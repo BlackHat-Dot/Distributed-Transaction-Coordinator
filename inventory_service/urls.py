@@ -21,6 +21,6 @@ from inventory.views import product_list, reserve_product, release_product
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('products/', product_list),
-    path('products/reserve', reserve_product),
-    path('products/release', release_product)
+    path('products/reserve/', reserve_product),
+    path('products/release/', release_product)
 ]
