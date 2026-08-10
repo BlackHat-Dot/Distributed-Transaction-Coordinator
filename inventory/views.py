@@ -101,9 +101,17 @@ def reserve_product(request):
     })
     # not exactly reservation but a vague approach.
 
+# used for compensation
 @api_view(["POST"])
 def release_product(request):
     transaction_id = request.data.get("transaction_id")
+
+
+    if transaction_id == "fail-release":
+        return Response(
+            {"error": "Release failed intentionally"},
+            status=500
+        )
 
     reservation = get_object_or_404(
         Reservation,
