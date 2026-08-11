@@ -35,7 +35,7 @@ def create_transaction(request):
     except Timeout:
         Transaction.objects.filter(
             transaction_id=transaction_id
-        ).update(status="INVENTORY_TIMEOUT")
+        ).update(status="INVENTORY_UNKNOWN")
 
         return Response({
             "transaction_id": transaction_id,
@@ -74,11 +74,11 @@ def create_transaction(request):
     except Timeout:
         Transaction.objects.filter(
             transaction_id=transaction_id
-        ).update(status="PAYMENT_TIMEOUT")
+        ).update(status="PAYMENT_UNKNOWN")
 
         return Response({
             "transaction_id": transaction_id,
-            "status": "PAYMENT_TIMEOUT",
+            "status": "PAYMENT_UNKNOWN",
         }, status=504
     )
 
