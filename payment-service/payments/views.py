@@ -12,6 +12,7 @@ def charge_payment(request):
     # intentional
 
     if amount == 9999:
+        
         return Response({
             "message": "intentional error"},
             status=400

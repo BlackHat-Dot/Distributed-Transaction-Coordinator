@@ -8,6 +8,7 @@ from .models import Product, Reservation
 
 @api_view(["GET"])
 def product_list(request):
+
     products = Product.objects.all()
     serializer = ProductSerializer(products, many=True)
 
@@ -16,7 +17,7 @@ def product_list(request):
 @api_view(["POST"])
 def reserve_product(request):
 
-    if not request.data:
+    if not request.data: # {}
         return Response({
             "message": "no input values"
         })

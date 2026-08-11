@@ -31,7 +31,15 @@ def create_transaction(request):
             "inventory_response": response.json()
         }, status=400)
 
-    amount = request.data.get("amount", 500)
+    Transaction.objects.filter(
+        transaction_id=transaction_id
+    ).update(status="INVRNTORY_RESERVED")
+
+    Transaction.objects.filter(
+        transaction_id=transaction_id
+    ).update(status="PAYMENT_PROCESSING")
+
+    amount = request.data.get("amount", 0) # 9999
 
     fail_compensation = request.data.get("fail_compensation", False)
 
@@ -44,6 +52,14 @@ def create_transaction(request):
     )
 
     if payment_response.status_code != 200:
+        Transaction.objects.filter(
+            transaction_id=transaction_id
+        ).update(status="PAYMENT_PROCESSING")
+
+        Transaction.objects.filter(
+                    transaction_id=transaction_id
+                ).update(status="COMPENSATING")
+        
         release_transaction_id = "fail-release" if fail_compensation else transaction_id
 
         release_response = requests.post(
@@ -60,7 +76,7 @@ def create_transaction(request):
         else:
             Transaction.objects.filter(
                 transaction_id=transaction_id
-                ).update(status="COMPENSATION_FAILED")
+            ).update(status="COMPENSATION_FAILED")
 
         return Response({
             "transaction_id": transaction_id,
