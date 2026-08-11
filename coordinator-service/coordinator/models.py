@@ -13,5 +13,8 @@ class Transaction(models.Model):
         default=0,
     )
 
+    created_at = models.DateTimeField(auto_now_add=True) # one time register , no change for each status update
+    updated_at = models.DateTimeField(auto_now=True) # timestamp update for each change in record
+
     def __str__(self):
         return str(self.transaction_id)

@@ -7,6 +7,12 @@ from .serializers import ProductSerializer
 from .models import Product, Reservation
 
 @api_view(["GET"])
+def health_check(request):
+    return Response({
+        "status": "healthy",
+    })
+
+@api_view(["GET"])
 def product_list(request):
 
     products = Product.objects.all()

@@ -3,6 +3,7 @@ import requests
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+from requests.exceptions import Timeout
 
 from .models import Transaction
 
@@ -21,13 +22,25 @@ def create_transaction(request):
         amount=amount
     )
 
-    response = requests.post(
-        "http://127.0.0.1:8000/products/reserve/",
-        json={
-            "product_id": product_id,
-            "quantity": quantity,
-            "transaction_id": transaction_id
-        },
+    try:
+        response = requests.post(
+            "http://127.0.0.1:8000/products/reserve/",
+            json={
+                "product_id": product_id,
+                "quantity": quantity,
+                "transaction_id": transaction_id,
+            },
+            timeout=5,
+    )
+    except Timeout:
+        Transaction.objects.filter(
+            transaction_id=transaction_id
+        ).update(status="INVENTORY_TIMEOUT")
+
+        return Response({
+            "transaction_id": transaction_id,
+            "status": "INVENTORY_TIMEOUT",
+        }, status=504
     )
 
     if response.status_code != 200:
@@ -49,12 +62,24 @@ def create_transaction(request):
 
     fail_compensation = request.data.get("fail_compensation", False)
 
-    payment_response = requests.post(
-        "http://127.0.0.1:8001/payments/charge/",
-        json={
+    try:
+        payment_response = requests.post(
+            "http://127.0.0.1:8001/payments/charge/",
+            json={
+                "transaction_id": transaction_id,
+                "amount": amount,
+            },
+            timeout=5,
+    )
+    except Timeout:
+        Transaction.objects.filter(
+            transaction_id=transaction_id
+        ).update(status="PAYMENT_TIMEOUT")
+
+        return Response({
             "transaction_id": transaction_id,
-            "amount": amount,
-        },
+            "status": "PAYMENT_TIMEOUT",
+        }, status=504
     )
 
     if payment_response.status_code != 200:
@@ -144,3 +169,36 @@ def retry_compensation(request, transaction_id):
         "status": "COMPENSATION_FAILED",
         "compensation_response": release_response.json(),
     }, status=500)
+
+@api_view(["GET"])
+def get_transaction(request, transaction_id):
+    transaction = Transaction.objects.get(
+        transaction_id=transaction_id
+    )
+
+    return Response({
+        "transaction_id": str(transaction.transaction_id),
+        "status": transaction.status,
+        "product_id": transaction.product_id,
+        "quantity": transaction.quantity,
+        "amount": str(transaction.amount),
+        "created_at": transaction.created_at,
+        "updated_at": transaction.updated_at,
+    })
+
+@api_view(["GET"])
+def list_transactions(request):
+    transactions = Transaction.objects.all().order_by("-created_at")
+
+    return Response([
+        {
+            "transaction_id": str(transaction.transaction_id),
+            "status": transaction.status,
+            "product_id": transaction.product_id,
+            "quantity": transaction.quantity,
+            "amount": str(transaction.amount),
+            "created_at": transaction.created_at,
+            "updated_at": transaction.updated_at,
+        }
+        for transaction in transactions
+    ])
