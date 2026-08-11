@@ -16,10 +16,12 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
-from coordinator.views import create_transaction
+from coordinator.views import create_transaction, retry_compensation
 
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path("transaction/", create_transaction)
+    path("transaction/", create_transaction),
+    path("transactions/<uuid:transaction_id>/retry-compensation/",
+         retry_compensation)
 ]

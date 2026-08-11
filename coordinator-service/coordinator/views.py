@@ -9,17 +9,23 @@ from .models import Transaction
 @api_view(["POST"])
 def create_transaction(request):
     transaction_id = str(uuid.uuid4()) # random uuid
+    product_id = request.data.get("product_id", 1)
+    quantity = request.data.get("quantity", 1)
+    amount = request.data.get("amount", 500)
 
     Transaction.objects.create(
         transaction_id=transaction_id,
         status="STARTED",
+        product_id=product_id,
+        quantity=quantity,
+        amount=amount
     )
 
     response = requests.post(
         "http://127.0.0.1:8000/products/reserve/",
         json={
-            "product_id": 1,
-            "quantity": 1,
+            "product_id": product_id,
+            "quantity": quantity,
             "transaction_id": transaction_id
         },
     )
@@ -78,9 +84,13 @@ def create_transaction(request):
                 transaction_id=transaction_id
             ).update(status="COMPENSATION_FAILED")
 
+        current_transaction = Transaction.objects.get(
+            transaction_id=transaction_id
+        )
+
         return Response({
             "transaction_id": transaction_id,
-            "status": "FAILED",
+            "status": current_transaction.status,
             "payment_response": payment_response.json(),
             "compensation_response": release_response.json(),
         }, status=400)
@@ -92,6 +102,45 @@ def create_transaction(request):
     return Response({
         "transaction_id": transaction_id,
         "status": "COMPLETED",
-        "inventory_response": response.json(),
-        "payment_response": payment_response.json(),
+        "product_id": product_id,
+        "quantity": quantity,
+        "amount": amount,
     })
+
+@api_view(["POST"])
+def retry_compensation(request, transaction_id):
+    transaction = Transaction.objects.get(
+        transaction_id=transaction_id
+    )
+
+    if transaction.status == "COMPENSATED":
+        return Response({
+            "transaction_id": str(transaction_id),
+            "status": "COMPENSATED",
+            "message": "Transaction is already compensated",
+        })
+
+    release_response = requests.post(
+        "http://127.0.0.1:8000/products/release/",
+        json={
+            "transaction_id": str(transaction_id),
+        },
+    )
+
+    if release_response.status_code == 200:
+        transaction.status = "COMPENSATED"
+        transaction.save(update_fields=["status"])
+        # Django updates only the status column 
+        # instead of saving every field on the Transaction object
+
+        return Response({
+            "transaction_id": transaction_id,
+            "status": "COMPENSATED",
+            "compensation_response": release_response.json(),
+        })
+
+    return Response({
+        "transaction_id": transaction_id,
+        "status": "COMPENSATION_FAILED",
+        "compensation_response": release_response.json(),
+    }, status=500)
