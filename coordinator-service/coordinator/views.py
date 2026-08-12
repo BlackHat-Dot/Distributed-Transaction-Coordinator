@@ -17,7 +17,7 @@ def create_transaction(request):
 
     Transaction.objects.create(
         transaction_id=transaction_id,
-        status="STARTED",
+        status=Transaction.Status.STARTED,
         product_id=product_id,
         quantity=quantity,
         amount=amount
@@ -37,20 +37,20 @@ def create_transaction(request):
         if isinstance(e, Timeout):
             Transaction.objects.filter(
                 transaction_id=transaction_id
-            ).update(status="INVENTORY_TIMEOUT")
+            ).update(status=Transaction.Status.INVENTORY_TIMEOUT)
 
             return Response({
                 "transaction_id": transaction_id,
-                "status": "INVENTORY_TIMEOUT",
+                "status": Transaction.Status.INVENTORY_TIMEOUT,
             }, status=504)
         elif isinstance(e, ConnectionError):
             Transaction.objects.filter(
                 transaction_id=transaction_id
-            ).update(status="INVENTORY_CONNECTION_ERROR")
+            ).update(status=Transaction.Status.INVENTORY_CONNECTION_ERROR)
 
             return Response({
                 "transaction_id": transaction_id,
-                "status": "INVENTORY_CONNECTION_ERROR",
+                "status": Transaction.Status.INVENTORY_CONNECTION_ERROR,
             }, status=504
             )
 
@@ -72,21 +72,21 @@ def create_transaction(request):
     if response.status_code != 200:
         Transaction.objects.filter(
             transaction_id=transaction_id
-        ).update(status="INVENTORY_RESERVE_FAILED")
+        ).update(status=Transaction.Status.INVENTORY_RESERVE_FAILED)
         
         return Response({
             "transaction_id": transaction_id,
-            "error": "Inventory reservation failed",
+            "error": Transaction.Status.INVENTORY_RESERVE_FAILED,
             "inventory_response": response.json()
             }, status=400)
 
     Transaction.objects.filter(
         transaction_id=transaction_id
-    ).update(status="INVENTORY_RESERVED")
+    ).update(status=Transaction.Status.INVENTORY_RESERVED)
 
     Transaction.objects.filter(
         transaction_id=transaction_id
-    ).update(status="PAYMENT_PROCESSING")
+    ).update(status=Transaction.Status.PAYMENT_PROCESSING)
 
     amount = request.data.get("amount", 0) # 9999
 
@@ -104,9 +104,9 @@ def create_transaction(request):
     except (Timeout, ConnectionError) as e:
 
         if isinstance(e, Timeout):
-            timeout_status = "PAYMENT_TIMEOUT"
+            timeout_status = Transaction.Status.PAYMENT_TIMEOUT
         else:
-            timeout_status = "PAYMENT_CONNECTION_ERROR"
+            timeout_status = Transaction.Status.PAYMENT_CONNECTION_ERROR
 
         Transaction.objects.filter(
             transaction_id=transaction_id
@@ -132,11 +132,11 @@ def create_transaction(request):
         if payment_data.get("status") == "CHARGED":
             Transaction.objects.filter(
                 transaction_id=transaction_id
-            ).update(status="COMPLETED")
-        
+            ).update(status=Transaction.Status.COMPLETED)
+
             return Response({
                 "transaction_id": transaction_id,
-                "status": "COMPLETED",
+                "status": Transaction.Status.COMPLETED,
                 "payment_response": payment_data,
             })
 
@@ -144,7 +144,7 @@ def create_transaction(request):
 
             Transaction.objects.filter(
                 transaction_id=transaction_id
-            ).update(status="COMPENSATING")
+            ).update(status=Transaction.Status.COMPENSATING)
 
             try:
                 release_response = requests.post(
@@ -158,16 +158,16 @@ def create_transaction(request):
 
                 Transaction.objects.filter(
                     transaction_id=transaction_id
-                ).update(status="COMPENSATION_FAILED")
+                ).update(status=Transaction.Status.COMPENSATION_FAILED)
 
                 if isinstance(e, Timeout):
-                    cause = "TIMEOUT"
+                    cause = Transaction.Status.TIMEOUT
                 else:
-                    cause = "CONNECTION_FAILED"
+                    cause = Transaction.Status.CONNECTION_FAILED
 
                 return Response({
                     "transaction_id": transaction_id,
-                    "status": "COMPENSATION_FAILED",
+                    "status": Transaction.Status.COMPENSATION_FAILED,
                     "cause": cause,
                     "error": "Could not reach Inventory during compensation",
                 }, status=503)
@@ -176,22 +176,22 @@ def create_transaction(request):
 
                 Transaction.objects.filter(
                     transaction_id=transaction_id
-                ).update(status="COMPENSATED")
+                ).update(status=Transaction.Status.COMPENSATED)
 
                 return Response({
                     "transaction_id": transaction_id,
-                    "status": "COMPENSATED",
+                    "status": Transaction.Status.COMPENSATED,
                     "payment_response": payment_data,
                     "compensation_response": release_response.json(),
                 }, status=400)
 
             Transaction.objects.filter(
                 transaction_id=transaction_id
-            ).update(status="COMPENSATION_FAILED")
+            ).update(status=Transaction.Status.COMPENSATION_FAILED)
 
             return Response({
                 "transaction_id": transaction_id,
-                "status": "COMPENSATION_FAILED",
+                "status": Transaction.Status.COMPENSATION_FAILED,
                 "payment_response": payment_data,
                 "compensation_response": release_response.json(),
             }, status=500)
@@ -199,7 +199,7 @@ def create_transaction(request):
 
     return Response({
         "transaction_id": transaction_id,
-        "status": "COMPLETED",
+        "status": Transaction.Status.COMPLETED,
         "product_id": product_id,
         "quantity": quantity,
         "amount": amount,
@@ -212,10 +212,10 @@ def retry_compensation(request, transaction_id):
         transaction_id=transaction_id
     )
 
-    if transaction.status == "COMPENSATED":
+    if transaction.status == Transaction.Status.COMPENSATED:
         return Response({
             "transaction_id": str(transaction_id),
-            "status": "COMPENSATED",
+            "status": Transaction.Status.COMPENSATED,
             "message": "Transaction is already compensated",
         })
 
@@ -242,26 +242,26 @@ def retry_compensation(request, transaction_id):
         elif isinstance(e, ConnectionError):
             return Response({
                 "transaction_id": transaction_id,
-                "status": "RETRY_COMPENSATION_FAILED",
+                "status": Transaction.Status.RETRY_COMPENSATION_FAILED,
                 "cause": "CONNECTION_FAILED",
                 "error": "Could not reach Inventory during retry compensation",
             }, status=503)
 
     if release_response.status_code == 200:
-        transaction.status = "COMPENSATED_ON_RETRY"
+        transaction.status = Transaction.Status.COMPENSATED_ON_RETRY
         transaction.save(update_fields=["status"])
         # Django updates only the status column 
         # instead of saving every field on the Transaction object
 
         return Response({
             "transaction_id": transaction_id,
-            "status": "COMPENSATED_ON_RETRY",
+            "status": Transaction.Status.COMPENSATED_ON_RETRY,
             "compensation_response": release_response.json(),
         })
 
     return Response({
         "transaction_id": transaction_id,
-        "status": "COMPENSATION_FAILED_ON_RETRY",
+        "status": Transaction.Status.RETRY_COMPENSATION_FAILED,
         "compensation_response": release_response.json(),
     }, status=500)
 
