@@ -3,7 +3,7 @@ import requests
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from requests.exceptions import Timeout
+from requests.exceptions import Timeout, ConnectionError
 
 from .models import Transaction
 
@@ -32,10 +32,10 @@ def create_transaction(request):
             },
             timeout=5,
     )
-    except Timeout:
+    except (Timeout, ConnectionError):
         Transaction.objects.filter(
             transaction_id=transaction_id
-        ).update(status="INVENTORY_UNKNOWN")
+        ).update(status="INVENTORY_TIMEOUT")
 
         return Response({
             "transaction_id": transaction_id,
@@ -43,7 +43,26 @@ def create_transaction(request):
         }, status=504
     )
 
+    # timeout
+        # Connection established
+        #        ↓
+        # Request sent
+        #        ↓
+        # No response within 5 seconds
+
+    # ConnectionError
+        # Tried to connect
+        #         ↓
+        # Could not establish connection
+
+    # for example: coordinator -> http://127.0.0.1:8001 is not running
+    # then, connection won't happen, so ConnectionError raised
+
     if response.status_code != 200:
+        Transaction.objects.filter(
+            transaction_id=transaction_id
+        ).update(status="INVENTORY_RESERVE_FAILED")
+        
         return Response({
             "transaction_id": transaction_id,
             "error": "Inventory reservation failed",
@@ -71,14 +90,14 @@ def create_transaction(request):
             },
             timeout=5,
     )
-    except Timeout:
+    except (Timeout, ConnectionError):
         Transaction.objects.filter(
             transaction_id=transaction_id
-        ).update(status="PAYMENT_UNKNOWN")
+        ).update(status="PAYMENT_TIMEOUT")
 
         return Response({
             "transaction_id": transaction_id,
-            "status": "PAYMENT_UNKNOWN",
+            "status": "PAYMENT_TIMEOUT",
         }, status=504
     )
 

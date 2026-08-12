@@ -26,7 +26,7 @@ from coordinator.views import (
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path("transaction/", create_transaction),
+    path("transactions/", create_transaction),
     path("transactions/<uuid:transaction_id>/retry-compensation/",
          retry_compensation),
     path("transactions/<uuid:transaction_id>/",get_transaction),
