@@ -18,6 +18,7 @@ class Reservation(models.Model):
     class Status(models.TextChoices):
         RESERVED = "RESERVED"
         RELEASED = "RELEASED"
+        NOT_RESERVED = "NOT_RESERVED"
 
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField(default=0)
@@ -29,4 +30,4 @@ class Reservation(models.Model):
     )
 
     def __str__(self):
-        return self.transaction_id
+        return str(self.transaction_id)

@@ -21,6 +21,7 @@ class Transaction(models.Model):
         COMPLETED = "COMPLETED"
         TIMEOUT = "TIMEOUT"
         CONNECTION_FAILED = "CONNECTION_FAILED"
+        CHARGED = "CHARGED"
 
     transaction_id = models.UUIDField(unique=True)
 

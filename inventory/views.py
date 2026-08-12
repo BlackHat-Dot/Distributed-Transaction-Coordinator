@@ -142,7 +142,7 @@ def release_product(request):
             transaction_id=transaction_id
         )
 
-        if reservation.status == "RELEASED":
+        if reservation.status == Reservation.Status.RELEASED:
             return Response({
                 "message": "Reservation already released"
             })
@@ -154,7 +154,7 @@ def release_product(request):
         product.stock += reservation.quantity
         product.save()
 
-        reservation.status = "RELEASED"
+        reservation.status = Reservation.Status.RESERVED
         reservation.save()
 
     return Response({
@@ -180,7 +180,7 @@ def reservation_check(request):
     except Http404:
         return Response({
             "transaction_id": transaction_id,
-            "status": "NOT_RESERVED",
+            "status": Reservation.Status.NOT_RESERVED,
         })
 
     return Response({

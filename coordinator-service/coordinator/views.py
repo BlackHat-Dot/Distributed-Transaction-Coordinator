@@ -129,7 +129,7 @@ def create_transaction(request):
 
         payment_data = payment_check.json()
 
-        if payment_data.get("status") == "CHARGED":
+        if payment_data.get("status") == Transaction.Status.CHARGED:
             Transaction.objects.filter(
                 transaction_id=transaction_id
             ).update(status=Transaction.Status.COMPLETED)
@@ -140,7 +140,7 @@ def create_transaction(request):
                 "payment_response": payment_data,
             })
 
-        if payment_data.get("status") != "CHARGED":
+        if payment_data.get("status") != Transaction.Status.CHARGED:
 
             Transaction.objects.filter(
                 transaction_id=transaction_id

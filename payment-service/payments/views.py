@@ -47,7 +47,7 @@ def charge_payment(request):
     payment = Payment.objects.create(
         transaction_id=transaction_id,
         amount=amount,
-        status="CHARGED"
+        status=Payment.Status.CHARGED
     )
 
     return Response({
@@ -80,5 +80,5 @@ def payment_check(request):
     except Http404:
         return Response({
             "transaction_id": transaction_id,
-            "status": "NOT_CHARGED",
+            "status": Payment.Status.NOT_CHARGED,
         })
