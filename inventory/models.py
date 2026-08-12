@@ -16,7 +16,7 @@ class Reservation(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField(default=0)
 
-    transaction_id = models.CharField(max_length=100, unique=True)
+    transaction_id = models.UUIDField(unique=True)
     status = models.CharField(max_length=20, default="RESERVED")
 
     def __str__(self):
