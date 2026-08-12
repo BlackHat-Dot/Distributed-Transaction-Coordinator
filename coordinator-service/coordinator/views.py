@@ -7,6 +7,7 @@ from requests.exceptions import Timeout, ConnectionError
 
 from .models import Transaction
 
+
 @api_view(["POST"])
 def create_transaction(request):
     transaction_id = str(uuid.uuid4()) # random uuid
@@ -32,16 +33,26 @@ def create_transaction(request):
             },
             timeout=5,
     )
-    except (Timeout, ConnectionError):
-        Transaction.objects.filter(
-            transaction_id=transaction_id
-        ).update(status="INVENTORY_TIMEOUT")
+    except (Timeout, ConnectionError) as e:
+        if isinstance(e, Timeout):
+            Transaction.objects.filter(
+                transaction_id=transaction_id
+            ).update(status="INVENTORY_TIMEOUT")
 
-        return Response({
-            "transaction_id": transaction_id,
-            "status": "INVENTORY_TIMEOUT",
-        }, status=504
-    )
+            return Response({
+                "transaction_id": transaction_id,
+                "status": "INVENTORY_TIMEOUT",
+            }, status=504)
+        elif isinstance(e, ConnectionError):
+            Transaction.objects.filter(
+                transaction_id=transaction_id
+            ).update(status="INVENTORY_CONNECTION_ERROR")
+
+            return Response({
+                "transaction_id": transaction_id,
+                "status": "INVENTORY_CONNECTION_ERROR",
+            }, status=504
+            )
 
     # timeout
         # Connection established
@@ -55,7 +66,7 @@ def create_transaction(request):
         #         ↓
         # Could not establish connection
 
-    # for example: coordinator -> http://127.0.0.1:8001 is not running
+    # for example: coordinator -> http://127.0.0.1:8000 is not running
     # then, connection won't happen, so ConnectionError raised
 
     if response.status_code != 200:
@@ -67,11 +78,11 @@ def create_transaction(request):
             "transaction_id": transaction_id,
             "error": "Inventory reservation failed",
             "inventory_response": response.json()
-        }, status=400)
+            }, status=400)
 
     Transaction.objects.filter(
         transaction_id=transaction_id
-    ).update(status="INVRNTORY_RESERVED")
+    ).update(status="INVENTORY_RESERVED")
 
     Transaction.objects.filter(
         transaction_id=transaction_id
@@ -90,21 +101,18 @@ def create_transaction(request):
             },
             timeout=5,
     )
-    except (Timeout, ConnectionError):
-        Transaction.objects.filter(
-            transaction_id=transaction_id
-        ).update(status="PAYMENT_TIMEOUT")
-
-        return Response({
-            "transaction_id": transaction_id,
-            "status": "PAYMENT_TIMEOUT",
-        }, status=504
-    )
+    except (Timeout, ConnectionError) as e:
+        if isinstance(e, Timeout):
+            Transaction.objects.filter(
+                transaction_id=transaction_id
+            ).update(status="PAYMENT_TIMEOUT")
+        
+        elif isinstance(e, ConnectionError):
+            Transaction.objects.filter(
+                transaction_id=transaction_id
+            ).update(status="PAYMENT_CONNECTION_ERROR")
 
     if payment_response.status_code != 200:
-        Transaction.objects.filter(
-            transaction_id=transaction_id
-        ).update(status="PAYMENT_PROCESSING")
 
         Transaction.objects.filter(
                     transaction_id=transaction_id
@@ -112,12 +120,34 @@ def create_transaction(request):
         
         release_transaction_id = "fail-release" if fail_compensation else transaction_id
 
-        release_response = requests.post(
-            "http://127.0.0.1:8000/products/release/",
-            json={
-                "transaction_id": release_transaction_id,
-            },
-        )
+        try:
+            release_response = requests.post(
+                "http://127.0.0.1:8000/products/release/",
+                json={
+                    "transaction_id": release_transaction_id,
+                },
+                timeout=5,
+            )
+        except (Timeout, ConnectionError) as e:
+            Transaction.objects.filter(
+                transaction_id=transaction_id
+            ).update(status="COMPENSATION_FAILED")
+
+            if isinstance(e, Timeout):
+                return Response({
+                    "transaction_id": transaction_id,
+                    "status": "COMPENSATION_FAILED",
+                    "cause": "TIMEOUT",
+                    "error": "Could not reach Inventory during compensation",
+                }, status=503)
+            
+            elif isinstance(e, ConnectionError):
+                return Response({
+                    "transaction_id": transaction_id,
+                    "status": "COMPENSATION_FAILED",
+                    "cause": "CONNECTION_FAILED",
+                    "error": "Could not reach Inventory during compensation",
+                }, status=503)
 
         if release_response.status_code == 200:
             Transaction.objects.filter(
@@ -164,28 +194,49 @@ def retry_compensation(request, transaction_id):
             "message": "Transaction is already compensated",
         })
 
-    release_response = requests.post(
-        "http://127.0.0.1:8000/products/release/",
-        json={
-            "transaction_id": str(transaction_id),
-        },
-    )
+    try:
+        release_response = requests.post(
+            "http://127.0.0.1:8000/products/release/",
+            json={
+                "transaction_id": str(transaction_id),
+            },
+            timeout=5,
+        )
+    except (Timeout, ConnectionError) as e:
+        Transaction.objects.filter(
+            transaction_id=transaction_id
+        ).update(status="RETRY_COMPENSATION_FAILED")
+        if isinstance(e, Timeout):
+            return Response({
+                "transaction_id": transaction_id,
+                "status": "RETRY_COMPENSATION_FAILED",
+                "cause": "TIMEOUT",
+                "error": "Could not reach Inventory during retry compensation",
+            }, status=503)
+        
+        elif isinstance(e, ConnectionError):
+            return Response({
+                "transaction_id": transaction_id,
+                "status": "RETRY_COMPENSATION_FAILED",
+                "cause": "CONNECTION_FAILED",
+                "error": "Could not reach Inventory during retry compensation",
+            }, status=503)
 
     if release_response.status_code == 200:
-        transaction.status = "COMPENSATED"
+        transaction.status = "COMPENSATED_ON_RETRY"
         transaction.save(update_fields=["status"])
         # Django updates only the status column 
         # instead of saving every field on the Transaction object
 
         return Response({
             "transaction_id": transaction_id,
-            "status": "COMPENSATED",
+            "status": "COMPENSATED_ON_RETRY",
             "compensation_response": release_response.json(),
         })
 
     return Response({
         "transaction_id": transaction_id,
-        "status": "COMPENSATION_FAILED",
+        "status": "COMPENSATION_FAILED_ON_RETRY",
         "compensation_response": release_response.json(),
     }, status=500)
 
@@ -221,3 +272,7 @@ def list_transactions(request):
         }
         for transaction in transactions
     ])
+
+@api_view(["GET"])
+def update_status(request, transaction_id):
+    pass
