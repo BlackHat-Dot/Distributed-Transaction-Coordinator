@@ -6,6 +6,8 @@ from django.db import transaction
 from .serializers import ProductSerializer
 from .models import Product, Reservation
 
+from django.http import Http404
+
 @api_view(["GET"])
 def health_check(request):
     return Response({
@@ -56,7 +58,7 @@ def reserve_product(request):
         })
 
     product = get_object_or_404(Product, id=product_id)
-    # if product doesn't exist then "No Product matches the given query"
+    # if product doesn't exist then it gives "No Product matches the given query"
 
     if product.stock < quantity:
         return Response(
@@ -144,3 +146,19 @@ def release_product(request):
         "message": "Inventory released",
         "transaction_id": transaction_id
     })
+
+@api_view(["POST"])
+def reservation_check(request):
+    try:
+        reserved = get_object_or_404(Reservation, request.data.get("transaction_id"))
+    except Http404:
+        return Response({
+            "data":False
+        }) # record doesnt exist
+    
+    return Response({
+        "data": True
+    }) # record exist
+    
+
+    

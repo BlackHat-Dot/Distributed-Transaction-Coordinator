@@ -102,83 +102,108 @@ def create_transaction(request):
             timeout=5,
     )
     except (Timeout, ConnectionError) as e:
-        if isinstance(e, Timeout):
-            Transaction.objects.filter(
-                transaction_id=transaction_id
-            ).update(status="PAYMENT_TIMEOUT")
-        
-        elif isinstance(e, ConnectionError):
-            Transaction.objects.filter(
-                transaction_id=transaction_id
-            ).update(status="PAYMENT_CONNECTION_ERROR")
 
-    if payment_response.status_code != 200:
+        if isinstance(e, Timeout):
+            timeout_status = "PAYMENT_TIMEOUT"
+        else:
+            timeout_status = "PAYMENT_CONNECTION_ERROR"
 
         Transaction.objects.filter(
-                    transaction_id=transaction_id
-                ).update(status="COMPENSATING")
-        
-        release_transaction_id = "fail-release" if fail_compensation else transaction_id
+            transaction_id=transaction_id
+        ).update(status=timeout_status)
 
         try:
-            release_response = requests.post(
-                "http://127.0.0.1:8000/products/release/",
-                json={
-                    "transaction_id": release_transaction_id,
+            payment_check = requests.get(
+                "http://127.0.0.1:8001/payments/check/",
+                params={
+                    "transaction_id": transaction_id,
                 },
                 timeout=5,
             )
-        except (Timeout, ConnectionError) as e:
+        except (Timeout, ConnectionError):
+            return Response({
+                "transaction_id": transaction_id,
+                "status": timeout_status,
+                "error": "Payment outcome could not be determined",
+            }, status=503)
+
+        payment_data = payment_check.json()
+
+        if payment_data.get("status") == "CHARGED":
+            Transaction.objects.filter(
+                transaction_id=transaction_id
+            ).update(status="COMPLETED")
+        
+            return Response({
+                "transaction_id": transaction_id,
+                "status": "COMPLETED",
+                "payment_response": payment_data,
+            })
+
+        if payment_data.get("status") != "CHARGED":
+
+            Transaction.objects.filter(
+                transaction_id=transaction_id
+            ).update(status="COMPENSATING")
+
+            try:
+                release_response = requests.post(
+                    "http://127.0.0.1:8000/products/release/",
+                    json={
+                        "transaction_id": transaction_id,
+                    },
+                    timeout=5,
+                )
+            except (Timeout, ConnectionError) as e:
+
+                Transaction.objects.filter(
+                    transaction_id=transaction_id
+                ).update(status="COMPENSATION_FAILED")
+
+                if isinstance(e, Timeout):
+                    cause = "TIMEOUT"
+                else:
+                    cause = "CONNECTION_FAILED"
+
+                return Response({
+                    "transaction_id": transaction_id,
+                    "status": "COMPENSATION_FAILED",
+                    "cause": cause,
+                    "error": "Could not reach Inventory during compensation",
+                }, status=503)
+
+            if release_response.status_code == 200:
+
+                Transaction.objects.filter(
+                    transaction_id=transaction_id
+                ).update(status="COMPENSATED")
+
+                return Response({
+                    "transaction_id": transaction_id,
+                    "status": "COMPENSATED",
+                    "payment_response": payment_data,
+                    "compensation_response": release_response.json(),
+                }, status=400)
+
             Transaction.objects.filter(
                 transaction_id=transaction_id
             ).update(status="COMPENSATION_FAILED")
 
-            if isinstance(e, Timeout):
-                return Response({
-                    "transaction_id": transaction_id,
-                    "status": "COMPENSATION_FAILED",
-                    "cause": "TIMEOUT",
-                    "error": "Could not reach Inventory during compensation",
-                }, status=503)
-            
-            elif isinstance(e, ConnectionError):
-                return Response({
-                    "transaction_id": transaction_id,
-                    "status": "COMPENSATION_FAILED",
-                    "cause": "CONNECTION_FAILED",
-                    "error": "Could not reach Inventory during compensation",
-                }, status=503)
+            return Response({
+                "transaction_id": transaction_id,
+                "status": "COMPENSATION_FAILED",
+                "payment_response": payment_data,
+                "compensation_response": release_response.json(),
+            }, status=500)
+        
 
-        if release_response.status_code == 200:
-            Transaction.objects.filter(
-                transaction_id=transaction_id
-            ).update(status="COMPENSATED")
-        else:
-            Transaction.objects.filter(
-                transaction_id=transaction_id
-            ).update(status="COMPENSATION_FAILED")
-
-        current_transaction = Transaction.objects.get(
-            transaction_id=transaction_id
-        )
-
-        return Response({
-            "transaction_id": transaction_id,
-            "status": current_transaction.status,
-            "payment_response": payment_response.json(),
-            "compensation_response": release_response.json(),
-        }, status=400)
-
-    Transaction.objects.filter(
-        transaction_id=transaction_id
-    ).update(status="COMPLETED")
-    
     return Response({
         "transaction_id": transaction_id,
         "status": "COMPLETED",
         "product_id": product_id,
         "quantity": quantity,
         "amount": amount,
+        "payment_response": payment_response.json(),
     })
 
 @api_view(["POST"])
@@ -272,7 +297,3 @@ def list_transactions(request):
         }
         for transaction in transactions
     ])
-
-@api_view(["GET"])
-def update_status(request, transaction_id):
-    pass

@@ -2,6 +2,8 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from .models import Payment
+from django.shortcuts import get_object_or_404
+from django.http import Http404
 
 
 @api_view(["POST"])
@@ -19,7 +21,7 @@ def charge_payment(request):
         )
 
     if not transaction_id:
-        Response(
+        return Response(
             {"error": "transaction_id"},
             status=400
         )
@@ -54,3 +56,29 @@ def charge_payment(request):
         "amount": str(payment.amount),
         "status": payment.status
     })
+
+@api_view(["GET"])
+def payment_check(request):
+    transaction_id = request.query_params.get("transaction_id")
+
+    if not transaction_id:
+        return Response(
+            {"error": "transaction_id is required"},
+            status=400
+        )
+    
+    try:
+        payment_obj = get_object_or_404(
+            Payment,
+            transaction_id=transaction_id
+        )
+
+        return Response({
+            "transaction_id": transaction_id,
+            "status": payment_obj.status,
+        })
+    except Http404:
+        return Response({
+            "transaction_id": transaction_id,
+            "status": "NOT_CHARGED",
+        })
