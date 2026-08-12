@@ -34,6 +34,12 @@ def reserve_product(request):
     quantity = request.data.get("quantity")
     transaction_id = request.data.get("transaction_id")
 
+    if not product_id:
+        return Response(
+            {"error": "product_id is required"},
+            status=400
+        )
+
     if not quantity or quantity <= 0:
         return Response(
             {"error": "Quantity must be greater than 0"},
@@ -67,15 +73,24 @@ def reserve_product(request):
         )
 
     with transaction.atomic(): # <- __enter__ called BEFORE this block starts
+        product = Product.objects.select_for_update().get(
+            id=product_id
+        )
+
+        if product.stock < quantity:
+            return Response(
+                {"error": "Not enough stock"},
+                status=400
+            )
+
         product.stock -= quantity
         product.save()
 
         Reservation.objects.create(
             product=product,
             quantity=quantity,
-            transaction_id=transaction_id,
+            transaction_id=transaction_id
         )
-
     """
     with knows nothing about databases, commits, or rollbacks.
     It only knows: call __enter__ "before the block", 
@@ -122,43 +137,56 @@ def release_product(request):
             status=500
         )
 
-    reservation = get_object_or_404(
-        Reservation,
-        transaction_id=transaction_id
-    )
+    with transaction.atomic():
+        reservation = Reservation.objects.select_for_update().get(
+            transaction_id=transaction_id
+        )
 
-    if reservation.status == "RELEASED": 
-        return Response({
-            "message": "Reservation already released"
-        })
+        if reservation.status == "RELEASED":
+            return Response({
+                "message": "Reservation already released"
+            })
 
-    # this block executed if reservation.status == "RESERVED"
+        product = Product.objects.select_for_update().get(
+            id=reservation.product_id
+        )
 
-    reservation.product.stock += reservation.quantity
-    # access the stock using foreign key 
-    # this is the rollback , return the reserved quantity back to stock.
-    reservation.product.save()
+        product.stock += reservation.quantity
+        product.save()
 
-    reservation.status = "RELEASED"
-    reservation.save()
+        reservation.status = "RELEASED"
+        reservation.save()
 
     return Response({
         "message": "Inventory released",
         "transaction_id": transaction_id
     })
 
-@api_view(["POST"])
+@api_view(["GET"])
 def reservation_check(request):
+    transaction_id = request.query_params.get("transaction_id")
+
+    if not transaction_id:
+        return Response(
+            {"error": "transaction_id is required"},
+            status=400
+        )
+
     try:
-        reserved = get_object_or_404(Reservation, request.data.get("transaction_id"))
+        reservation = get_object_or_404(
+            Reservation,
+            transaction_id=transaction_id
+        )
     except Http404:
         return Response({
-            "data":False
-        }) # record doesnt exist
-    
+            "transaction_id": transaction_id,
+            "status": "NOT_RESERVED",
+        })
+
     return Response({
-        "data": True
-    }) # record exist
+        "transaction_id": transaction_id,
+        "status": reservation.status,
+    })
     
 
     
