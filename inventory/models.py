@@ -12,12 +12,21 @@ class Product(models.Model):
     # , str(Product), product name in django server 
     # is also because of this __str__
 
+
 class Reservation(models.Model):
+
+    class Status(models.TextChoices):
+        RESERVED = "RESERVED"
+        RELEASED = "RELEASED"
+
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField(default=0)
-
     transaction_id = models.UUIDField(unique=True)
-    status = models.CharField(max_length=20, default="RESERVED")
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.RESERVED,
+    )
 
     def __str__(self):
         return self.transaction_id
