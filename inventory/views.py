@@ -58,22 +58,14 @@ def reserve_product(request):
 
     if existing_reservation: # idempotency
         return Response({
-            "message": "Reseravation already exists",
+            "message": "Reservation already exists",
             "transaction_id": transaction_id,
             "status": existing_reservation.status
         })
 
-    product = get_object_or_404(Product, id=product_id)
-    # if product doesn't exist then it gives "No Product matches the given query"
-
-    if product.stock < quantity:
-        return Response(
-            {"error": "Not enough stock"},
-            status=400
-        )
-
     with transaction.atomic(): # <- __enter__ called BEFORE this block starts
-        product = Product.objects.select_for_update().get(
+        product = get_object_or_404(
+            Product.objects.select_for_update(),
             id=product_id
         )
 
@@ -137,25 +129,35 @@ def release_product(request):
             status=500
         )
 
-    with transaction.atomic():
-        reservation = Reservation.objects.select_for_update().get(
-            transaction_id=transaction_id
-        )
+    try:
+        with transaction.atomic():
+            reservation = get_object_or_404(
+                Reservation.objects.select_for_update(),
+                transaction_id=transaction_id
+            )
+    
+            if reservation.status == Reservation.Status.RELEASED:
+                return Response({
+                    "message": "Reservation already released",
+                    "transaction_id": transaction_id,
+                })
+    
+            product = Product.objects.select_for_update().get(
+                id=reservation.product_id
+            )
+    
+            product.stock += reservation.quantity
+            product.save()
+    
+            reservation.status = Reservation.Status.RELEASED
+            reservation.save()
 
-        if reservation.status == Reservation.Status.RELEASED:
-            return Response({
-                "message": "Reservation already released"
-            })
-
-        product = Product.objects.select_for_update().get(
-            id=reservation.product_id
-        )
-
-        product.stock += reservation.quantity
-        product.save()
-
-        reservation.status = Reservation.Status.RESERVED
-        reservation.save()
+    # we overide the default "detail" exception message of get_objet_404()
+    except Http404:
+        return Response({
+            "transaction_id": transaction_id,
+            "error": "Reservation not found",
+        }, status=404)
 
     return Response({
         "message": "Inventory released",
@@ -165,6 +167,7 @@ def release_product(request):
 @api_view(["GET"])
 def reservation_check(request):
     transaction_id = request.query_params.get("transaction_id")
+
 
     if not transaction_id:
         return Response(

@@ -1,3 +1,323 @@
-from django.test import TestCase
+import uuid
+from decimal import Decimal
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Create your tests here.
+from django.test import TestCase, TransactionTestCase, override_settings
+from django.db import connection
+from rest_framework.test import APIClient
+
+from .models import Payment
+from .views import NOT_CHARGED
+
+
+class ChargePaymentValidationTests(TestCase):
+    """Input validation for POST /payments/charge/"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.url = "/payments/charge/"
+
+    def test_missing_transaction_id(self):
+        resp = self.client.post(self.url, {"amount": 100}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("transaction_id", resp.data["error"])
+        # checks whether "transaction_id" in {"error": ""}
+        # ex: {"error": "transaction_id is required"}
+
+    def test_empty_transaction_id(self):
+        resp = self.client.post(
+            self.url, {"transaction_id": "", "amount": 100}, format="json"
+        )
+        self.assertEqual(resp.status_code, 400)
+        # empty string is falsy
+
+    def test_invalid_uuid_transaction_id(self):
+        resp = self.client.post(
+            self.url,
+            {"transaction_id": "not-a-uuid", "amount": 100},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("valid UUID", resp.data["error"])
+
+    def test_missing_amount(self):
+        resp = self.client.post(
+            self.url,
+            {"transaction_id": str(uuid.uuid4())},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("amount", resp.data["error"])
+
+    def test_zero_amount(self):
+        resp = self.client.post(
+            self.url,
+            {"transaction_id": str(uuid.uuid4()), "amount": 0},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("greater than zero", resp.data["error"])
+
+    def test_negative_amount(self):
+        resp = self.client.post(
+            self.url,
+            {"transaction_id": str(uuid.uuid4()), "amount": -50},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("greater than zero", resp.data["error"])
+
+    def test_non_numeric_amount(self):
+        resp = self.client.post(
+            self.url,
+            {"transaction_id": str(uuid.uuid4()), "amount": "abc"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("valid number", resp.data["error"])
+
+
+class ChargePaymentSuccessTests(TestCase):
+    """Successful charge and idempotency for POST /payments/charge/"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.url = "/payments/charge/"
+
+    # setUp() is a unittest method that runs before each test method
+    # for each test_ , setUp runs runs before that test function.
+    def test_successful_charge(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": 500},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["transaction_id"], tid)
+        self.assertEqual(resp.data["amount"], "500.00")
+        self.assertEqual(resp.data["status"], "CHARGED")
+
+        # Verify DB row
+        payment = Payment.objects.get(transaction_id=tid)
+        self.assertEqual(payment.status, Payment.Status.CHARGED)
+        self.assertEqual(payment.amount, Decimal("500.00"))
+
+    def test_decimal_amount_precision(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": "123.45"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["amount"], "123.45")
+
+    def test_duplicate_transaction_id_is_idempotent(self):
+        tid = str(uuid.uuid4())
+
+        resp1 = self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": 500},
+            format="json",
+        )
+        self.assertEqual(resp1.status_code, 201)
+
+        resp2 = self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": 500},
+            format="json",
+        )
+        # Second request returns 200, not 201 — payment already existed
+        self.assertEqual(resp2.status_code, 200)
+        self.assertEqual(resp2.data["status"], "CHARGED")
+        self.assertEqual(resp2.data["amount"], "500.00")
+
+        # Exactly one row in DB
+        self.assertEqual(
+            Payment.objects.filter(transaction_id=tid).count(), 1
+        )
+
+    def test_duplicate_with_different_amount_returns_original(self):
+        """Idempotency means the FIRST charge wins. A duplicate request
+        with a different amount still returns the original payment."""
+        tid = str(uuid.uuid4())
+
+        self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": 500},
+            format="json",
+        )
+        resp2 = self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": 999},
+            format="json",
+        )
+        self.assertEqual(resp2.status_code, 200)
+        self.assertEqual(resp2.data["amount"], "500.00")
+        self.assertEqual(
+            Payment.objects.filter(transaction_id=tid).count(), 1
+        )
+
+
+class ChargePaymentIntentionalFailureTests(TestCase):
+    """Testing the intentional failure mechanism (amount=9999)"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.url = "/payments/charge/"
+
+    def test_intentional_failure_returns_422(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": 9999},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.data["status"], NOT_CHARGED)
+        self.assertIn("_testing", resp.data)
+
+    def test_intentional_failure_creates_no_payment_row(self):
+        tid = str(uuid.uuid4())
+        self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": 9999},
+            format="json",
+        )
+        self.assertFalse(Payment.objects.filter(transaction_id=tid).exists())
+
+    def test_intentional_failure_still_validates_input_first(self):
+        """Validation runs before the intentional failure check."""
+        resp = self.client.post(
+            self.url,
+            {"transaction_id": "", "amount": 9999},
+            format="json",
+        )
+        # Should get validation error, not intentional failure
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("transaction_id", resp.data["error"])
+
+
+class PaymentCheckTests(TestCase):
+    """Tests for GET /payments/check/"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.charge_url = "/payments/charge/"
+        self.check_url = "/payments/check/"
+
+    def test_check_charged_payment(self):
+        tid = str(uuid.uuid4())
+        self.client.post(
+            self.charge_url,
+            {"transaction_id": tid, "amount": 500},
+            format="json",
+        )
+
+        resp = self.client.get(self.check_url, {"transaction_id": tid})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["transaction_id"], tid)
+        self.assertEqual(resp.data["status"], "CHARGED")
+
+    def test_check_not_charged_payment(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.get(self.check_url, {"transaction_id": tid})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["transaction_id"], tid)
+        self.assertEqual(resp.data["status"], NOT_CHARGED)
+
+    def test_check_missing_transaction_id(self):
+        resp = self.client.get(self.check_url)
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("transaction_id", resp.data["error"])
+
+    def test_check_invalid_uuid(self):
+        resp = self.client.get(
+            self.check_url, {"transaction_id": "invalid"}
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("valid UUID", resp.data["error"])
+
+    def test_check_after_intentional_failure(self):
+        """After amount=9999, check should report NOT_CHARGED
+        because no Payment row was created."""
+        tid = str(uuid.uuid4())
+        self.client.post(
+            self.charge_url,
+            {"transaction_id": tid, "amount": 9999},
+            format="json",
+        )
+
+        resp = self.client.get(self.check_url, {"transaction_id": tid})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["status"], NOT_CHARGED)
+
+
+def _is_postgres():
+    return connection.vendor == "postgresql"
+
+
+class ConcurrentChargeTests(TransactionTestCase):
+    """Concurrency safety: multiple threads charging the same transaction_id.
+
+    Uses TransactionTestCase because each thread needs its own real DB
+    transaction (TestCase wraps everything in a single transaction that
+    other threads cannot see).
+
+    This test is meaningful on PostgreSQL. On SQLite it still runs but
+    SQLite's locking may serialize the requests, so the race is less
+    realistic.
+    """
+
+    def test_concurrent_duplicate_charge(self):
+        tid = str(uuid.uuid4())
+        url = "/payments/charge/"
+        num_threads = 5
+        results = []
+
+        def do_charge(_):
+            client = APIClient()
+            try:
+                resp = client.post(
+                    url,
+                    {"transaction_id": tid, "amount": 250},
+                    format="json",
+                )
+                return resp.status_code, resp.data
+            finally:
+                connection.close()
+
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            futures = [
+                executor.submit(do_charge, i) for i in range(num_threads)
+            ]
+            for future in as_completed(futures):
+                results.append(future.result())
+
+        # All requests must succeed (no 500s)
+        status_codes = [r[0] for r in results]
+        for code in status_codes:
+            self.assertIn(
+                code,
+                (200, 201),
+                f"Unexpected status code {code} — "
+                f"race condition produced an error",
+            )
+
+        # Exactly one 201 (the winner), rest are 200 (idempotent)
+        self.assertEqual(
+            status_codes.count(201),
+            1,
+            f"Expected exactly one 201 but got: {status_codes}",
+        )
+
+        # All responses report CHARGED with consistent amount
+        for code, data in results:
+            self.assertEqual(data["status"], "CHARGED")
+            self.assertEqual(data["amount"], "250.00")
+
+        # Exactly one Payment row in the database
+        self.assertEqual(
+            Payment.objects.filter(transaction_id=tid).count(), 1
+        )

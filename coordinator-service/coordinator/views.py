@@ -4,24 +4,73 @@ import requests
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from requests.exceptions import Timeout, ConnectionError
+from django.db import IntegrityError, transaction
 
 from .models import Transaction
 
 
 @api_view(["POST"])
 def create_transaction(request):
-    transaction_id = str(uuid.uuid4()) # random uuid
+    # ── Parse and validate optional client-supplied transaction_id ──
+    # Missing → generate uuid4 (original behaviour preserved).
+    # Present but invalid → 400.
+    # Present and valid → use as-is; idempotency check follows.
+    raw_tid = request.data.get("transaction_id")
+    if raw_tid is None:
+        transaction_id = uuid.uuid4()
+    else:
+        try:
+            transaction_id = uuid.UUID(str(raw_tid))
+        except (ValueError, AttributeError):
+            return Response(
+                {"error": "transaction_id must be a valid UUID"},
+                status=400,
+            )
+
     product_id = request.data.get("product_id", 1)
     quantity = request.data.get("quantity", 1)
     amount = request.data.get("amount", 500)
+    fail_compensation = request.data.get("fail_compensation", False)
 
-    Transaction.objects.create(
-        transaction_id=transaction_id,
-        status=Transaction.Status.STARTED,
-        product_id=product_id,
-        quantity=quantity,
-        amount=amount
-    )
+    # ── Idempotent create: exactly one attempt, one IntegrityError handler ──
+    #
+    # transaction.atomic() wraps ONLY this create() call so that the
+    # IntegrityError from PostgreSQL's unique constraint is catchable —
+    # a failed statement inside a transaction leaves it in an aborted state
+    # and requires a rollback before any further DB use. atomic() provides
+    # that rollback automatically on exception.
+    #
+    # The block exits (and PostgreSQL COMMITS) before any outbound HTTP call.
+    # No lock is held across the network calls to Inventory or Payment.
+    #
+    # Race: Thread A and Thread B both attempt create() with the same tid.
+    #   Winner (A): INSERT succeeds → atomic() commits → falls through → runs saga.
+    #   Loser  (B): INSERT raises IntegrityError → atomic() rolls back →
+    #               re-fetches A's row → returns 200 with current status.
+    try:
+        with transaction.atomic():
+            Transaction.objects.create(
+                transaction_id=transaction_id,
+                status=Transaction.Status.STARTED,
+                product_id=product_id,
+                quantity=quantity,
+                amount=amount,
+            )
+    except IntegrityError:
+        # Duplicate transaction_id — sequential retry or concurrent race loser.
+        # Re-fetch the row the winning request created and return its state.
+        # The saga must NOT run; that would double-charge and double-reserve.
+        existing = Transaction.objects.get(transaction_id=transaction_id)
+        return Response(
+            {
+                "transaction_id": str(existing.transaction_id),
+                "status": existing.status,
+            },
+            status=200,
+        )
+
+    # ── atomic() block has exited and committed above this line ──
+    # ── The saga starts here. No DB transaction is open. ──
 
     try:
         response = requests.post(
@@ -88,9 +137,6 @@ def create_transaction(request):
         transaction_id=transaction_id
     ).update(status=Transaction.Status.PAYMENT_PROCESSING)
 
-    amount = request.data.get("amount", 0) # 9999
-
-    fail_compensation = request.data.get("fail_compensation", False)
 
     try:
         payment_response = requests.post(
@@ -129,7 +175,7 @@ def create_transaction(request):
 
         payment_data = payment_check.json()
 
-        if payment_data.get("status") == Transaction.Status.CHARGED:
+        if payment_data.get("status") == "CHARGED":
             Transaction.objects.filter(
                 transaction_id=transaction_id
             ).update(status=Transaction.Status.COMPLETED)
@@ -140,7 +186,13 @@ def create_transaction(request):
                 "payment_response": payment_data,
             })
 
-        if payment_data.get("status") != Transaction.Status.CHARGED:
+        if payment_data.get("status") != "CHARGED":
+
+            release_transaction_id = (
+                "fail-release"
+                if fail_compensation
+                else transaction_id
+            )
 
             Transaction.objects.filter(
                 transaction_id=transaction_id
@@ -150,7 +202,7 @@ def create_transaction(request):
                 release_response = requests.post(
                     "http://127.0.0.1:8000/products/release/",
                     json={
-                        "transaction_id": transaction_id,
+                        "transaction_id": release_transaction_id,
                     },
                     timeout=5,
                 )
@@ -195,16 +247,80 @@ def create_transaction(request):
                 "payment_response": payment_data,
                 "compensation_response": release_response.json(),
             }, status=500)
-        
 
-    return Response({
-        "transaction_id": transaction_id,
-        "status": Transaction.Status.COMPLETED,
-        "product_id": product_id,
-        "quantity": quantity,
-        "amount": amount,
-        "payment_response": payment_response.json(),
-    })
+    payment_data = payment_response.json()
+
+    if payment_data.get("status") == "CHARGED":
+
+        Transaction.objects.filter(
+            transaction_id=transaction_id
+        ).update(status=Transaction.Status.COMPLETED)
+
+        return Response({
+            "transaction_id": transaction_id,
+            "status": Transaction.Status.COMPLETED,
+            "payment_response": payment_data,
+        })
+    if payment_data.get("status") != "CHARGED":
+
+        release_transaction_id = ("fail-release" if fail_compensation else transaction_id)
+
+        Transaction.objects.filter(
+            transaction_id=transaction_id
+        ).update(status=Transaction.Status.COMPENSATING)
+
+        try:
+            release_response = requests.post(
+                "http://127.0.0.1:8000/products/release/",
+                json={
+                    "transaction_id": release_transaction_id,
+                },
+                timeout=5,
+            )
+
+        except (Timeout, ConnectionError) as e:
+
+            Transaction.objects.filter(
+                transaction_id=transaction_id
+            ).update(status=Transaction.Status.COMPENSATION_FAILED)
+
+            if isinstance(e, Timeout):
+                cause = Transaction.Status.TIMEOUT
+
+            else:
+                cause = Transaction.Status.CONNECTION_FAILED
+
+            return Response({
+                "transaction_id": transaction_id,
+                "status": Transaction.Status.COMPENSATION_FAILED,
+                "cause": cause,
+                "error": "Could not reach Inventory during compensation",
+            }, status=503)
+        
+        if release_response.status_code == 200:
+
+            Transaction.objects.filter(
+                transaction_id=transaction_id
+
+            ).update(status=Transaction.Status.COMPENSATED)
+            return Response({
+                "transaction_id": transaction_id,
+                "status": Transaction.Status.COMPENSATED,
+                "payment_response": payment_data,
+                "compensation_response": release_response.json(),
+            }, status=400)
+        
+        Transaction.objects.filter(
+            transaction_id=transaction_id
+        ).update(status=Transaction.Status.COMPENSATION_FAILED)
+
+        return Response({
+            "transaction_id": transaction_id,
+            "status": Transaction.Status.COMPENSATION_FAILED,
+            "payment_response": payment_data,
+            "compensation_response": release_response.json(),
+        }, status=500)
+
 
 @api_view(["POST"])
 def retry_compensation(request, transaction_id):

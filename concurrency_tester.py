@@ -7,12 +7,12 @@ requests_data = [
     {
         "product_id": 1,
         "quantity": 1,
-        "transaction_id": "11111111-1111-1111-1111-111111111111",
+        "transaction_id": "11111111-1111-1111-1111-111111111113",
     },
     {
         "product_id": 1,
         "quantity": 1,
-        "transaction_id": "22222222-2222-2222-2222-222222222222",
+        "transaction_id": "22222222-2222-2222-2222-222222222223",
     },
 ]
 
