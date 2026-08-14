@@ -17,7 +17,7 @@ def create_transaction(request):
     # Present and valid → use as-is; idempotency check follows.
     raw_tid = request.data.get("transaction_id")
     if raw_tid is None:
-        transaction_id = uuid.uuid4()
+        transaction_id = str(uuid.uuid4())
     else:
         try:
             transaction_id = uuid.UUID(str(raw_tid))
@@ -83,10 +83,7 @@ def create_transaction(request):
             },
             timeout=5,
         )
-        if inventory_fail:
-            return Response({
-                "detail": "intentional fail"
-            }) # crash demo
+        
 
     except (Timeout, ConnectionError) as e:
         if isinstance(e, Timeout):
@@ -419,3 +416,16 @@ def list_transactions(request):
         }
         for transaction in transactions
     ])
+
+
+@api_view(["GET"])
+def transaction_status_update(request, transaction_id):
+    transaction = Transaction.objects.filter(
+        transaction_id = transaction_id
+    )
+
+    transaction.status = Transaction.Status.INVENTORY_RESERVED
+
+    return Response({
+        "detail": "status updated"
+    })

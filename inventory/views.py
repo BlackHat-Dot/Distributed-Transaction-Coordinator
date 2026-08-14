@@ -8,6 +8,9 @@ from .models import Product, Reservation
 
 from django.http import Http404
 
+import requests
+
+
 @api_view(["GET"])
 def health_check(request):
     return Response({
@@ -109,13 +112,31 @@ def reserve_product(request):
     — this runs COMMIT or ROLLBACK(respective of the scenario)
     """
 
+    update_transaction = requests.post(
+            "http://127.0.0.1:8002/transaction/status/update/",
+            json={
+                "transaction_id": transaction_id,
+            },
+            timeout=5,
+        )
+
+    if update_transaction.status == 200:
+        return Response({
+            "message": "Inventory reserved",
+            "product_id": product.id,
+            "quantity": quantity,
+            "remaining": product.stock,
+            "detail": "Transaction update success"
+        })
+
+
     return Response({
         "message": "Inventory reserved",
         "product_id": product.id,
         "quantity": quantity,
-        "remaining": product.stock
+        "remaining": product.stock,
+        "detail": "transaction update fail"
     })
-    # not exactly reservation but a vague approach.
 
 # used for compensation
 @api_view(["POST"])

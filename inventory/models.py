@@ -16,8 +16,8 @@ class Product(models.Model):
 class Reservation(models.Model):
 
     class Status(models.TextChoices):
-        RESERVED = "RESERVED"
-        RELEASED = "RELEASED"
+        RESERVED = "INVENTORY_RESERVED"
+        RELEASED = "INVENTORY_RELEASED"
         NOT_RESERVED = "NOT_RESERVED"
 
     product = models.ForeignKey(Product, on_delete=models.CASCADE)

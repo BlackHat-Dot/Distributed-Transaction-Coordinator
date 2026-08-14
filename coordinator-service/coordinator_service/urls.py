@@ -21,6 +21,7 @@ from coordinator.views import (
     retry_compensation,
     get_transaction,
     list_transactions,
+    transaction_status_update
 )
 
 
@@ -31,4 +32,5 @@ urlpatterns = [
          retry_compensation),
     path("transactions/<uuid:transaction_id>/",get_transaction),
     path("transactions/all/",list_transactions),
+    path("transaction/status/update/", transaction_status_update)
 ]
