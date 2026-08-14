@@ -72,6 +72,7 @@ def create_transaction(request):
     # ── atomic() block has exited and committed above this line ──
     # ── The saga starts here. No DB transaction is open. ──
 
+    inventory_fail = request.data.get("coordinator")
     try:
         response = requests.post(
             "http://127.0.0.1:8000/products/reserve/",
@@ -81,7 +82,12 @@ def create_transaction(request):
                 "transaction_id": transaction_id,
             },
             timeout=5,
-    )
+        )
+        if inventory_fail:
+            return Response({
+                "detail": "intentional fail"
+            }) # crash demo
+
     except (Timeout, ConnectionError) as e:
         if isinstance(e, Timeout):
             Transaction.objects.filter(
