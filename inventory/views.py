@@ -86,6 +86,22 @@ def reserve_product(request):
             quantity=quantity,
             transaction_id=transaction_id
         )
+
+        update_transaction = requests.get(
+        f"http://127.0.0.1:8002/transaction/status/update/{transaction_id}",
+        timeout=5,
+        )
+
+        if update_transaction.status_code == 200:
+            print("done")
+            return Response({
+                "message": "Inventory reserved",
+                "product_id": product.id,
+                "quantity": quantity,
+                "remaining": product.stock,
+                "detail": "Transaction update success"
+            })
+        
     """
     with knows nothing about databases, commits, or rollbacks.
     It only knows: call __enter__ "before the block", 
@@ -112,24 +128,9 @@ def reserve_product(request):
     — this runs COMMIT or ROLLBACK(respective of the scenario)
     """
 
-    update_transaction = requests.post(
-            "http://127.0.0.1:8002/transaction/status/update/",
-            json={
-                "transaction_id": transaction_id,
-            },
-            timeout=5,
-        )
-
-    if update_transaction.status == 200:
-        return Response({
-            "message": "Inventory reserved",
-            "product_id": product.id,
-            "quantity": quantity,
-            "remaining": product.stock,
-            "detail": "Transaction update success"
-        })
 
 
+    print("Hello")
     return Response({
         "message": "Inventory reserved",
         "product_id": product.id,

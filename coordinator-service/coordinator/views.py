@@ -83,6 +83,11 @@ def create_transaction(request):
             },
             timeout=5,
         )
+
+        if inventory_fail:
+            return Response({
+                "detail": "Intentional crash"
+            })
         
 
     except (Timeout, ConnectionError) as e:
@@ -132,9 +137,6 @@ def create_transaction(request):
             "inventory_response": response.json()
             }, status=400)
 
-    Transaction.objects.filter(
-        transaction_id=transaction_id
-    ).update(status=Transaction.Status.INVENTORY_RESERVED)
 
     Transaction.objects.filter(
         transaction_id=transaction_id
@@ -420,11 +422,15 @@ def list_transactions(request):
 
 @api_view(["GET"])
 def transaction_status_update(request, transaction_id):
-    transaction = Transaction.objects.filter(
+    transaction = Transaction.objects.get(
         transaction_id = transaction_id
     )
 
     transaction.status = Transaction.Status.INVENTORY_RESERVED
+
+    transaction.save()
+
+    print("Hello bro")
 
     return Response({
         "detail": "status updated"

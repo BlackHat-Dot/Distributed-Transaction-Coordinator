@@ -32,5 +32,5 @@ urlpatterns = [
          retry_compensation),
     path("transactions/<uuid:transaction_id>/",get_transaction),
     path("transactions/all/",list_transactions),
-    path("transaction/status/update/", transaction_status_update)
+    path("transaction/status/update/<uuid:transaction_id>/", transaction_status_update)
 ]
