@@ -11,7 +11,7 @@ from django.http import Http404
 from .serializers import ProductSerializer
 from .models import Product, Reservation
 
-TRANSACTION_STATUS_UPDATE_URL = "http://127.0.0.1:8002/transaction/status/update/"
+TRANSACTION_STATUS_UPDATE_URL = "http://127.0.0.1:8002/transaction/status/update/{}/"
 REQUEST_TIMEOUT = 5
 
 
