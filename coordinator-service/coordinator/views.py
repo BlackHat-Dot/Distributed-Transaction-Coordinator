@@ -1,10 +1,11 @@
-import uuid
+﻿import uuid
 import requests
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from requests.exceptions import Timeout, ConnectionError
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 
 from .models import Transaction
 
@@ -18,8 +19,36 @@ REQUEST_TIMEOUT = 5
 
 # helpers
 
-def _set_status(transaction_id, status):
-    Transaction.objects.filter(transaction_id=transaction_id).update(status=status)
+def _set_status(transaction_id, status, expected_status=None):
+    """
+    Update a transaction's status.
+
+    Why expected_status matters (safe state transitions)
+    -----------------------------------------------------
+    A recovery worker may have already claimed a transaction and moved it to
+    RECOVERY_IN_PROGRESS while the live Coordinator was mid-flight on an HTTP
+    call.  Without a guard, _set_status would blindly overwrite the claimed
+    row, racing with the recovery worker.
+
+    When expected_status is supplied the UPDATE includes a WHERE status=...
+    predicate.  If the row has already been moved to a different status (e.g.
+    RECOVERY_IN_PROGRESS) the update matches 0 rows and is silently ignored.
+    The Coordinator continues down its code path, but Payment service
+    idempotency and the recovery worker's own writes produce the correct
+    final state.
+
+    Why updated_at=timezone.now() is explicit
+    -----------------------------------------
+    Django's auto_now=True only fires on model.save().  QuerySet.update()
+    bypasses auto_now entirely.  We must supply updated_at explicitly so that
+    the recovery threshold check (updated_at__lt=threshold) stays accurate.
+    Without this, _set_status calls would leave updated_at stale, potentially
+    causing the recovery sweep to think a transaction is stuck when it isn't.
+    """
+    qs = Transaction.objects.filter(transaction_id=transaction_id)
+    if expected_status is not None:
+        qs = qs.filter(status=expected_status)
+    qs.update(status=status, updated_at=timezone.now())
 
 
 def _transport_status(exc, timeout_status, conn_status):
@@ -95,15 +124,31 @@ def _reserve_inventory(transaction_id, product_id, quantity):
         status = _transport_status(
             e, Transaction.Status.INVENTORY_TIMEOUT, Transaction.Status.INVENTORY_CONNECTION_ERROR
         )
-        _set_status(transaction_id, status)
+        # Guard: only write if still STARTED.
+        # A recovery worker cannot have claimed a STARTED row before any HTTP
+        # call was attempted, but the guard is cheap and makes the invariant
+        # explicit: we only advance the state machine from a known-good prior
+        # state.
+        _set_status(transaction_id, status, expected_status=Transaction.Status.STARTED)
         return None, Response({"transaction_id": transaction_id, "status": status}, status=504)
 
 
 def _compensate(transaction_id, fail_compensation, payment_data):
     # Runs the release call and returns the final Response for a
-    # non-CHARGED payment outcome
+    # non-CHARGED payment outcome.
     release_transaction_id = "fail-release" if fail_compensation else transaction_id
-    _set_status(transaction_id, Transaction.Status.COMPENSATING)
+
+    # Guard: only move to COMPENSATING if still in PAYMENT_PROCESSING.
+    # If a recovery worker has already claimed the row (RECOVERY_IN_PROGRESS)
+    # this update is a no-op (0 rows) and the recovery worker owns the
+    # compensation.  The Coordinator continues below and may still call
+    # _release_inventory, but inventory-service idempotency handles duplicate
+    # release calls safely.
+    _set_status(
+        transaction_id,
+        Transaction.Status.COMPENSATING,
+        expected_status=Transaction.Status.PAYMENT_PROCESSING,
+    )
 
     try:
         release_response = requests.post(
@@ -182,7 +227,16 @@ def _charge_payment(transaction_id, amount, fail_compensation):
         uncertain_status = _transport_status(
             e, Transaction.Status.PAYMENT_TIMEOUT, Transaction.Status.PAYMENT_CONNECTION_ERROR
         )
-        _set_status(transaction_id, uncertain_status)
+        # Guard: only write the uncertain transport status if still in
+        # PAYMENT_PROCESSING.  A recovery worker may have already claimed the
+        # row (moved it to RECOVERY_IN_PROGRESS) while the charge POST was in
+        # flight.  The conditional update prevents the Coordinator from
+        # overwriting that claim.
+        _set_status(
+            transaction_id,
+            uncertain_status,
+            expected_status=Transaction.Status.PAYMENT_PROCESSING,
+        )
 
         try:
             payment_check = requests.get(
@@ -245,7 +299,18 @@ def create_transaction(request):
             status=400,
         )
 
-    _set_status(transaction_id, Transaction.Status.PAYMENT_PROCESSING)
+    # Guard: only advance to PAYMENT_PROCESSING from INVENTORY_RESERVED.
+    # If a recovery worker claimed the INVENTORY_RESERVED row while the
+    # reserve HTTP call was in flight (and the Coordinator was delayed
+    # reading the response), this update matches 0 rows.  The Coordinator
+    # then calls _charge_payment anyway; Payment service idempotency
+    # ensures the charge is not double-applied, and the recovery worker
+    # independently drives the transaction to its terminal state.
+    _set_status(
+        transaction_id,
+        Transaction.Status.PAYMENT_PROCESSING,
+        expected_status=Transaction.Status.INVENTORY_RESERVED,
+    )
 
     return _charge_payment(transaction_id, amount, fail_compensation)
 
