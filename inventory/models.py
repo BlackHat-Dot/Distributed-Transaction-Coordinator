@@ -8,11 +8,6 @@ class Product(models.Model):
     def __str__(self):
         return self.name
 
-    # __str__ : used when print(Product)
-    # , str(Product), product name in django server 
-    # is also because of this __str__
-
-
 class Reservation(models.Model):
 
     class Status(models.TextChoices):

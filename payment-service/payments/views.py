@@ -7,8 +7,6 @@ from django.db import IntegrityError, transaction
 
 from .models import Payment
 
-# Amount that triggers intentional failure for compensation testing
-# reserve → payment fails → compensate.
 TESTING_FAILURE_AMOUNT = Decimal("9999")
 
 TWO_PLACES = Decimal("0.01")
@@ -74,10 +72,6 @@ def charge_payment(request):
     if error_response:
         return error_response
 
-    # Intentional failure for testing compensation path
-    # When the Coordinator sends amount=9999, Payment returns a business
-    # failure without creating a Payment row, so check_payment correctly
-    # reports NOT_CHARGED and the Coordinator compensates Inventory.
     if amount == TESTING_FAILURE_AMOUNT:
         return Response(
             {
@@ -88,15 +82,6 @@ def charge_payment(request):
             },
             status=422,
         )
-
-    # Idempotent charge with concurrency safety
-    #
-    # Race scenario:
-    #   Thread A: filter → None     Thread B: filter → None
-    #   Thread A: create → OK       Thread B: create → IntegrityError
-    #
-    # The unique constraint on transaction_id guarantees at most one row.
-    # We catch IntegrityError on the losing thread and re-fetch.
 
     existing = Payment.objects.filter(transaction_id=transaction_uuid).first()
     if existing is not None:
@@ -127,6 +112,4 @@ def payment_check(request):
     if payment is not None:
         return Response({"transaction_id": str(payment.transaction_id), "status": payment.status})
 
-    # No payment row → the charge never completed successfully.
-    # This is an expected outcome, not an error.
     return Response({"transaction_id": str(transaction_uuid), "status": NOT_CHARGED})

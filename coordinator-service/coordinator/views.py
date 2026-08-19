@@ -20,31 +20,7 @@ REQUEST_TIMEOUT = 5
 # helpers
 
 def _set_status(transaction_id, status, expected_status=None):
-    """
-    Update a transaction's status.
 
-    Why expected_status matters (safe state transitions)
-    -----------------------------------------------------
-    A recovery worker may have already claimed a transaction and moved it to
-    RECOVERY_IN_PROGRESS while the live Coordinator was mid-flight on an HTTP
-    call.  Without a guard, _set_status would blindly overwrite the claimed
-    row, racing with the recovery worker.
-
-    When expected_status is supplied the UPDATE includes a WHERE status=...
-    predicate.  If the row has already been moved to a different status (e.g.
-    RECOVERY_IN_PROGRESS) the update matches 0 rows and is silently ignored.
-    The Coordinator continues down its code path, but Payment service
-    idempotency and the recovery worker's own writes produce the correct
-    final state.
-
-    Why updated_at=timezone.now() is explicit
-    -----------------------------------------
-    Django's auto_now=True only fires on model.save().  QuerySet.update()
-    bypasses auto_now entirely.  We must supply updated_at explicitly so that
-    the recovery threshold check (updated_at__lt=threshold) stays accurate.
-    Without this, _set_status calls would leave updated_at stale, potentially
-    causing the recovery sweep to think a transaction is stuck when it isn't.
-    """
     qs = Transaction.objects.filter(transaction_id=transaction_id)
     if expected_status is not None:
         qs = qs.filter(status=expected_status)
@@ -52,47 +28,21 @@ def _set_status(transaction_id, status, expected_status=None):
 
 
 def _transport_status(exc, timeout_status, conn_status):
-    # Map a Timeout/ConnectionError to the right domain status.
+
     return timeout_status if isinstance(exc, Timeout) else conn_status
 
 
 def _parse_transaction_id(raw_tid):
-    # Missing -> generate uuid4. Present but invalid -> (None, 400 response).
-    # Present and valid -> (uuid, None).
+
     if raw_tid is None:
         return str(uuid.uuid4()), None
     try:
-        return str(uuid.UUID(raw_tid)), None # since raw_tid is already str we dont need convertion
+        return str(uuid.UUID(raw_tid)), None  # since raw_tid is already str we dont need convertion
     except (ValueError, AttributeError):
         return None, Response({"error": "transaction_id must be a valid UUID"}, status=400)
 
 
 def _create_transaction_idempotent(transaction_id, product_id, quantity, amount):
-    """
-        Tries to create the transaction row once.
-
-            => If transaction_id is new: row gets created, returns (True, None).
-            => If transaction_id already exists: Postgres raises IntegrityError
-               (unique constraint). We catch it, fetch the existing row, and
-               return (False, response_with_existing_status) instead.
-
-        Why atomic() is needed here:
-            A failed INSERT leaves the DB connection in a broken transaction
-            state until it's rolled back. atomic() does that rollback for us
-            automatically when IntegrityError is raised, so the .get() call
-            in the except block can run cleanly right after.
-
-        Why the `with atomic()` block only wraps create():
-            The block covers just the Transaction.objects.create() call, nothing
-            else is indented inside it. It does NOT include the later HTTP calls
-            to Inventory or Payment. So the DB transaction commits and closes right
-            after the row is created, before any network call starts. No DB lock
-            is held while we're waiting on another service.
-
-        Returns:
-            (True, None) on success
-            (False, Response) if transaction_id was a duplicate
-        """
     try:
         with transaction.atomic():
             Transaction.objects.create(
@@ -112,7 +62,7 @@ def _create_transaction_idempotent(transaction_id, product_id, quantity, amount)
 
 
 def _reserve_inventory(transaction_id, product_id, quantity):
-    # Returns (response, error_response). Exactly one is None.
+
     try:
         response = requests.post(
             INVENTORY_RESERVE_URL,
@@ -124,26 +74,15 @@ def _reserve_inventory(transaction_id, product_id, quantity):
         status = _transport_status(
             e, Transaction.Status.INVENTORY_TIMEOUT, Transaction.Status.INVENTORY_CONNECTION_ERROR
         )
-        # Guard: only write if still STARTED.
-        # A recovery worker cannot have claimed a STARTED row before any HTTP
-        # call was attempted, but the guard is cheap and makes the invariant
-        # explicit: we only advance the state machine from a known-good prior
-        # state.
+
         _set_status(transaction_id, status, expected_status=Transaction.Status.STARTED)
         return None, Response({"transaction_id": transaction_id, "status": status}, status=504)
 
 
 def _compensate(transaction_id, fail_compensation, payment_data):
-    # Runs the release call and returns the final Response for a
-    # non-CHARGED payment outcome.
+
     release_transaction_id = "fail-release" if fail_compensation else transaction_id
 
-    # Guard: only move to COMPENSATING if still in PAYMENT_PROCESSING.
-    # If a recovery worker has already claimed the row (RECOVERY_IN_PROGRESS)
-    # this update is a no-op (0 rows) and the recovery worker owns the
-    # compensation.  The Coordinator continues below and may still call
-    # _release_inventory, but inventory-service idempotency handles duplicate
-    # release calls safely.
     _set_status(
         transaction_id,
         Transaction.Status.COMPENSATING,
@@ -194,10 +133,14 @@ def _compensate(transaction_id, fail_compensation, payment_data):
 
 
 def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data):
-    # Shared by the direct-charge-response path and the
-    # uncertain-outcome/check path: decide COMPLETED vs compensate
+
     if payment_data.get("status") == "CHARGED":
-        _set_status(transaction_id, Transaction.Status.COMPLETED)
+
+        _set_status(
+            transaction_id,
+            Transaction.Status.COMPLETED,
+            expected_status=Transaction.Status.PAYMENT_PROCESSING,
+        )
         return Response({
             "transaction_id": transaction_id,
             "status": Transaction.Status.COMPLETED,
@@ -207,16 +150,7 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data):
 
 
 def _charge_payment(transaction_id, amount, fail_compensation):
-    """
-    Normal case: POST to /payments/charge/ succeeds and returns a status
-    (CHARGED or not) right away, that's the answer done.
 
-    Timeout/connection-error case: we don't know if the charge actually
-    went through on Payment's side or not. So we call GET /payments/check/
-    to look up the real outcome instead of guessing. Once we have a real
-    status from either path, the same COMPLETED-vs-compensate decision
-    is made.
-    """
     try:
         payment_response = requests.post(
             PAYMENT_CHARGE_URL,
@@ -227,11 +161,7 @@ def _charge_payment(transaction_id, amount, fail_compensation):
         uncertain_status = _transport_status(
             e, Transaction.Status.PAYMENT_TIMEOUT, Transaction.Status.PAYMENT_CONNECTION_ERROR
         )
-        # Guard: only write the uncertain transport status if still in
-        # PAYMENT_PROCESSING.  A recovery worker may have already claimed the
-        # row (moved it to RECOVERY_IN_PROGRESS) while the charge POST was in
-        # flight.  The conditional update prevents the Coordinator from
-        # overwriting that claim.
+    
         _set_status(
             transaction_id,
             uncertain_status,
@@ -274,18 +204,14 @@ def create_transaction(request):
     if not created:
         return dup_response
 
-    # atomic() block above has already committed. Saga starts here;
-    # no DB transaction is open across the outbound HTTP calls, and that is why
-    # the block is small
+
 
     response, reserve_error = _reserve_inventory(transaction_id, product_id, quantity)
     if reserve_error:
         return reserve_error
 
     if request.data.get("coordinator"):
-        # Test hook: force an early return after a successful reserve
-        # call, without inspecting its result to simulate a coordinator
-        # crash mid-saga.
+     
         return Response({"detail": "Intentional crash"})
 
     if response.status_code != 200:
@@ -299,13 +225,7 @@ def create_transaction(request):
             status=400,
         )
 
-    # Guard: only advance to PAYMENT_PROCESSING from INVENTORY_RESERVED.
-    # If a recovery worker claimed the INVENTORY_RESERVED row while the
-    # reserve HTTP call was in flight (and the Coordinator was delayed
-    # reading the response), this update matches 0 rows.  The Coordinator
-    # then calls _charge_payment anyway; Payment service idempotency
-    # ensures the charge is not double-applied, and the recovery worker
-    # independently drives the transaction to its terminal state.
+
     _set_status(
         transaction_id,
         Transaction.Status.PAYMENT_PROCESSING,
@@ -346,14 +266,31 @@ def retry_compensation(request, transaction_id):
         )
 
     if release_response.status_code == 200:
-        txn.status = Transaction.Status.COMPENSATED_ON_RETRY
-        txn.save(update_fields=["status"])
+
+        updated = Transaction.objects.filter(
+            transaction_id=transaction_id,
+            status=txn.status,
+        ).update(
+            status=Transaction.Status.COMPENSATED_ON_RETRY,
+            updated_at=timezone.now(),
+        )
+
+        if not updated:
+            current = Transaction.objects.get(transaction_id=transaction_id)
+            return Response({
+                "transaction_id": transaction_id,
+                "status": current.status,
+                "message": "Transaction was concurrently resolved by another process",
+                "compensation_response": release_response.json(),
+            })
+
         return Response({
             "transaction_id": transaction_id,
             "status": Transaction.Status.COMPENSATED_ON_RETRY,
             "compensation_response": release_response.json(),
         })
 
+    _set_status(transaction_id, Transaction.Status.RETRY_COMPENSATION_FAILED, expected_status=txn.status)
     return Response(
         {
             "transaction_id": transaction_id,
