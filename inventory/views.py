@@ -74,12 +74,11 @@ def reserve_product(request):
 
     existing_reservation = Reservation.objects.filter(transaction_id=transaction_id).first()
     if existing_reservation:  # fast-path idempotency: no DB lock needed
-        product = Product.objects.get(id=existing_reservation.product_id)
+        product = Product.objects.get(id=existing_reservation.product_id) # fk access
         return _reservation_response(existing_reservation, product, transaction_id)
 
     
     try:
-
         with transaction.atomic():
             # Lock the product row and return 404 if the product does not exist.
             product = get_object_or_404(Product.objects.select_for_update(), id=product_id)

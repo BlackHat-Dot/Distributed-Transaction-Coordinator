@@ -17,7 +17,7 @@ PAYMENT_CHECK_URL = "http://127.0.0.1:8001/payments/check/"
 REQUEST_TIMEOUT = 5
 
 
-# helpers
+# function starts with underscore are helpers for api end-points
 
 def _set_status(transaction_id, status, expected_status=None):
 
@@ -34,16 +34,20 @@ def _transport_status(exc, timeout_status, conn_status):
 
 def _parse_transaction_id(raw_tid):
 
+    # uuid generate
     if raw_tid is None:
         return str(uuid.uuid4()), None
-    try:
-        return str(uuid.UUID(raw_tid)), None  # since raw_tid is already str we dont need convertion
+    # authenticity of received uuid is verified and flagged
+    try: 
+        # since raw_tid is already str we dont need convertion
+        return str(uuid.UUID(raw_tid)), None
+    # ValueError : if not uuid , AttributeError : if not a string
     except (ValueError, AttributeError):
         return None, Response({"error": "transaction_id must be a valid UUID"}, status=400)
 
 
 def _create_transaction_idempotent(transaction_id, product_id, quantity, amount):
-    try:
+    try: # technically we don't need a `with` wrap for a single transaction but for better future proofing it is kept.
         with transaction.atomic():
             Transaction.objects.create(
                 transaction_id=transaction_id,
@@ -198,13 +202,12 @@ def create_transaction(request):
     product_id = request.data.get("product_id", 1)
     quantity = request.data.get("quantity", 1)
     amount = request.data.get("amount", 500)
-    fail_compensation = request.data.get("fail_compensation", False)
+
+    fail_compensation = request.data.get("fail_compensation", False) # test hook
 
     created, dup_response = _create_transaction_idempotent(transaction_id, product_id, quantity, amount)
     if not created:
         return dup_response
-
-
 
     response, reserve_error = _reserve_inventory(transaction_id, product_id, quantity)
     if reserve_error:

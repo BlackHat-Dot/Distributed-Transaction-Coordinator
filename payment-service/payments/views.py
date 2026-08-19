@@ -96,6 +96,7 @@ def charge_payment(request):
             )
     except IntegrityError:
         # Concurrent request already created this payment
+        # counter thread won and created the payment
         existing = Payment.objects.get(transaction_id=transaction_uuid)
         return _payment_response(existing)
 
