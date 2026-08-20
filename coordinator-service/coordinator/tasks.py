@@ -49,5 +49,3 @@ def recover_stuck_transactions():
             client.eval(RELEASE_LOCK_SCRIPT, 1, LOCK_KEY, lock_token)
         except Exception as exc:
             logger.error("Failed to release lock '%s': %s", LOCK_KEY, exc)
-
-recover_stuck_transactions_task = recover_stuck_transactions

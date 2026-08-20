@@ -3,3 +3,6 @@ db.sqlite3
 __pycache__/
 migrations/
 .env
+celerybeat-schedule-wal
+celerybeat-schedule-shm
+celerybeat-schedule
