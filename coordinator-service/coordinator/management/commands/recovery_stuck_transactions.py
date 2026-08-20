@@ -98,10 +98,6 @@ class Command(BaseCommand):
         )
 
         for transaction_id in candidates:
-            # Reclaim: status value stays the same but updated_at is refreshed.
-            # The updated_at__lt=threshold guard is what enforces mutual
-            # exclusion between concurrent workers, exactly like the initial
-            # claims above.
             claimed = Transaction.objects.filter(
                 transaction_id=transaction_id,
                 status=Transaction.Status.RECOVERY_IN_PROGRESS,
@@ -140,7 +136,7 @@ class Command(BaseCommand):
         payment_status = payment_resp.json().get("status") if payment_resp.status_code == 200 else None
 
         if payment_status == PAYMENT_CHARGED:
-            # Roll FORWARD: payment succeeded
+
             Transaction.objects.filter(
                 transaction_id=transaction_id,
                 status=Transaction.Status.RECOVERY_IN_PROGRESS,
@@ -156,7 +152,6 @@ class Command(BaseCommand):
             return
 
         if payment_status != PAYMENT_NOT_CHARGED:
-            # Unrecognized payment status — don't guess
             self._leave_in_progress(
                 transaction_id, f"unrecognized payment status ({payment_status!r})"
             )

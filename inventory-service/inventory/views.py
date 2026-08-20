@@ -1,8 +1,5 @@
-import requests
-
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from requests.exceptions import Timeout, ConnectionError
 
 from django.shortcuts import get_object_or_404
 from django.db import transaction, IntegrityError
@@ -27,10 +24,7 @@ def product_list(request):
     return Response(serializer.data)
 
 
-# reserve_product helpers
-
 def _validate_reserve_input(data):
-    # Returns an error Response or None if input is valid
     if not data:
         return Response({"message": "no input values"}, status=400)
 
@@ -73,14 +67,13 @@ def reserve_product(request):
     transaction_id = request.data.get("transaction_id")
 
     existing_reservation = Reservation.objects.filter(transaction_id=transaction_id).first()
-    if existing_reservation:  # fast-path idempotency: no DB lock needed
-        product = Product.objects.get(id=existing_reservation.product_id) # fk access
+    if existing_reservation:
+        product = Product.objects.get(id=existing_reservation.product_id)
         return _reservation_response(existing_reservation, product, transaction_id)
 
     
     try:
         with transaction.atomic():
-            # Lock the product row and return 404 if the product does not exist.
             product = get_object_or_404(Product.objects.select_for_update(), id=product_id)
 
             if product.stock < quantity:
@@ -104,9 +97,6 @@ def reserve_product(request):
 
 
 
-# release / check
-
-# used for compensation
 @api_view(["POST"])
 def release_product(request):
     transaction_id = request.data.get("transaction_id")
@@ -134,7 +124,6 @@ def release_product(request):
             reservation.status = Reservation.Status.RELEASED
             reservation.save()
     except Http404:
-        # Override get_object_or_404's default "detail" message.
         return Response({
             "transaction_id": transaction_id,
             "error": "Reservation not found",
@@ -143,7 +132,6 @@ def release_product(request):
     return Response({"message": "Inventory released", "transaction_id": transaction_id})
 
 
-# used for compensation check
 @api_view(["GET"])
 def reservation_check(request):
     transaction_id = request.query_params.get("transaction_id")

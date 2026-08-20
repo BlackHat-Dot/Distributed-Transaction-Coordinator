@@ -17,7 +17,6 @@ PAYMENT_CHECK_URL = "http://127.0.0.1:8001/payments/check/"
 REQUEST_TIMEOUT = 5
 
 
-# function starts with underscore are helpers for api end-points
 
 def _set_status(transaction_id, status, expected_status=None):
 
@@ -33,21 +32,17 @@ def _transport_status(exc, timeout_status, conn_status):
 
 
 def _parse_transaction_id(raw_tid):
-
-    # uuid generate
     if raw_tid is None:
         return str(uuid.uuid4()), None
-    # authenticity of received uuid is verified and flagged
+    
     try: 
-        # since raw_tid is already str we dont need convertion
         return str(uuid.UUID(raw_tid)), None
-    # ValueError : if not uuid , AttributeError : if not a string
     except (ValueError, AttributeError):
         return None, Response({"error": "transaction_id must be a valid UUID"}, status=400)
 
 
 def _create_transaction_idempotent(transaction_id, product_id, quantity, amount):
-    try: # technically we don't need a `with` wrap for a single transaction but for better future proofing it is kept.
+    try:
         with transaction.atomic():
             Transaction.objects.create(
                 transaction_id=transaction_id,
@@ -84,7 +79,6 @@ def _reserve_inventory(transaction_id, product_id, quantity):
 
 
 def _compensate(transaction_id, fail_compensation, payment_data):
-
     release_transaction_id = "fail-release" if fail_compensation else transaction_id
 
     _set_status(
@@ -191,7 +185,6 @@ def _charge_payment(transaction_id, amount, fail_compensation):
     return _finalize_payment_outcome(transaction_id, fail_compensation, payment_response.json())
 
 
-# views 
 
 @api_view(["POST"])
 def create_transaction(request):
@@ -203,7 +196,7 @@ def create_transaction(request):
     quantity = request.data.get("quantity", 1)
     amount = request.data.get("amount", 500)
 
-    fail_compensation = request.data.get("fail_compensation", False) # test hook
+    fail_compensation = request.data.get("fail_compensation", False)
 
     created, dup_response = _create_transaction_idempotent(transaction_id, product_id, quantity, amount)
     if not created:

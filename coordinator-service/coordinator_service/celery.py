@@ -7,7 +7,7 @@ os.environ.setdefault(
     "coordinator_service.settings",
 )
 
-app = Celery("coordinator_service")
+app = Celery("coordinator")
 
 app.config_from_object(
     "django.conf:settings",

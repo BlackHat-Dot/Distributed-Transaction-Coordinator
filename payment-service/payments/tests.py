@@ -11,8 +11,6 @@ from .views import NOT_CHARGED
 
 
 class ChargePaymentValidationTests(TestCase):
-    """Input validation for POST /payments/charge/"""
-
     def setUp(self):
         self.client = APIClient()
         self.url = "/payments/charge/"
@@ -21,15 +19,12 @@ class ChargePaymentValidationTests(TestCase):
         resp = self.client.post(self.url, {"amount": 100}, format="json")
         self.assertEqual(resp.status_code, 400)
         self.assertIn("transaction_id", resp.data["error"])
-        # checks whether "transaction_id" in {"error": ""}
-        # ex: {"error": "transaction_id is required"}
 
     def test_empty_transaction_id(self):
         resp = self.client.post(
             self.url, {"transaction_id": "", "amount": 100}, format="json"
         )
         self.assertEqual(resp.status_code, 400)
-        # empty string is falsy
 
     def test_invalid_uuid_transaction_id(self):
         resp = self.client.post(
@@ -78,14 +73,10 @@ class ChargePaymentValidationTests(TestCase):
 
 
 class ChargePaymentSuccessTests(TestCase):
-    """Successful charge and idempotency for POST /payments/charge/"""
-
     def setUp(self):
         self.client = APIClient()
         self.url = "/payments/charge/"
 
-    # setUp() is a unittest method that runs before each test method
-    # for each test_ , setUp runs runs before that test function.
     def test_successful_charge(self):
         tid = str(uuid.uuid4())
         resp = self.client.post(
@@ -98,7 +89,6 @@ class ChargePaymentSuccessTests(TestCase):
         self.assertEqual(resp.data["amount"], "500.00")
         self.assertEqual(resp.data["status"], "CHARGED")
 
-        # Verify DB row
         payment = Payment.objects.get(transaction_id=tid)
         self.assertEqual(payment.status, Payment.Status.CHARGED)
         self.assertEqual(payment.amount, Decimal("500.00"))
@@ -128,19 +118,17 @@ class ChargePaymentSuccessTests(TestCase):
             {"transaction_id": tid, "amount": 500},
             format="json",
         )
-        # Second request returns 200, not 201 — payment already existed
+     
         self.assertEqual(resp2.status_code, 200)
         self.assertEqual(resp2.data["status"], "CHARGED")
         self.assertEqual(resp2.data["amount"], "500.00")
 
-        # Exactly one row in DB
+
         self.assertEqual(
             Payment.objects.filter(transaction_id=tid).count(), 1
         )
 
     def test_duplicate_with_different_amount_returns_original(self):
-        """Idempotency means the FIRST charge wins. A duplicate request
-        with a different amount still returns the original payment."""
         tid = str(uuid.uuid4())
 
         self.client.post(
@@ -161,8 +149,6 @@ class ChargePaymentSuccessTests(TestCase):
 
 
 class ChargePaymentIntentionalFailureTests(TestCase):
-    """Testing the intentional failure mechanism (amount=9999)"""
-
     def setUp(self):
         self.client = APIClient()
         self.url = "/payments/charge/"
@@ -188,20 +174,16 @@ class ChargePaymentIntentionalFailureTests(TestCase):
         self.assertFalse(Payment.objects.filter(transaction_id=tid).exists())
 
     def test_intentional_failure_still_validates_input_first(self):
-        """Validation runs before the intentional failure check."""
         resp = self.client.post(
             self.url,
             {"transaction_id": "", "amount": 9999},
             format="json",
         )
-        # Should get validation error, not intentional failure
         self.assertEqual(resp.status_code, 400)
         self.assertIn("transaction_id", resp.data["error"])
 
 
 class PaymentCheckTests(TestCase):
-    """Tests for GET /payments/check/"""
-
     def setUp(self):
         self.client = APIClient()
         self.charge_url = "/payments/charge/"
@@ -240,8 +222,6 @@ class PaymentCheckTests(TestCase):
         self.assertIn("valid UUID", resp.data["error"])
 
     def test_check_after_intentional_failure(self):
-        """After amount=9999, check should report NOT_CHARGED
-        because no Payment row was created."""
         tid = str(uuid.uuid4())
         self.client.post(
             self.charge_url,
@@ -259,17 +239,6 @@ def _is_postgres():
 
 
 class ConcurrentChargeTests(TransactionTestCase):
-    """Concurrency safety: multiple threads charging the same transaction_id.
-
-    Uses TransactionTestCase because each thread needs its own real DB
-    transaction (TestCase wraps everything in a single transaction that
-    other threads cannot see).
-
-    This test is meaningful on PostgreSQL. On SQLite it still runs but
-    SQLite's locking may serialize the requests, so the race is less
-    realistic.
-    """
-
     def test_concurrent_duplicate_charge(self):
         tid = str(uuid.uuid4())
         url = "/payments/charge/"
@@ -295,7 +264,6 @@ class ConcurrentChargeTests(TransactionTestCase):
             for future in as_completed(futures):
                 results.append(future.result())
 
-        # All requests must succeed (no 500s)
         status_codes = [r[0] for r in results]
         for code in status_codes:
             self.assertIn(
@@ -305,19 +273,17 @@ class ConcurrentChargeTests(TransactionTestCase):
                 f"race condition produced an error",
             )
 
-        # Exactly one 201 (the winner), rest are 200 (idempotent)
+    
         self.assertEqual(
             status_codes.count(201),
             1,
             f"Expected exactly one 201 but got: {status_codes}",
         )
 
-        # All responses report CHARGED with consistent amount
         for code, data in results:
             self.assertEqual(data["status"], "CHARGED")
             self.assertEqual(data["amount"], "250.00")
 
-        # Exactly one Payment row in the database
         self.assertEqual(
             Payment.objects.filter(transaction_id=tid).count(), 1
         )

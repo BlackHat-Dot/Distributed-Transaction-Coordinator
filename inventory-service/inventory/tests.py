@@ -1,40 +1,3 @@
-"""
-Inventory service — comprehensive test suite.
-
-Coverage:
-  - Input validation for reserve and release
-  - Happy-path reserve: stock decremented, Reservation created
-  - Reserve idempotency (sequential): duplicate transaction_id returns existing
-    row, no second stock decrement
-  - Reserve idempotency (concurrent): two threads send the same transaction_id
-    simultaneously; the DB UNIQUE constraint fires on the loser, IntegrityError
-    is caught in reserve_product, stock decrement is rolled back, idempotent
-    response returned — no 500
-  - Reserve insufficient stock: correct error, no side effects
-  - Reserve concurrency (distinct transaction_ids): SELECT FOR UPDATE protects
-    stock under parallel load; exactly one winner per product when stock is 1
-  - Release happy path: stock restored, Reservation marked RELEASED
-  - Release idempotency: double release does not double-restore stock
-  - Release concurrency: two threads releasing the same reservation;
-    stock restored exactly once
-  - Release not-found: 404 with no DB side effects
-  - Reservation check: RESERVED, RELEASED, NOT_RESERVED cases, validation
-  - Coordinator callback failure is non-fatal: reserve succeeds even when
-    the Coordinator status-update call fails or times out
-
-Design notes
-------------
-TestCase wraps each test in a transaction that is rolled back after the test;
-it is fast but means other threads cannot see the data.
-
-TransactionTestCase commits data to the real DB so multiple threads can
-observe each other's writes.  It is slower and recreates the DB state between
-tests using truncation.  We use it only for concurrency tests.
-
-All outbound HTTP calls to the Coordinator status-update endpoint are mocked
-with unittest.mock.patch so the suite runs without the Coordinator being up.
-"""
-
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from unittest.mock import patch, MagicMock
@@ -46,9 +9,6 @@ from rest_framework.test import APIClient
 from .models import Product, Reservation
 
 
-# ---------------------------------------------------------------------------
-# URL constants (must match inventory_service/urls.py)
-# ---------------------------------------------------------------------------
 RESERVE_URL = "/products/reserve/"
 RELEASE_URL = "/products/release/"
 CHECK_URL = "/reserve/check/"
@@ -56,19 +16,13 @@ PRODUCTS_URL = "/products/"
 HEALTH_URL = "/health/"
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def _mock_coordinator_ok():
-    """Return a context manager that patches the Coordinator callback to succeed."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     return patch("inventory.views.requests.get", return_value=mock_resp)
 
 
 def _mock_coordinator_down():
-    """Return a context manager that patches the Coordinator callback to raise ConnectionError."""
     from requests.exceptions import ConnectionError as RequestsConnectionError
     return patch("inventory.views.requests.get", side_effect=RequestsConnectionError())
 
@@ -76,10 +30,6 @@ def _mock_coordinator_down():
 def _create_product(name="Widget", stock=10):
     return Product.objects.create(name=name, stock=stock)
 
-
-# ---------------------------------------------------------------------------
-# Health check
-# ---------------------------------------------------------------------------
 
 class HealthCheckTests(TestCase):
     def setUp(self):
@@ -90,10 +40,6 @@ class HealthCheckTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["status"], "healthy")
 
-
-# ---------------------------------------------------------------------------
-# Product list
-# ---------------------------------------------------------------------------
 
 class ProductListTests(TestCase):
     def setUp(self):
@@ -115,13 +61,7 @@ class ProductListTests(TestCase):
         self.assertIn("Beta", names)
 
 
-# ---------------------------------------------------------------------------
-# Reserve — input validation
-# ---------------------------------------------------------------------------
-
 class ReserveValidationTests(TestCase):
-    """POST /products/reserve/ — field-level validation before any DB access."""
-
     def setUp(self):
         self.client = APIClient()
         self.product = _create_product(stock=10)
@@ -173,17 +113,10 @@ class ReserveValidationTests(TestCase):
 
     def test_empty_body_returns_error(self):
         resp = self.client.post(RESERVE_URL, {}, format="json")
-        # Any non-200 is acceptable; the important thing is no crash
         self.assertNotEqual(resp.status_code, 500)
 
 
-# ---------------------------------------------------------------------------
-# Reserve — happy path
-# ---------------------------------------------------------------------------
-
 class ReserveHappyPathTests(TestCase):
-    """Successful reservation: stock decremented, Reservation row created."""
-
     def setUp(self):
         self.client = APIClient()
         self.product = _create_product(stock=10)
@@ -230,7 +163,6 @@ class ReserveHappyPathTests(TestCase):
         self.assertIn("transaction_id", resp.data)
         self.assertIn("status", resp.data)
         self.assertNotIn("detail", resp.data)
-        # remaining should reflect the post-reservation stock
         self.assertEqual(resp.data["remaining"], 6)
         self.assertEqual(resp.data["transaction_id"], tid)
         self.assertEqual(resp.data["status"], Reservation.Status.RESERVED)
@@ -245,13 +177,7 @@ class ReserveHappyPathTests(TestCase):
         self.assertEqual(resp.status_code, 404)
 
 
-# ---------------------------------------------------------------------------
-# Reserve — insufficient stock
-# ---------------------------------------------------------------------------
-
 class ReserveInsufficientStockTests(TestCase):
-    """Stock cannot go negative; reservation must be refused with no side effects."""
-
     def setUp(self):
         self.client = APIClient()
         self.product = _create_product(stock=2)
@@ -289,7 +215,6 @@ class ReserveInsufficientStockTests(TestCase):
         self.assertFalse(Reservation.objects.filter(transaction_id=tid).exists())
 
     def test_exact_stock_quantity_succeeds(self):
-        """Reserving exactly the remaining stock must succeed (boundary case)."""
         tid = str(uuid.uuid4())
         with _mock_coordinator_ok():
             resp = self.client.post(
@@ -302,13 +227,7 @@ class ReserveInsufficientStockTests(TestCase):
         self.assertEqual(self.product.stock, 0)
 
 
-# ---------------------------------------------------------------------------
-# Reserve — idempotency
-# ---------------------------------------------------------------------------
-
 class ReserveIdempotencyTests(TestCase):
-    """Duplicate transaction_id: return existing reservation, no second decrement."""
-
     def setUp(self):
         self.client = APIClient()
         self.product = _create_product(stock=10)
@@ -345,7 +264,6 @@ class ReserveIdempotencyTests(TestCase):
             )
 
         self.product.refresh_from_db()
-        # Stock should only have been decremented once (by 3), not twice (by 6)
         self.assertEqual(self.product.stock, 7)
 
     def test_duplicate_creates_exactly_one_reservation_row(self):
@@ -365,7 +283,6 @@ class ReserveIdempotencyTests(TestCase):
         self.assertEqual(Reservation.objects.filter(transaction_id=tid).count(), 1)
 
     def test_duplicate_with_different_quantity_returns_original(self):
-        """The first call wins; the second call's quantity is ignored."""
         tid = str(uuid.uuid4())
         with _mock_coordinator_ok():
             self.client.post(
@@ -379,7 +296,6 @@ class ReserveIdempotencyTests(TestCase):
                 format="json",
             )
 
-        # Second response must return the ORIGINAL reservation (quantity=2)
         self.assertEqual(resp2.data["transaction_id"], tid)
         self.assertEqual(resp2.data["quantity"], 2)
         self.assertEqual(resp2.data["product_id"], self.product.id)
@@ -388,20 +304,10 @@ class ReserveIdempotencyTests(TestCase):
             Reservation.objects.get(transaction_id=tid).quantity, 2
         )
         self.product.refresh_from_db()
-        # Only 2 units were ever reserved
         self.assertEqual(self.product.stock, 8)
 
 
-# ---------------------------------------------------------------------------
-# Reserve — Coordinator callback failure is non-fatal
-# ---------------------------------------------------------------------------
-
 class ReserveCallbackFailureTests(TestCase):
-    """
-    The status-update callback to the Coordinator is best-effort.
-    A failed callback must not roll back the reservation.
-    """
-
     def setUp(self):
         self.client = APIClient()
         self.product = _create_product(stock=10)
@@ -415,7 +321,6 @@ class ReserveCallbackFailureTests(TestCase):
                 format="json",
             )
 
-        # Reservation must succeed despite the callback failure
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(Reservation.objects.filter(transaction_id=tid).exists())
 
@@ -432,7 +337,6 @@ class ReserveCallbackFailureTests(TestCase):
         self.assertEqual(self.product.stock, 6)
 
     def test_coordinator_error_response_reports_callback_failure(self):
-        """Callback failure is non-fatal; detail field is intentionally omitted."""
         tid = str(uuid.uuid4())
         with _mock_coordinator_down():
             resp = self.client.post(
@@ -441,7 +345,6 @@ class ReserveCallbackFailureTests(TestCase):
                 format="json",
             )
 
-        # detail field was removed, assert the response is still successful
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["transaction_id"], tid)
         self.assertEqual(resp.data["status"], Reservation.Status.RESERVED)
@@ -461,10 +364,6 @@ class ReserveCallbackFailureTests(TestCase):
         self.assertTrue(Reservation.objects.filter(transaction_id=tid).exists())
 
 
-# ---------------------------------------------------------------------------
-# Release — input & not-found
-# ---------------------------------------------------------------------------
-
 class ReleaseValidationTests(TestCase):
 
     def setUp(self):
@@ -472,7 +371,6 @@ class ReleaseValidationTests(TestCase):
 
     def test_missing_transaction_id_returns_404_or_error(self):
         resp = self.client.post(RELEASE_URL, {}, format="json")
-        # No transaction_id → get_object_or_404 raises 404
         self.assertIn(resp.status_code, (400, 404))
 
     def test_nonexistent_transaction_id_returns_404(self):
@@ -495,7 +393,6 @@ class ReleaseValidationTests(TestCase):
         self.assertEqual(product.stock, 5)
 
     def test_intentional_failure_trigger_returns_500(self):
-        """Sending transaction_id='fail-release' triggers the test hook."""
         resp = self.client.post(
             RELEASE_URL,
             {"transaction_id": "fail-release"},
@@ -504,13 +401,7 @@ class ReleaseValidationTests(TestCase):
         self.assertEqual(resp.status_code, 500)
 
 
-# ---------------------------------------------------------------------------
-# Release — happy path
-# ---------------------------------------------------------------------------
-
 class ReleaseHappyPathTests(TestCase):
-    """Successful release: stock restored, Reservation status updated."""
-
     def setUp(self):
         self.client = APIClient()
         self.product = _create_product(stock=10)
@@ -523,7 +414,6 @@ class ReleaseHappyPathTests(TestCase):
             transaction_id=tid,
             status=Reservation.Status.RESERVED,
         )
-        # Deduct stock as if reserve was called
         self.product.stock -= quantity
         self.product.save()
         return reservation
@@ -560,19 +450,7 @@ class ReleaseHappyPathTests(TestCase):
         self.assertIn("transaction_id", resp.data)
 
 
-# ---------------------------------------------------------------------------
-# Release — idempotency
-# ---------------------------------------------------------------------------
-
 class ReleaseIdempotencyTests(TestCase):
-    """
-    Double release must not double-restore stock.
-
-    This is critical for correctness: if a retry_compensation call arrives
-    after the recovery worker already released, the second release must be a
-    no-op on stock.
-    """
-
     def setUp(self):
         self.client = APIClient()
         self.product = _create_product(stock=10)
@@ -593,16 +471,13 @@ class ReleaseIdempotencyTests(TestCase):
         reservation = self._make_reservation(quantity=3)
         tid = str(reservation.transaction_id)
 
-        # First release
         resp1 = self.client.post(RELEASE_URL, {"transaction_id": tid}, format="json")
         self.assertEqual(resp1.status_code, 200)
 
-        # Second release (idempotent re-try)
         resp2 = self.client.post(RELEASE_URL, {"transaction_id": tid}, format="json")
         self.assertEqual(resp2.status_code, 200)
 
         self.product.refresh_from_db()
-        # Stock must equal 10 (restored once), NOT 13 (restored twice)
         self.assertEqual(
             self.product.stock,
             10,
@@ -618,13 +493,8 @@ class ReleaseIdempotencyTests(TestCase):
         self.assertEqual(reservation.status, Reservation.Status.RELEASED)
 
 
-# ---------------------------------------------------------------------------
-# Reservation check
-# ---------------------------------------------------------------------------
 
 class ReservationCheckTests(TestCase):
-    """GET /reserve/check/?transaction_id=..."""
-
     def setUp(self):
         self.client = APIClient()
         self.product = _create_product(stock=10)
@@ -664,23 +534,7 @@ class ReservationCheckTests(TestCase):
         self.assertIn("transaction_id", resp.data.get("error", ""))
 
 
-# ---------------------------------------------------------------------------
-# Reserve — concurrency (requires real DB transactions)
-# ---------------------------------------------------------------------------
-
 class ReserveConcurrencyTests(TransactionTestCase):
-    """
-    Two threads concurrently try to reserve from the same product.
-
-    The SELECT FOR UPDATE in reserve_product ensures that only one thread
-    can hold the row lock at a time.  When stock = 1 and both threads want
-    quantity=1, exactly one must succeed and one must fail with "Not enough
-    stock".
-
-    Uses TransactionTestCase so each thread gets its own real DB transaction
-    that is visible to the other threads.
-    """
-
     def test_concurrent_reserve_exactly_one_winner_when_stock_is_one(self):
         product = Product.objects.create(name="LimitedItem", stock=1)
         results = []
@@ -707,22 +561,18 @@ class ReserveConcurrencyTests(TransactionTestCase):
             for future in as_completed(futures):
                 results.append(future.result())
 
-        # No crashes
         for code in results:
             self.assertNotEqual(code, 500, "Concurrent reserve produced a 500")
 
-        # Exactly one 200 (success) and one 400 (insufficient stock)
         self.assertEqual(results.count(200), 1,
                          f"Expected exactly 1 success, got: {results}")
         self.assertEqual(results.count(400), 1,
                          f"Expected exactly 1 failure, got: {results}")
 
-        # Stock must be exactly 0 (one reservation consumed it all)
         product.refresh_from_db()
         self.assertEqual(product.stock, 0,
                          f"Expected stock=0 after one reservation, got: {product.stock}")
 
-        # Exactly one Reservation row was created
         self.assertEqual(
             Reservation.objects.filter(product=product).count(),
             1,
@@ -730,7 +580,6 @@ class ReserveConcurrencyTests(TransactionTestCase):
         )
 
     def test_concurrent_reserve_both_succeed_when_stock_is_sufficient(self):
-        """Both threads succeed when stock > sum(quantities)."""
         product = Product.objects.create(name="AbundantItem", stock=10)
 
         def do_reserve(_):
@@ -760,18 +609,8 @@ class ReserveConcurrencyTests(TransactionTestCase):
         self.assertEqual(product.stock, 4)  # 10 - 3 - 3
 
 
-# ---------------------------------------------------------------------------
-# Release — concurrency
-# ---------------------------------------------------------------------------
 
 class ReleaseConcurrencyTests(TransactionTestCase):
-    """
-    Two threads simultaneously release the same reservation.
-    The SELECT FOR UPDATE inside release_product ensures exactly one thread
-    processes the release; the other sees status=RELEASED and returns early
-    without touching stock.
-    """
-
     def test_concurrent_release_restores_stock_exactly_once(self):
         product = Product.objects.create(name="Widget", stock=7)
         reservation = Reservation.objects.create(
@@ -780,7 +619,7 @@ class ReleaseConcurrencyTests(TransactionTestCase):
             transaction_id=uuid.uuid4(),
             status=Reservation.Status.RESERVED,
         )
-        # Simulate the stock having been decremented at reserve time
+
         product.stock -= 3
         product.save()
         tid = str(reservation.transaction_id)
@@ -796,15 +635,12 @@ class ReleaseConcurrencyTests(TransactionTestCase):
         with ThreadPoolExecutor(max_workers=2) as executor:
             results = list(executor.map(do_release, range(2)))
 
-        # Both calls must complete without a 500
         for code in results:
             self.assertNotEqual(code, 500, f"Concurrent release produced a 500: {results}")
 
-        # Both must return 200 (second is the idempotent path)
         for code in results:
             self.assertEqual(code, 200, f"Unexpected status: {results}")
 
-        # Stock must be exactly 7 (restored once, not twice)
         product.refresh_from_db()
         self.assertEqual(
             product.stock,
@@ -813,39 +649,7 @@ class ReleaseConcurrencyTests(TransactionTestCase):
         )
 
 
-# ---------------------------------------------------------------------------
-# Reserve — concurrent duplicate transaction_id (IntegrityError path)
-# ---------------------------------------------------------------------------
-
 class ReserveConcurrentDuplicateIdempotencyTests(TransactionTestCase):
-    """
-    Two threads send the EXACT SAME transaction_id to reserve_product at the
-    same time, before either has committed a row.
-
-    The race
-    --------
-    Both threads pass the initial filter().first() check (plain SELECT, no
-    lock) and find None.  Both then enter transaction.atomic() and queue up
-    on the SELECT FOR UPDATE product lock.
-
-    Thread A wins the lock, decrements stock, creates the Reservation, commits.
-
-    Thread B acquires the lock after A's commit.  It re-reads the (now lower)
-    stock and tries to INSERT a Reservation with the same transaction_id.
-    PostgreSQL fires the UNIQUE constraint on inventory_reservation.transaction_id
-    → IntegrityError.
-
-    The atomic block re-raises, rolling back Thread B's stock decrement.
-    reserve_product catches IntegrityError outside the atomic block
-    (connection is clean), re-fetches the existing Reservation, and returns
-    the idempotent 200 response.
-
-    Expected outcomes
-    -----------------
-    - Both threads return 200 (no 500s).
-    - Exactly one Reservation row exists in the DB.
-    - Stock was decremented exactly once.
-    """
 
     def test_concurrent_same_transaction_id_no_500_one_reservation(self):
         product = Product.objects.create(name="RaceyItem", stock=10)
@@ -874,7 +678,6 @@ class ReserveConcurrentDuplicateIdempotencyTests(TransactionTestCase):
             for future in as_completed(futures):
                 results.append(future.result())
 
-        # ── No 500s ───────────────────────────────────────────────────────
         codes = [r[0] for r in results]
         for code in codes:
             self.assertIn(
@@ -884,25 +687,22 @@ class ReserveConcurrentDuplicateIdempotencyTests(TransactionTestCase):
                 f"All codes: {codes}",
             )
 
-        # ── Exactly one Reservation row ───────────────────────────────────
         self.assertEqual(
             Reservation.objects.filter(transaction_id=tid).count(),
             1,
             "Expected exactly one Reservation row for the shared transaction_id",
         )
 
-        # ── Stock decremented exactly once (by 2) ────────────────────────
+
         product.refresh_from_db()
         self.assertEqual(
             product.stock,
-            8,   # 10 - 2 (one decrement only)
+            8,
             f"Expected stock=8 (decremented once), got {product.stock}. "
             "A concurrent loser may have double-decremented and not rolled back.",
         )
 
     def test_concurrent_same_transaction_id_all_responses_consistent(self):
-        """All concurrent responses for the same transaction_id must agree
-        and return the exact same unified response shape."""
         product = Product.objects.create(name="ConsistencyItem", stock=10)
         tid = str(uuid.uuid4())
         results = []

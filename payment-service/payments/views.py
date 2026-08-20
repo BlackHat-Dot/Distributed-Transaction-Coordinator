@@ -15,7 +15,6 @@ NOT_CHARGED = "NOT_CHARGED"
 
 
 def _validate_uuid(value):
-    # Return a uuid.UUID if valid, else None
     try:
         return uuid.UUID(str(value))
     except (ValueError, AttributeError):
@@ -23,7 +22,6 @@ def _validate_uuid(value):
 
 
 def _require_transaction_id(raw_value):
-    # Returns (uuid, error_response), Exactly one is None
     if not raw_value:
         return None, Response({"error": "transaction_id is required"}, status=400)
 
@@ -35,12 +33,10 @@ def _require_transaction_id(raw_value):
 
 
 def _validate_amount(raw_amount):
-    # Returns (Decimal, error_response), Exactly one is None
     if raw_amount is None:
         return None, Response({"error": "amount is required"}, status=400)
 
     try:
-        # Convert through str to avoid float→Decimal imprecision
         amount = Decimal(str(raw_amount)).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
     except (InvalidOperation, TypeError):
         return None, Response({"error": "amount must be a valid number"}, status=400)
@@ -95,8 +91,6 @@ def charge_payment(request):
                 status=Payment.Status.CHARGED,
             )
     except IntegrityError:
-        # Concurrent request already created this payment
-        # counter thread won and created the payment
         existing = Payment.objects.get(transaction_id=transaction_uuid)
         return _payment_response(existing)
 
