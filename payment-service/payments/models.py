@@ -5,6 +5,7 @@ class Payment(models.Model):
 
     class Status(models.TextChoices):
         CHARGED = "CHARGED"
+        NOT_CHARGED = "NOT_CHARGED"
 
     transaction_id = models.UUIDField(unique=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)

@@ -228,7 +228,11 @@ def create_transaction(request):
             status=400,
         )
 
-
+    _set_status(
+            transaction_id,
+            Transaction.Status.INVENTORY_RESERVED,
+            expected_status=Transaction.Status.STARTED,
+        )
     _set_status(
         transaction_id,
         Transaction.Status.PAYMENT_PROCESSING,
