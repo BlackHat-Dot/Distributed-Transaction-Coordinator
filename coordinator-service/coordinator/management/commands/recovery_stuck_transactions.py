@@ -1,8 +1,9 @@
-﻿import requests
+import requests
 from datetime import timedelta
 from django.utils import timezone
 from django.core.management.base import BaseCommand
-from coordinator.models import Transaction
+from coordinator.models import Transaction, SagaEvent
+from coordinator.saga_log import _set_status_with_event
 
 PAYMENT_CHECK_URL = "http://127.0.0.1:8001/payments/check/"
 INVENTORY_CHECK_URL = "http://127.0.0.1:8000/reserve/check/"
@@ -137,12 +138,13 @@ class Command(BaseCommand):
 
         if payment_status == PAYMENT_CHARGED:
 
-            Transaction.objects.filter(
+            _set_status_with_event(
                 transaction_id=transaction_id,
-                status=Transaction.Status.RECOVERY_IN_PROGRESS,
-            ).update(
-                status=Transaction.Status.COMPLETED,
-                updated_at=timezone.now(),
+                to_status=Transaction.Status.COMPLETED,
+                expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+                actor=SagaEvent.ACTOR_RECOVERY,
+                http_status_code=payment_resp.status_code,
+                http_payload=payment_resp.json() if payment_resp.status_code == 200 else None,
             )
             self.stdout.write(
                 self.style.SUCCESS(
@@ -172,12 +174,13 @@ class Command(BaseCommand):
         if inventory_status == INVENTORY_RESERVED:
             self._compensate(transaction_id)
         elif inventory_status in (INVENTORY_RELEASED, INVENTORY_NOT_RESERVED):
-            Transaction.objects.filter(
+            _set_status_with_event(
                 transaction_id=transaction_id,
-                status=Transaction.Status.RECOVERY_IN_PROGRESS,
-            ).update(
-                status=Transaction.Status.TIMEOUT,
-                updated_at=timezone.now(),
+                to_status=Transaction.Status.TIMEOUT,
+                expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+                actor=SagaEvent.ACTOR_RECOVERY,
+                http_status_code=inventory_resp.status_code,
+                http_payload=inventory_resp.json() if inventory_resp.status_code == 200 else None,
             )
             self.stdout.write(
                 self.style.SUCCESS(
@@ -199,12 +202,13 @@ class Command(BaseCommand):
         )
 
     def _compensate(self, transaction_id):
-        Transaction.objects.filter(
+        _set_status_with_event(
             transaction_id=transaction_id,
-            status=Transaction.Status.RECOVERY_IN_PROGRESS,
-        ).update(
-            status=Transaction.Status.COMPENSATING,
-            updated_at=timezone.now(),
+            to_status=Transaction.Status.COMPENSATING,
+            expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+            actor=SagaEvent.ACTOR_RECOVERY,
+            http_status_code=None,
+            http_payload=None,
         )
 
         try:
@@ -214,12 +218,13 @@ class Command(BaseCommand):
                 timeout=REQUEST_TIMEOUT,
             )
         except requests.exceptions.RequestException:
-            Transaction.objects.filter(
+            _set_status_with_event(
                 transaction_id=transaction_id,
-                status=Transaction.Status.COMPENSATING,
-            ).update(
-                status=Transaction.Status.COMPENSATION_FAILED,
-                updated_at=timezone.now(),
+                to_status=Transaction.Status.COMPENSATION_FAILED,
+                expected_status=Transaction.Status.COMPENSATING,
+                actor=SagaEvent.ACTOR_RECOVERY,
+                http_status_code=None,
+                http_payload=None,
             )
             self.stdout.write(
                 self.style.ERROR(
@@ -229,12 +234,13 @@ class Command(BaseCommand):
             return
 
         if resp.status_code == 200:
-            Transaction.objects.filter(
+            _set_status_with_event(
                 transaction_id=transaction_id,
-                status=Transaction.Status.COMPENSATING,
-            ).update(
-                status=Transaction.Status.COMPENSATED,
-                updated_at=timezone.now(),
+                to_status=Transaction.Status.COMPENSATED,
+                expected_status=Transaction.Status.COMPENSATING,
+                actor=SagaEvent.ACTOR_RECOVERY,
+                http_status_code=resp.status_code,
+                http_payload=resp.json() if resp.status_code == 200 else None,
             )
             self.stdout.write(
                 self.style.SUCCESS(
@@ -242,12 +248,13 @@ class Command(BaseCommand):
                 )
             )
         else:
-            Transaction.objects.filter(
+            _set_status_with_event(
                 transaction_id=transaction_id,
-                status=Transaction.Status.COMPENSATING,
-            ).update(
-                status=Transaction.Status.COMPENSATION_FAILED,
-                updated_at=timezone.now(),
+                to_status=Transaction.Status.COMPENSATION_FAILED,
+                expected_status=Transaction.Status.COMPENSATING,
+                actor=SagaEvent.ACTOR_RECOVERY,
+                http_status_code=resp.status_code,
+                http_payload=resp.json() if resp.status_code == 200 else None,
             )
             self.stdout.write(
                 self.style.ERROR(
