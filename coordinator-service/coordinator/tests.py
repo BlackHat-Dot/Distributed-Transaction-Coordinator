@@ -279,9 +279,9 @@ class ConcurrentCreateTests(TransactionTestCase):
                 saga_execution_counts.append(downstream_calls)
 
         for code, _ in results:
-            self.assertIn(
+            self.assertEqual(
                 code,
-                (200,),
+                200,
                 f"Thread returned unexpected status {code} — "
                 f"possible uncaught IntegrityError",
             )

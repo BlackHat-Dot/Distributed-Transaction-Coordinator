@@ -1,5 +1,5 @@
-import logging
-import uuid
+
+
 from unittest.mock import MagicMock, patch
 from django.conf import settings
 from django.test import TestCase
@@ -22,7 +22,7 @@ class CeleryTaskLockingTests(TestCase):
 
     def test_task_runs_command_and_releases_lock(self):
         with patch("coordinator.tasks.call_command") as mock_call_command:
-            with self.assertLogs("coordinator.tasks", level="INFO") as cm:
+            with self.assertLogs("coordinator.tasks", level="INFO") as cm:                              
                 result = recover_stuck_transactions()
 
             self.assertEqual(result, "completed")
