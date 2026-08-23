@@ -2,7 +2,7 @@ import uuid
 from decimal import Decimal
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from django.test import TestCase, TransactionTestCase, override_settings
+from django.test import TestCase, TransactionTestCase
 from django.db import connection
 from rest_framework.test import APIClient
 
