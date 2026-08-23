@@ -47,3 +47,47 @@ class Transaction(models.Model):
 
     def __str__(self):
         return str(self.transaction_id)
+
+
+class SagaEvent(models.Model):
+    """
+    Append-only audit log for every Transaction state transition.
+
+    Rules (enforced here and in _set_status_with_event):
+    - Rows are never updated or deleted.
+    - seq is monotonically increasing per transaction (1-based).
+    - unique_together on (transaction, seq) is the DB-level guard against
+      two concurrent writers inserting the same sequence number.
+    """
+
+    ACTOR_REQUEST = "request"
+    ACTOR_RECOVERY = "recovery"
+    ACTOR_RETRY = "retry"
+
+    transaction = models.ForeignKey(
+        Transaction,
+        on_delete=models.CASCADE,
+        related_name="events",
+    )
+    seq = models.PositiveIntegerField(
+        help_text="1-based sequence number, monotonically increasing per transaction.",
+    )
+    from_status = models.CharField(max_length=40)
+    to_status = models.CharField(max_length=40)
+    actor = models.CharField(
+        max_length=20,
+        help_text="Which code path wrote this transition: 'request', 'recovery', or 'retry'.",
+    )
+    http_status_code = models.IntegerField(null=True, blank=True)
+    http_payload = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("transaction", "seq")]
+        ordering = ["transaction", "seq"]
+
+    def __str__(self):
+        return (
+            f"SagaEvent(txn={self.transaction_id}, seq={self.seq}, "
+            f"{self.from_status}->{self.to_status})"
+        )
