@@ -1,12 +1,3 @@
-/**
- * DTC Mission Control — Observability & Real-Time Visualization App
- * Vanilla ES6+ JavaScript, zero build tools, zero dependencies.
- */
-
-// ============================================================================
-// Global State & Configuration
-// ============================================================================
-
 const CONFIG = {
   coordinatorUrl: localStorage.getItem("dtc_cfg_coord") || "http://127.0.0.1:8002",
   inventoryUrl: localStorage.getItem("dtc_cfg_inv") || "http://127.0.0.1:8000",
@@ -38,15 +29,9 @@ const STATE = {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// ============================================================================
-// DOM Elements Cache
-// ============================================================================
-
 const DOM = {
-  // Toast Container
   toastContainer: document.getElementById("toast-container"),
 
-  // Nav & Health
   healthCoord: document.getElementById("node-health-coord"),
   healthInv: document.getElementById("node-health-inv"),
   healthPay: document.getElementById("node-health-pay"),
@@ -59,13 +44,11 @@ const DOM = {
   btnHowItWorks: document.getElementById("btn-how-it-works"),
   btnConfig: document.getElementById("btn-config"),
 
-  // Proof Stats
   statRacesDefended: document.getElementById("stat-race-defended"),
   statLocksEnforced: document.getElementById("stat-locks-enforced"),
   statSagasTotal: document.getElementById("stat-sagas-total"),
   statDoubleBooking: document.getElementById("stat-double-booking"),
 
-  // Scenario Buttons
   btnDemoHappy: document.getElementById("btn-demo-happy"),
   btnDemoFail: document.getElementById("btn-demo-fail"),
   btnDemoRace: document.getElementById("btn-demo-race"),
@@ -74,7 +57,6 @@ const DOM = {
   customDrawer: document.getElementById("custom-payload-drawer"),
   formCustomTx: document.getElementById("form-custom-tx"),
 
-  // Topology SVG Elements
   pulseLayer: document.getElementById("pulse-layer"),
   nodeBoxClient: document.getElementById("node-box-client"),
   nodeBoxCoord: document.getElementById("node-box-coord"),
@@ -90,7 +72,6 @@ const DOM = {
   topoCoordEvents: document.getElementById("topo-coord-events"),
   topoCoordLease: document.getElementById("topo-coord-lease"),
 
-  // Recovery Worker Panel
   recCountdownVal: document.getElementById("rec-countdown-val"),
   recProgressFill: document.getElementById("rec-progress-fill"),
   recSagasSwept: document.getElementById("rec-sagas-swept"),
@@ -98,13 +79,11 @@ const DOM = {
   recRedisLock: document.getElementById("rec-redis-lock"),
   btnTriggerSweep: document.getElementById("btn-trigger-sweep"),
 
-  // Transaction Feed
   badgeTotalTx: document.getElementById("badge-total-tx"),
   filterTabs: document.querySelectorAll(".filter-tab"),
   tbodyTxFeed: document.getElementById("tbody-tx-feed"),
   btnManualPoll: document.getElementById("btn-manual-poll"),
 
-  // Forensic Audit Stream
   forensicMetaCard: document.getElementById("forensic-meta-card"),
   fmetaId: document.getElementById("fmeta-id"),
   fmetaStatusBadge: document.getElementById("fmeta-status-badge"),
@@ -121,7 +100,6 @@ const DOM = {
   payloadInspectorCode: document.getElementById("payload-inspector-code"),
   btnClosePayload: document.getElementById("btn-close-payload"),
 
-  // Modals
   modalArch: document.getElementById("modal-architecture"),
   btnCloseArch: document.getElementById("btn-close-arch"),
   modalConfig: document.getElementById("modal-config"),
@@ -133,10 +111,6 @@ const DOM = {
   cfgPollMs: document.getElementById("cfg-poll-ms"),
   btnResetCfg: document.getElementById("btn-reset-cfg"),
 };
-
-// ============================================================================
-// Toast Notification Component
-// ============================================================================
 
 function showToast({ icon = "⚡", title, message, type = "normal", duration = 4500 }) {
   if (!DOM.toastContainer) return;
@@ -164,9 +138,6 @@ function showToast({ icon = "⚡", title, message, type = "normal", duration = 4
   }, duration);
 }
 
-// ============================================================================
-// API & Networking Utilities
-// ============================================================================
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
   const controller = new AbortController();
@@ -201,7 +172,6 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
   }
 }
 
-// Helper: Extract human-readable error reasons from backend JSON responses
 function extractDetailedErrorMessage(res, defaultMsg = "Operation failed") {
   if (!res) return defaultMsg;
   if (res.data) {
@@ -261,10 +231,6 @@ function updateHealthUI(nodeKey, isOnline, latency) {
   }
 }
 
-// ============================================================================
-// Interactive SVG Topology Curved Packet Animation & Crash Shatter
-// ============================================================================
-
 function triggerCrashedNode(nodeKey) {
   STATE.health[nodeKey].crashed = true;
   updateHealthUI(nodeKey, false, null);
@@ -316,10 +282,6 @@ function triggerArrivalPulse(destinationNodeId, type = "success") {
   }, 450);
 }
 
-/**
- * Animates a small glowing 8-10px packet icon along the exact SVG Bezier curve
- * between nodes, triggering an arrival pulse on receipt or shattering mid-way on crash.
- */
 function animatePacketAlongPath({
   route,
   type = "success",
@@ -329,11 +291,11 @@ function animatePacketAlongPath({
 }) {
   return new Promise((resolve) => {
     const colorMap = {
-      success: "#34d399",   // Green (Reserve/Charge)
-      info: "#38bdf8",      // Blue (Probes/Status)
-      warning: "#fbbf24",   // Amber (Compensating Release)
-      danger: "#f43f5e",    // Red (Conflict/Crash/Decline)
-      purple: "#c084fc",   // Purple (Recovery)
+      success: "#34d399",
+      info: "#38bdf8",
+      warning: "#fbbf24",
+      danger: "#f43f5e",
+      purple: "#c084fc",
     };
 
     const filterMap = {
@@ -364,14 +326,12 @@ function animatePacketAlongPath({
     const totalLength = pathEl.getTotalLength();
     const packetGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
 
-    // Outer translucent glowing halo
     const halo = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     halo.setAttribute("r", "9");
     halo.setAttribute("fill", color);
     halo.setAttribute("opacity", "0.35");
     halo.setAttribute("filter", filter);
 
-    // Inner bright packet core (8px filled circle)
     const core = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     core.setAttribute("r", "4.5");
     core.setAttribute("fill", color);
@@ -397,7 +357,7 @@ function animatePacketAlongPath({
         requestAnimationFrame(renderFrame);
       } else {
         if (breakMidway) {
-          // Abrupt crash stop & shatter effect
+  
           halo.setAttribute("fill", "#f43f5e");
           halo.setAttribute("r", "16");
           halo.setAttribute("opacity", "0.9");
@@ -423,7 +383,6 @@ function animatePacketAlongPath({
             resolve();
           }, 400);
         } else {
-          // Destination arrival confirmation glow
           if (packetGroup.parentNode === DOM.pulseLayer) {
             DOM.pulseLayer.removeChild(packetGroup);
           }
@@ -440,9 +399,6 @@ function animatePacketAlongPath({
   });
 }
 
-// ============================================================================
-// Transaction Feed & State Management
-// ============================================================================
 
 async function fetchTransactionsFeed() {
   if (STATE.isSimulatedMode) {
@@ -580,10 +536,6 @@ function getWaterfallHTML(tx) {
   `;
 }
 
-// ============================================================================
-// Forensic SagaEvent Audit Log Stream
-// ============================================================================
-
 window.selectTransaction = function(txId) {
   STATE.activeTxId = txId;
   renderTransactionsTable(STATE.transactions);
@@ -618,7 +570,6 @@ async function inspectTransaction(txId, autoScroll = false) {
     DOM.fmetaProd.textContent = `Prod #${txData.product_id || 1} (Qty: ${txData.quantity !== undefined ? txData.quantity : 1})`;
     DOM.fmetaAmt.textContent = `$${txData.amount || 500}`;
 
-    // Failure banner display
     const isFailureState = txData.status.includes("FAILED") || txData.status.includes("TIMEOUT") || txData.status === "COMPENSATED";
     if (isFailureState) {
       let failureReason = "Non-terminal or compensated state detected";
@@ -707,17 +658,12 @@ function getStatusBadgeClass(status) {
   return "badge-amber";
 }
 
-// ============================================================================
-// One-Click Live Recruiter Scenarios & Stress Tests
-// ============================================================================
 
-// 1. Scenario: Happy Path Saga
 DOM.btnDemoHappy.addEventListener("click", async () => {
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "ORCHESTRATING";
 
-  // Step 1: Client -> Coordinator
   await animatePacketAlongPath({
     route: "client-coord",
     type: "info",
@@ -725,7 +671,7 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 2: Coordinator -> Inventory Reserve (Green)
+
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -733,7 +679,6 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
-  // Step 3: Inventory -> Coordinator 200 OK Response (Green)
   await animatePacketAlongPath({
     route: "inv-coord",
     type: "success",
@@ -741,7 +686,6 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 4: Coordinator -> Payment Charge (Green)
   await animatePacketAlongPath({
     route: "coord-pay",
     type: "success",
@@ -749,7 +693,6 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     destinationNodeId: "node-box-pay",
   });
 
-  // Step 5: Payment -> Coordinator 200 OK Response (Green)
   await animatePacketAlongPath({
     route: "pay-coord",
     type: "success",
@@ -782,13 +725,11 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
   DOM.topoCoordState.textContent = "IDLE";
 });
 
-// 2. Scenario: Payment Decline & Auto-Compensation
 DOM.btnDemoFail.addEventListener("click", async () => {
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "COMPENSATING";
 
-  // Step 1: Client -> Coordinator
   await animatePacketAlongPath({
     route: "client-coord",
     type: "info",
@@ -796,7 +737,6 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 2: Reserve Inventory OK (Green)
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -804,7 +744,6 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
-  // Step 3: Inventory -> Coordinator OK
   await animatePacketAlongPath({
     route: "inv-coord",
     type: "success",
@@ -812,7 +751,6 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 4: Payment Charge Declined (Red)
   await animatePacketAlongPath({
     route: "coord-pay",
     type: "danger",
@@ -820,7 +758,6 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-pay",
   });
 
-  // Step 5: Payment -> Coordinator Decline Response (Red)
   await animatePacketAlongPath({
     route: "pay-coord",
     type: "danger",
@@ -828,7 +765,6 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 6: Compensating Inventory Release (Amber)
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "warning",
@@ -836,7 +772,6 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
-  // Step 7: Inventory -> Coordinator Release Confirmed (Amber)
   await animatePacketAlongPath({
     route: "inv-coord",
     type: "warning",
@@ -857,7 +792,6 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     return;
   }
 
-  // Send amount: 9999 to trigger backend's testing failure amount
   const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
     method: "POST",
     body: JSON.stringify({ product_id: 1, quantity: 1, amount: 9999 }),
@@ -870,14 +804,13 @@ DOM.btnDemoFail.addEventListener("click", async () => {
   DOM.topoCoordState.textContent = "IDLE";
 });
 
-// 3. Scenario: 5x Concurrent Race Attack (COMPLETE ROUND-TRIP TO PAYMENT & BACK)
+
 DOM.btnDemoRace.addEventListener("click", async () => {
   const sharedTxId = crypto.randomUUID();
   STATE.stats.dispatchedCount += 5;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "RACE BURST";
 
-  // Step 1: Fire 5 concurrent packets along client-coord
   for (let i = 0; i < 5; i++) {
     animatePacketAlongPath({
       route: "client-coord",
@@ -900,7 +833,6 @@ DOM.btnDemoRace.addEventListener("click", async () => {
     duration: 6500,
   });
 
-  // Step 2: Winner moves to Inventory Service (Reserve)
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -908,7 +840,6 @@ DOM.btnDemoRace.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
-  // Step 3: Inventory returns 200 OK to Coordinator
   await animatePacketAlongPath({
     route: "inv-coord",
     type: "success",
@@ -916,7 +847,6 @@ DOM.btnDemoRace.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 4: Winner moves to Payment Service (Charge)
   await animatePacketAlongPath({
     route: "coord-pay",
     type: "success",
@@ -924,7 +854,6 @@ DOM.btnDemoRace.addEventListener("click", async () => {
     destinationNodeId: "node-box-pay",
   });
 
-  // Step 5: Payment returns 200 OK back to Coordinator
   await animatePacketAlongPath({
     route: "pay-coord",
     type: "success",
@@ -957,13 +886,11 @@ DOM.btnDemoRace.addEventListener("click", async () => {
   DOM.topoCoordState.textContent = "IDLE";
 });
 
-// 4. Scenario: Crash Simulation & Celery Recovery
 DOM.btnDemoCrash.addEventListener("click", async () => {
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "CRASH SIMULATION";
 
-  // Step 1: Client -> Coordinator
   await animatePacketAlongPath({
     route: "client-coord",
     type: "info",
@@ -971,7 +898,6 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 2: Inventory Reserved OK
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -979,7 +905,6 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
-  // Step 3: Inventory response back to Coordinator
   await animatePacketAlongPath({
     route: "inv-coord",
     type: "success",
@@ -987,7 +912,6 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 4: Crash mid-flight on Payment call (Stops at 50% & shatters)
   await animatePacketAlongPath({
     route: "coord-pay",
     type: "danger",
@@ -1027,11 +951,9 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
     }
   }
 
-  // Celery recovery reconciliation
   setTimeout(async () => {
     DOM.topoCoordLease.textContent = "SWEEP CLAIM";
     
-    // Probe payment outcome
     await animatePacketAlongPath({
       route: "coord-pay",
       type: "purple",
@@ -1046,7 +968,6 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
       destinationNodeId: "node-box-coord",
     });
 
-    // Release inventory reservation
     await animatePacketAlongPath({
       route: "coord-inv",
       type: "warning",
@@ -1099,7 +1020,6 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
   }, 4000);
 });
 
-// 5. Scenario: Custom Payload (FULL ANIMATION ROUND-TRIP + EXPLICIT ERROR REPORTING)
 DOM.btnToggleCustom.addEventListener("click", () => {
   DOM.customDrawer.classList.toggle("hidden");
 });
@@ -1128,7 +1048,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   DOM.topoCoordState.textContent = "PROCESSING CUSTOM";
   DOM.customDrawer.classList.add("hidden");
 
-  // Step 1: Client -> Coordinator
   await animatePacketAlongPath({
     route: "client-coord",
     type: "info",
@@ -1136,7 +1055,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 2: Coordinator -> Inventory
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -1194,7 +1112,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
     return;
   }
 
-  // Real backend call
   const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -1204,7 +1121,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   const status = txData.status || (res.ok ? "COMPLETED" : "FAILED");
   const detailedError = extractDetailedErrorMessage(res);
 
-  // Case 1: Inventory Reserve Failed
   if (txData.error === "INVENTORY_RESERVE_FAILED" || res.status === 400 && txData.inventory_response) {
     await animatePacketAlongPath({
       route: "inv-coord",
@@ -1221,7 +1137,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
       duration: 6000,
     });
   }
-  // Case 2: Coordinator Crash Simulated
   else if (isCrash || txData.detail === "Intentional crash") {
     await animatePacketAlongPath({
       route: "inv-coord",
@@ -1258,7 +1173,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
       fetchTransactionsFeed();
     }, 4000);
   }
-  // Case 3: Payment Declined / Compensated
   else if (status === "COMPENSATED" || status === "COMPENSATION_FAILED") {
     await animatePacketAlongPath({
       route: "inv-coord",
@@ -1313,7 +1227,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
       });
     }
   }
-  // Case 4: Happy Path Completed
   else {
     await animatePacketAlongPath({
       route: "inv-coord",
@@ -1351,7 +1264,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   DOM.topoCoordState.textContent = "IDLE";
 });
 
-// Trigger Immediate Sweep Button
 DOM.btnTriggerSweep.addEventListener("click", async () => {
   STATE.stats.sagasSwept += 5;
   DOM.recSagasSwept.textContent = STATE.stats.sagasSwept;
@@ -1374,7 +1286,6 @@ DOM.btnTriggerSweep.addEventListener("click", async () => {
   }, 2000);
 });
 
-// Retry Compensation for active transaction
 DOM.btnRetryActiveTx.addEventListener("click", async () => {
   if (!STATE.activeTxId) return;
   await animatePacketAlongPath({ route: "coord-inv", type: "warning", durationMs: 450, destinationNodeId: "node-box-inv" });
@@ -1396,9 +1307,6 @@ DOM.btnRetryActiveTx.addEventListener("click", async () => {
   fetchTransactionsFeed();
 });
 
-// ============================================================================
-// Simulation Fallback Mode
-// ============================================================================
 
 function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null, failureReason = null) {
   const txId = customId || crypto.randomUUID();
@@ -1454,10 +1362,6 @@ function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null, 
   renderTransactionsTable(STATE.transactions);
 }
 
-// ============================================================================
-// Controls, Filters & Modals
-// ============================================================================
-
 DOM.filterTabs.forEach(tab => {
   tab.addEventListener("click", () => {
     DOM.filterTabs.forEach(t => t.classList.remove("active"));
@@ -1483,7 +1387,6 @@ DOM.toggleSimMode.addEventListener("change", () => {
   fetchTransactionsFeed();
 });
 
-// Modals
 DOM.btnHowItWorks.addEventListener("click", () => DOM.modalArch.classList.remove("hidden"));
 DOM.btnCloseArch.addEventListener("click", () => DOM.modalArch.classList.add("hidden"));
 DOM.btnConfig.addEventListener("click", () => {
@@ -1519,9 +1422,6 @@ DOM.btnResetCfg.addEventListener("click", () => {
   DOM.cfgPollMs.value = "1500";
 });
 
-// ============================================================================
-// Recovery Worker Countdown Loop (90s Celery Beat)
-// ============================================================================
 
 function startRecoveryCountdown() {
   setInterval(() => {
@@ -1550,10 +1450,6 @@ function startRecoveryCountdown() {
     DOM.recProgressFill.style.width = `${100 - pct}%`;
   }, 1000);
 }
-
-// ============================================================================
-// Initialization & Polling Interval Loop
-// ============================================================================
 
 window.addEventListener("DOMContentLoaded", () => {
   DOM.statRacesDefended.textContent = STATE.stats.racesDefended;

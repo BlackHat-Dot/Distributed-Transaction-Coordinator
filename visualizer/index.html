@@ -11,10 +11,8 @@
 </head>
 <body>
 
-  <!-- Floating Toast Notifications Container -->
   <div id="toast-container" class="toast-container"></div>
 
-  <!-- Top Navigation & Global Telemetry Strip -->
   <header class="top-nav">
     <div class="nav-brand">
       <div class="logo-mark">
@@ -29,7 +27,6 @@
       </div>
     </div>
 
-    <!-- Live Service Health Indicators -->
     <div class="health-strip">
       <div class="health-node" id="node-health-coord" title="Coordinator Service (:8002)">
         <span class="pulse-dot"></span>
@@ -59,7 +56,6 @@
       </div>
     </div>
 
-    <!-- Control Actions -->
     <div class="nav-controls">
       <div class="mode-toggle-group">
         <label class="switch-label" title="Switch between real backend polling and simulated interactive demo mode">
@@ -80,10 +76,8 @@
     </div>
   </header>
 
-  <!-- Main Dashboard Container -->
   <main class="dashboard-body">
 
-    <!-- Hero Section 1: Prominent Concurrency & Idempotency Proof Panel -->
     <section class="proof-panel">
       <div class="proof-header">
         <div class="proof-title-area">
@@ -111,7 +105,6 @@
         </div>
       </div>
 
-      <!-- One-Click Stress-Test & Scenario Trigger Bar -->
       <div class="scenario-bar">
         <div class="scenario-label">Execute Live Scenarios:</div>
         <div class="scenario-buttons">
@@ -157,7 +150,6 @@
         </div>
       </div>
 
-      <!-- Expandable Custom Payload Form -->
       <div id="custom-payload-drawer" class="custom-drawer hidden">
         <form id="form-custom-tx" class="custom-form">
           <div class="form-grid">
@@ -193,7 +185,6 @@
       </div>
     </section>
 
-    <!-- Hero Section 2: Interactive SVG Service Topology & Traffic Pulses -->
     <section class="topology-section">
       <div class="section-header">
         <div class="section-title">
@@ -214,7 +205,6 @@
       <div class="topology-canvas-container">
         <svg id="topology-svg" viewBox="0 0 960 260" preserveAspectRatio="xMidYMid meet">
           <defs>
-            <!-- Glow Filters -->
             <filter id="glow-green" x="-20%" y="-20%" width="140%" height="140%">
               <feGaussianBlur stdDeviation="3" result="blur" />
               <feComposite in="SourceGraphic" in2="blur" operator="over" />
@@ -232,7 +222,6 @@
               <feComposite in="SourceGraphic" in2="blur" operator="over" />
             </filter>
 
-            <!-- Connector Gradients -->
             <linearGradient id="grad-client-coord" x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.3"/>
               <stop offset="100%" stop-color="#818cf8" stop-opacity="0.6"/>
@@ -247,24 +236,17 @@
             </linearGradient>
           </defs>
 
-          <!-- Static Edge Paths -->
-          <!-- Client -> Coordinator -->
           <path id="path-client-coord" class="topo-edge" d="M 130 130 L 330 130" stroke="url(#grad-client-coord)" stroke-width="2.5" stroke-dasharray="4 4"/>
           
-          <!-- Coordinator -> Inventory (Curve Up) -->
           <path id="path-coord-inv" class="topo-edge" d="M 530 110 C 620 60, 680 60, 750 60" stroke="url(#grad-coord-inv)" stroke-width="2.5" fill="none"/>
           
-          <!-- Coordinator -> Payment (Curve Down) -->
           <path id="path-coord-pay" class="topo-edge" d="M 530 150 C 620 200, 680 200, 750 200" stroke="url(#grad-coord-pay)" stroke-width="2.5" fill="none"/>
 
-          <!-- Reverse Paths for Returning Responses & Probes (Hidden Guide Paths) -->
           <path id="path-inv-coord" d="M 750 60 C 680 60, 620 60, 530 110" stroke="none" fill="none"/>
           <path id="path-pay-coord" d="M 750 200 C 680 200, 620 200, 530 150" stroke="none" fill="none"/>
 
-          <!-- Dynamic Animated Packet Layer -->
           <g id="pulse-layer"></g>
 
-          <!-- Node 1: Upstream Client / Gateway -->
           <g class="topo-node-group" id="node-group-client" transform="translate(30, 75)">
             <rect id="node-box-client" class="node-box node-box-client" width="120" height="110" rx="12"/>
             <circle cx="28" cy="30" r="10" fill="#0284c7" opacity="0.2"/>
@@ -278,7 +260,6 @@
             <text x="105" y="98" class="node-stat-val" id="topo-client-active" text-anchor="end">0</text>
           </g>
 
-          <!-- Node 2: Coordinator Service (:8002) -->
           <g class="topo-node-group" id="node-group-coord" transform="translate(330, 55)">
             <rect id="node-box-coord" class="node-box node-box-coord" width="200" height="150" rx="14"/>
             <rect class="node-header-bar" x="0" y="0" width="200" height="38" rx="14"/>
@@ -300,7 +281,6 @@
             <text x="100" y="131" font-size="10" fill="#94a3b8" text-anchor="middle">PostgreSQL • dtc_coordinator</text>
           </g>
 
-          <!-- Node 3: Inventory Service (:8000) -->
           <g class="topo-node-group" id="node-group-inv" transform="translate(750, 10)">
             <rect id="node-box-inv" class="node-box node-box-inv" width="180" height="105" rx="12"/>
             <text x="16" y="24" class="node-title" id="title-inv">INVENTORY SERVICE</text>
@@ -315,7 +295,6 @@
             <text x="16" y="96" class="node-stat-label" style="font-size: 8.5px; fill: #64748b;">PostgreSQL • dtc_inventory</text>
           </g>
 
-          <!-- Node 4: Payment Service (:8001) - Clean Full Text -->
           <g class="topo-node-group" id="node-group-pay" transform="translate(750, 145)">
             <rect id="node-box-pay" class="node-box node-box-pay" width="180" height="105" rx="12"/>
             <text x="16" y="24" class="node-title" id="title-pay">PAYMENT SERVICE</text>
@@ -334,7 +313,6 @@
       </div>
     </section>
 
-    <!-- Dedicated Recovery Worker & Distributed Lock Panel -->
     <section class="recovery-panel">
       <div class="recovery-header">
         <div class="rec-title-area">
@@ -375,10 +353,8 @@
       </div>
     </section>
 
-    <!-- Main Workspace Grid: Transactions Matrix + Forensic Audit Stream -->
     <div class="workspace-grid">
       
-      <!-- Left Column: In-Flight & Historical Transactions Feed -->
       <section class="panel tx-feed-panel">
         <div class="panel-header">
           <div class="panel-title-area">
@@ -417,7 +393,6 @@
         </div>
       </section>
 
-      <!-- Right Column: Forensic SagaEvent Deep-Dive Stream -->
       <section class="panel forensic-panel">
         <div class="panel-header">
           <div class="panel-title-area">
@@ -434,7 +409,6 @@
         </div>
 
         <div class="forensic-body">
-          <!-- Active Transaction Meta Banner -->
           <div id="forensic-meta-card" class="forensic-meta-card hidden">
             <div class="fmeta-col">
               <span class="fmeta-label">TRANSACTION UUID</span>
@@ -458,7 +432,6 @@
             </div>
           </div>
 
-          <!-- Chronological Step-by-Step Audit Timeline -->
           <div class="timeline-container" id="timeline-container">
             <div class="timeline-empty" id="timeline-empty-msg">
               <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#475569" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -467,7 +440,6 @@
             <div class="timeline-stream" id="timeline-stream"></div>
           </div>
 
-          <!-- Raw HTTP Payload Inspector Modal/Box -->
           <div id="payload-inspector-box" class="payload-inspector hidden">
             <div class="payload-bar">
               <span id="payload-inspector-title">HTTP Payload:</span>
@@ -481,7 +453,6 @@
     </div>
   </main>
 
-  <!-- Modal: "How This Architecture Works" (60-Second Recruiter Explainer) -->
   <div id="modal-architecture" class="modal-backdrop hidden">
     <div class="modal-dialog">
       <div class="modal-header">
@@ -528,7 +499,6 @@
     </div>
   </div>
 
-  <!-- Modal: System Configuration -->
   <div id="modal-config" class="modal-backdrop hidden">
     <div class="modal-dialog modal-dialog-sm">
       <div class="modal-header">
