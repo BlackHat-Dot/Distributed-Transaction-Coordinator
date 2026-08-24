@@ -1,3 +1,12 @@
+/**
+ * DTC Mission Control — Observability & Real-Time Visualization App
+ * Vanilla ES6+ JavaScript, zero build tools, zero dependencies.
+ */
+
+// ============================================================================
+// Global State & Configuration
+// ============================================================================
+
 const CONFIG = {
   coordinatorUrl: localStorage.getItem("dtc_cfg_coord") || "http://127.0.0.1:8002",
   inventoryUrl: localStorage.getItem("dtc_cfg_inv") || "http://127.0.0.1:8000",
@@ -9,6 +18,7 @@ const STATE = {
   isSimulatedMode: false,
   activeFilter: "ALL",
   activeTxId: null,
+  activeModalScenarioKey: null,
   transactions: [],
   activeEvents: [],
   stats: {
@@ -29,9 +39,148 @@ const STATE = {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// ============================================================================
+// Scenario Breakdown Documentation Database
+// ============================================================================
+
+const SCENARIO_DESCRIPTIONS = {
+  happy: {
+    icon: "⚡",
+    title: "Happy Path Saga",
+    badge: "3-Phase Forward Orchestration",
+    badgeClass: "badge-success",
+    desc: "Executes a standard forward distributed transaction where all participating microservices succeed. The Coordinator sequentially drives stock reservation and payment capture without spanning database transactions.",
+    payload: `POST http://127.0.0.1:8002/transactions/
+{
+  "product_id": 1,
+  "quantity": 1,
+  "amount": 500
+}`,
+    steps: [
+      "Client dispatches POST /transactions/ to Coordinator.",
+      "Coordinator inserts Transaction(status=STARTED) and dispatches POST /products/reserve/ to Inventory (:8000).",
+      "Inventory acquires row lock via SELECT FOR UPDATE, decrements stock, inserts Reservation(status=RESERVED), and returns 200 OK.",
+      "Coordinator transitions to PAYMENT_PROCESSING and dispatches POST /payments/charge/ to Payment (:8001).",
+      "Payment inserts Payment(status=CHARGED) and returns 200 OK.",
+      "Coordinator transitions to COMPLETED and responds HTTP 200 to Client."
+    ],
+    defenses: "ACID isolation per microservice database. Coordinator drives the saga through explicit SagaEvent audit transitions. Idempotent record creation eliminates duplicate requests.",
+    outcome: "Status: COMPLETED (HTTP 200 OK)"
+  },
+  fail: {
+    icon: "🔄",
+    title: "Payment Decline & Auto-Compensate",
+    badge: "Backward Compensating Rollback",
+    badgeClass: "badge-amber",
+    desc: "Demonstrates automated compensating recovery when downstream payment declines. Because distributed transactions cannot use global database rollbacks, the Coordinator executes an inverse compensating action to restore reserved stock.",
+    payload: `POST http://127.0.0.1:8002/transactions/
+{
+  "product_id": 1,
+  "quantity": 1,
+  "amount": 9999
+}
+// Note: Amount 9999 triggers intentional 422 decline in Payment Service`,
+    steps: [
+      "Client dispatches transaction with amount $9,999 to Coordinator.",
+      "Coordinator reserves inventory stock successfully (STARTED → INVENTORY_RESERVED).",
+      "Coordinator attempts payment charge (POST /payments/charge/).",
+      "Payment service declines charge with HTTP 422 ('Payment declined / Testing failure amount').",
+      "Coordinator catches decline, transitions to COMPENSATING, and dispatches POST /products/release/ to Inventory.",
+      "Inventory locks reservation under SELECT FOR UPDATE, restores stock (stock += 1), marks Reservation RELEASED.",
+      "Coordinator transitions to COMPENSATED and returns HTTP 400 with rollback details."
+    ],
+    defenses: "Saga Backward Recovery pattern. Inventory release endpoint is strictly idempotent via row-level reservation checks (only 'RESERVED' rows can be released).",
+    outcome: "Status: COMPENSATED (HTTP 400 Bad Request / 422)"
+  },
+  race: {
+    icon: "🔥",
+    title: "5x Concurrent Race Attack",
+    badge: "PostgreSQL Relational Concurrency Defense",
+    badgeClass: "badge-rose",
+    desc: "Simulates a high-concurrency client retry storm or double-click attack. Five identical requests with the exact same client-supplied UUID hit the Coordinator at the exact same millisecond.",
+    payload: `5x Concurrent Requests (Promise.all):
+POST http://127.0.0.1:8002/transactions/
+{
+  "transaction_id": "8f3b2c14-59e2-4a71-9df0-e2b34a91c002",
+  "product_id": 1,
+  "quantity": 1,
+  "amount": 500
+}`,
+    steps: [
+      "Client fires 5 concurrent asynchronous HTTP POST requests with an identical UUID.",
+      "5 worker threads simultaneously attempt INSERT INTO coordinator_transaction.",
+      "Thread 1 succeeds in inserting the row and proceeds to drive the saga to completion.",
+      "Threads 2, 3, 4, and 5 violate PostgreSQL's PRIMARY KEY / UNIQUE(transaction_id) constraint.",
+      "PostgreSQL aborts the 4 duplicate insert transactions with IntegrityError (SQL 23505).",
+      "Coordinator catches IntegrityError, immediately short-circuits, and prevents duplicate downstream calls to Inventory or Payment."
+    ],
+    defenses: "Relational UNIQUE constraint + Compare-And-Insert atomic blocks. Zero reliance on transient in-memory Redis TTL keys which risk cache expiration bugs.",
+    outcome: "Exactly 1 saga commits COMPLETED. 4 duplicate requests safely defended."
+  },
+  crash: {
+    icon: "💥",
+    title: "Process Crash Simulation",
+    badge: "Celery Beat & Dual-Path Reconciler",
+    badgeClass: "badge-purple",
+    desc: "Simulates a catastrophic coordinator process death, server crash, or OOM kill mid-flight right after reserving stock. The transaction is left orphaned in PAYMENT_PROCESSING with unreleased stock.",
+    payload: `POST http://127.0.0.1:8002/transactions/
+{
+  "transaction_id": "<UUID>",
+  "product_id": 1,
+  "quantity": 1,
+  "amount": 500,
+  "coordinator": true
+}
+// Note: 'coordinator': true kills process mid-flight`,
+    steps: [
+      "Coordinator reserves stock in Inventory (:8000), transitions status to PAYMENT_PROCESSING.",
+      "Coordinator process terminates abruptly before dispatching HTTP call to Payment Service.",
+      "Transaction remains orphaned in PostgreSQL with status=PAYMENT_PROCESSING.",
+      "Celery Beat background worker sweeps stale non-terminal records older than 5 minutes.",
+      "Worker claims transaction into RECOVERY_IN_PROGRESS using Redis mutex lock (Lua script).",
+      "Worker probes ground-truth Payment endpoint (GET /payments/check/); receives status=NOT_CHARGED.",
+      "Worker dispatches compensating release to Inventory and marks transaction COMPENSATED."
+    ],
+    defenses: "Distributed Redis mutex lock (prevents duplicate sweeps) + Ground-Truth Downstream Probing + Atomic Lua script lock release.",
+    outcome: "Status: Recovers from orphaned PAYMENT_PROCESSING → COMPENSATED"
+  },
+  custom: {
+    icon: "⚙️",
+    title: "Custom Payload Dispatcher",
+    badge: "Interactive Edge-Case Tester",
+    badgeClass: "badge-blue",
+    desc: "Allows interactive configuration of custom transaction parameters to test edge cases, inventory rejections, process crashes, and failed compensation.",
+    payload: `POST http://127.0.0.1:8002/transactions/
+{
+  "transaction_id": "<Optional Custom UUID>",
+  "product_id": <Custom Number>,
+  "quantity": <Custom Number: 0, 1, 9999>,
+  "amount": <Custom Number>,
+  "fail_compensation": <true|false>,
+  "coordinator": <true|false>
+}`,
+    steps: [
+      "User submits customized payload from the expandable form.",
+      "Client packet animates to Coordinator.",
+      "Coordinator evaluates parameters and dispatches to Inventory.",
+      "If quantity <= 0 or out of stock: Inventory returns 400; Coordinator marks INVENTORY_RESERVE_FAILED and halts.",
+      "If amount == 9999: Payment declines and triggers backward compensation.",
+      "If coordinator == true: Simulates process crash and triggers recovery sweep."
+    ],
+    defenses: "Input boundary validation + Dynamic saga path branching + Explicit backend error message extraction.",
+    outcome: "Dynamic outcome based on selected parameters."
+  }
+};
+
+// ============================================================================
+// DOM Elements Cache
+// ============================================================================
+
 const DOM = {
+  // Toast Container
   toastContainer: document.getElementById("toast-container"),
 
+  // Nav & Health
   healthCoord: document.getElementById("node-health-coord"),
   healthInv: document.getElementById("node-health-inv"),
   healthPay: document.getElementById("node-health-pay"),
@@ -40,15 +189,21 @@ const DOM = {
   latPay: document.getElementById("lat-pay"),
   sweepCountdown: document.getElementById("sweep-countdown"),
   toggleSimMode: document.getElementById("toggle-sim-mode"),
-  simModeText: document.getElementById("sim-mode-text"),
+  labelDemo: document.getElementById("label-demo"),
+  labelLive: document.getElementById("label-live"),
+  toggleTheme: document.getElementById("toggle-theme"),
+  iconThemeLight: document.getElementById("icon-theme-light"),
+  iconThemeDark: document.getElementById("icon-theme-dark"),
   btnHowItWorks: document.getElementById("btn-how-it-works"),
   btnConfig: document.getElementById("btn-config"),
 
+  // Proof Stats
   statRacesDefended: document.getElementById("stat-race-defended"),
   statLocksEnforced: document.getElementById("stat-locks-enforced"),
   statSagasTotal: document.getElementById("stat-sagas-total"),
   statDoubleBooking: document.getElementById("stat-double-booking"),
 
+  // Scenario Buttons
   btnDemoHappy: document.getElementById("btn-demo-happy"),
   btnDemoFail: document.getElementById("btn-demo-fail"),
   btnDemoRace: document.getElementById("btn-demo-race"),
@@ -57,6 +212,7 @@ const DOM = {
   customDrawer: document.getElementById("custom-payload-drawer"),
   formCustomTx: document.getElementById("form-custom-tx"),
 
+  // Topology SVG Elements
   pulseLayer: document.getElementById("pulse-layer"),
   nodeBoxClient: document.getElementById("node-box-client"),
   nodeBoxCoord: document.getElementById("node-box-coord"),
@@ -72,6 +228,7 @@ const DOM = {
   topoCoordEvents: document.getElementById("topo-coord-events"),
   topoCoordLease: document.getElementById("topo-coord-lease"),
 
+  // Recovery Worker Panel
   recCountdownVal: document.getElementById("rec-countdown-val"),
   recProgressFill: document.getElementById("rec-progress-fill"),
   recSagasSwept: document.getElementById("rec-sagas-swept"),
@@ -79,11 +236,13 @@ const DOM = {
   recRedisLock: document.getElementById("rec-redis-lock"),
   btnTriggerSweep: document.getElementById("btn-trigger-sweep"),
 
+  // Transaction Feed
   badgeTotalTx: document.getElementById("badge-total-tx"),
   filterTabs: document.querySelectorAll(".filter-tab"),
   tbodyTxFeed: document.getElementById("tbody-tx-feed"),
   btnManualPoll: document.getElementById("btn-manual-poll"),
 
+  // Forensic Audit Stream
   forensicMetaCard: document.getElementById("forensic-meta-card"),
   fmetaId: document.getElementById("fmeta-id"),
   fmetaStatusBadge: document.getElementById("fmeta-status-badge"),
@@ -100,6 +259,21 @@ const DOM = {
   payloadInspectorCode: document.getElementById("payload-inspector-code"),
   btnClosePayload: document.getElementById("btn-close-payload"),
 
+  // Scenario Info Modal
+  modalScenInfo: document.getElementById("modal-scenario-info"),
+  btnCloseScenInfo: document.getElementById("btn-close-scen-info"),
+  btnDismissScenInfo: document.getElementById("btn-dismiss-scen-info"),
+  btnRunFromModal: document.getElementById("btn-run-from-modal"),
+  scenInfoIcon: document.getElementById("scen-info-icon"),
+  scenInfoTitle: document.getElementById("scen-info-title"),
+  scenInfoBadge: document.getElementById("scen-info-badge"),
+  scenInfoDesc: document.getElementById("scen-info-desc"),
+  scenInfoPayload: document.getElementById("scen-info-payload"),
+  scenInfoSteps: document.getElementById("scen-info-steps"),
+  scenInfoDefenses: document.getElementById("scen-info-defenses"),
+  scenInfoOutcome: document.getElementById("scen-info-outcome"),
+
+  // Modals
   modalArch: document.getElementById("modal-architecture"),
   btnCloseArch: document.getElementById("btn-close-arch"),
   modalConfig: document.getElementById("modal-config"),
@@ -111,6 +285,10 @@ const DOM = {
   cfgPollMs: document.getElementById("cfg-poll-ms"),
   btnResetCfg: document.getElementById("btn-reset-cfg"),
 };
+
+// ============================================================================
+// Toast Notification Component
+// ============================================================================
 
 function showToast({ icon = "⚡", title, message, type = "normal", duration = 4500 }) {
   if (!DOM.toastContainer) return;
@@ -138,6 +316,62 @@ function showToast({ icon = "⚡", title, message, type = "normal", duration = 4
   }, duration);
 }
 
+// ============================================================================
+// Scenario Info Modal Viewer
+// ============================================================================
+
+window.showScenarioInfo = function(scenarioKey) {
+  const info = SCENARIO_DESCRIPTIONS[scenarioKey];
+  if (!info || !DOM.modalScenInfo) return;
+
+  STATE.activeModalScenarioKey = scenarioKey;
+
+  DOM.scenInfoIcon.textContent = info.icon;
+  DOM.scenInfoTitle.textContent = info.title;
+  DOM.scenInfoBadge.textContent = info.badge;
+  DOM.scenInfoBadge.className = `badge ${info.badgeClass || 'badge-neutral'}`;
+  DOM.scenInfoDesc.textContent = info.desc;
+  DOM.scenInfoPayload.textContent = info.payload;
+  DOM.scenInfoDefenses.textContent = info.defenses;
+  DOM.scenInfoOutcome.textContent = info.outcome;
+
+  DOM.scenInfoSteps.innerHTML = info.steps.map((step, idx) => `
+    <div class="scen-step-item">
+      <span class="scen-step-num">${idx + 1}</span>
+      <span>${step}</span>
+    </div>
+  `).join("");
+
+  DOM.modalScenInfo.classList.remove("hidden");
+};
+
+function closeScenarioInfoModal() {
+  if (DOM.modalScenInfo) {
+    DOM.modalScenInfo.classList.add("hidden");
+  }
+}
+
+if (DOM.btnCloseScenInfo) DOM.btnCloseScenInfo.addEventListener("click", closeScenarioInfoModal);
+if (DOM.btnDismissScenInfo) DOM.btnDismissScenInfo.addEventListener("click", closeScenarioInfoModal);
+
+if (DOM.btnRunFromModal) {
+  DOM.btnRunFromModal.addEventListener("click", () => {
+    const key = STATE.activeModalScenarioKey;
+    closeScenarioInfoModal();
+    if (key === "happy") DOM.btnDemoHappy.click();
+    else if (key === "fail") DOM.btnDemoFail.click();
+    else if (key === "race") DOM.btnDemoRace.click();
+    else if (key === "crash") DOM.btnDemoCrash.click();
+    else if (key === "custom") {
+      DOM.customDrawer.classList.remove("hidden");
+      DOM.customDrawer.scrollIntoView({ behavior: "smooth" });
+    }
+  });
+}
+
+// ============================================================================
+// API & Networking Utilities
+// ============================================================================
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
   const controller = new AbortController();
@@ -172,6 +406,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
   }
 }
 
+// Helper: Extract human-readable error reasons from backend JSON responses
 function extractDetailedErrorMessage(res, defaultMsg = "Operation failed") {
   if (!res) return defaultMsg;
   if (res.data) {
@@ -231,6 +466,10 @@ function updateHealthUI(nodeKey, isOnline, latency) {
   }
 }
 
+// ============================================================================
+// Interactive SVG Topology Curved Packet Animation & Crash Shatter
+// ============================================================================
+
 function triggerCrashedNode(nodeKey) {
   STATE.health[nodeKey].crashed = true;
   updateHealthUI(nodeKey, false, null);
@@ -282,6 +521,10 @@ function triggerArrivalPulse(destinationNodeId, type = "success") {
   }, 450);
 }
 
+/**
+ * Animates a small glowing 8-10px packet icon along the exact SVG Bezier curve
+ * between nodes, triggering an arrival pulse on receipt or shattering mid-way on crash.
+ */
 function animatePacketAlongPath({
   route,
   type = "success",
@@ -291,11 +534,11 @@ function animatePacketAlongPath({
 }) {
   return new Promise((resolve) => {
     const colorMap = {
-      success: "#34d399",
-      info: "#38bdf8",
-      warning: "#fbbf24",
-      danger: "#f43f5e",
-      purple: "#c084fc",
+      success: "#34d399",   // Green (Reserve/Charge)
+      info: "#38bdf8",      // Blue (Probes/Status)
+      warning: "#fbbf24",   // Amber (Compensating Release)
+      danger: "#f43f5e",    // Red (Conflict/Crash/Decline)
+      purple: "#c084fc",   // Purple (Recovery)
     };
 
     const filterMap = {
@@ -326,12 +569,14 @@ function animatePacketAlongPath({
     const totalLength = pathEl.getTotalLength();
     const packetGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
 
+    // Outer translucent glowing halo
     const halo = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     halo.setAttribute("r", "9");
     halo.setAttribute("fill", color);
     halo.setAttribute("opacity", "0.35");
     halo.setAttribute("filter", filter);
 
+    // Inner bright packet core (8px filled circle)
     const core = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     core.setAttribute("r", "4.5");
     core.setAttribute("fill", color);
@@ -357,7 +602,7 @@ function animatePacketAlongPath({
         requestAnimationFrame(renderFrame);
       } else {
         if (breakMidway) {
-  
+          // Abrupt crash stop & shatter effect
           halo.setAttribute("fill", "#f43f5e");
           halo.setAttribute("r", "16");
           halo.setAttribute("opacity", "0.9");
@@ -383,6 +628,7 @@ function animatePacketAlongPath({
             resolve();
           }, 400);
         } else {
+          // Destination arrival confirmation glow
           if (packetGroup.parentNode === DOM.pulseLayer) {
             DOM.pulseLayer.removeChild(packetGroup);
           }
@@ -399,6 +645,9 @@ function animatePacketAlongPath({
   });
 }
 
+// ============================================================================
+// Transaction Feed & State Management
+// ============================================================================
 
 async function fetchTransactionsFeed() {
   if (STATE.isSimulatedMode) {
@@ -536,6 +785,10 @@ function getWaterfallHTML(tx) {
   `;
 }
 
+// ============================================================================
+// Forensic SagaEvent Audit Log Stream
+// ============================================================================
+
 window.selectTransaction = function(txId) {
   STATE.activeTxId = txId;
   renderTransactionsTable(STATE.transactions);
@@ -570,6 +823,7 @@ async function inspectTransaction(txId, autoScroll = false) {
     DOM.fmetaProd.textContent = `Prod #${txData.product_id || 1} (Qty: ${txData.quantity !== undefined ? txData.quantity : 1})`;
     DOM.fmetaAmt.textContent = `$${txData.amount || 500}`;
 
+    // Failure banner display
     const isFailureState = txData.status.includes("FAILED") || txData.status.includes("TIMEOUT") || txData.status === "COMPENSATED";
     if (isFailureState) {
       let failureReason = "Non-terminal or compensated state detected";
@@ -658,12 +912,17 @@ function getStatusBadgeClass(status) {
   return "badge-amber";
 }
 
+// ============================================================================
+// One-Click Live Recruiter Scenarios & Stress Tests
+// ============================================================================
 
+// 1. Scenario: Happy Path Saga
 DOM.btnDemoHappy.addEventListener("click", async () => {
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "ORCHESTRATING";
 
+  // Step 1: Client -> Coordinator
   await animatePacketAlongPath({
     route: "client-coord",
     type: "info",
@@ -671,7 +930,7 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-
+  // Step 2: Coordinator -> Inventory Reserve (Green)
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -679,6 +938,7 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
+  // Step 3: Inventory -> Coordinator 200 OK Response (Green)
   await animatePacketAlongPath({
     route: "inv-coord",
     type: "success",
@@ -686,6 +946,7 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
+  // Step 4: Coordinator -> Payment Charge (Green)
   await animatePacketAlongPath({
     route: "coord-pay",
     type: "success",
@@ -693,6 +954,7 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     destinationNodeId: "node-box-pay",
   });
 
+  // Step 5: Payment -> Coordinator 200 OK Response (Green)
   await animatePacketAlongPath({
     route: "pay-coord",
     type: "success",
@@ -725,11 +987,13 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
   DOM.topoCoordState.textContent = "IDLE";
 });
 
+// 2. Scenario: Payment Decline & Auto-Compensation
 DOM.btnDemoFail.addEventListener("click", async () => {
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "COMPENSATING";
 
+  // Step 1: Client -> Coordinator
   await animatePacketAlongPath({
     route: "client-coord",
     type: "info",
@@ -737,6 +1001,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
+  // Step 2: Reserve Inventory OK (Green)
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -744,6 +1009,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
+  // Step 3: Inventory -> Coordinator OK
   await animatePacketAlongPath({
     route: "inv-coord",
     type: "success",
@@ -751,6 +1017,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
+  // Step 4: Payment Charge Declined (Red)
   await animatePacketAlongPath({
     route: "coord-pay",
     type: "danger",
@@ -758,6 +1025,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-pay",
   });
 
+  // Step 5: Payment -> Coordinator Decline Response (Red)
   await animatePacketAlongPath({
     route: "pay-coord",
     type: "danger",
@@ -765,6 +1033,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
+  // Step 6: Compensating Inventory Release (Amber)
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "warning",
@@ -772,6 +1041,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
+  // Step 7: Inventory -> Coordinator Release Confirmed (Amber)
   await animatePacketAlongPath({
     route: "inv-coord",
     type: "warning",
@@ -792,6 +1062,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     return;
   }
 
+  // Send amount: 9999 to trigger backend's testing failure amount
   const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
     method: "POST",
     body: JSON.stringify({ product_id: 1, quantity: 1, amount: 9999 }),
@@ -804,13 +1075,14 @@ DOM.btnDemoFail.addEventListener("click", async () => {
   DOM.topoCoordState.textContent = "IDLE";
 });
 
-
+// 3. Scenario: 5x Concurrent Race Attack (COMPLETE ROUND-TRIP TO PAYMENT & BACK)
 DOM.btnDemoRace.addEventListener("click", async () => {
   const sharedTxId = crypto.randomUUID();
   STATE.stats.dispatchedCount += 5;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "RACE BURST";
 
+  // Step 1: Fire 5 concurrent packets along client-coord
   for (let i = 0; i < 5; i++) {
     animatePacketAlongPath({
       route: "client-coord",
@@ -833,6 +1105,7 @@ DOM.btnDemoRace.addEventListener("click", async () => {
     duration: 6500,
   });
 
+  // Step 2: Winner moves to Inventory Service (Reserve)
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -840,6 +1113,7 @@ DOM.btnDemoRace.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
+  // Step 3: Inventory returns 200 OK to Coordinator
   await animatePacketAlongPath({
     route: "inv-coord",
     type: "success",
@@ -847,6 +1121,7 @@ DOM.btnDemoRace.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
+  // Step 4: Winner moves to Payment Service (Charge)
   await animatePacketAlongPath({
     route: "coord-pay",
     type: "success",
@@ -854,6 +1129,7 @@ DOM.btnDemoRace.addEventListener("click", async () => {
     destinationNodeId: "node-box-pay",
   });
 
+  // Step 5: Payment returns 200 OK back to Coordinator
   await animatePacketAlongPath({
     route: "pay-coord",
     type: "success",
@@ -886,11 +1162,13 @@ DOM.btnDemoRace.addEventListener("click", async () => {
   DOM.topoCoordState.textContent = "IDLE";
 });
 
+// 4. Scenario: Crash Simulation & Celery Recovery
 DOM.btnDemoCrash.addEventListener("click", async () => {
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "CRASH SIMULATION";
 
+  // Step 1: Client -> Coordinator
   await animatePacketAlongPath({
     route: "client-coord",
     type: "info",
@@ -898,6 +1176,7 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
+  // Step 2: Inventory Reserved OK
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -905,6 +1184,7 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
+  // Step 3: Inventory response back to Coordinator
   await animatePacketAlongPath({
     route: "inv-coord",
     type: "success",
@@ -912,6 +1192,7 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
+  // Step 4: Crash mid-flight on Payment call (Stops at 50% & shatters)
   await animatePacketAlongPath({
     route: "coord-pay",
     type: "danger",
@@ -951,9 +1232,11 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
     }
   }
 
+  // Celery recovery reconciliation
   setTimeout(async () => {
     DOM.topoCoordLease.textContent = "SWEEP CLAIM";
     
+    // Probe payment outcome
     await animatePacketAlongPath({
       route: "coord-pay",
       type: "purple",
@@ -968,6 +1251,7 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
       destinationNodeId: "node-box-coord",
     });
 
+    // Release inventory reservation
     await animatePacketAlongPath({
       route: "coord-inv",
       type: "warning",
@@ -1020,6 +1304,7 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
   }, 4000);
 });
 
+// 5. Scenario: Custom Payload (FULL ANIMATION ROUND-TRIP + EXPLICIT ERROR REPORTING)
 DOM.btnToggleCustom.addEventListener("click", () => {
   DOM.customDrawer.classList.toggle("hidden");
 });
@@ -1048,6 +1333,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   DOM.topoCoordState.textContent = "PROCESSING CUSTOM";
   DOM.customDrawer.classList.add("hidden");
 
+  // Step 1: Client -> Coordinator
   await animatePacketAlongPath({
     route: "client-coord",
     type: "info",
@@ -1055,6 +1341,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
     destinationNodeId: "node-box-coord",
   });
 
+  // Step 2: Coordinator -> Inventory
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -1112,6 +1399,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
     return;
   }
 
+  // Real backend call
   const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -1121,6 +1409,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   const status = txData.status || (res.ok ? "COMPLETED" : "FAILED");
   const detailedError = extractDetailedErrorMessage(res);
 
+  // Case 1: Inventory Reserve Failed
   if (txData.error === "INVENTORY_RESERVE_FAILED" || res.status === 400 && txData.inventory_response) {
     await animatePacketAlongPath({
       route: "inv-coord",
@@ -1137,6 +1426,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
       duration: 6000,
     });
   }
+  // Case 2: Coordinator Crash Simulated
   else if (isCrash || txData.detail === "Intentional crash") {
     await animatePacketAlongPath({
       route: "inv-coord",
@@ -1173,6 +1463,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
       fetchTransactionsFeed();
     }, 4000);
   }
+  // Case 3: Payment Declined / Compensated
   else if (status === "COMPENSATED" || status === "COMPENSATION_FAILED") {
     await animatePacketAlongPath({
       route: "inv-coord",
@@ -1227,6 +1518,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
       });
     }
   }
+  // Case 4: Happy Path Completed
   else {
     await animatePacketAlongPath({
       route: "inv-coord",
@@ -1264,6 +1556,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   DOM.topoCoordState.textContent = "IDLE";
 });
 
+// Trigger Immediate Sweep Button
 DOM.btnTriggerSweep.addEventListener("click", async () => {
   STATE.stats.sagasSwept += 5;
   DOM.recSagasSwept.textContent = STATE.stats.sagasSwept;
@@ -1286,6 +1579,7 @@ DOM.btnTriggerSweep.addEventListener("click", async () => {
   }, 2000);
 });
 
+// Retry Compensation for active transaction
 DOM.btnRetryActiveTx.addEventListener("click", async () => {
   if (!STATE.activeTxId) return;
   await animatePacketAlongPath({ route: "coord-inv", type: "warning", durationMs: 450, destinationNodeId: "node-box-inv" });
@@ -1307,6 +1601,9 @@ DOM.btnRetryActiveTx.addEventListener("click", async () => {
   fetchTransactionsFeed();
 });
 
+// ============================================================================
+// Simulation Fallback Mode
+// ============================================================================
 
 function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null, failureReason = null) {
   const txId = customId || crypto.randomUUID();
@@ -1362,6 +1659,10 @@ function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null, 
   renderTransactionsTable(STATE.transactions);
 }
 
+// ============================================================================
+// Controls, Filters & Modals
+// ============================================================================
+
 DOM.filterTabs.forEach(tab => {
   tab.addEventListener("click", () => {
     DOM.filterTabs.forEach(t => t.classList.remove("active"));
@@ -1372,21 +1673,58 @@ DOM.filterTabs.forEach(tab => {
 });
 
 DOM.btnManualPoll.addEventListener("click", () => {
+  CanvasEngine.init();
   checkServiceHealth();
   fetchTransactionsFeed();
 });
 
-DOM.toggleSimMode.addEventListener("change", () => {
-  STATE.isSimulatedMode = DOM.toggleSimMode.checked;
-  DOM.simModeText.textContent = STATE.isSimulatedMode ? "DEMO MODE" : "LIVE BACKEND";
-  DOM.simModeText.style.color = STATE.isSimulatedMode ? "var(--accent-amber)" : "var(--accent-green)";
-  if (STATE.isSimulatedMode && STATE.transactions.length === 0) {
-    createSimulatedTransaction("COMPLETED");
+// Two-State Sliding Toggle: DEMO ⟷ LIVE
+window.setBackendMode = function(isDemo) {
+  if (DOM.toggleSimMode) DOM.toggleSimMode.checked = isDemo;
+  STATE.isSimulatedMode = isDemo;
+  if (isDemo) {
+    DOM.labelDemo?.classList.add("active");
+    DOM.labelLive?.classList.remove("active");
+    if (STATE.transactions.length === 0) {
+      createSimulatedTransaction("COMPLETED");
+    }
+  } else {
+    DOM.labelLive?.classList.add("active");
+    DOM.labelDemo?.classList.remove("active");
   }
+  CanvasEngine.init();
   checkServiceHealth();
   fetchTransactionsFeed();
-});
+};
 
+if (DOM.toggleSimMode) {
+  DOM.toggleSimMode.addEventListener("change", () => {
+    window.setBackendMode(DOM.toggleSimMode.checked);
+  });
+}
+
+// Night / Light Mode Theme Toggle
+window.setDashboardTheme = function(theme) {
+  const isLight = theme === "light";
+  document.documentElement.setAttribute("data-theme", isLight ? "light" : "dark");
+  if (DOM.toggleTheme) DOM.toggleTheme.checked = isLight;
+  if (isLight) {
+    DOM.iconThemeLight?.classList.add("active");
+    DOM.iconThemeDark?.classList.remove("active");
+  } else {
+    DOM.iconThemeDark?.classList.add("active");
+    DOM.iconThemeLight?.classList.remove("active");
+  }
+  localStorage.setItem("dtc_theme", isLight ? "light" : "dark");
+};
+
+if (DOM.toggleTheme) {
+  DOM.toggleTheme.addEventListener("change", () => {
+    window.setDashboardTheme(DOM.toggleTheme.checked ? "light" : "dark");
+  });
+}
+
+// Modals
 DOM.btnHowItWorks.addEventListener("click", () => DOM.modalArch.classList.remove("hidden"));
 DOM.btnCloseArch.addEventListener("click", () => DOM.modalArch.classList.add("hidden"));
 DOM.btnConfig.addEventListener("click", () => {
@@ -1411,6 +1749,7 @@ DOM.formConfig.addEventListener("submit", (e) => {
   localStorage.setItem("dtc_cfg_poll", CONFIG.pollIntervalMs);
 
   DOM.modalConfig.classList.add("hidden");
+  CanvasEngine.init();
   checkServiceHealth();
   fetchTransactionsFeed();
 });
@@ -1422,6 +1761,9 @@ DOM.btnResetCfg.addEventListener("click", () => {
   DOM.cfgPollMs.value = "1500";
 });
 
+// ============================================================================
+// Recovery Worker Countdown Loop (90s Celery Beat)
+// ============================================================================
 
 function startRecoveryCountdown() {
   setInterval(() => {
@@ -1451,12 +1793,483 @@ function startRecoveryCountdown() {
   }, 1000);
 }
 
+// ============================================================================
+// Initialization & Polling Interval Loop
+// ============================================================================
+
+
+// ============================================================================
+// Obsidian-Style Interactive Topology Canvas Engine
+// (Freeform Draggable Nodes, Real-Time Dynamic Bezier Routing, Pan & Zoom)
+// ============================================================================
+
+const DEFAULT_CANVAS_NODES = {
+  client: { x: 30,  y: 70,  width: 130, height: 115 },
+  coord:  { x: 260, y: 50,  width: 220, height: 155 },
+  inv:    { x: 580, y: 20,  width: 220, height: 110 },
+  pay:    { x: 580, y: 160, width: 220, height: 110 },
+};
+
+const CanvasEngine = {
+  container: null,
+  svg: null,
+  world: null,
+  bgRect: null,
+  zoomLabel: null,
+  btnZoomIn: null,
+  btnZoomOut: null,
+  btnFitView: null,
+  btnResetLayout: null,
+
+  panX: 0,
+  panY: 0,
+  zoom: 1.0,
+  minZoom: 0.35,
+  maxZoom: 2.5,
+
+  nodes: JSON.parse(JSON.stringify(DEFAULT_CANVAS_NODES)),
+
+  isDraggingNode: false,
+  activeDragNodeKey: null,
+  dragStartMouse: { x: 0, y: 0 },
+  dragStartNodePos: { x: 0, y: 0 },
+
+  isPanning: false,
+  panStartMouse: { x: 0, y: 0 },
+  panStartPos: { x: 0, y: 0 },
+
+  init() {
+    this.container = document.getElementById("topology-canvas-container");
+    this.svg = document.getElementById("topology-svg");
+    this.world = document.getElementById("canvas-world");
+    this.bgRect = document.getElementById("canvas-bg-rect");
+    this.zoomLabel = document.getElementById("canvas-zoom-label");
+    this.btnZoomIn = document.getElementById("btn-canvas-zoom-in");
+    this.btnZoomOut = document.getElementById("btn-canvas-zoom-out");
+    this.btnFitView = document.getElementById("btn-canvas-fit-view");
+    this.btnResetLayout = document.getElementById("btn-canvas-reset-layout");
+
+    if (!this.container || !this.svg || !this.world) return;
+
+    // 1. Load saved node positions from localStorage
+    try {
+      const savedNodes = localStorage.getItem("dtc_topology_nodes");
+      if (savedNodes) {
+        const parsed = JSON.parse(savedNodes);
+        Object.keys(DEFAULT_CANVAS_NODES).forEach((k) => {
+          if (parsed[k] && typeof parsed[k].x === "number" && typeof parsed[k].y === "number") {
+            this.nodes[k] = { ...DEFAULT_CANVAS_NODES[k], x: parsed[k].x, y: parsed[k].y };
+          }
+        });
+      }
+    } catch (e) {
+      console.warn("Could not load saved topology nodes", e);
+    }
+
+    // 2. Load saved viewport (pan/zoom)
+    try {
+      const savedVp = localStorage.getItem("dtc_topology_viewport");
+      if (savedVp) {
+        const vp = JSON.parse(savedVp);
+        if (typeof vp.panX === "number") this.panX = vp.panX;
+        if (typeof vp.panY === "number") this.panY = vp.panY;
+        if (typeof vp.zoom === "number") this.zoom = Math.min(Math.max(vp.zoom, this.minZoom), this.maxZoom);
+      }
+    } catch (e) {
+      console.warn("Could not load saved viewport", e);
+    }
+
+    // 3. Position all nodes in DOM
+    this.applyAllNodePositions();
+    this.updateEdges();
+    this.applyTransform();
+
+    // 4. Bind events
+    this.bindEvents();
+
+    // 5. Fit view on startup if no saved viewport
+    if (!localStorage.getItem("dtc_topology_viewport")) {
+      setTimeout(() => this.fitView(), 50);
+    }
+  },
+
+  applyAllNodePositions() {
+    Object.keys(this.nodes).forEach((key) => {
+      const group = document.getElementById(`node-group-${key}`);
+      if (group) {
+        const n = this.nodes[key];
+        group.setAttribute("transform", `translate(${n.x}, ${n.y})`);
+      }
+    });
+  },
+
+  applyTransform() {
+    if (!this.world) return;
+    this.world.setAttribute("transform", `translate(${this.panX}, ${this.panY}) scale(${this.zoom})`);
+    if (this.zoomLabel) {
+      this.zoomLabel.textContent = `${Math.round(this.zoom * 100)}%`;
+    }
+  },
+
+  saveState() {
+    try {
+      localStorage.setItem("dtc_topology_nodes", JSON.stringify(this.nodes));
+      localStorage.setItem(
+        "dtc_topology_viewport",
+        JSON.stringify({ panX: this.panX, panY: this.panY, zoom: this.zoom })
+      );
+    } catch (e) {
+      // ignore quota errors
+    }
+  },
+
+  /**
+   * Calculates smart dynamic Bezier curve connector between source and target node boxes
+   */
+  getDynamicPathD(sourceKey, targetKey) {
+    const s = this.nodes[sourceKey];
+    const t = this.nodes[targetKey];
+    if (!s || !t) return "";
+
+    const sCenter = { x: s.x + s.width / 2, y: s.y + s.height / 2 };
+    const tCenter = { x: t.x + t.width / 2, y: t.y + t.height / 2 };
+
+    let p1 = { x: 0, y: 0 };
+    let p2 = { x: 0, y: 0 };
+    let c1 = { x: 0, y: 0 };
+    let c2 = { x: 0, y: 0 };
+
+    const dx = tCenter.x - sCenter.x;
+    const dy = tCenter.y - sCenter.y;
+
+    // Case A: Target is primarily to the Right
+    if (dx >= (s.width + t.width) * 0.35) {
+      p1 = { x: s.x + s.width, y: s.y + s.height / 2 };
+      p2 = { x: t.x, y: t.y + t.height / 2 };
+      const curDx = Math.max((p2.x - p1.x) * 0.5, 30);
+      c1 = { x: p1.x + curDx, y: p1.y };
+      c2 = { x: p2.x - curDx, y: p2.y };
+    }
+    // Case B: Target is primarily to the Left
+    else if (dx <= -(s.width + t.width) * 0.35) {
+      p1 = { x: s.x, y: s.y + s.height / 2 };
+      p2 = { x: t.x + t.width, y: t.y + t.height / 2 };
+      const curDx = Math.max((p1.x - p2.x) * 0.5, 30);
+      c1 = { x: p1.x - curDx, y: p1.y };
+      c2 = { x: p2.x + curDx, y: p2.y };
+    }
+    // Case C: Vertical alignment (Target is Below)
+    else if (dy > 0) {
+      p1 = { x: s.x + s.width / 2, y: s.y + s.height };
+      p2 = { x: t.x + t.width / 2, y: t.y };
+      const curDy = Math.max((p2.y - p1.y) * 0.5, 30);
+      c1 = { x: p1.x, y: p1.y + curDy };
+      c2 = { x: p2.x, y: p2.y - curDy };
+    }
+    // Case D: Vertical alignment (Target is Above)
+    else {
+      p1 = { x: s.x + s.width / 2, y: s.y };
+      p2 = { x: t.x + t.width / 2, y: t.y + t.height };
+      const curDy = Math.max((p1.y - p2.y) * 0.5, 30);
+      c1 = { x: p1.x, y: p1.y - curDy };
+      c2 = { x: p2.x, y: p2.y + curDy };
+    }
+
+    return `M ${p1.x} ${p1.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${p2.x} ${p2.y}`;
+  },
+
+  updateEdges() {
+    const pathClientCoord = document.getElementById("path-client-coord");
+    const pathCoordInv = document.getElementById("path-coord-inv");
+    const pathCoordPay = document.getElementById("path-coord-pay");
+    const pathInvCoord = document.getElementById("path-inv-coord");
+    const pathPayCoord = document.getElementById("path-pay-coord");
+
+    const dClientCoord = this.getDynamicPathD("client", "coord");
+    const dCoordInv = this.getDynamicPathD("coord", "inv");
+    const dCoordPay = this.getDynamicPathD("coord", "pay");
+    const dInvCoord = this.getDynamicPathD("inv", "coord");
+    const dPayCoord = this.getDynamicPathD("pay", "coord");
+
+    if (pathClientCoord) pathClientCoord.setAttribute("d", dClientCoord);
+    if (pathCoordInv) pathCoordInv.setAttribute("d", dCoordInv);
+    if (pathCoordPay) pathCoordPay.setAttribute("d", dCoordPay);
+    if (pathInvCoord) pathInvCoord.setAttribute("d", dInvCoord);
+    if (pathPayCoord) pathPayCoord.setAttribute("d", dPayCoord);
+  },
+
+  fitView() {
+    if (!this.container) return;
+    const rect = this.container.getBoundingClientRect();
+    const cWidth = rect.width || 800;
+    const cHeight = rect.height || 360;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    Object.values(this.nodes).forEach((n) => {
+      minX = Math.min(minX, n.x);
+      minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x + n.width);
+      maxY = Math.max(maxY, n.y + n.height);
+    });
+
+    const bWidth = maxX - minX;
+    const bHeight = maxY - minY;
+    const padding = 50;
+
+    const scaleX = (cWidth - padding * 2) / bWidth;
+    const scaleY = (cHeight - padding * 2) / bHeight;
+    const newZoom = Math.min(Math.max(Math.min(scaleX, scaleY), this.minZoom), 1.3);
+
+    this.zoom = newZoom;
+    this.panX = (cWidth - bWidth * newZoom) / 2 - minX * newZoom;
+    this.panY = (cHeight - bHeight * newZoom) / 2 - minY * newZoom;
+
+    this.applyTransform();
+    this.saveState();
+  },
+
+  focusNode(nodeKey) {
+    const node = this.nodes[nodeKey];
+    if (!node || !this.container) return;
+
+    const rect = this.container.getBoundingClientRect();
+    const cWidth = rect.width || 800;
+    const cHeight = rect.height || 360;
+
+    this.zoom = 1.15;
+    this.panX = cWidth / 2 - (node.x + node.width / 2) * this.zoom;
+    this.panY = cHeight / 2 - (node.y + node.height / 2) * this.zoom;
+
+    this.applyTransform();
+    this.saveState();
+  },
+
+  resetLayout() {
+    this.nodes = JSON.parse(JSON.stringify(DEFAULT_CANVAS_NODES));
+    this.applyAllNodePositions();
+    this.updateEdges();
+    this.fitView();
+    this.saveState();
+  },
+
+  bindEvents() {
+    // 1. Draggable Node Events
+    const nodeGroups = this.svg.querySelectorAll(".topo-node-group");
+    nodeGroups.forEach((group) => {
+      const nodeKey = group.getAttribute("data-node-key");
+
+      group.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return; // Left click only
+        e.stopPropagation();
+        this.isDraggingNode = true;
+        this.activeDragNodeKey = nodeKey;
+        this.dragStartMouse = { x: e.clientX, y: e.clientY };
+        this.dragStartNodePos = { x: this.nodes[nodeKey].x, y: this.nodes[nodeKey].y };
+        group.classList.add("is-dragging");
+      });
+
+      group.addEventListener("touchstart", (e) => {
+        if (e.touches.length !== 1) return;
+        e.stopPropagation();
+        this.isDraggingNode = true;
+        this.activeDragNodeKey = nodeKey;
+        this.dragStartMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        this.dragStartNodePos = { x: this.nodes[nodeKey].x, y: this.nodes[nodeKey].y };
+        group.classList.add("is-dragging");
+      }, { passive: false });
+
+      // Double click to focus node
+      group.addEventListener("dblclick", (e) => {
+        e.stopPropagation();
+        this.focusNode(nodeKey);
+      });
+    });
+
+    // 2. Global Mouse / Window Dragging & Panning Listeners
+    window.addEventListener("mousemove", (e) => {
+      // Node Drag
+      if (this.isDraggingNode && this.activeDragNodeKey) {
+        const dx = (e.clientX - this.dragStartMouse.x) / this.zoom;
+        const dy = (e.clientY - this.dragStartMouse.y) / this.zoom;
+        const node = this.nodes[this.activeDragNodeKey];
+        node.x = Math.round(this.dragStartNodePos.x + dx);
+        node.y = Math.round(this.dragStartNodePos.y + dy);
+
+        const group = document.getElementById(`node-group-${this.activeDragNodeKey}`);
+        if (group) {
+          group.setAttribute("transform", `translate(${node.x}, ${node.y})`);
+        }
+        this.updateEdges();
+        return;
+      }
+
+      // Canvas Pan
+      if (this.isPanning) {
+        this.panX = this.panStartPos.x + (e.clientX - this.panStartMouse.x);
+        this.panY = this.panStartPos.y + (e.clientY - this.panStartMouse.y);
+        this.applyTransform();
+      }
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (this.isDraggingNode) {
+        this.isDraggingNode = false;
+        if (this.activeDragNodeKey) {
+          const group = document.getElementById(`node-group-${this.activeDragNodeKey}`);
+          if (group) group.classList.remove("is-dragging");
+          this.activeDragNodeKey = null;
+        }
+        this.saveState();
+      }
+
+      if (this.isPanning) {
+        this.isPanning = false;
+        this.container.classList.remove("is-panning");
+        this.saveState();
+      }
+    });
+
+    // Touch Move / End for Mobile
+    window.addEventListener("touchmove", (e) => {
+      if (this.isDraggingNode && this.activeDragNodeKey && e.touches.length === 1) {
+        e.preventDefault();
+        const dx = (e.touches[0].clientX - this.dragStartMouse.x) / this.zoom;
+        const dy = (e.touches[0].clientY - this.dragStartMouse.y) / this.zoom;
+        const node = this.nodes[this.activeDragNodeKey];
+        node.x = Math.round(this.dragStartNodePos.x + dx);
+        node.y = Math.round(this.dragStartNodePos.y + dy);
+
+        const group = document.getElementById(`node-group-${this.activeDragNodeKey}`);
+        if (group) {
+          group.setAttribute("transform", `translate(${node.x}, ${node.y})`);
+        }
+        this.updateEdges();
+      } else if (this.isPanning && e.touches.length === 1) {
+        e.preventDefault();
+        this.panX = this.panStartPos.x + (e.touches[0].clientX - this.panStartMouse.x);
+        this.panY = this.panStartPos.y + (e.touches[0].clientY - this.panStartMouse.y);
+        this.applyTransform();
+      }
+    }, { passive: false });
+
+    window.addEventListener("touchend", () => {
+      if (this.isDraggingNode) {
+        this.isDraggingNode = false;
+        if (this.activeDragNodeKey) {
+          const group = document.getElementById(`node-group-${this.activeDragNodeKey}`);
+          if (group) group.classList.remove("is-dragging");
+          this.activeDragNodeKey = null;
+        }
+        this.saveState();
+      }
+      if (this.isPanning) {
+        this.isPanning = false;
+        this.container.classList.remove("is-panning");
+        this.saveState();
+      }
+    });
+
+    // 3. Canvas Background Pan Initiation
+    if (this.bgRect) {
+      this.bgRect.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        this.isPanning = true;
+        this.panStartMouse = { x: e.clientX, y: e.clientY };
+        this.panStartPos = { x: this.panX, y: this.panY };
+        this.container.classList.add("is-panning");
+      });
+
+      this.bgRect.addEventListener("touchstart", (e) => {
+        if (e.touches.length !== 1) return;
+        this.isPanning = true;
+        this.panStartMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        this.panStartPos = { x: this.panX, y: this.panY };
+        this.container.classList.add("is-panning");
+      }, { passive: false });
+    }
+
+    // 4. Zoom to Cursor via Wheel (+1% / -1% fine steps)
+    this.container.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const rect = this.container.getBoundingClientRect();
+      const cursorX = e.clientX - rect.left;
+      const cursorY = e.clientY - rect.top;
+
+      const delta = e.deltaY < 0 ? 0.01 : -0.01;
+      const newZoom = Math.min(Math.max(Math.round((this.zoom + delta) * 100) / 100, this.minZoom), this.maxZoom);
+
+      if (newZoom === this.zoom) return;
+
+      // Zoom-to-cursor formula
+      this.panX = cursorX - (cursorX - this.panX) * (newZoom / this.zoom);
+      this.panY = cursorY - (cursorY - this.panY) * (newZoom / this.zoom);
+      this.zoom = newZoom;
+
+      this.applyTransform();
+      this.saveState();
+    }, { passive: false });
+
+    // 5. Canvas Toolbar Button Actions (Exact +1% / -1% increments)
+    if (this.btnZoomIn) {
+      this.btnZoomIn.addEventListener("click", () => {
+        const rect = this.container.getBoundingClientRect();
+        const cx = (rect.width || 800) / 2;
+        const cy = (rect.height || 360) / 2;
+        const newZoom = Math.min(Math.round((this.zoom + 0.01) * 100) / 100, this.maxZoom);
+        this.panX = cx - (cx - this.panX) * (newZoom / this.zoom);
+        this.panY = cy - (cy - this.panY) * (newZoom / this.zoom);
+        this.zoom = newZoom;
+        this.applyTransform();
+        this.saveState();
+      });
+    }
+
+    if (this.btnZoomOut) {
+      this.btnZoomOut.addEventListener("click", () => {
+        const rect = this.container.getBoundingClientRect();
+        const cx = (rect.width || 800) / 2;
+        const cy = (rect.height || 360) / 2;
+        const newZoom = Math.max(Math.round((this.zoom - 0.01) * 100) / 100, this.minZoom);
+        this.panX = cx - (cx - this.panX) * (newZoom / this.zoom);
+        this.panY = cy - (cy - this.panY) * (newZoom / this.zoom);
+        this.zoom = newZoom;
+        this.applyTransform();
+        this.saveState();
+      });
+    }
+
+    if (this.btnFitView) {
+      this.btnFitView.addEventListener("click", () => this.fitView());
+    }
+
+    if (this.btnResetLayout) {
+      this.btnResetLayout.addEventListener("click", () => {
+        this.resetLayout();
+        showToast({
+          icon: "🔄",
+          title: "Topology Layout Reset",
+          message: "Node positions and zoom restored to default configuration.",
+          type: "normal",
+        });
+      });
+    }
+  },
+};
+
 window.addEventListener("DOMContentLoaded", () => {
+  // Initialize Theme from localStorage
+  const savedTheme = localStorage.getItem("dtc_theme") || "dark";
+  window.setDashboardTheme(savedTheme);
+
+  // Initialize Mode (Default to LIVE)
+  window.setBackendMode(false);
+
   DOM.statRacesDefended.textContent = STATE.stats.racesDefended;
   DOM.statLocksEnforced.textContent = STATE.stats.locksEnforced;
   DOM.recOrphansRecovered.textContent = STATE.stats.orphansRecovered;
   DOM.recSagasSwept.textContent = STATE.stats.sagasSwept;
 
+  CanvasEngine.init();
   checkServiceHealth();
   fetchTransactionsFeed();
   startRecoveryCountdown();

@@ -57,19 +57,37 @@
     </div>
 
     <div class="nav-controls">
-      <div class="mode-toggle-group">
-        <label class="switch-label" title="Switch between real backend polling and simulated interactive demo mode">
-          <input type="checkbox" id="toggle-sim-mode">
-          <span class="switch-slider"></span>
-          <span class="switch-text" id="sim-mode-text">LIVE BACKEND</span>
+      <!-- 1. DEMO ⟷ LIVE Sliding Mode Toggle -->
+      <div class="sliding-toggle-group mode-toggle-container" id="mode-toggle-wrap">
+        <span class="toggle-side-label toggle-label-demo" id="label-demo" onclick="window.setBackendMode(true)">DEMO</span>
+        <label class="switch-toggle" for="toggle-sim-mode" title="Toggle between DEMO simulation and LIVE backend">
+          <input type="checkbox" id="toggle-sim-mode" aria-label="Toggle backend mode (Checked: Demo, Unchecked: Live)" />
+          <span class="toggle-slider">
+            <span class="toggle-knob"></span>
+          </span>
         </label>
+        <span class="toggle-side-label toggle-label-live active" id="label-live" onclick="window.setBackendMode(false)">LIVE</span>
       </div>
 
+      <!-- 2. Architecture Guide Trigger -->
       <button id="btn-how-it-works" class="btn btn-outline" title="View 60-second architecture guide">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/></svg>
         Architecture
       </button>
 
+      <!-- 3. Night / Light Theme Sliding Toggle -->
+      <div class="sliding-toggle-group theme-toggle-container" id="theme-toggle-wrap">
+        <span class="toggle-side-icon toggle-icon-light" id="icon-theme-light" title="Light Theme" onclick="window.setDashboardTheme('light')">☀️</span>
+        <label class="switch-toggle" for="toggle-theme" title="Toggle between Light and Dark theme">
+          <input type="checkbox" id="toggle-theme" aria-label="Toggle Theme (Checked: Light, Unchecked: Dark)" />
+          <span class="toggle-slider">
+            <span class="toggle-knob"></span>
+          </span>
+        </label>
+        <span class="toggle-side-icon toggle-icon-dark active" id="icon-theme-dark" title="Dark Theme" onclick="window.setDashboardTheme('dark')">🌙</span>
+      </div>
+
+      <!-- 4. Endpoints Configuration Trigger -->
       <button id="btn-config" class="btn btn-icon" title="Configure endpoints">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
@@ -114,6 +132,9 @@
               <strong>Happy Path Saga</strong>
               <small>Reserve → Charge → Complete</small>
             </div>
+            <span class="scenario-info-btn" onclick="event.stopPropagation(); window.showScenarioInfo('happy')" title="Scenario Info">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            </span>
           </button>
 
           <button class="btn btn-scenario btn-scenario-comp" id="btn-demo-fail">
@@ -122,6 +143,9 @@
               <strong>Payment Decline & Compensate</strong>
               <small>Reserve → Decline → Auto-Release</small>
             </div>
+            <span class="scenario-info-btn" onclick="event.stopPropagation(); window.showScenarioInfo('fail')" title="Scenario Info">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            </span>
           </button>
 
           <button class="btn btn-scenario btn-scenario-race" id="btn-demo-race">
@@ -130,6 +154,9 @@
               <strong>5x Concurrent Race Attack</strong>
               <small>5 simultaneous calls → Exactly 1 commits</small>
             </div>
+            <span class="scenario-info-btn" onclick="event.stopPropagation(); window.showScenarioInfo('race')" title="Scenario Info">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            </span>
           </button>
 
           <button class="btn btn-scenario btn-scenario-crash" id="btn-demo-crash">
@@ -138,6 +165,9 @@
               <strong>Process Crash Simulation</strong>
               <small>Killed mid-flight → Celery sweep recovers</small>
             </div>
+            <span class="scenario-info-btn" onclick="event.stopPropagation(); window.showScenarioInfo('crash')" title="Scenario Info">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            </span>
           </button>
 
           <button class="btn btn-scenario btn-scenario-custom" id="btn-toggle-custom">
@@ -146,6 +176,9 @@
               <strong>Custom Payload</strong>
               <small>Manual parameters</small>
             </div>
+            <span class="scenario-info-btn" onclick="event.stopPropagation(); window.showScenarioInfo('custom')" title="Scenario Info">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            </span>
           </button>
         </div>
       </div>
@@ -190,6 +223,7 @@
         <div class="section-title">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
           LIVE SERVICE TOPOLOGY & RPC TELEMETRY
+          <span class="canvas-mode-pill">Interactive Canvas • Drag Nodes & Pan/Zoom</span>
         </div>
         
         <div class="topology-header-controls">
@@ -202,9 +236,32 @@
         </div>
       </div>
 
-      <div class="topology-canvas-container">
-        <svg id="topology-svg" viewBox="0 0 960 260" preserveAspectRatio="xMidYMid meet">
+      <div class="topology-canvas-container" id="topology-canvas-container">
+        <!-- Floating Canvas Toolbar (Obsidian style) -->
+        <div class="canvas-controls-bar" id="canvas-controls-bar">
+          <button id="btn-canvas-zoom-in" class="canvas-ctrl-btn" title="Zoom In (+)">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+          </button>
+          <button id="btn-canvas-zoom-out" class="canvas-ctrl-btn" title="Zoom Out (-)">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+          </button>
+          <span class="canvas-zoom-label" id="canvas-zoom-label">100%</span>
+          <div class="canvas-ctrl-divider"></div>
+          <button id="btn-canvas-fit-view" class="canvas-ctrl-btn" title="Fit All Nodes (Recenter View)">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+          </button>
+          <button id="btn-canvas-reset-layout" class="canvas-ctrl-btn" title="Reset Node Positions to Default">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          </button>
+        </div>
+
+        <svg id="topology-svg" width="100%" height="100%">
           <defs>
+            <!-- Canvas Dot Grid Pattern -->
+            <pattern id="canvas-dot-grid" width="24" height="24" patternUnits="userSpaceOnUse">
+              <circle cx="12" cy="12" r="1.2" class="canvas-grid-dot" />
+            </pattern>
+
             <filter id="glow-green" x="-20%" y="-20%" width="140%" height="140%">
               <feGaussianBlur stdDeviation="3" result="blur" />
               <feComposite in="SourceGraphic" in2="blur" operator="over" />
@@ -236,78 +293,94 @@
             </linearGradient>
           </defs>
 
-          <path id="path-client-coord" class="topo-edge" d="M 130 130 L 330 130" stroke="url(#grad-client-coord)" stroke-width="2.5" stroke-dasharray="4 4"/>
-          
-          <path id="path-coord-inv" class="topo-edge" d="M 530 110 C 620 60, 680 60, 750 60" stroke="url(#grad-coord-inv)" stroke-width="2.5" fill="none"/>
-          
-          <path id="path-coord-pay" class="topo-edge" d="M 530 150 C 620 200, 680 200, 750 200" stroke="url(#grad-coord-pay)" stroke-width="2.5" fill="none"/>
+          <!-- Interactive Background Rect for Panning -->
+          <rect id="canvas-bg-rect" width="100%" height="100%" fill="url(#canvas-dot-grid)"></rect>
 
-          <path id="path-inv-coord" d="M 750 60 C 680 60, 620 60, 530 110" stroke="none" fill="none"/>
-          <path id="path-pay-coord" d="M 750 200 C 680 200, 620 200, 530 150" stroke="none" fill="none"/>
+          <!-- Transformable World Group (Pan & Zoom applies here) -->
+          <g id="canvas-world">
+            <!-- 1. Dynamic Connecting Edges Layer -->
+            <g id="edges-layer">
+              <path id="path-client-coord" class="topo-edge" d="" stroke="url(#grad-client-coord)" stroke-width="2.5" stroke-dasharray="4 4" fill="none"/>
+              <path id="path-coord-inv" class="topo-edge" d="" stroke="url(#grad-coord-inv)" stroke-width="2.5" fill="none"/>
+              <path id="path-coord-pay" class="topo-edge" d="" stroke="url(#grad-coord-pay)" stroke-width="2.5" fill="none"/>
+              <path id="path-inv-coord" d="" stroke="none" fill="none"/>
+              <path id="path-pay-coord" d="" stroke="none" fill="none"/>
+            </g>
 
-          <g id="pulse-layer"></g>
+            <!-- 2. Flying Animated Packets Layer -->
+            <g id="pulse-layer"></g>
 
-          <g class="topo-node-group" id="node-group-client" transform="translate(30, 75)">
-            <rect id="node-box-client" class="node-box node-box-client" width="120" height="110" rx="12"/>
-            <circle cx="28" cy="30" r="10" fill="#0284c7" opacity="0.2"/>
-            <text x="28" y="34" font-size="12" fill="#38bdf8" text-anchor="middle">🌐</text>
-            <text x="50" y="32" class="node-title">CLIENT / API</text>
-            <text x="50" y="46" class="node-sub">HTTP Traffic</text>
-            <line x1="15" y1="60" x2="105" y2="60" stroke="#334155" stroke-width="1"/>
-            <text x="15" y="80" class="node-stat-label">Dispatched</text>
-            <text x="105" y="80" class="node-stat-val" id="topo-client-sent" text-anchor="end">0</text>
-            <text x="15" y="98" class="node-stat-label">In-Flight</text>
-            <text x="105" y="98" class="node-stat-val" id="topo-client-active" text-anchor="end">0</text>
-          </g>
+            <!-- 3. Draggable Service Node Cards Layer -->
+            <g id="nodes-layer">
+              <!-- Node 1: Client / Gateway -->
+              <g class="topo-node-group" id="node-group-client" data-node-key="client" title="Double click to focus node • Drag to reposition">
+                <rect id="node-box-client" class="node-box node-box-client" width="130" height="115" rx="12"/>
+                <circle cx="26" cy="26" r="10" fill="#0284c7" opacity="0.2"/>
+                <text x="26" y="30" font-size="12" fill="#38bdf8" text-anchor="middle">🌐</text>
+                <text x="44" y="24" class="node-title">CLIENT / API</text>
+                <text x="44" y="38" class="node-sub">HTTP Traffic Gateway</text>
+                <line x1="12" y1="50" x2="118" y2="50" stroke="#1e293b" stroke-width="1"/>
+                <text x="14" y="74" class="node-stat-label">Dispatched</text>
+                <text x="116" y="74" class="node-stat-val font-mono" id="topo-client-sent" text-anchor="end">0</text>
+                <text x="14" y="96" class="node-stat-label">In-Flight</text>
+                <text x="116" y="96" class="node-stat-val font-mono" id="topo-client-active" text-anchor="end">0</text>
+              </g>
 
-          <g class="topo-node-group" id="node-group-coord" transform="translate(330, 55)">
-            <rect id="node-box-coord" class="node-box node-box-coord" width="200" height="150" rx="14"/>
-            <rect class="node-header-bar" x="0" y="0" width="200" height="38" rx="14"/>
-            <circle cx="24" cy="20" r="8" fill="#6366f1" opacity="0.4"/>
-            <text x="24" y="24" font-size="10" fill="#a5b4fc" text-anchor="middle" id="icon-coord">⚙️</text>
-            <text x="42" y="19" class="node-title" id="title-coord">COORDINATOR SERVICE</text>
-            <text x="42" y="31" class="node-port-sub">Port 8002 • Saga Orchestrator</text>
-            
-            <text x="18" y="62" class="node-stat-label">State Machine:</text>
-            <text x="182" y="62" class="node-stat-val font-mono" id="topo-coord-state" text-anchor="end">IDLE</text>
-            
-            <text x="18" y="82" class="node-stat-label">Audit Log (SagaEvent):</text>
-            <text x="182" y="82" class="node-stat-val" id="topo-coord-events" text-anchor="end">0 rows</text>
-            
-            <text x="18" y="102" class="node-stat-label">Recovery Lease:</text>
-            <text x="182" y="102" class="node-stat-val text-success" id="topo-coord-lease" text-anchor="end">READY</text>
+              <!-- Node 2: Coordinator Service -->
+              <g class="topo-node-group" id="node-group-coord" data-node-key="coord" title="Double click to focus node • Drag to reposition">
+                <rect id="node-box-coord" class="node-box node-box-coord" width="220" height="155" rx="14"/>
+                <rect class="node-header-bar" x="0" y="0" width="220" height="38" rx="14"/>
+                <circle cx="24" cy="20" r="8" fill="#6366f1" opacity="0.4"/>
+                <text x="24" y="24" font-size="10" fill="#a5b4fc" text-anchor="middle" id="icon-coord">⚙️</text>
+                <text x="42" y="19" class="node-title" id="title-coord">COORDINATOR SERVICE</text>
+                <text x="42" y="31" class="node-port-sub">Port 8002 • Saga Orchestrator</text>
+                
+                <text x="16" y="62" class="node-stat-label">State Machine</text>
+                <text x="204" y="62" class="node-stat-val font-mono" id="topo-coord-state" text-anchor="end">IDLE</text>
+                
+                <text x="16" y="84" class="node-stat-label">Audit SagaEvent</text>
+                <text x="204" y="84" class="node-stat-val" id="topo-coord-events" text-anchor="end">0 sagas</text>
+                
+                <text x="16" y="106" class="node-stat-label">Recovery Lease</text>
+                <text x="204" y="106" class="node-stat-val text-success font-mono" id="topo-coord-lease" text-anchor="end">READY</text>
 
-            <rect x="14" y="116" width="172" height="22" rx="4" fill="#0f172a" stroke="#334155" stroke-width="1"/>
-            <text x="100" y="131" font-size="10" fill="#94a3b8" text-anchor="middle">PostgreSQL • dtc_coordinator</text>
-          </g>
+                <rect x="14" y="122" width="192" height="22" rx="4" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+                <text x="110" y="137" font-size="9.5" fill="#94a3b8" text-anchor="middle" font-family="var(--font-mono)">PostgreSQL • dtc_coordinator</text>
+              </g>
 
-          <g class="topo-node-group" id="node-group-inv" transform="translate(750, 10)">
-            <rect id="node-box-inv" class="node-box node-box-inv" width="180" height="105" rx="12"/>
-            <text x="16" y="24" class="node-title" id="title-inv">INVENTORY SERVICE</text>
-            <text x="16" y="38" class="node-port-sub">Port 8000 • Row-Locking</text>
-            
-            <text x="16" y="60" class="node-stat-label">SELECT FOR UPDATE:</text>
-            <text x="164" y="60" class="node-stat-val text-success" id="topo-inv-lock" text-anchor="end">ENFORCED</text>
-            
-            <text x="16" y="80" class="node-stat-label">Release Idempotency:</text>
-            <text x="164" y="80" class="node-stat-val text-accent" text-anchor="end">GUARANTEED</text>
-            
-            <text x="16" y="96" class="node-stat-label" style="font-size: 8.5px; fill: #64748b;">PostgreSQL • dtc_inventory</text>
-          </g>
+              <!-- Node 3: Inventory Service -->
+              <g class="topo-node-group" id="node-group-inv" data-node-key="inv" title="Double click to focus node • Drag to reposition">
+                <rect id="node-box-inv" class="node-box node-box-inv" width="220" height="110" rx="12"/>
+                <text x="16" y="24" class="node-title" id="title-inv">INVENTORY SERVICE</text>
+                <text x="16" y="38" class="node-port-sub">Port 8000 • Row-Locking</text>
+                <line x1="14" y1="46" x2="206" y2="46" stroke="#1e293b" stroke-width="1"/>
+                
+                <text x="16" y="64" class="node-stat-label">Row Lock</text>
+                <text x="204" y="64" class="node-stat-val text-success font-mono" id="topo-inv-lock" text-anchor="end">SELECT FOR UPDATE</text>
+                
+                <text x="16" y="84" class="node-stat-label">Idempotency</text>
+                <text x="204" y="84" class="node-stat-val text-accent font-mono" id="topo-inv-idem" text-anchor="end">GUARANTEED</text>
+                
+                <text x="16" y="100" class="node-stat-label" style="font-size: 8.5px; fill: #64748b; font-family: var(--font-mono);">PostgreSQL • dtc_inventory</text>
+              </g>
 
-          <g class="topo-node-group" id="node-group-pay" transform="translate(750, 145)">
-            <rect id="node-box-pay" class="node-box node-box-pay" width="180" height="105" rx="12"/>
-            <text x="16" y="24" class="node-title" id="title-pay">PAYMENT SERVICE</text>
-            <text x="16" y="38" class="node-port-sub">Port 8001 • Idempotent Gateway</text>
-            
-            <text x="16" y="60" class="node-stat-label">Idempotency Key:</text>
-            <text x="164" y="60" class="node-stat-val text-success" id="pay-idempotency-key" text-anchor="end">DB UNIQUE</text>
-            
-            <text x="16" y="80" class="node-stat-label">Constraint:</text>
-            <text x="164" y="80" class="node-stat-val font-mono" id="pay-constraint-label" text-anchor="end" style="font-size: 9.5px; fill: #38bdf8;">UNIQUE(tx_id)</text>
-            <title>PostgreSQL Constraint: UNIQUE (transaction_id) on payments_payment table — prevents duplicate charges under concurrency</title>
-
-            <text x="16" y="96" class="node-stat-label" style="font-size: 8.5px; fill: #64748b;">PostgreSQL • dtc_payment</text>
+              <!-- Node 4: Payment Service -->
+              <g class="topo-node-group" id="node-group-pay" data-node-key="pay" title="Double click to focus node • Drag to reposition">
+                <rect id="node-box-pay" class="node-box node-box-pay" width="220" height="110" rx="12"/>
+                <text x="16" y="24" class="node-title" id="title-pay">PAYMENT SERVICE</text>
+                <text x="16" y="38" class="node-port-sub">Port 8001 • Idempotent Gateway</text>
+                <line x1="14" y1="46" x2="206" y2="46" stroke="#1e293b" stroke-width="1"/>
+                
+                <text x="16" y="64" class="node-stat-label">Idempotency</text>
+                <text x="204" y="64" class="node-stat-val text-success font-mono" id="pay-idempotency-key" text-anchor="end">DB UNIQUE KEY</text>
+                
+                <text x="16" y="84" class="node-stat-label">Constraint</text>
+                <text x="204" y="84" class="node-stat-val font-mono" id="pay-constraint-label" text-anchor="end" style="font-size: 9px; fill: #38bdf8;">UNIQUE(tx_id)</text>
+                <title>PostgreSQL Constraint: UNIQUE (transaction_id) on payments_payment table — prevents duplicate charges under concurrency</title>
+                
+                <text x="16" y="100" class="node-stat-label" style="font-size: 8.5px; fill: #64748b; font-family: var(--font-mono);">PostgreSQL • dtc_payment</text>
+              </g>
+            </g>
           </g>
         </svg>
       </div>
@@ -527,6 +600,52 @@
           <button type="submit" class="btn btn-primary btn-sm">Save & Reconnect</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Scenario Technical Breakdown Modal -->
+  <div id="modal-scenario-info" class="modal-backdrop hidden">
+    <div class="modal-dialog modal-scenario-dialog">
+      <div class="modal-header">
+        <div class="scenario-modal-title-area">
+          <span id="scen-info-icon" class="scen-info-icon">⚡</span>
+          <div>
+            <h3 id="scen-info-title">Scenario Deep-Dive</h3>
+            <span id="scen-info-badge" class="badge badge-success">3-Phase Forward Saga</span>
+          </div>
+        </div>
+        <button class="btn btn-icon btn-close-modal" id="btn-close-scen-info">✕</button>
+      </div>
+      <div class="modal-body scenario-info-body">
+        <div class="scenario-info-card">
+          <h4><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg> OVERVIEW & OBJECTIVE</h4>
+          <p id="scen-info-desc">--</p>
+        </div>
+
+        <div class="scenario-info-card">
+          <h4><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg> HTTP DISPATCH PAYLOAD</h4>
+          <pre id="scen-info-payload" class="scenario-payload-code">--</pre>
+        </div>
+
+        <div class="scenario-info-card">
+          <h4><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg> STEP-BY-STEP SERVICE RPC FLOW</h4>
+          <div id="scen-info-steps" class="scen-info-steps-list"></div>
+        </div>
+
+        <div class="scenario-info-card">
+          <h4><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> ACID DEFENSES & CONCURRENCY MECHANISMS</h4>
+          <p id="scen-info-defenses">--</p>
+        </div>
+
+        <div class="scenario-info-card scenario-outcome-card">
+          <h4><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> EXPECTED TERMINAL OUTCOME</h4>
+          <p id="scen-info-outcome" class="text-success font-mono" style="font-weight: 700;">--</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-dismiss-scen-info">Close</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btn-run-from-modal">Execute This Scenario</button>
+      </div>
     </div>
   </div>
 
