@@ -239,9 +239,19 @@ def create_transaction(request):
 @api_view(["POST"])
 def retry_compensation(request, transaction_id):
 
-    txn = Transaction.objects.get(transaction_id=transaction_id)
-    txn_status_at_entry = txn.status
+    txn = Transaction.objects.exclude(
+        status=Transaction.Status.COMPLETED
+    ).filter(
+        transaction_id=transaction_id
+    ).first()
 
+    if not txn:
+        return Response({
+            "detail": "Transaction is already charged and marked as completed"
+        })
+    
+    txn_status_at_entry = txn.status
+    
     if txn_status_at_entry == Transaction.Status.COMPENSATED:
         return Response({
             "transaction_id": str(transaction_id),

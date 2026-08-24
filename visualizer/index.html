@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DTC Mission Control — Distributed Transaction Coordinator Observability</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Floating Toast Notifications Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Top Navigation & Global Telemetry Strip -->
+  <header class="top-nav">
+    <div class="nav-brand">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 3v18M3 12h18M7.5 7.5l9 9M7.5 16.5l9-9"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-title">DTC MISSION CONTROL</div>
+        <div class="brand-sub">Distributed Saga Coordinator Observability & Concurrency Verification</div>
+      </div>
+    </div>
+
+    <!-- Live Service Health Indicators -->
+    <div class="health-strip">
+      <div class="health-node" id="node-health-coord" title="Coordinator Service (:8002)">
+        <span class="pulse-dot"></span>
+        <span class="node-name">COORDINATOR</span>
+        <span class="node-port">:8002</span>
+        <span class="node-latency" id="lat-coord">-- ms</span>
+      </div>
+
+      <div class="health-node" id="node-health-inv" title="Inventory Service (:8000)">
+        <span class="pulse-dot"></span>
+        <span class="node-name">INVENTORY</span>
+        <span class="node-port">:8000</span>
+        <span class="node-latency" id="lat-inv">-- ms</span>
+      </div>
+
+      <div class="health-node" id="node-health-pay" title="Payment Service (:8001)">
+        <span class="pulse-dot"></span>
+        <span class="node-name">PAYMENT</span>
+        <span class="node-port">:8001</span>
+        <span class="node-latency" id="lat-pay">-- ms</span>
+      </div>
+
+      <div class="health-node node-infra" id="node-health-celery" title="Celery Beat Crash Recovery (90s Sweep)">
+        <span class="pulse-dot"></span>
+        <span class="node-name">RECOVERY WORKER</span>
+        <span class="node-countdown" id="sweep-countdown">90s</span>
+      </div>
+    </div>
+
+    <!-- Control Actions -->
+    <div class="nav-controls">
+      <div class="mode-toggle-group">
+        <label class="switch-label" title="Switch between real backend polling and simulated interactive demo mode">
+          <input type="checkbox" id="toggle-sim-mode">
+          <span class="switch-slider"></span>
+          <span class="switch-text" id="sim-mode-text">LIVE BACKEND</span>
+        </label>
+      </div>
+
+      <button id="btn-how-it-works" class="btn btn-outline" title="View 60-second architecture guide">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/></svg>
+        Architecture
+      </button>
+
+      <button id="btn-config" class="btn btn-icon" title="Configure endpoints">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Dashboard Container -->
+  <main class="dashboard-body">
+
+    <!-- Hero Section 1: Prominent Concurrency & Idempotency Proof Panel -->
+    <section class="proof-panel">
+      <div class="proof-header">
+        <div class="proof-title-area">
+          <span class="proof-badge">RECRUITER LIVE DEMO</span>
+          <h2>Idempotency, Concurrency & Crash Invariants</h2>
+          <p>Real-time verification: PostgreSQL row locks (`select_for_update`) and relational `UNIQUE` constraints eliminate double-booking and state corruption.</p>
+        </div>
+        <div class="proof-stats">
+          <div class="stat-card">
+            <div class="stat-num" id="stat-race-defended">0</div>
+            <div class="stat-label">RACE CONDITIONS DEFENDED</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num" id="stat-locks-enforced">0</div>
+            <div class="stat-label">ROW LOCKS ACQUIRED</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num" id="stat-sagas-total">0</div>
+            <div class="stat-label">TOTAL SAGAS DRIVEN</div>
+          </div>
+          <div class="stat-card stat-highlight">
+            <div class="stat-num text-success" id="stat-double-booking">100.0%</div>
+            <div class="stat-label">DOUBLE-BOOKING PREVENTION</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- One-Click Stress-Test & Scenario Trigger Bar -->
+      <div class="scenario-bar">
+        <div class="scenario-label">Execute Live Scenarios:</div>
+        <div class="scenario-buttons">
+          <button class="btn btn-scenario btn-scenario-happy" id="btn-demo-happy">
+            <span class="btn-icon">⚡</span>
+            <div class="btn-text">
+              <strong>Happy Path Saga</strong>
+              <small>Reserve → Charge → Complete</small>
+            </div>
+          </button>
+
+          <button class="btn btn-scenario btn-scenario-comp" id="btn-demo-fail">
+            <span class="btn-icon">🔄</span>
+            <div class="btn-text">
+              <strong>Payment Decline & Compensate</strong>
+              <small>Reserve → Decline → Auto-Release</small>
+            </div>
+          </button>
+
+          <button class="btn btn-scenario btn-scenario-race" id="btn-demo-race">
+            <span class="btn-icon">🔥</span>
+            <div class="btn-text">
+              <strong>5x Concurrent Race Attack</strong>
+              <small>5 simultaneous calls → Exactly 1 commits</small>
+            </div>
+          </button>
+
+          <button class="btn btn-scenario btn-scenario-crash" id="btn-demo-crash">
+            <span class="btn-icon">💥</span>
+            <div class="btn-text">
+              <strong>Process Crash Simulation</strong>
+              <small>Killed mid-flight → Celery sweep recovers</small>
+            </div>
+          </button>
+
+          <button class="btn btn-scenario btn-scenario-custom" id="btn-toggle-custom">
+            <span class="btn-icon">⚙️</span>
+            <div class="btn-text">
+              <strong>Custom Payload</strong>
+              <small>Manual parameters</small>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Expandable Custom Payload Form -->
+      <div id="custom-payload-drawer" class="custom-drawer hidden">
+        <form id="form-custom-tx" class="custom-form">
+          <div class="form-grid">
+            <div class="form-field">
+              <label>Transaction ID (Optional UUID):</label>
+              <input type="text" id="cust-tx-id" placeholder="Auto-generated if empty">
+            </div>
+            <div class="form-field">
+              <label>Product ID:</label>
+              <input type="number" id="cust-product-id" value="1" min="1">
+            </div>
+            <div class="form-field">
+              <label>Quantity:</label>
+              <input type="number" id="cust-qty" value="1" min="1">
+            </div>
+            <div class="form-field">
+              <label>Amount ($):</label>
+              <input type="number" id="cust-amount" value="500" min="1">
+            </div>
+          </div>
+          <div class="form-actions">
+            <label class="checkbox-tag">
+              <input type="checkbox" id="cust-flag-fail">
+              <span><code>fail_compensation</code> (Simulate Release Failure)</span>
+            </label>
+            <label class="checkbox-tag">
+              <input type="checkbox" id="cust-flag-crash">
+              <span><code>coordinator</code> (Simulate Coordinator Crash)</span>
+            </label>
+            <button type="submit" class="btn btn-primary btn-sm">Dispatch Transaction</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- Hero Section 2: Interactive SVG Service Topology & Traffic Pulses -->
+    <section class="topology-section">
+      <div class="section-header">
+        <div class="section-title">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+          LIVE SERVICE TOPOLOGY & RPC TELEMETRY
+        </div>
+        
+        <div class="topology-header-controls">
+          <!-- Live Animation Opt-In Toggle Switch -->
+          <label class="switch-label live-anim-toggle" title="Opt-in: Inserts small visual staging delays (350-500ms) between RPC steps so packet animations along curved edges are clearly visible">
+            <input type="checkbox" id="toggle-live-anim">
+            <span class="switch-slider"></span>
+            <span class="switch-text" id="live-anim-text">LIVE VIEW: OFF</span>
+          </label>
+
+          <div class="topology-legend">
+            <span class="legend-item"><span class="dot dot-green"></span> Reserve / Charge</span>
+            <span class="legend-item"><span class="dot dot-blue"></span> Probe / Status</span>
+            <span class="legend-item"><span class="dot dot-orange"></span> Compensate</span>
+            <span class="legend-item"><span class="dot dot-red"></span> Conflict / Crash</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="topology-canvas-container">
+        <svg id="topology-svg" viewBox="0 0 960 260" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <!-- Glow Filters -->
+            <filter id="glow-green" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+            <filter id="glow-blue" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+            <filter id="glow-orange" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+            <filter id="glow-red" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="4" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+
+            <!-- Connector Gradients -->
+            <linearGradient id="grad-client-coord" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.3"/>
+              <stop offset="100%" stop-color="#818cf8" stop-opacity="0.6"/>
+            </linearGradient>
+            <linearGradient id="grad-coord-inv" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#818cf8" stop-opacity="0.6"/>
+              <stop offset="100%" stop-color="#34d399" stop-opacity="0.6"/>
+            </linearGradient>
+            <linearGradient id="grad-coord-pay" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#818cf8" stop-opacity="0.6"/>
+              <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.6"/>
+            </linearGradient>
+          </defs>
+
+          <!-- Static Edge Paths -->
+          <!-- Client -> Coordinator -->
+          <path id="path-client-coord" class="topo-edge" d="M 130 130 L 330 130" stroke="url(#grad-client-coord)" stroke-width="2.5" stroke-dasharray="4 4"/>
+          
+          <!-- Coordinator -> Inventory (Curve Up) -->
+          <path id="path-coord-inv" class="topo-edge" d="M 530 110 C 620 60, 680 60, 750 60" stroke="url(#grad-coord-inv)" stroke-width="2.5" fill="none"/>
+          
+          <!-- Coordinator -> Payment (Curve Down) -->
+          <path id="path-coord-pay" class="topo-edge" d="M 530 150 C 620 200, 680 200, 750 200" stroke="url(#grad-coord-pay)" stroke-width="2.5" fill="none"/>
+
+          <!-- Reverse Paths for Returning Responses & Probes (Hidden Guide Paths) -->
+          <path id="path-inv-coord" d="M 750 60 C 680 60, 620 60, 530 110" stroke="none" fill="none"/>
+          <path id="path-pay-coord" d="M 750 200 C 680 200, 620 200, 530 150" stroke="none" fill="none"/>
+
+          <!-- Dynamic Animated Packet Layer -->
+          <g id="pulse-layer"></g>
+
+          <!-- Node 1: Upstream Client / Gateway -->
+          <g class="topo-node-group" id="node-group-client" transform="translate(30, 75)">
+            <rect id="node-box-client" class="node-box node-box-client" width="120" height="110" rx="12"/>
+            <circle cx="28" cy="30" r="10" fill="#0284c7" opacity="0.2"/>
+            <text x="28" y="34" font-size="12" fill="#38bdf8" text-anchor="middle">🌐</text>
+            <text x="50" y="32" class="node-title">CLIENT / API</text>
+            <text x="50" y="46" class="node-sub">HTTP Traffic</text>
+            <line x1="15" y1="60" x2="105" y2="60" stroke="#334155" stroke-width="1"/>
+            <text x="15" y="80" class="node-stat-label">Dispatched</text>
+            <text x="105" y="80" class="node-stat-val" id="topo-client-sent" text-anchor="end">0</text>
+            <text x="15" y="98" class="node-stat-label">In-Flight</text>
+            <text x="105" y="98" class="node-stat-val" id="topo-client-active" text-anchor="end">0</text>
+          </g>
+
+          <!-- Node 2: Coordinator Service (:8002) -->
+          <g class="topo-node-group" id="node-group-coord" transform="translate(330, 55)">
+            <rect id="node-box-coord" class="node-box node-box-coord" width="200" height="150" rx="14"/>
+            <rect class="node-header-bar" x="0" y="0" width="200" height="38" rx="14"/>
+            <circle cx="24" cy="20" r="8" fill="#6366f1" opacity="0.4"/>
+            <text x="24" y="24" font-size="10" fill="#a5b4fc" text-anchor="middle" id="icon-coord">⚙️</text>
+            <text x="42" y="19" class="node-title" id="title-coord">COORDINATOR SERVICE</text>
+            <text x="42" y="31" class="node-port-sub">Port 8002 • Saga Orchestrator</text>
+            
+            <text x="18" y="62" class="node-stat-label">State Machine:</text>
+            <text x="182" y="62" class="node-stat-val font-mono" id="topo-coord-state" text-anchor="end">IDLE</text>
+            
+            <text x="18" y="82" class="node-stat-label">Audit Log (SagaEvent):</text>
+            <text x="182" y="82" class="node-stat-val" id="topo-coord-events" text-anchor="end">0 rows</text>
+            
+            <text x="18" y="102" class="node-stat-label">Recovery Lease:</text>
+            <text x="182" y="102" class="node-stat-val text-success" id="topo-coord-lease" text-anchor="end">READY</text>
+
+            <rect x="14" y="116" width="172" height="22" rx="4" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+            <text x="100" y="131" font-size="10" fill="#94a3b8" text-anchor="middle">PostgreSQL • dtc_coordinator</text>
+          </g>
+
+          <!-- Node 3: Inventory Service (:8000) -->
+          <g class="topo-node-group" id="node-group-inv" transform="translate(750, 10)">
+            <rect id="node-box-inv" class="node-box node-box-inv" width="180" height="105" rx="12"/>
+            <text x="16" y="24" class="node-title" id="title-inv">INVENTORY SERVICE</text>
+            <text x="16" y="38" class="node-port-sub">Port 8000 • Row-Locking</text>
+            
+            <text x="16" y="60" class="node-stat-label">SELECT FOR UPDATE:</text>
+            <text x="164" y="60" class="node-stat-val text-success" id="topo-inv-lock" text-anchor="end">ENFORCED</text>
+            
+            <text x="16" y="80" class="node-stat-label">Release Idempotency:</text>
+            <text x="164" y="80" class="node-stat-val text-accent" text-anchor="end">GUARANTEED</text>
+            
+            <text x="16" y="96" class="node-stat-label" style="font-size: 8.5px; fill: #64748b;">PostgreSQL • dtc_inventory</text>
+          </g>
+
+          <!-- Node 4: Payment Service (:8001) - Clean Full Text -->
+          <g class="topo-node-group" id="node-group-pay" transform="translate(750, 145)">
+            <rect id="node-box-pay" class="node-box node-box-pay" width="180" height="105" rx="12"/>
+            <text x="16" y="24" class="node-title" id="title-pay">PAYMENT SERVICE</text>
+            <text x="16" y="38" class="node-port-sub">Port 8001 • Idempotent Gateway</text>
+            
+            <text x="16" y="60" class="node-stat-label">Idempotency Key:</text>
+            <text x="164" y="60" class="node-stat-val text-success" id="pay-idempotency-key" text-anchor="end">DB UNIQUE</text>
+            
+            <text x="16" y="80" class="node-stat-label">Constraint:</text>
+            <text x="164" y="80" class="node-stat-val font-mono" id="pay-constraint-label" text-anchor="end" style="font-size: 9.5px; fill: #38bdf8;">UNIQUE(tx_id)</text>
+            <title>PostgreSQL Constraint: UNIQUE (transaction_id) on payments_payment table — prevents duplicate charges under concurrency</title>
+
+            <text x="16" y="96" class="node-stat-label" style="font-size: 8.5px; fill: #64748b;">PostgreSQL • dtc_payment</text>
+          </g>
+        </svg>
+      </div>
+    </section>
+
+    <!-- Dedicated Recovery Worker & Distributed Lock Panel -->
+    <section class="recovery-panel">
+      <div class="recovery-header">
+        <div class="rec-title-area">
+          <span class="pulse-dot-purple"></span>
+          <h4>CELERY BEAT CRASH RECOVERY WORKER & DISTRIBUTED LEASE MONITOR</h4>
+          <span class="badge badge-purple">90s SWEEP SCHEDULE</span>
+        </div>
+        <div class="rec-actions">
+          <button id="btn-trigger-sweep" class="btn btn-xs btn-outline" title="Trigger an immediate recovery sweep">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Trigger Immediate Sweep
+          </button>
+        </div>
+      </div>
+      <div class="recovery-grid">
+        <div class="rec-card">
+          <div class="rec-card-label">LEASE TIMEOUT COUNTDOWN</div>
+          <div class="rec-card-val font-mono text-purple" id="rec-countdown-val">90s</div>
+          <div class="rec-progress-bar">
+            <div class="rec-progress-fill" id="rec-progress-fill" style="width: 100%;"></div>
+          </div>
+        </div>
+        <div class="rec-card">
+          <div class="rec-card-label">SAGAS SWEPT</div>
+          <div class="rec-card-val font-mono" id="rec-sagas-swept">0</div>
+          <div class="rec-sub">Stale non-terminal records polled</div>
+        </div>
+        <div class="rec-card">
+          <div class="rec-card-label">ORPHANS RECOVERED</div>
+          <div class="rec-card-val font-mono text-success" id="rec-orphans-recovered">0</div>
+          <div class="rec-sub">Auto-reconciled crashes</div>
+        </div>
+        <div class="rec-card">
+          <div class="rec-card-label">REDIS DISTRIBUTED MUTEX</div>
+          <div class="rec-card-val font-mono" id="rec-redis-lock"><span class="badge badge-success">IDLE / READY</span></div>
+          <div class="rec-sub">Atomic Lua script release</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Workspace Grid: Transactions Matrix + Forensic Audit Stream -->
+    <div class="workspace-grid">
+      
+      <!-- Left Column: In-Flight & Historical Transactions Feed -->
+      <section class="panel tx-feed-panel">
+        <div class="panel-header">
+          <div class="panel-title-area">
+            <h3>TRANSACTION MATRIX</h3>
+            <span class="badge badge-neutral" id="badge-total-tx">0 Total</span>
+          </div>
+          <div class="feed-filter-bar">
+            <button class="filter-tab active" data-filter="ALL">All</button>
+            <button class="filter-tab" data-filter="IN_FLIGHT">In-Flight</button>
+            <button class="filter-tab" data-filter="COMPLETED">Completed</button>
+            <button class="filter-tab" data-filter="COMPENSATED">Compensated</button>
+            <button class="filter-tab" data-filter="FAILED">Failed</button>
+            <button id="btn-manual-poll" class="btn btn-icon btn-sm" title="Refresh list">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="tx-table-container">
+          <table class="tx-table" id="table-tx-feed">
+            <thead>
+              <tr>
+                <th style="width: 130px;">Transaction ID</th>
+                <th>Saga Phase Waterfall</th>
+                <th style="width: 110px;">Status</th>
+                <th style="width: 70px;">Amount</th>
+                <th style="width: 65px;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-tx-feed">
+              <tr>
+                <td colspan="5" class="table-empty">Connecting to Coordinator Service...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Right Column: Forensic SagaEvent Deep-Dive Stream -->
+      <section class="panel forensic-panel">
+        <div class="panel-header">
+          <div class="panel-title-area">
+            <h3>SAGA FORENSIC AUDIT STREAM</h3>
+            <span class="endpoint-pill">GET /transactions/{id}/events/</span>
+          </div>
+          <div class="forensic-actions">
+            <span id="forensic-seq-count" class="badge badge-purple">0 Events</span>
+            <button id="btn-retry-active-tx" class="btn btn-sm btn-warning hidden">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+              Retry Compensation
+            </button>
+          </div>
+        </div>
+
+        <div class="forensic-body">
+          <!-- Active Transaction Meta Banner -->
+          <div id="forensic-meta-card" class="forensic-meta-card hidden">
+            <div class="fmeta-col">
+              <span class="fmeta-label">TRANSACTION UUID</span>
+              <span class="fmeta-val font-mono" id="fmeta-id">--</span>
+            </div>
+            <div class="fmeta-col">
+              <span class="fmeta-label">CURRENT STATUS</span>
+              <span id="fmeta-status-badge" class="badge badge-neutral">--</span>
+            </div>
+            <div class="fmeta-col">
+              <span class="fmeta-label">PRODUCT / QTY</span>
+              <span class="fmeta-val" id="fmeta-prod">--</span>
+            </div>
+            <div class="fmeta-col">
+              <span class="fmeta-label">AMOUNT</span>
+              <span class="fmeta-val text-success" id="fmeta-amt">--</span>
+            </div>
+          </div>
+
+          <!-- Chronological Step-by-Step Audit Timeline -->
+          <div class="timeline-container" id="timeline-container">
+            <div class="timeline-empty" id="timeline-empty-msg">
+              <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#475569" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <p>Select any transaction from the matrix on the left or fire a demo scenario to inspect its immutable <code>SagaEvent</code> audit trail.</p>
+            </div>
+            <div class="timeline-stream" id="timeline-stream"></div>
+          </div>
+
+          <!-- Raw HTTP Payload Inspector Modal/Box -->
+          <div id="payload-inspector-box" class="payload-inspector hidden">
+            <div class="payload-bar">
+              <span id="payload-inspector-title">HTTP Payload:</span>
+              <button id="btn-close-payload" class="btn btn-icon btn-xs">✕</button>
+            </div>
+            <pre><code id="payload-inspector-code"></code></pre>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Modal: "How This Architecture Works" (60-Second Recruiter Explainer) -->
+  <div id="modal-architecture" class="modal-backdrop hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>Architecture & Design Rationale (In 60 Seconds)</h3>
+        <button class="btn btn-icon btn-close-modal" id="btn-close-arch">✕</button>
+      </div>
+      <div class="modal-body arch-grid">
+        <div class="arch-card">
+          <div class="arch-icon">⚖️</div>
+          <h4>1. Saga Pattern vs. 2PC</h4>
+          <p>Two-Phase Commit (2PC) blocks distributed databases while holding locks across network boundaries. The Saga pattern uses local ACID transactions followed by automated <strong>Compensating Actions</strong> if downstream services decline.</p>
+        </div>
+
+        <div class="arch-card">
+          <div class="arch-icon">🔒</div>
+          <h4>2. Relational Idempotency</h4>
+          <p>Rather than relying on volatile Redis TTL keys that expire and risk double-charges on delayed retries, all services enforce PostgreSQL <code>UNIQUE(transaction_id)</code> constraints caught via <code>IntegrityError</code>.</p>
+        </div>
+
+        <div class="arch-card">
+          <div class="arch-icon">🛡️</div>
+          <h4>3. Row-Level Concurrency (CAS)</h4>
+          <p>The Coordinator protects all status mutations under <code>SELECT FOR UPDATE</code> with Compare-And-Set (CAS) filters. Racing workers or client retries are serialized cleanly without sequence collisions.</p>
+        </div>
+
+        <div class="arch-card">
+          <div class="arch-icon">📜</div>
+          <h4>4. Append-Only SagaEvent Log</h4>
+          <p>A single mutable status column destroys history. Every transition appends an immutable <code>SagaEvent(seq, from, to, actor, payload)</code> record, providing ground-truth forensic audibility.</p>
+        </div>
+
+        <div class="arch-card">
+          <div class="arch-icon">⏱️</div>
+          <h4>5. Deterministic Crash Recovery</h4>
+          <p>A Celery Beat background worker sweeps orphaned non-terminal transactions older than 5 minutes, querying ground-truth downstream endpoints (<code>/payments/check/</code>, <code>/reserve/check/</code>) to roll forward or compensate.</p>
+        </div>
+
+        <div class="arch-card">
+          <div class="arch-icon">📦</div>
+          <h4>6. Microservice Isolation</h4>
+          <p>Three independent Django services, three separate PostgreSQL databases. Zero shared database state. Completely isolated domain boundaries.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: System Configuration -->
+  <div id="modal-config" class="modal-backdrop hidden">
+    <div class="modal-dialog modal-dialog-sm">
+      <div class="modal-header">
+        <h3>Target Environment Configuration</h3>
+        <button class="btn btn-icon btn-close-modal" id="btn-close-config">✕</button>
+      </div>
+      <form id="form-config" class="modal-body">
+        <div class="form-field">
+          <label>Coordinator Base URL:</label>
+          <input type="text" id="cfg-coord-url" value="http://127.0.0.1:8002">
+        </div>
+        <div class="form-field">
+          <label>Inventory Base URL:</label>
+          <input type="text" id="cfg-inv-url" value="http://127.0.0.1:8000">
+        </div>
+        <div class="form-field">
+          <label>Payment Base URL:</label>
+          <input type="text" id="cfg-pay-url" value="http://127.0.0.1:8001">
+        </div>
+        <div class="form-field">
+          <label>Polling Frequency (ms):</label>
+          <input type="number" id="cfg-poll-ms" value="1500" min="500" step="500">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-reset-cfg">Reset Defaults</button>
+          <button type="submit" class="btn btn-primary btn-sm">Save & Reconnect</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
