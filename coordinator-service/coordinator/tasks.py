@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 LOCK_KEY = "locks:recovery_stuck_transactions"
 LOCK_TIMEOUT = 7200
 
+# lua script
 RELEASE_LOCK_SCRIPT = """
 if redis.call("get", KEYS[1]) == ARGV[1] then
     return redis.call("del", KEYS[1])

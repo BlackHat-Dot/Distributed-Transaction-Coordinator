@@ -238,9 +238,7 @@ def create_transaction(request):
 
 @api_view(["POST"])
 def retry_compensation(request, transaction_id):
-    # Read current status for the early-exit guard only. No row lock yet —
-    # this read is intentionally outside the atomic block because we haven't
-    # done any network I/O yet and we want to short-circuit cheaply.
+
     txn = Transaction.objects.get(transaction_id=transaction_id)
     txn_status_at_entry = txn.status
 
@@ -251,10 +249,6 @@ def retry_compensation(request, transaction_id):
             "message": "Transaction is already compensated",
         })
 
-    # Network I/O — up to REQUEST_TIMEOUT seconds. The DB row is NOT locked
-    # during this call. A concurrent retry_compensation or recovery sweep can
-    # move the row during this window. That is fine: _set_status_with_event
-    # below will detect it atomically under SELECT FOR UPDATE.
     try:
         release_response = requests.post(
             INVENTORY_RELEASE_URL,
@@ -262,11 +256,7 @@ def retry_compensation(request, transaction_id):
             timeout=REQUEST_TIMEOUT,
         )
     except (Timeout, ConnectionError) as e:
-        # Network exception path. expected_status=txn_status_at_entry: we
-        # only write RETRY_COMPENSATION_FAILED if the row is still in the
-        # state we saw at entry. If a concurrent caller already moved it,
-        # _set_status_with_event returns False and we return 503 anyway
-        # (the caller's retry call failed regardless).
+   
         _set_status_with_event(
             transaction_id,
             to_status=Transaction.Status.RETRY_COMPENSATION_FAILED,
@@ -287,18 +277,7 @@ def retry_compensation(request, transaction_id):
         )
 
     if release_response.status_code == 200:
-        # Inventory released successfully. Now atomically transition the
-        # coordinator's status and append the audit event.
-        #
-        # expected_status=txn_status_at_entry: this is the same predicate as
-        # the old code's filter(status=txn.status), but now enforced under
-        # SELECT FOR UPDATE instead of an unguarded filter+update. The key
-        # difference: by the time _set_status_with_event executes, it
-        # acquires a fresh row lock and checks the current DB status against
-        # txn_status_at_entry. If a concurrent caller has already moved the
-        # row (e.g. another retry thread won the race), the lock reveals the
-        # mismatch and _set_status_with_event returns False — the loser
-        # correctly takes the "concurrently resolved" branch below.
+
         transitioned = _set_status_with_event(
             transaction_id,
             to_status=Transaction.Status.COMPENSATED_ON_RETRY,
@@ -323,8 +302,6 @@ def retry_compensation(request, transaction_id):
             "compensation_response": release_response.json(),
         })
 
-    # Inventory returned a non-200. Write RETRY_COMPENSATION_FAILED only if
-    # the row hasn't already moved (same expected_status predicate as above).
     _set_status_with_event(
         transaction_id,
         to_status=Transaction.Status.RETRY_COMPENSATION_FAILED,
@@ -391,13 +368,6 @@ def _serialize_event(event):
 
 @api_view(["GET"])
 def list_transaction_events(request, transaction_id):
-    """
-    Stage 1 read-only endpoint.
-
-    Returns the append-only SagaEvent log for a transaction, ordered by seq.
-    No writes are performed here. The event log will be empty until Stage 3
-    wires _set_status_with_event into the existing call sites.
-    """
     txn = Transaction.objects.get(transaction_id=transaction_id)
     events = txn.events.order_by("seq")
     return Response({

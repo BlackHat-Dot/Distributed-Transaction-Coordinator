@@ -50,15 +50,6 @@ class Transaction(models.Model):
 
 
 class SagaEvent(models.Model):
-    """
-    Append-only audit log for every Transaction state transition.
-
-    Rules (enforced here and in _set_status_with_event):
-    - Rows are never updated or deleted.
-    - seq is monotonically increasing per transaction (1-based).
-    - unique_together on (transaction, seq) is the DB-level guard against
-      two concurrent writers inserting the same sequence number.
-    """
 
     ACTOR_REQUEST = "request"
     ACTOR_RECOVERY = "recovery"

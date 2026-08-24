@@ -1,10 +1,3 @@
-﻿"""
-test_recovery_race.py
-
-Step 3: Inter-process race test between Command._compensate() (recovery sweep)
-and retry_compensation() (client request path).
-"""
-
 import threading
 import time
 import uuid
@@ -23,13 +16,10 @@ THREAD_STAGGER = 0.05
 
 
 class SimulatedInventory:
-    """
-    Simulates the exact idempotent behavior of inventory-service''s
-    release_product view (which uses SELECT FOR UPDATE on Reservation).
-    """
+
     def __init__(self, initial_stock=10, reserved_qty=2):
         self.lock = threading.Lock()
-        self.stock = initial_stock - reserved_qty  # e.g., 8
+        self.stock = initial_stock - reserved_qty  # e.g : 8
         self.reserved_qty = reserved_qty
         self.released = False
         self.call_count = 0
@@ -39,7 +29,7 @@ class SimulatedInventory:
         with self.lock:
             self.call_count += 1
             if self.released:
-                # Idempotent return without incrementing stock again
+    
                 return 200, {
                     "message": "Reservation already released",
                     "transaction_id": str(transaction_id),
@@ -53,18 +43,9 @@ class SimulatedInventory:
 
 
 class RecoveryAndRetryCompensationRaceTests(TransactionTestCase):
-    """
-    Simulates a race between:
-    1. The background recovery sweep executing _compensate() after claiming
-       a stuck transaction into RECOVERY_IN_PROGRESS.
-    2. A client simultaneously calling POST /transactions/<id>/retry-compensation/.
-
-    Both paths interact with the Inventory release endpoint concurrently,
-    and both attempt to write terminal status updates to the coordinator DB.
-    """
 
     def test_concurrent_recovery_compensate_and_retry_compensation(self):
-        # 1. Setup transaction in RECOVERY_IN_PROGRESS (as if _claim just finished)
+        
         txn = Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=Transaction.Status.RECOVERY_IN_PROGRESS,
@@ -75,11 +56,11 @@ class RecoveryAndRetryCompensationRaceTests(TransactionTestCase):
         tid = txn.transaction_id
         url = RETRY_URL.format(tid)
 
-        # 2. Setup simulated idempotent Inventory service
+
         inventory = SimulatedInventory(initial_stock=10, reserved_qty=2)
 
         def mock_post(url_arg, *args, **kwargs):
-            # Dispatch to simulated inventory release
+
             tid_arg = kwargs.get("json", {}).get("transaction_id", str(tid))
             status_code, body = inventory.release(tid_arg)
             mock_resp = MagicMock()
@@ -93,7 +74,7 @@ class RecoveryAndRetryCompensationRaceTests(TransactionTestCase):
         def run_recovery():
             try:
                 cmd = RecoveryCommand()
-                # Run _compensate directly as recovery worker
+
                 cmd._compensate(tid)
                 results["recovery"] = "done"
             except Exception as e:
@@ -112,7 +93,7 @@ class RecoveryAndRetryCompensationRaceTests(TransactionTestCase):
             finally:
                 connection.close()
 
-        # 3. Launch both concurrently
+
         with patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=mock_post), \
              patch("coordinator.views.requests.post", side_effect=mock_post):
             t_rec = threading.Thread(target=run_recovery)
@@ -122,11 +103,10 @@ class RecoveryAndRetryCompensationRaceTests(TransactionTestCase):
             t_rec.join()
             t_ret.join()
 
-        # (a) Assert no exceptions occurred in either thread
+
         self.assertEqual(errors, [], f"Thread exceptions: {errors}")
 
-        # (b) Assert inventory was called concurrently (both threads called it),
-        # but stock was restored EXACTLY ONCE (idempotency held)
+       
         self.assertGreaterEqual(inventory.call_count, 1)
         self.assertEqual(
             inventory.stock, 10,
@@ -134,7 +114,7 @@ class RecoveryAndRetryCompensationRaceTests(TransactionTestCase):
             "Double-release bug detected!",
         )
 
-        # (c) Assert Transaction.status is in a single unambiguous terminal state
+      
         txn.refresh_from_db()
         self.assertIn(
             txn.status,
@@ -142,12 +122,7 @@ class RecoveryAndRetryCompensationRaceTests(TransactionTestCase):
             f"Unexpected final status: {txn.status}",
         )
 
-        # (d) Assert SagaEvent audit log correctness
         events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
-        # We expect:
-        # Event 1: RECOVERY_IN_PROGRESS -> COMPENSATING (by recovery)
-        # Event 2: COMPENSATING -> COMPENSATED (if recovery won) or COMPENSATED_ON_RETRY (if retry won)
-        # Exactly ONE terminal event from COMPENSATING
         self.assertEqual(
             len(events), 2,
             f"Expected exactly 2 events, got {len(events)}: {events}",
@@ -161,3 +136,89 @@ class RecoveryAndRetryCompensationRaceTests(TransactionTestCase):
         self.assertEqual(events[1].from_status, Transaction.Status.COMPENSATING)
         self.assertEqual(events[1].to_status, txn.status)
         self.assertIn(events[1].actor, [SagaEvent.ACTOR_RECOVERY, SagaEvent.ACTOR_RETRY])
+
+
+class RecoveryClaimTests(TransactionTestCase):
+
+    def test_claim_creates_saga_event(self):
+        from datetime import timedelta
+        from django.utils import timezone
+
+        past_time = timezone.now() - timedelta(minutes=10)
+        txn = Transaction.objects.create(
+            transaction_id=uuid.uuid4(),
+            status=Transaction.Status.INVENTORY_RESERVED,
+            product_id=1,
+            quantity=1,
+            amount=100,
+        )
+       
+        Transaction.objects.filter(pk=txn.pk).update(updated_at=past_time)
+
+        cmd = RecoveryCommand()
+        threshold = timezone.now() - timedelta(minutes=5)
+
+    
+        claimed_ids = cmd._claim(Transaction.Status.INVENTORY_RESERVED, threshold)
+        self.assertEqual(claimed_ids, [txn.transaction_id])
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.status, Transaction.Status.RECOVERY_IN_PROGRESS)
+
+    
+        events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].seq, 1)
+        self.assertEqual(events[0].from_status, Transaction.Status.INVENTORY_RESERVED)
+        self.assertEqual(events[0].to_status, Transaction.Status.RECOVERY_IN_PROGRESS)
+        self.assertEqual(events[0].actor, SagaEvent.ACTOR_RECOVERY)
+
+
+        second_claimed_ids = cmd._claim(Transaction.Status.INVENTORY_RESERVED, threshold)
+        self.assertEqual(second_claimed_ids, [])
+
+        events_after = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
+        self.assertEqual(len(events_after), 1, "Duplicate SagaEvent was written on second claim attempt")
+
+    def test_concurrent_claim_exactly_one_winner_and_one_event(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        past_time = timezone.now() - timedelta(minutes=10)
+        txn = Transaction.objects.create(
+            transaction_id=uuid.uuid4(),
+            status=Transaction.Status.STARTED,
+            product_id=1,
+            quantity=1,
+            amount=100,
+        )
+        Transaction.objects.filter(pk=txn.pk).update(updated_at=past_time)
+        threshold = timezone.now() - timedelta(minutes=5)
+
+        results = []
+
+        def do_claim(_):
+            cmd = RecoveryCommand()
+            try:
+                claimed = cmd._claim(Transaction.Status.STARTED, threshold)
+                return claimed
+            finally:
+                connection.close()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(do_claim, i) for i in range(2)]
+            for f in as_completed(futures):
+                results.append(f.result())
+
+        
+        winners = [r for r in results if txn.transaction_id in r]
+        self.assertEqual(len(winners), 1, f"Expected 1 winner, got: {results}")
+
+       
+        events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].seq, 1)
+        self.assertEqual(events[0].from_status, Transaction.Status.STARTED)
+        self.assertEqual(events[0].to_status, Transaction.Status.RECOVERY_IN_PROGRESS)
+        self.assertEqual(events[0].actor, SagaEvent.ACTOR_RECOVERY)

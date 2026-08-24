@@ -44,16 +44,16 @@ class Command(BaseCommand):
 
         claimed_ids = []
         for transaction_id in candidates:
-            claimed = Transaction.objects.filter(
+            claimed = _set_status_with_event(
                 transaction_id=transaction_id,
-                status=from_status,
-                updated_at__lt=threshold,
-            ).update(
-                status=Transaction.Status.RECOVERY_IN_PROGRESS,
-                updated_at=timezone.now(),
+                to_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+                expected_status=from_status,
+                actor=SagaEvent.ACTOR_RECOVERY,
+                http_status_code=None,
+                http_payload=None,
             )
 
-            if claimed != 1:
+            if not claimed:
                 self.stdout.write(
                     f"  {from_status} {transaction_id}: already claimed, skipping."
                 )
