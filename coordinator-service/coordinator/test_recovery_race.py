@@ -8,6 +8,7 @@ from django.test import TransactionTestCase
 from rest_framework.test import APIClient
 
 from coordinator.models import Transaction, SagaEvent
+from coordinator.saga_log import _set_status_with_event
 from coordinator.management.commands.recovery_stuck_transactions import Command as RecoveryCommand
 
 RETRY_URL = "/transactions/{}/retry-compensation/"
@@ -222,3 +223,136 @@ class RecoveryClaimTests(TransactionTestCase):
         self.assertEqual(events[0].from_status, Transaction.Status.STARTED)
         self.assertEqual(events[0].to_status, Transaction.Status.RECOVERY_IN_PROGRESS)
         self.assertEqual(events[0].actor, SagaEvent.ACTOR_RECOVERY)
+
+    def test_recover_compensating_resolves_to_compensated(self):
+        from datetime import timedelta
+        from django.core.management import call_command
+        from django.utils import timezone
+
+        txn = Transaction.objects.create(
+            transaction_id=uuid.uuid4(),
+            status=Transaction.Status.STARTED,
+            product_id=1,
+            quantity=1,
+            amount=100,
+        )
+        tid = txn.transaction_id
+        _set_status_with_event(
+            transaction_id=tid,
+            to_status=Transaction.Status.COMPENSATING,
+            expected_status=Transaction.Status.STARTED,
+            actor=SagaEvent.ACTOR_RECOVERY,
+        )
+
+        past_time = timezone.now() - timedelta(minutes=10)
+        Transaction.objects.filter(transaction_id=tid).update(updated_at=past_time)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"message": "Inventory released"}
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", return_value=mock_resp):
+            call_command("recovery_stuck_transactions")
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.status, Transaction.Status.COMPENSATED)
+
+        events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
+        self.assertEqual(len(events), 4)
+
+        self.assertEqual(events[0].seq, 1)
+        self.assertEqual(events[0].from_status, Transaction.Status.STARTED)
+        self.assertEqual(events[0].to_status, Transaction.Status.COMPENSATING)
+       
+        self.assertEqual(events[1].seq, 2)
+        self.assertEqual(events[1].from_status, Transaction.Status.COMPENSATING)
+        self.assertEqual(events[1].to_status, Transaction.Status.RECOVERY_IN_PROGRESS)
+        self.assertEqual(events[1].actor, SagaEvent.ACTOR_RECOVERY)
+       
+        self.assertEqual(events[2].seq, 3)
+        self.assertEqual(events[2].from_status, Transaction.Status.RECOVERY_IN_PROGRESS)
+        self.assertEqual(events[2].to_status, Transaction.Status.COMPENSATING)
+        self.assertEqual(events[2].actor, SagaEvent.ACTOR_RECOVERY)
+
+        self.assertEqual(events[3].seq, 4)
+        self.assertEqual(events[3].from_status, Transaction.Status.COMPENSATING)
+        self.assertEqual(events[3].to_status, Transaction.Status.COMPENSATED)
+        self.assertEqual(events[3].actor, SagaEvent.ACTOR_RECOVERY)
+
+    def test_recover_compensation_failed_resolves_to_compensated(self):
+        from datetime import timedelta
+        from django.core.management import call_command
+        from django.utils import timezone
+
+        txn = Transaction.objects.create(
+            transaction_id=uuid.uuid4(),
+            status=Transaction.Status.COMPENSATION_FAILED,
+            product_id=1,
+            quantity=1,
+            amount=100,
+        )
+        tid = txn.transaction_id
+
+        past_time = timezone.now() - timedelta(minutes=10)
+        Transaction.objects.filter(transaction_id=tid).update(updated_at=past_time)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"message": "Inventory released"}
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", return_value=mock_resp):
+            call_command("recovery_stuck_transactions")
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.status, Transaction.Status.COMPENSATED)
+
+        events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
+        self.assertEqual(len(events), 3)
+       
+        self.assertEqual(events[0].seq, 1)
+        self.assertEqual(events[0].from_status, Transaction.Status.COMPENSATION_FAILED)
+        self.assertEqual(events[0].to_status, Transaction.Status.RECOVERY_IN_PROGRESS)
+        self.assertEqual(events[0].actor, SagaEvent.ACTOR_RECOVERY)
+       
+        self.assertEqual(events[1].seq, 2)
+        self.assertEqual(events[1].from_status, Transaction.Status.RECOVERY_IN_PROGRESS)
+        self.assertEqual(events[1].to_status, Transaction.Status.COMPENSATING)
+        self.assertEqual(events[1].actor, SagaEvent.ACTOR_RECOVERY)
+
+        self.assertEqual(events[2].seq, 3)
+        self.assertEqual(events[2].from_status, Transaction.Status.COMPENSATING)
+        self.assertEqual(events[2].to_status, Transaction.Status.COMPENSATED)
+        self.assertEqual(events[2].actor, SagaEvent.ACTOR_RECOVERY)
+
+    def test_recover_compensation_failed_downstream_reject_leaves_compensation_failed(self):
+        from datetime import timedelta
+        from django.core.management import call_command
+        from django.utils import timezone
+
+        txn = Transaction.objects.create(
+            transaction_id=uuid.uuid4(),
+            status=Transaction.Status.COMPENSATION_FAILED,
+            product_id=1,
+            quantity=1,
+            amount=100,
+        )
+        tid = txn.transaction_id
+
+        past_time = timezone.now() - timedelta(minutes=10)
+        Transaction.objects.filter(transaction_id=tid).update(updated_at=past_time)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+        mock_resp.json.return_value = {"error": "Release error"}
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", return_value=mock_resp):
+            call_command("recovery_stuck_transactions")
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.status, Transaction.Status.COMPENSATION_FAILED)
+
+        events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
+        self.assertEqual(len(events), 3)
+        self.assertEqual(events[0].to_status, Transaction.Status.RECOVERY_IN_PROGRESS)
+        self.assertEqual(events[1].to_status, Transaction.Status.COMPENSATING)
+        self.assertEqual(events[2].to_status, Transaction.Status.COMPENSATION_FAILED)
