@@ -29,6 +29,8 @@ class Command(BaseCommand):
         self.recover_payment_processing(threshold)
         self.recover_reserved(threshold)
         self.recover_started(threshold)
+        self.recover_compensating(threshold)
+        self.recover_compensation_failed(threshold)
 
         self.recover_in_progress(threshold)
 
@@ -87,6 +89,22 @@ class Command(BaseCommand):
                 f"Recovering {transaction_id} claimed from STARTED..."
             )
             self._resolve_transaction(transaction_id)
+
+    def recover_compensating(self, threshold):
+
+        for transaction_id in self._claim(Transaction.Status.COMPENSATING, threshold):
+            self.stdout.write(
+                f"Recovering {transaction_id} claimed from COMPENSATING..."
+            )
+            self._compensate(transaction_id)
+
+    def recover_compensation_failed(self, threshold):
+
+        for transaction_id in self._claim(Transaction.Status.COMPENSATION_FAILED, threshold):
+            self.stdout.write(
+                f"Recovering {transaction_id} claimed from COMPENSATION_FAILED..."
+            )
+            self._compensate(transaction_id)
 
 
     def recover_in_progress(self, threshold):
