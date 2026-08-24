@@ -1,31 +1,20 @@
-/**
- * DTC Mission Control — Observability & Real-Time Visualization
- * Pure vanilla CSS3 stylesheet with unified design tokens, dark/light themes, and sliding toggles.
- */
 
-/* ==========================================================================
-   1. Design Tokens & Global Variables (Dark Theme - Default)
-   ========================================================================== */
 :root {
-  /* Surface & Background Colors */
   --bg-deep: #070b13;
   --bg-surface: #0f172a;
   --bg-surface-elevated: #1e293b;
   --bg-surface-subtle: #131c2e;
   --bg-input: #090e1a;
   
-  /* Borders */
   --border-subtle: rgba(51, 65, 85, 0.6);
   --border-strong: #334155;
   --border-focus: #6366f1;
 
-  /* Typography Colors */
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
   --text-code: #38bdf8;
 
-  /* Accent Colors */
   --accent-blue: #38bdf8;
   --accent-indigo: #818cf8;
   --accent-green: #34d399;
@@ -34,18 +23,15 @@
   --accent-rose: #f43f5e;
   --accent-purple: #c084fc;
 
-  /* Fonts */
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, Monaco, monospace;
 
-  /* Radii */
   --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-xl: 18px;
 
-  /* Shadows */
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
@@ -53,15 +39,11 @@
   --shadow-glow-indigo: 0 0 20px rgba(99, 102, 241, 0.2);
   --shadow-glow-red: 0 0 25px rgba(244, 63, 94, 0.5);
 
-  /* Standard Spacing Tokens */
   --panel-pad-desktop: 20px 24px;
   --panel-pad-tablet: 16px 18px;
   --panel-pad-mobile: 14px 14px;
 }
 
-/* ==========================================================================
-   2. Light Theme Definition ([data-theme="light"])
-   ========================================================================== */
 [data-theme="light"] {
   --bg-deep: #f1f5f9;
   --bg-surface: #ffffff;
@@ -94,9 +76,6 @@
   --shadow-glow-red: 0 0 20px rgba(225, 29, 72, 0.2);
 }
 
-/* ==========================================================================
-   3. Reset, Base Styles & Smooth Theme Cross-Fade
-   ========================================================================== */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -116,7 +95,7 @@ html, body {
   transition: background-color 280ms cubic-bezier(0.4, 0, 0.2, 1), color 280ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Global elements smooth transition */
+
 .top-nav, .panel, .proof-panel, .recovery-panel, .stat-card, .btn-scenario,
 .health-node, .tx-table th, .tx-table td, .forensic-meta-card, .timeline-item,
 .custom-drawer, .modal-dialog, .modal-header, .modal-footer, .topology-canvas-container {
@@ -131,7 +110,6 @@ button, input, select, textarea {
   font-size: inherit;
 }
 
-/* Custom Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -153,9 +131,6 @@ button, input, select, textarea {
   background: #475569;
 }
 
-/* ==========================================================================
-   4. Header Bar Navigation
-   ========================================================================== */
 .top-nav {
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
@@ -276,9 +251,6 @@ button, input, select, textarea {
   flex-shrink: 0;
 }
 
-/* ==========================================================================
-   5. Modern Sliding Toggle Controls (DEMO ⟷ LIVE and Light ⟷ Dark)
-   ========================================================================== */
 .sliding-toggle-group {
   display: inline-flex;
   align-items: center;
@@ -342,7 +314,6 @@ button, input, select, textarea {
   filter: drop-shadow(0 0 5px rgba(245, 158, 11, 0.6));
 }
 
-/* Custom Sliding Switch Pill */
 .switch-toggle {
   position: relative;
   display: inline-block;
@@ -390,7 +361,6 @@ button, input, select, textarea {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
-/* Mode Toggle States (Default: LIVE is Unchecked => Knob on Right) */
 .mode-toggle-container .toggle-slider {
   background: rgba(52, 211, 153, 0.15);
   border-color: rgba(52, 211, 153, 0.45);
@@ -403,7 +373,6 @@ button, input, select, textarea {
   box-shadow: 0 0 8px rgba(52, 211, 153, 0.7);
 }
 
-/* Mode Toggle Checked => DEMO (Knob on Left) */
 .mode-toggle-container input:checked + .toggle-slider {
   background: rgba(56, 189, 248, 0.15);
   border-color: rgba(56, 189, 248, 0.45);
@@ -416,7 +385,6 @@ button, input, select, textarea {
   box-shadow: 0 0 8px rgba(56, 189, 248, 0.7);
 }
 
-/* Theme Toggle States (Default: DARK is Unchecked => Knob on Right near Moon) */
 .theme-toggle-container .toggle-slider {
   background: rgba(192, 132, 252, 0.15);
   border-color: rgba(192, 132, 252, 0.4);
@@ -429,7 +397,6 @@ button, input, select, textarea {
   box-shadow: 0 0 8px rgba(192, 132, 252, 0.7);
 }
 
-/* Theme Toggle Checked => LIGHT (Knob on Left near Sun) */
 .theme-toggle-container input:checked + .toggle-slider {
   background: rgba(245, 158, 11, 0.15);
   border-color: rgba(245, 158, 11, 0.4);
@@ -442,14 +409,10 @@ button, input, select, textarea {
   box-shadow: 0 0 8px rgba(245, 158, 11, 0.7);
 }
 
-/* Hover feedback */
 .sliding-toggle-group:hover .toggle-slider {
   filter: brightness(1.12);
 }
 
-/* ==========================================================================
-   6. Buttons & Badges
-   ========================================================================== */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -501,9 +464,6 @@ button, input, select, textarea {
 .badge-purple  { background: rgba(192, 132, 252, 0.15); color: var(--accent-purple); border: 1px solid rgba(192, 132, 252, 0.3); }
 .badge-neutral { background: rgba(100, 116, 139, 0.15); color: var(--text-muted); border: 1px solid rgba(100, 116, 139, 0.3); }
 
-/* ==========================================================================
-   7. Dashboard Layout & Main Containers
-   ========================================================================== */
 .dashboard-body {
   max-width: 1560px;
   margin: 0 auto;
@@ -514,9 +474,6 @@ button, input, select, textarea {
   width: 100%;
 }
 
-/* ==========================================================================
-   8. Proof Header & Stat Cards Grid
-   ========================================================================== */
 .proof-panel {
   background: linear-gradient(180deg, #111a2e 0%, var(--bg-surface) 100%);
   border: 1px solid rgba(99, 102, 241, 0.25);
@@ -623,9 +580,6 @@ button, input, select, textarea {
   background: rgba(52, 211, 153, 0.05);
 }
 
-/* ==========================================================================
-   9. Scenario Bar & Action Cards
-   ========================================================================== */
 .scenario-bar {
   background: var(--bg-surface-subtle);
   border: 1px solid var(--border-subtle);
@@ -813,9 +767,6 @@ button, input, select, textarea {
   font-family: var(--font-mono);
 }
 
-/* ==========================================================================
-   10. Live Service Topology Diagram (Interactive Obsidian Canvas)
-   ========================================================================== */
 .topology-section {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
@@ -926,7 +877,6 @@ button, input, select, textarea {
   fill: rgba(15, 23, 42, 0.08);
 }
 
-/* Floating Obsidian-style Canvas Controls */
 .canvas-controls-bar {
   position: absolute;
   bottom: 14px;
@@ -986,7 +936,6 @@ button, input, select, textarea {
   margin: 0 2px;
 }
 
-/* Draggable Node Groups */
 .topo-node-group {
   cursor: grab;
   transition: filter 0.2s ease;
@@ -1078,9 +1027,6 @@ button, input, select, textarea {
 .node-stat-val { font-size: 9.5px; font-weight: 700; fill: #f1f5f9; font-family: var(--font-mono); }
 [data-theme="light"] .node-stat-val { fill: #0f172a; }
 
-/* ==========================================================================
-   11. Recovery Worker Panel & Countdown
-   ========================================================================== */
 .recovery-panel {
   background: var(--bg-surface);
   border: 1px solid rgba(192, 132, 252, 0.3);
@@ -1200,9 +1146,6 @@ button, input, select, textarea {
   transition: width 1s linear;
 }
 
-/* ==========================================================================
-   12. Transaction Matrix Table & Waterfall
-   ========================================================================== */
 .workspace-grid {
   display: grid;
   grid-template-columns: 1.15fr 1fr;
@@ -1397,9 +1340,6 @@ button, input, select, textarea {
   font-weight: 600;
 }
 
-/* ==========================================================================
-   13. Forensic Audit Stream Panel
-   ========================================================================== */
 .forensic-panel {
   display: flex;
   flex-direction: column;
@@ -1610,9 +1550,6 @@ button, input, select, textarea {
   word-break: break-all;
 }
 
-/* ==========================================================================
-   14. Toast Notifications
-   ========================================================================== */
 .toast-container {
   position: fixed;
   bottom: 24px;
@@ -1661,9 +1598,6 @@ button, input, select, textarea {
 [data-theme="light"] .toast-race { background: #fff1f2; }
 .toast-purple { border-left: 4px solid var(--accent-purple); }
 
-/* ==========================================================================
-   15. Modals & Dialogs
-   ========================================================================== */
 .modal-backdrop {
   position: fixed;
   top: 0;
@@ -1874,7 +1808,6 @@ button, input, select, textarea {
   border-color: #e2e8f0;
 }
 
-/* Helper utility classes */
 .font-mono { font-family: var(--font-mono); }
 .text-success { color: var(--accent-green); }
 .text-accent { color: var(--accent-blue); }
@@ -1882,11 +1815,6 @@ button, input, select, textarea {
 .text-purple { color: var(--accent-purple); }
 .hidden { display: none !important; }
 
-/* ==========================================================================
-   16. Responsive Breakpoints & Reflow Rules
-   ========================================================================== */
-
-/* Breakpoint 1: Laptops & Medium Screens (<= 1200px) */
 @media (max-width: 1200px) {
   .top-nav {
     padding: 10px 18px;
@@ -1902,7 +1830,6 @@ button, input, select, textarea {
   }
 }
 
-/* Breakpoint 2: Narrow Desktop & Large Tablets (<= 992px) */
 @media (max-width: 992px) {
   :root {
     --panel-pad-desktop: var(--panel-pad-tablet);
@@ -1935,7 +1862,6 @@ button, input, select, textarea {
   }
 }
 
-/* Breakpoint 3: Tablets & Narrow Viewports (<= 768px) */
 @media (max-width: 768px) {
   .top-nav {
     padding: 10px 14px;
@@ -1986,7 +1912,6 @@ button, input, select, textarea {
   }
 }
 
-/* Breakpoint 4: Mobile Phones (<= 560px) */
 @media (max-width: 560px) {
   :root {
     --panel-pad-desktop: var(--panel-pad-mobile);
@@ -2036,5 +1961,153 @@ button, input, select, textarea {
     bottom: 14px;
     width: auto;
     max-width: 100%;
+  }
+}
+
+.nav-control-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border-subtle);
+  margin: 0 4px;
+}
+
+.canvas-controls-bar {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(51, 65, 85, 0.8);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  z-index: 25;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="light"] .canvas-controls-bar {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: #cbd5e1;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.canvas-help-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.canvas-shortcuts-tooltip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  background: #0f172a;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  width: 230px;
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+[data-theme="light"] .canvas-shortcuts-tooltip {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
+}
+
+.canvas-help-wrapper:hover .canvas-shortcuts-tooltip,
+.canvas-help-wrapper:focus-within .canvas-shortcuts-tooltip {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.tooltip-title {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--accent-blue);
+  font-family: var(--font-mono);
+  margin-bottom: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.shortcut-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.kbd-badge {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.topo-node-group {
+  cursor: grab;
+  transition: filter 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.topo-node-group:hover .node-box {
+  stroke-width: 2.2;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.55));
+}
+
+.topo-node-group.is-dragging {
+  cursor: grabbing !important;
+}
+
+.topo-node-group.is-dragging .node-box {
+  stroke-width: 2.8 !important;
+  filter: drop-shadow(0 16px 32px rgba(0, 0, 0, 0.75)) !important;
+  stroke: var(--accent-blue) !important;
+}
+
+.wf-hatch-fail {
+  background: repeating-linear-gradient(
+    45deg,
+    #f43f5e,
+    #f43f5e 6px,
+    rgba(244, 63, 94, 0.25) 6px,
+    rgba(244, 63, 94, 0.25) 12px
+  ) !important;
+  border: 1px solid rgba(244, 63, 94, 0.5);
+}
+
+.timeline-stream {
+  animation: audit-fade-slide 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.forensic-meta-card {
+  animation: audit-fade-slide 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes audit-fade-slide {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

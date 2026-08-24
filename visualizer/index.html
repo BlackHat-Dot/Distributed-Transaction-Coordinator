@@ -69,13 +69,13 @@
         <span class="toggle-side-label toggle-label-live active" id="label-live" onclick="window.setBackendMode(false)">LIVE</span>
       </div>
 
-      <!-- 2. Architecture Guide Trigger -->
+      <div class="nav-control-divider"></div>
+
       <button id="btn-how-it-works" class="btn btn-outline" title="View 60-second architecture guide">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/></svg>
         Architecture
       </button>
 
-      <!-- 3. Night / Light Theme Sliding Toggle -->
       <div class="sliding-toggle-group theme-toggle-container" id="theme-toggle-wrap">
         <span class="toggle-side-icon toggle-icon-light" id="icon-theme-light" title="Light Theme" onclick="window.setDashboardTheme('light')">☀️</span>
         <label class="switch-toggle" for="toggle-theme" title="Toggle between Light and Dark theme">
@@ -87,7 +87,6 @@
         <span class="toggle-side-icon toggle-icon-dark active" id="icon-theme-dark" title="Dark Theme" onclick="window.setDashboardTheme('dark')">🌙</span>
       </div>
 
-      <!-- 4. Endpoints Configuration Trigger -->
       <button id="btn-config" class="btn btn-icon" title="Configure endpoints">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
@@ -237,15 +236,15 @@
       </div>
 
       <div class="topology-canvas-container" id="topology-canvas-container">
-        <!-- Floating Canvas Toolbar (Obsidian style) -->
+        <!-- Floating Canvas Toolbar (Obsidian style with shortcuts tooltip) -->
         <div class="canvas-controls-bar" id="canvas-controls-bar">
-          <button id="btn-canvas-zoom-in" class="canvas-ctrl-btn" title="Zoom In (+)">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-          </button>
-          <button id="btn-canvas-zoom-out" class="canvas-ctrl-btn" title="Zoom Out (-)">
+          <button id="btn-canvas-zoom-out" class="canvas-ctrl-btn" title="Zoom Out (– / - key)">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
           </button>
           <span class="canvas-zoom-label" id="canvas-zoom-label">100%</span>
+          <button id="btn-canvas-zoom-in" class="canvas-ctrl-btn" title="Zoom In (+ / = key)">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+          </button>
           <div class="canvas-ctrl-divider"></div>
           <button id="btn-canvas-fit-view" class="canvas-ctrl-btn" title="Fit All Nodes (Recenter View)">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -253,6 +252,20 @@
           <button id="btn-canvas-reset-layout" class="canvas-ctrl-btn" title="Reset Node Positions to Default">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
           </button>
+          <div class="canvas-ctrl-divider"></div>
+          <div class="canvas-help-wrapper">
+            <button id="btn-canvas-shortcuts" class="canvas-ctrl-btn" title="Keyboard & Mouse Shortcuts">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/></svg>
+            </button>
+            <div class="canvas-shortcuts-tooltip" id="canvas-shortcuts-tooltip">
+              <div class="tooltip-title">Canvas Navigation</div>
+              <div class="shortcut-row"><span>Zoom In / Out</span><span class="kbd-badge">+ / – or Scroll</span></div>
+              <div class="shortcut-row"><span>Pan Viewport</span><span class="kbd-badge">Drag Background</span></div>
+              <div class="shortcut-row"><span>Move Service</span><span class="kbd-badge">Drag Node Card</span></div>
+              <div class="shortcut-row"><span>Focus Node</span><span class="kbd-badge">Double Click</span></div>
+              <div class="shortcut-row"><span>Recenter</span><span class="kbd-badge">Fit View Icon</span></div>
+            </div>
+          </div>
         </div>
 
         <svg id="topology-svg" width="100%" height="100%">
@@ -293,26 +306,20 @@
             </linearGradient>
           </defs>
 
-          <!-- Interactive Background Rect for Panning -->
           <rect id="canvas-bg-rect" width="100%" height="100%" fill="url(#canvas-dot-grid)"></rect>
 
-          <!-- Transformable World Group (Pan & Zoom applies here) -->
           <g id="canvas-world">
-            <!-- 1. Dynamic Connecting Edges Layer -->
             <g id="edges-layer">
-              <path id="path-client-coord" class="topo-edge" d="" stroke="url(#grad-client-coord)" stroke-width="2.5" stroke-dasharray="4 4" fill="none"/>
+              <path id="path-client-coord" class="topo-edge" d="" stroke="url(#grad-client-coord)" stroke-width="2.5"  fill="none"/>
               <path id="path-coord-inv" class="topo-edge" d="" stroke="url(#grad-coord-inv)" stroke-width="2.5" fill="none"/>
               <path id="path-coord-pay" class="topo-edge" d="" stroke="url(#grad-coord-pay)" stroke-width="2.5" fill="none"/>
               <path id="path-inv-coord" d="" stroke="none" fill="none"/>
               <path id="path-pay-coord" d="" stroke="none" fill="none"/>
             </g>
 
-            <!-- 2. Flying Animated Packets Layer -->
             <g id="pulse-layer"></g>
 
-            <!-- 3. Draggable Service Node Cards Layer -->
             <g id="nodes-layer">
-              <!-- Node 1: Client / Gateway -->
               <g class="topo-node-group" id="node-group-client" data-node-key="client" title="Double click to focus node • Drag to reposition">
                 <rect id="node-box-client" class="node-box node-box-client" width="130" height="115" rx="12"/>
                 <circle cx="26" cy="26" r="10" fill="#0284c7" opacity="0.2"/>
@@ -326,7 +333,6 @@
                 <text x="116" y="96" class="node-stat-val font-mono" id="topo-client-active" text-anchor="end">0</text>
               </g>
 
-              <!-- Node 2: Coordinator Service -->
               <g class="topo-node-group" id="node-group-coord" data-node-key="coord" title="Double click to focus node • Drag to reposition">
                 <rect id="node-box-coord" class="node-box node-box-coord" width="220" height="155" rx="14"/>
                 <rect class="node-header-bar" x="0" y="0" width="220" height="38" rx="14"/>
@@ -348,7 +354,6 @@
                 <text x="110" y="137" font-size="9.5" fill="#94a3b8" text-anchor="middle" font-family="var(--font-mono)">PostgreSQL • dtc_coordinator</text>
               </g>
 
-              <!-- Node 3: Inventory Service -->
               <g class="topo-node-group" id="node-group-inv" data-node-key="inv" title="Double click to focus node • Drag to reposition">
                 <rect id="node-box-inv" class="node-box node-box-inv" width="220" height="110" rx="12"/>
                 <text x="16" y="24" class="node-title" id="title-inv">INVENTORY SERVICE</text>
@@ -364,7 +369,6 @@
                 <text x="16" y="100" class="node-stat-label" style="font-size: 8.5px; fill: #64748b; font-family: var(--font-mono);">PostgreSQL • dtc_inventory</text>
               </g>
 
-              <!-- Node 4: Payment Service -->
               <g class="topo-node-group" id="node-group-pay" data-node-key="pay" title="Double click to focus node • Drag to reposition">
                 <rect id="node-box-pay" class="node-box node-box-pay" width="220" height="110" rx="12"/>
                 <text x="16" y="24" class="node-title" id="title-pay">PAYMENT SERVICE</text>
@@ -603,7 +607,6 @@
     </div>
   </div>
 
-  <!-- Scenario Technical Breakdown Modal -->
   <div id="modal-scenario-info" class="modal-backdrop hidden">
     <div class="modal-dialog modal-scenario-dialog">
       <div class="modal-header">

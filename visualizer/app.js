@@ -1,11 +1,31 @@
-/**
- * DTC Mission Control — Observability & Real-Time Visualization App
- * Vanilla ES6+ JavaScript, zero build tools, zero dependencies.
- */
 
-// ============================================================================
-// Global State & Configuration
-// ============================================================================
+window.copyTxUUIDToClipboard = function(uuid, btnElement) {
+  if (!uuid) return;
+  navigator.clipboard.writeText(uuid).then(() => {
+    if (btnElement) {
+      const originalHTML = btnElement.innerHTML;
+      btnElement.innerHTML = '<span style="color: var(--accent-green); font-weight: bold;">✓</span>';
+      setTimeout(() => {
+        btnElement.innerHTML = originalHTML;
+      }, 1500);
+    }
+    showToast({
+      icon: "📋",
+      title: "UUID Copied",
+      message: `${uuid.substring(0, 8)}... copied to clipboard`,
+      type: "normal",
+      duration: 2000,
+    });
+  }).catch(() => {
+    showToast({
+      icon: "📋",
+      title: "UUID",
+      message: uuid,
+      type: "normal",
+      duration: 3000,
+    });
+  });
+};
 
 const CONFIG = {
   coordinatorUrl: localStorage.getItem("dtc_cfg_coord") || "http://127.0.0.1:8002",
@@ -38,10 +58,6 @@ const STATE = {
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// ============================================================================
-// Scenario Breakdown Documentation Database
-// ============================================================================
 
 const SCENARIO_DESCRIPTIONS = {
   happy: {
@@ -172,15 +188,10 @@ POST http://127.0.0.1:8002/transactions/
   }
 };
 
-// ============================================================================
-// DOM Elements Cache
-// ============================================================================
 
 const DOM = {
-  // Toast Container
   toastContainer: document.getElementById("toast-container"),
 
-  // Nav & Health
   healthCoord: document.getElementById("node-health-coord"),
   healthInv: document.getElementById("node-health-inv"),
   healthPay: document.getElementById("node-health-pay"),
@@ -197,13 +208,11 @@ const DOM = {
   btnHowItWorks: document.getElementById("btn-how-it-works"),
   btnConfig: document.getElementById("btn-config"),
 
-  // Proof Stats
   statRacesDefended: document.getElementById("stat-race-defended"),
   statLocksEnforced: document.getElementById("stat-locks-enforced"),
   statSagasTotal: document.getElementById("stat-sagas-total"),
   statDoubleBooking: document.getElementById("stat-double-booking"),
 
-  // Scenario Buttons
   btnDemoHappy: document.getElementById("btn-demo-happy"),
   btnDemoFail: document.getElementById("btn-demo-fail"),
   btnDemoRace: document.getElementById("btn-demo-race"),
@@ -212,7 +221,6 @@ const DOM = {
   customDrawer: document.getElementById("custom-payload-drawer"),
   formCustomTx: document.getElementById("form-custom-tx"),
 
-  // Topology SVG Elements
   pulseLayer: document.getElementById("pulse-layer"),
   nodeBoxClient: document.getElementById("node-box-client"),
   nodeBoxCoord: document.getElementById("node-box-coord"),
@@ -228,7 +236,6 @@ const DOM = {
   topoCoordEvents: document.getElementById("topo-coord-events"),
   topoCoordLease: document.getElementById("topo-coord-lease"),
 
-  // Recovery Worker Panel
   recCountdownVal: document.getElementById("rec-countdown-val"),
   recProgressFill: document.getElementById("rec-progress-fill"),
   recSagasSwept: document.getElementById("rec-sagas-swept"),
@@ -236,13 +243,11 @@ const DOM = {
   recRedisLock: document.getElementById("rec-redis-lock"),
   btnTriggerSweep: document.getElementById("btn-trigger-sweep"),
 
-  // Transaction Feed
   badgeTotalTx: document.getElementById("badge-total-tx"),
   filterTabs: document.querySelectorAll(".filter-tab"),
   tbodyTxFeed: document.getElementById("tbody-tx-feed"),
   btnManualPoll: document.getElementById("btn-manual-poll"),
 
-  // Forensic Audit Stream
   forensicMetaCard: document.getElementById("forensic-meta-card"),
   fmetaId: document.getElementById("fmeta-id"),
   fmetaStatusBadge: document.getElementById("fmeta-status-badge"),
@@ -259,7 +264,6 @@ const DOM = {
   payloadInspectorCode: document.getElementById("payload-inspector-code"),
   btnClosePayload: document.getElementById("btn-close-payload"),
 
-  // Scenario Info Modal
   modalScenInfo: document.getElementById("modal-scenario-info"),
   btnCloseScenInfo: document.getElementById("btn-close-scen-info"),
   btnDismissScenInfo: document.getElementById("btn-dismiss-scen-info"),
@@ -273,7 +277,6 @@ const DOM = {
   scenInfoDefenses: document.getElementById("scen-info-defenses"),
   scenInfoOutcome: document.getElementById("scen-info-outcome"),
 
-  // Modals
   modalArch: document.getElementById("modal-architecture"),
   btnCloseArch: document.getElementById("btn-close-arch"),
   modalConfig: document.getElementById("modal-config"),
@@ -286,9 +289,6 @@ const DOM = {
   btnResetCfg: document.getElementById("btn-reset-cfg"),
 };
 
-// ============================================================================
-// Toast Notification Component
-// ============================================================================
 
 function showToast({ icon = "⚡", title, message, type = "normal", duration = 4500 }) {
   if (!DOM.toastContainer) return;
@@ -316,9 +316,6 @@ function showToast({ icon = "⚡", title, message, type = "normal", duration = 4
   }, duration);
 }
 
-// ============================================================================
-// Scenario Info Modal Viewer
-// ============================================================================
 
 window.showScenarioInfo = function(scenarioKey) {
   const info = SCENARIO_DESCRIPTIONS[scenarioKey];
@@ -369,9 +366,6 @@ if (DOM.btnRunFromModal) {
   });
 }
 
-// ============================================================================
-// API & Networking Utilities
-// ============================================================================
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
   const controller = new AbortController();
@@ -406,7 +400,6 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
   }
 }
 
-// Helper: Extract human-readable error reasons from backend JSON responses
 function extractDetailedErrorMessage(res, defaultMsg = "Operation failed") {
   if (!res) return defaultMsg;
   if (res.data) {
@@ -466,9 +459,6 @@ function updateHealthUI(nodeKey, isOnline, latency) {
   }
 }
 
-// ============================================================================
-// Interactive SVG Topology Curved Packet Animation & Crash Shatter
-// ============================================================================
 
 function triggerCrashedNode(nodeKey) {
   STATE.health[nodeKey].crashed = true;
@@ -521,10 +511,6 @@ function triggerArrivalPulse(destinationNodeId, type = "success") {
   }, 450);
 }
 
-/**
- * Animates a small glowing 8-10px packet icon along the exact SVG Bezier curve
- * between nodes, triggering an arrival pulse on receipt or shattering mid-way on crash.
- */
 function animatePacketAlongPath({
   route,
   type = "success",
@@ -534,11 +520,11 @@ function animatePacketAlongPath({
 }) {
   return new Promise((resolve) => {
     const colorMap = {
-      success: "#34d399",   // Green (Reserve/Charge)
-      info: "#38bdf8",      // Blue (Probes/Status)
-      warning: "#fbbf24",   // Amber (Compensating Release)
-      danger: "#f43f5e",    // Red (Conflict/Crash/Decline)
-      purple: "#c084fc",   // Purple (Recovery)
+      success: "#34d399",
+      info: "#38bdf8",
+      warning: "#fbbf24",
+      danger: "#f43f5e",
+      purple: "#c084fc",
     };
 
     const filterMap = {
@@ -566,17 +552,20 @@ function animatePacketAlongPath({
       return;
     }
 
+    const originalStroke = pathEl.getAttribute("stroke");
+    const originalFilter = pathEl.getAttribute("filter");
+    pathEl.setAttribute("stroke", color);
+    pathEl.setAttribute("filter", filter);
+
     const totalLength = pathEl.getTotalLength();
     const packetGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
 
-    // Outer translucent glowing halo
     const halo = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     halo.setAttribute("r", "9");
     halo.setAttribute("fill", color);
     halo.setAttribute("opacity", "0.35");
     halo.setAttribute("filter", filter);
 
-    // Inner bright packet core (8px filled circle)
     const core = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     core.setAttribute("r", "4.5");
     core.setAttribute("fill", color);
@@ -602,7 +591,6 @@ function animatePacketAlongPath({
         requestAnimationFrame(renderFrame);
       } else {
         if (breakMidway) {
-          // Abrupt crash stop & shatter effect
           halo.setAttribute("fill", "#f43f5e");
           halo.setAttribute("r", "16");
           halo.setAttribute("opacity", "0.9");
@@ -628,7 +616,6 @@ function animatePacketAlongPath({
             resolve();
           }, 400);
         } else {
-          // Destination arrival confirmation glow
           if (packetGroup.parentNode === DOM.pulseLayer) {
             DOM.pulseLayer.removeChild(packetGroup);
           }
@@ -644,10 +631,6 @@ function animatePacketAlongPath({
     requestAnimationFrame(renderFrame);
   });
 }
-
-// ============================================================================
-// Transaction Feed & State Management
-// ============================================================================
 
 async function fetchTransactionsFeed() {
   if (STATE.isSimulatedMode) {
@@ -760,9 +743,9 @@ function getWaterfallHTML(tx) {
     labelHTML = `<span>Res: ${rMs}ms</span><span style="color: var(--accent-rose)">Decl: ${pMs}ms</span><span style="color: var(--accent-amber)">Rel: ${cMs}ms</span>`;
   } else if (s === "INVENTORY_RESERVE_FAILED") {
     trackHTML = `
-      <div class="wf-seg wf-fail" style="width: 100%;" title="Inventory Reserve Rejected"></div>
+      <div class="wf-seg wf-hatch-fail" style="width: 100%;" title="Inventory Reserve Rejected (Quantity 0 / Out of Stock)"></div>
     `;
-    labelHTML = `<span style="color: var(--accent-rose)">Reserve Rejected</span><span class="wf-duration">12ms</span>`;
+    labelHTML = `<span style="color: var(--accent-rose); font-weight: 700;">Reserve Rejected</span><span class="wf-duration" style="color: var(--accent-rose);">12ms</span>`;
   } else if (s === "RECOVERY_IN_PROGRESS" || s === "COMPENSATING") {
     trackHTML = `
       <div class="wf-seg wf-reserve" style="width: 35%;" title="Reserve: ${rMs}ms"></div>
@@ -785,9 +768,6 @@ function getWaterfallHTML(tx) {
   `;
 }
 
-// ============================================================================
-// Forensic SagaEvent Audit Log Stream
-// ============================================================================
 
 window.selectTransaction = function(txId) {
   STATE.activeTxId = txId;
@@ -823,7 +803,6 @@ async function inspectTransaction(txId, autoScroll = false) {
     DOM.fmetaProd.textContent = `Prod #${txData.product_id || 1} (Qty: ${txData.quantity !== undefined ? txData.quantity : 1})`;
     DOM.fmetaAmt.textContent = `$${txData.amount || 500}`;
 
-    // Failure banner display
     const isFailureState = txData.status.includes("FAILED") || txData.status.includes("TIMEOUT") || txData.status === "COMPENSATED";
     if (isFailureState) {
       let failureReason = "Non-terminal or compensated state detected";
@@ -912,17 +891,12 @@ function getStatusBadgeClass(status) {
   return "badge-amber";
 }
 
-// ============================================================================
-// One-Click Live Recruiter Scenarios & Stress Tests
-// ============================================================================
 
-// 1. Scenario: Happy Path Saga
 DOM.btnDemoHappy.addEventListener("click", async () => {
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "ORCHESTRATING";
 
-  // Step 1: Client -> Coordinator
   await animatePacketAlongPath({
     route: "client-coord",
     type: "info",
@@ -930,7 +904,6 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 2: Coordinator -> Inventory Reserve (Green)
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -938,7 +911,6 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
-  // Step 3: Inventory -> Coordinator 200 OK Response (Green)
   await animatePacketAlongPath({
     route: "inv-coord",
     type: "success",
@@ -946,7 +918,6 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 4: Coordinator -> Payment Charge (Green)
   await animatePacketAlongPath({
     route: "coord-pay",
     type: "success",
@@ -954,7 +925,6 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     destinationNodeId: "node-box-pay",
   });
 
-  // Step 5: Payment -> Coordinator 200 OK Response (Green)
   await animatePacketAlongPath({
     route: "pay-coord",
     type: "success",
@@ -987,13 +957,11 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
   DOM.topoCoordState.textContent = "IDLE";
 });
 
-// 2. Scenario: Payment Decline & Auto-Compensation
 DOM.btnDemoFail.addEventListener("click", async () => {
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "COMPENSATING";
 
-  // Step 1: Client -> Coordinator
   await animatePacketAlongPath({
     route: "client-coord",
     type: "info",
@@ -1001,7 +969,6 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 2: Reserve Inventory OK (Green)
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -1009,7 +976,6 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
-  // Step 3: Inventory -> Coordinator OK
   await animatePacketAlongPath({
     route: "inv-coord",
     type: "success",
@@ -1017,7 +983,6 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 4: Payment Charge Declined (Red)
   await animatePacketAlongPath({
     route: "coord-pay",
     type: "danger",
@@ -1025,7 +990,6 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-pay",
   });
 
-  // Step 5: Payment -> Coordinator Decline Response (Red)
   await animatePacketAlongPath({
     route: "pay-coord",
     type: "danger",
@@ -1033,7 +997,6 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 6: Compensating Inventory Release (Amber)
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "warning",
@@ -1041,7 +1004,6 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
-  // Step 7: Inventory -> Coordinator Release Confirmed (Amber)
   await animatePacketAlongPath({
     route: "inv-coord",
     type: "warning",
@@ -1062,7 +1024,6 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     return;
   }
 
-  // Send amount: 9999 to trigger backend's testing failure amount
   const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
     method: "POST",
     body: JSON.stringify({ product_id: 1, quantity: 1, amount: 9999 }),
@@ -1075,14 +1036,12 @@ DOM.btnDemoFail.addEventListener("click", async () => {
   DOM.topoCoordState.textContent = "IDLE";
 });
 
-// 3. Scenario: 5x Concurrent Race Attack (COMPLETE ROUND-TRIP TO PAYMENT & BACK)
 DOM.btnDemoRace.addEventListener("click", async () => {
   const sharedTxId = crypto.randomUUID();
   STATE.stats.dispatchedCount += 5;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "RACE BURST";
 
-  // Step 1: Fire 5 concurrent packets along client-coord
   for (let i = 0; i < 5; i++) {
     animatePacketAlongPath({
       route: "client-coord",
@@ -1105,7 +1064,6 @@ DOM.btnDemoRace.addEventListener("click", async () => {
     duration: 6500,
   });
 
-  // Step 2: Winner moves to Inventory Service (Reserve)
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -1113,7 +1071,6 @@ DOM.btnDemoRace.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
-  // Step 3: Inventory returns 200 OK to Coordinator
   await animatePacketAlongPath({
     route: "inv-coord",
     type: "success",
@@ -1121,7 +1078,6 @@ DOM.btnDemoRace.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 4: Winner moves to Payment Service (Charge)
   await animatePacketAlongPath({
     route: "coord-pay",
     type: "success",
@@ -1129,7 +1085,6 @@ DOM.btnDemoRace.addEventListener("click", async () => {
     destinationNodeId: "node-box-pay",
   });
 
-  // Step 5: Payment returns 200 OK back to Coordinator
   await animatePacketAlongPath({
     route: "pay-coord",
     type: "success",
@@ -1162,13 +1117,11 @@ DOM.btnDemoRace.addEventListener("click", async () => {
   DOM.topoCoordState.textContent = "IDLE";
 });
 
-// 4. Scenario: Crash Simulation & Celery Recovery
 DOM.btnDemoCrash.addEventListener("click", async () => {
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "CRASH SIMULATION";
 
-  // Step 1: Client -> Coordinator
   await animatePacketAlongPath({
     route: "client-coord",
     type: "info",
@@ -1176,7 +1129,6 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 2: Inventory Reserved OK
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -1184,7 +1136,6 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
-  // Step 3: Inventory response back to Coordinator
   await animatePacketAlongPath({
     route: "inv-coord",
     type: "success",
@@ -1192,7 +1143,6 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 4: Crash mid-flight on Payment call (Stops at 50% & shatters)
   await animatePacketAlongPath({
     route: "coord-pay",
     type: "danger",
@@ -1232,11 +1182,9 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
     }
   }
 
-  // Celery recovery reconciliation
   setTimeout(async () => {
     DOM.topoCoordLease.textContent = "SWEEP CLAIM";
     
-    // Probe payment outcome
     await animatePacketAlongPath({
       route: "coord-pay",
       type: "purple",
@@ -1251,7 +1199,6 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
       destinationNodeId: "node-box-coord",
     });
 
-    // Release inventory reservation
     await animatePacketAlongPath({
       route: "coord-inv",
       type: "warning",
@@ -1304,7 +1251,6 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
   }, 4000);
 });
 
-// 5. Scenario: Custom Payload (FULL ANIMATION ROUND-TRIP + EXPLICIT ERROR REPORTING)
 DOM.btnToggleCustom.addEventListener("click", () => {
   DOM.customDrawer.classList.toggle("hidden");
 });
@@ -1333,7 +1279,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   DOM.topoCoordState.textContent = "PROCESSING CUSTOM";
   DOM.customDrawer.classList.add("hidden");
 
-  // Step 1: Client -> Coordinator
   await animatePacketAlongPath({
     route: "client-coord",
     type: "info",
@@ -1341,7 +1286,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Step 2: Coordinator -> Inventory
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -1399,7 +1343,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
     return;
   }
 
-  // Real backend call
   const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -1409,7 +1352,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   const status = txData.status || (res.ok ? "COMPLETED" : "FAILED");
   const detailedError = extractDetailedErrorMessage(res);
 
-  // Case 1: Inventory Reserve Failed
   if (txData.error === "INVENTORY_RESERVE_FAILED" || res.status === 400 && txData.inventory_response) {
     await animatePacketAlongPath({
       route: "inv-coord",
@@ -1426,7 +1368,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
       duration: 6000,
     });
   }
-  // Case 2: Coordinator Crash Simulated
   else if (isCrash || txData.detail === "Intentional crash") {
     await animatePacketAlongPath({
       route: "inv-coord",
@@ -1463,7 +1404,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
       fetchTransactionsFeed();
     }, 4000);
   }
-  // Case 3: Payment Declined / Compensated
   else if (status === "COMPENSATED" || status === "COMPENSATION_FAILED") {
     await animatePacketAlongPath({
       route: "inv-coord",
@@ -1518,7 +1458,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
       });
     }
   }
-  // Case 4: Happy Path Completed
   else {
     await animatePacketAlongPath({
       route: "inv-coord",
@@ -1556,7 +1495,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   DOM.topoCoordState.textContent = "IDLE";
 });
 
-// Trigger Immediate Sweep Button
 DOM.btnTriggerSweep.addEventListener("click", async () => {
   STATE.stats.sagasSwept += 5;
   DOM.recSagasSwept.textContent = STATE.stats.sagasSwept;
@@ -1579,7 +1517,6 @@ DOM.btnTriggerSweep.addEventListener("click", async () => {
   }, 2000);
 });
 
-// Retry Compensation for active transaction
 DOM.btnRetryActiveTx.addEventListener("click", async () => {
   if (!STATE.activeTxId) return;
   await animatePacketAlongPath({ route: "coord-inv", type: "warning", durationMs: 450, destinationNodeId: "node-box-inv" });
@@ -1601,9 +1538,6 @@ DOM.btnRetryActiveTx.addEventListener("click", async () => {
   fetchTransactionsFeed();
 });
 
-// ============================================================================
-// Simulation Fallback Mode
-// ============================================================================
 
 function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null, failureReason = null) {
   const txId = customId || crypto.randomUUID();
@@ -1659,10 +1593,6 @@ function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null, 
   renderTransactionsTable(STATE.transactions);
 }
 
-// ============================================================================
-// Controls, Filters & Modals
-// ============================================================================
-
 DOM.filterTabs.forEach(tab => {
   tab.addEventListener("click", () => {
     DOM.filterTabs.forEach(t => t.classList.remove("active"));
@@ -1678,7 +1608,6 @@ DOM.btnManualPoll.addEventListener("click", () => {
   fetchTransactionsFeed();
 });
 
-// Two-State Sliding Toggle: DEMO ⟷ LIVE
 window.setBackendMode = function(isDemo) {
   if (DOM.toggleSimMode) DOM.toggleSimMode.checked = isDemo;
   STATE.isSimulatedMode = isDemo;
@@ -1703,7 +1632,6 @@ if (DOM.toggleSimMode) {
   });
 }
 
-// Night / Light Mode Theme Toggle
 window.setDashboardTheme = function(theme) {
   const isLight = theme === "light";
   document.documentElement.setAttribute("data-theme", isLight ? "light" : "dark");
@@ -1724,7 +1652,6 @@ if (DOM.toggleTheme) {
   });
 }
 
-// Modals
 DOM.btnHowItWorks.addEventListener("click", () => DOM.modalArch.classList.remove("hidden"));
 DOM.btnCloseArch.addEventListener("click", () => DOM.modalArch.classList.add("hidden"));
 DOM.btnConfig.addEventListener("click", () => {
@@ -1761,9 +1688,6 @@ DOM.btnResetCfg.addEventListener("click", () => {
   DOM.cfgPollMs.value = "1500";
 });
 
-// ============================================================================
-// Recovery Worker Countdown Loop (90s Celery Beat)
-// ============================================================================
 
 function startRecoveryCountdown() {
   setInterval(() => {
@@ -1792,16 +1716,6 @@ function startRecoveryCountdown() {
     DOM.recProgressFill.style.width = `${100 - pct}%`;
   }, 1000);
 }
-
-// ============================================================================
-// Initialization & Polling Interval Loop
-// ============================================================================
-
-
-// ============================================================================
-// Obsidian-Style Interactive Topology Canvas Engine
-// (Freeform Draggable Nodes, Real-Time Dynamic Bezier Routing, Pan & Zoom)
-// ============================================================================
 
 const DEFAULT_CANVAS_NODES = {
   client: { x: 30,  y: 70,  width: 130, height: 115 },
@@ -1851,7 +1765,6 @@ const CanvasEngine = {
 
     if (!this.container || !this.svg || !this.world) return;
 
-    // 1. Load saved node positions from localStorage
     try {
       const savedNodes = localStorage.getItem("dtc_topology_nodes");
       if (savedNodes) {
@@ -1866,7 +1779,6 @@ const CanvasEngine = {
       console.warn("Could not load saved topology nodes", e);
     }
 
-    // 2. Load saved viewport (pan/zoom)
     try {
       const savedVp = localStorage.getItem("dtc_topology_viewport");
       if (savedVp) {
@@ -1879,15 +1791,12 @@ const CanvasEngine = {
       console.warn("Could not load saved viewport", e);
     }
 
-    // 3. Position all nodes in DOM
     this.applyAllNodePositions();
     this.updateEdges();
     this.applyTransform();
 
-    // 4. Bind events
     this.bindEvents();
 
-    // 5. Fit view on startup if no saved viewport
     if (!localStorage.getItem("dtc_topology_viewport")) {
       setTimeout(() => this.fitView(), 50);
     }
@@ -1919,13 +1828,9 @@ const CanvasEngine = {
         JSON.stringify({ panX: this.panX, panY: this.panY, zoom: this.zoom })
       );
     } catch (e) {
-      // ignore quota errors
     }
   },
 
-  /**
-   * Calculates smart dynamic Bezier curve connector between source and target node boxes
-   */
   getDynamicPathD(sourceKey, targetKey) {
     const s = this.nodes[sourceKey];
     const t = this.nodes[targetKey];
@@ -1942,7 +1847,6 @@ const CanvasEngine = {
     const dx = tCenter.x - sCenter.x;
     const dy = tCenter.y - sCenter.y;
 
-    // Case A: Target is primarily to the Right
     if (dx >= (s.width + t.width) * 0.35) {
       p1 = { x: s.x + s.width, y: s.y + s.height / 2 };
       p2 = { x: t.x, y: t.y + t.height / 2 };
@@ -1950,7 +1854,6 @@ const CanvasEngine = {
       c1 = { x: p1.x + curDx, y: p1.y };
       c2 = { x: p2.x - curDx, y: p2.y };
     }
-    // Case B: Target is primarily to the Left
     else if (dx <= -(s.width + t.width) * 0.35) {
       p1 = { x: s.x, y: s.y + s.height / 2 };
       p2 = { x: t.x + t.width, y: t.y + t.height / 2 };
@@ -1958,7 +1861,6 @@ const CanvasEngine = {
       c1 = { x: p1.x - curDx, y: p1.y };
       c2 = { x: p2.x + curDx, y: p2.y };
     }
-    // Case C: Vertical alignment (Target is Below)
     else if (dy > 0) {
       p1 = { x: s.x + s.width / 2, y: s.y + s.height };
       p2 = { x: t.x + t.width / 2, y: t.y };
@@ -1966,7 +1868,6 @@ const CanvasEngine = {
       c1 = { x: p1.x, y: p1.y + curDy };
       c2 = { x: p2.x, y: p2.y - curDy };
     }
-    // Case D: Vertical alignment (Target is Above)
     else {
       p1 = { x: s.x + s.width / 2, y: s.y };
       p2 = { x: t.x + t.width / 2, y: t.y + t.height };
@@ -2053,13 +1954,28 @@ const CanvasEngine = {
   },
 
   bindEvents() {
-    // 1. Draggable Node Events
+    
+    window.addEventListener("keydown", (e) => {
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+
+      if (e.key === "+" || e.key === "=") {
+        e.preventDefault();
+        CanvasEngine.btnZoomIn?.click();
+      } else if (e.key === "-" || e.key === "_") {
+        e.preventDefault();
+        CanvasEngine.btnZoomOut?.click();
+      } else if (e.key === "0") {
+        e.preventDefault();
+        CanvasEngine.fitView();
+      }
+    });
+
     const nodeGroups = this.svg.querySelectorAll(".topo-node-group");
     nodeGroups.forEach((group) => {
       const nodeKey = group.getAttribute("data-node-key");
 
       group.addEventListener("mousedown", (e) => {
-        if (e.button !== 0) return; // Left click only
+        if (e.button !== 0) return;
         e.stopPropagation();
         this.isDraggingNode = true;
         this.activeDragNodeKey = nodeKey;
@@ -2078,16 +1994,13 @@ const CanvasEngine = {
         group.classList.add("is-dragging");
       }, { passive: false });
 
-      // Double click to focus node
       group.addEventListener("dblclick", (e) => {
         e.stopPropagation();
         this.focusNode(nodeKey);
       });
     });
 
-    // 2. Global Mouse / Window Dragging & Panning Listeners
     window.addEventListener("mousemove", (e) => {
-      // Node Drag
       if (this.isDraggingNode && this.activeDragNodeKey) {
         const dx = (e.clientX - this.dragStartMouse.x) / this.zoom;
         const dy = (e.clientY - this.dragStartMouse.y) / this.zoom;
@@ -2103,7 +2016,6 @@ const CanvasEngine = {
         return;
       }
 
-      // Canvas Pan
       if (this.isPanning) {
         this.panX = this.panStartPos.x + (e.clientX - this.panStartMouse.x);
         this.panY = this.panStartPos.y + (e.clientY - this.panStartMouse.y);
@@ -2129,7 +2041,6 @@ const CanvasEngine = {
       }
     });
 
-    // Touch Move / End for Mobile
     window.addEventListener("touchmove", (e) => {
       if (this.isDraggingNode && this.activeDragNodeKey && e.touches.length === 1) {
         e.preventDefault();
@@ -2169,7 +2080,6 @@ const CanvasEngine = {
       }
     });
 
-    // 3. Canvas Background Pan Initiation
     if (this.bgRect) {
       this.bgRect.addEventListener("mousedown", (e) => {
         if (e.button !== 0) return;
@@ -2188,7 +2098,6 @@ const CanvasEngine = {
       }, { passive: false });
     }
 
-    // 4. Zoom to Cursor via Wheel (+1% / -1% fine steps)
     this.container.addEventListener("wheel", (e) => {
       e.preventDefault();
       const rect = this.container.getBoundingClientRect();
@@ -2200,7 +2109,6 @@ const CanvasEngine = {
 
       if (newZoom === this.zoom) return;
 
-      // Zoom-to-cursor formula
       this.panX = cursorX - (cursorX - this.panX) * (newZoom / this.zoom);
       this.panY = cursorY - (cursorY - this.panY) * (newZoom / this.zoom);
       this.zoom = newZoom;
@@ -2209,7 +2117,6 @@ const CanvasEngine = {
       this.saveState();
     }, { passive: false });
 
-    // 5. Canvas Toolbar Button Actions (Exact +1% / -1% increments)
     if (this.btnZoomIn) {
       this.btnZoomIn.addEventListener("click", () => {
         const rect = this.container.getBoundingClientRect();
@@ -2257,11 +2164,8 @@ const CanvasEngine = {
 };
 
 window.addEventListener("DOMContentLoaded", () => {
-  // Initialize Theme from localStorage
   const savedTheme = localStorage.getItem("dtc_theme") || "dark";
   window.setDashboardTheme(savedTheme);
-
-  // Initialize Mode (Default to LIVE)
   window.setBackendMode(false);
 
   DOM.statRacesDefended.textContent = STATE.stats.racesDefended;
