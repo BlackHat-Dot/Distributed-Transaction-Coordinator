@@ -167,15 +167,15 @@
             </div>
             <div class="form-field">
               <label>Product ID:</label>
-              <input type="number" id="cust-product-id" value="1" min="1">
+              <input type="number" id="cust-product-id" value="1" min="0">
             </div>
             <div class="form-field">
               <label>Quantity:</label>
-              <input type="number" id="cust-qty" value="1" min="1">
+              <input type="number" id="cust-qty" value="1" min="0">
             </div>
             <div class="form-field">
               <label>Amount ($):</label>
-              <input type="number" id="cust-amount" value="500" min="1">
+              <input type="number" id="cust-amount" value="500" min="0">
             </div>
           </div>
           <div class="form-actions">
@@ -202,13 +202,6 @@
         </div>
         
         <div class="topology-header-controls">
-          <!-- Live Animation Opt-In Toggle Switch -->
-          <label class="switch-label live-anim-toggle" title="Opt-in: Inserts small visual staging delays (350-500ms) between RPC steps so packet animations along curved edges are clearly visible">
-            <input type="checkbox" id="toggle-live-anim">
-            <span class="switch-slider"></span>
-            <span class="switch-text" id="live-anim-text">LIVE VIEW: OFF</span>
-          </label>
-
           <div class="topology-legend">
             <span class="legend-item"><span class="dot dot-green"></span> Reserve / Charge</span>
             <span class="legend-item"><span class="dot dot-blue"></span> Probe / Status</span>
@@ -458,6 +451,10 @@
             <div class="fmeta-col">
               <span class="fmeta-label">AMOUNT</span>
               <span class="fmeta-val text-success" id="fmeta-amt">--</span>
+            </div>
+            <div id="fmeta-failure-banner" class="fmeta-failure-banner hidden">
+              <span class="fmeta-failure-icon">⚠️</span>
+              <span id="fmeta-failure-text" class="fmeta-failure-text">--</span>
             </div>
           </div>
 

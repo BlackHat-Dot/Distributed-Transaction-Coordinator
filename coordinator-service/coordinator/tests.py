@@ -247,36 +247,41 @@ class InProgressDuplicateTests(TestCase):
 
 class ConcurrentCreateTests(TransactionTestCase):
     def test_concurrent_duplicate_one_row_one_saga(self):
+        import threading
         tid = str(uuid.uuid4())
         num_threads = 5
         results = []
         saga_execution_counts = []
+        thread_calls = threading.local()
+
+        def mock_post(url, *args, **kwargs):
+            thread_calls.count = getattr(thread_calls, 'count', 0) + 1
+            if "reserve" in url:
+                return _reserve_ok_response()
+            if "charge" in url:
+                return _charged_response()
+            return _reserve_ok_response()
 
         def do_create(_):
             client = APIClient()
-            call_count_before = [0]
+            thread_calls.count = 0
             try:
-                with patch("coordinator.views.requests.post") as post_mock:
-                    post_mock.side_effect = [
-                        _reserve_ok_response(),
-                        _charged_response(),
-                    ]
-                    resp = client.post(
-                        URL,
-                        {"transaction_id": tid},
-                        format="json",
-                    )
-                    call_count_before[0] = post_mock.call_count
-                return resp.status_code, resp.data, call_count_before[0]
+                resp = client.post(
+                    URL,
+                    {"transaction_id": tid},
+                    format="json",
+                )
+                return resp.status_code, resp.data, getattr(thread_calls, 'count', 0)
             finally:
                 connection.close()
 
-        with ThreadPoolExecutor(max_workers=num_threads) as executor:
-            futures = [executor.submit(do_create, i) for i in range(num_threads)]
-            for future in as_completed(futures):
-                status_code, data, downstream_calls = future.result()
-                results.append((status_code, data))
-                saga_execution_counts.append(downstream_calls)
+        with patch("coordinator.views.requests.post", side_effect=mock_post):
+            with ThreadPoolExecutor(max_workers=num_threads) as executor:
+                futures = [executor.submit(do_create, i) for i in range(num_threads)]
+                for future in as_completed(futures):
+                    status_code, data, downstream_calls = future.result()
+                    results.append((status_code, data))
+                    saga_execution_counts.append(downstream_calls)
 
         for code, _ in results:
             self.assertEqual(

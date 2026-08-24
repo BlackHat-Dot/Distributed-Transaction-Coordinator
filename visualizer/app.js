@@ -16,7 +16,6 @@ const CONFIG = {
 
 const STATE = {
   isSimulatedMode: false,
-  isLiveAnimPaced: false,
   activeFilter: "ALL",
   activeTxId: null,
   transactions: [],
@@ -59,10 +58,6 @@ const DOM = {
   simModeText: document.getElementById("sim-mode-text"),
   btnHowItWorks: document.getElementById("btn-how-it-works"),
   btnConfig: document.getElementById("btn-config"),
-
-  // Live Animation Opt-In Toggle
-  toggleLiveAnim: document.getElementById("toggle-live-anim"),
-  liveAnimText: document.getElementById("live-anim-text"),
 
   // Proof Stats
   statRacesDefended: document.getElementById("stat-race-defended"),
@@ -115,6 +110,8 @@ const DOM = {
   fmetaStatusBadge: document.getElementById("fmeta-status-badge"),
   fmetaProd: document.getElementById("fmeta-prod"),
   fmetaAmt: document.getElementById("fmeta-amt"),
+  fmetaFailureBanner: document.getElementById("fmeta-failure-banner"),
+  fmetaFailureText: document.getElementById("fmeta-failure-text"),
   forensicSeqCount: document.getElementById("forensic-seq-count"),
   btnRetryActiveTx: document.getElementById("btn-retry-active-tx"),
   timelineEmptyMsg: document.getElementById("timeline-empty-msg"),
@@ -141,7 +138,7 @@ const DOM = {
 // Toast Notification Component
 // ============================================================================
 
-function showToast({ icon = "⚡", title, message, type = "normal", duration = 4000 }) {
+function showToast({ icon = "⚡", title, message, type = "normal", duration = 4500 }) {
   if (!DOM.toastContainer) return;
 
   const toast = document.createElement("div");
@@ -171,7 +168,7 @@ function showToast({ icon = "⚡", title, message, type = "normal", duration = 4
 // API & Networking Utilities
 // ============================================================================
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = 3000) {
+async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   const startTime = performance.now();
@@ -202,6 +199,30 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 3000) {
     clearTimeout(timeoutId);
     return { ok: false, status: 0, error: err.message, latency: null };
   }
+}
+
+// Helper: Extract human-readable error reasons from backend JSON responses
+function extractDetailedErrorMessage(res, defaultMsg = "Operation failed") {
+  if (!res) return defaultMsg;
+  if (res.data) {
+    if (res.data.inventory_response) {
+      if (res.data.inventory_response.error) return `Inventory: ${res.data.inventory_response.error}`;
+      if (res.data.inventory_response.detail) return `Inventory: ${res.data.inventory_response.detail}`;
+    }
+    if (res.data.payment_response) {
+      if (res.data.payment_response.error) return `Payment: ${res.data.payment_response.error}`;
+      if (res.data.payment_response.detail) return `Payment: ${res.data.payment_response.detail}`;
+      if (res.data.payment_response._testing) return `Payment: ${res.data.payment_response.error || 'Declined'} (${res.data.payment_response._testing})`;
+    }
+    if (res.data.compensation_response) {
+      if (res.data.compensation_response.error) return `Compensation: ${res.data.compensation_response.error}`;
+      if (res.data.compensation_response.detail) return `Compensation: ${res.data.compensation_response.detail}`;
+    }
+    if (res.data.error) return `${res.data.error}`;
+    if (res.data.detail) return `${res.data.detail}`;
+  }
+  if (res.error) return `Network Error: ${res.error}`;
+  return defaultMsg;
 }
 
 async function checkServiceHealth() {
@@ -306,15 +327,12 @@ function animatePacketAlongPath({
   breakMidway = false,
   destinationNodeId = null,
 }) {
-  // Only active when Live View toggle is ON
-  if (!STATE.isLiveAnimPaced) return Promise.resolve();
-
   return new Promise((resolve) => {
     const colorMap = {
       success: "#34d399",   // Green (Reserve/Charge)
       info: "#38bdf8",      // Blue (Probes/Status)
       warning: "#fbbf24",   // Amber (Compensating Release)
-      danger: "#f43f5e",    // Red (Conflict/Crash)
+      danger: "#f43f5e",    // Red (Conflict/Crash/Decline)
       purple: "#c084fc",   // Purple (Recovery)
     };
 
@@ -535,6 +553,11 @@ function getWaterfallHTML(tx) {
       <div class="wf-seg wf-comp" style="width: 30%;" title="Compensating Release: ${cMs}ms"></div>
     `;
     labelHTML = `<span>Res: ${rMs}ms</span><span style="color: var(--accent-rose)">Decl: ${pMs}ms</span><span style="color: var(--accent-amber)">Rel: ${cMs}ms</span>`;
+  } else if (s === "INVENTORY_RESERVE_FAILED") {
+    trackHTML = `
+      <div class="wf-seg wf-fail" style="width: 100%;" title="Inventory Reserve Rejected"></div>
+    `;
+    labelHTML = `<span style="color: var(--accent-rose)">Reserve Rejected</span><span class="wf-duration">12ms</span>`;
   } else if (s === "RECOVERY_IN_PROGRESS" || s === "COMPENSATING") {
     trackHTML = `
       <div class="wf-seg wf-reserve" style="width: 35%;" title="Reserve: ${rMs}ms"></div>
@@ -546,7 +569,7 @@ function getWaterfallHTML(tx) {
       <div class="wf-seg wf-reserve" style="width: 40%;"></div>
       <div class="wf-seg wf-fail" style="width: 60%;"></div>
     `;
-    labelHTML = `<span>In-flight / Failed</span>`;
+    labelHTML = `<span>Failed</span>`;
   }
 
   return `
@@ -592,8 +615,26 @@ async function inspectTransaction(txId, autoScroll = false) {
     DOM.fmetaId.textContent = txData.transaction_id;
     DOM.fmetaStatusBadge.textContent = txData.status;
     DOM.fmetaStatusBadge.className = `badge ${getStatusBadgeClass(txData.status)}`;
-    DOM.fmetaProd.textContent = `Prod #${txData.product_id || 1} (Qty: ${txData.quantity || 1})`;
+    DOM.fmetaProd.textContent = `Prod #${txData.product_id || 1} (Qty: ${txData.quantity !== undefined ? txData.quantity : 1})`;
     DOM.fmetaAmt.textContent = `$${txData.amount || 500}`;
+
+    // Failure banner display
+    const isFailureState = txData.status.includes("FAILED") || txData.status.includes("TIMEOUT") || txData.status === "COMPENSATED";
+    if (isFailureState) {
+      let failureReason = "Non-terminal or compensated state detected";
+      if (txData.status === "INVENTORY_RESERVE_FAILED") {
+        failureReason = txData.failure_reason || "Inventory reservation rejected (zero quantity, out of stock, or invalid product ID)";
+      } else if (txData.status === "COMPENSATED") {
+        failureReason = txData.failure_reason || "Payment declined / failed → Stock auto-released via compensating action";
+      } else if (txData.status === "COMPENSATION_FAILED") {
+        failureReason = txData.failure_reason || "Compensating stock release rejected by Inventory Service";
+      }
+
+      DOM.fmetaFailureBanner.classList.remove("hidden");
+      DOM.fmetaFailureText.textContent = `Failure Reason: ${failureReason}`;
+    } else {
+      DOM.fmetaFailureBanner.classList.add("hidden");
+    }
 
     if (["COMPENSATION_FAILED", "RETRY_COMPENSATION_FAILED"].includes(txData.status)) {
       DOM.btnRetryActiveTx.classList.remove("hidden");
@@ -667,15 +708,16 @@ function getStatusBadgeClass(status) {
 }
 
 // ============================================================================
-// One-Click Live Recruiter Scenarios & Stress Tests (Curved Packet Transit)
+// One-Click Live Recruiter Scenarios & Stress Tests
 // ============================================================================
 
+// 1. Scenario: Happy Path Saga
 DOM.btnDemoHappy.addEventListener("click", async () => {
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "ORCHESTRATING";
 
-  // Phase 1: Client -> Coordinator
+  // Step 1: Client -> Coordinator
   await animatePacketAlongPath({
     route: "client-coord",
     type: "info",
@@ -683,7 +725,7 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Phase 2: Coordinator -> Inventory Reserve (Green)
+  // Step 2: Coordinator -> Inventory Reserve (Green)
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -691,15 +733,15 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
-  // Inventory -> Coordinator Response (Blue/Green)
+  // Step 3: Inventory -> Coordinator 200 OK Response (Green)
   await animatePacketAlongPath({
     route: "inv-coord",
-    type: "info",
+    type: "success",
     durationMs: 350,
     destinationNodeId: "node-box-coord",
   });
 
-  // Phase 3: Coordinator -> Payment Charge (Green)
+  // Step 4: Coordinator -> Payment Charge (Green)
   await animatePacketAlongPath({
     route: "coord-pay",
     type: "success",
@@ -707,7 +749,7 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     destinationNodeId: "node-box-pay",
   });
 
-  // Payment -> Coordinator Response (Success)
+  // Step 5: Payment -> Coordinator 200 OK Response (Green)
   await animatePacketAlongPath({
     route: "pay-coord",
     type: "success",
@@ -718,7 +760,7 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
   showToast({
     icon: "⚡",
     title: "Happy Path Saga Completed",
-    message: "Inventory reserved via row lock → Payment charged → Transaction marked COMPLETED",
+    message: "Inventory row-locked & reserved → Payment charged ($500.00) → Transaction marked COMPLETED",
     type: "success",
   });
 
@@ -740,12 +782,13 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
   DOM.topoCoordState.textContent = "IDLE";
 });
 
+// 2. Scenario: Payment Decline & Auto-Compensation
 DOM.btnDemoFail.addEventListener("click", async () => {
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "COMPENSATING";
 
-  // Phase 1: Client -> Coordinator
+  // Step 1: Client -> Coordinator
   await animatePacketAlongPath({
     route: "client-coord",
     type: "info",
@@ -753,7 +796,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Phase 2: Reserve Inventory OK (Green)
+  // Step 2: Reserve Inventory OK (Green)
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -761,14 +804,15 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
+  // Step 3: Inventory -> Coordinator OK
   await animatePacketAlongPath({
     route: "inv-coord",
-    type: "info",
+    type: "success",
     durationMs: 350,
     destinationNodeId: "node-box-coord",
   });
 
-  // Phase 3: Payment Declined (Red)
+  // Step 4: Payment Charge Declined (Red)
   await animatePacketAlongPath({
     route: "coord-pay",
     type: "danger",
@@ -776,6 +820,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-pay",
   });
 
+  // Step 5: Payment -> Coordinator Decline Response (Red)
   await animatePacketAlongPath({
     route: "pay-coord",
     type: "danger",
@@ -783,7 +828,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Phase 4: Compensating Inventory Release (Amber)
+  // Step 6: Compensating Inventory Release (Amber)
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "warning",
@@ -791,6 +836,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
+  // Step 7: Inventory -> Coordinator Release Confirmed (Amber)
   await animatePacketAlongPath({
     route: "inv-coord",
     type: "warning",
@@ -801,7 +847,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
   showToast({
     icon: "🔄",
     title: "Compensating Saga Executed",
-    message: "Payment declined (HTTP 400) → Coordinator auto-released inventory stock → Marked COMPENSATED",
+    message: "Payment declined (HTTP 422: Testing failure amount $9,999) → Stock auto-released to Inventory → Marked COMPENSATED",
     type: "normal",
   });
 
@@ -811,9 +857,10 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     return;
   }
 
+  // Send amount: 9999 to trigger backend's testing failure amount
   const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
     method: "POST",
-    body: JSON.stringify({ product_id: 1, quantity: 1, amount: 99999 }),
+    body: JSON.stringify({ product_id: 1, quantity: 1, amount: 9999 }),
   });
 
   if (res.data && res.data.transaction_id) {
@@ -823,32 +870,23 @@ DOM.btnDemoFail.addEventListener("click", async () => {
   DOM.topoCoordState.textContent = "IDLE";
 });
 
+// 3. Scenario: 5x Concurrent Race Attack (COMPLETE ROUND-TRIP TO PAYMENT & BACK)
 DOM.btnDemoRace.addEventListener("click", async () => {
   const sharedTxId = crypto.randomUUID();
   STATE.stats.dispatchedCount += 5;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "RACE BURST";
 
-  // Fire 5 packets along client-coord
-  if (STATE.isLiveAnimPaced) {
-    for (let i = 0; i < 5; i++) {
-      animatePacketAlongPath({
-        route: "client-coord",
-        type: i === 0 ? "success" : "danger",
-        durationMs: 350 + i * 50,
-        destinationNodeId: "node-box-coord",
-      });
-    }
-    await sleep(400);
-
-    // 1 winner continues to Inventory & Payment
+  // Step 1: Fire 5 concurrent packets along client-coord
+  for (let i = 0; i < 5; i++) {
     animatePacketAlongPath({
-      route: "coord-inv",
-      type: "success",
-      durationMs: 450,
-      destinationNodeId: "node-box-inv",
+      route: "client-coord",
+      type: i === 0 ? "success" : "danger",
+      durationMs: 350 + i * 40,
+      destinationNodeId: "node-box-coord",
     });
   }
+  await sleep(400);
 
   STATE.stats.racesDefended += 4;
   DOM.statRacesDefended.textContent = STATE.stats.racesDefended;
@@ -857,9 +895,41 @@ DOM.btnDemoRace.addEventListener("click", async () => {
   showToast({
     icon: "🔥",
     title: "Race Condition Defended",
-    message: `5 concurrent requests with UUID ${sharedTxId.substring(0,8)}... → 1 committed, 4 blocked by UNIQUE constraint + row locks!`,
+    message: `5 concurrent requests with UUID ${sharedTxId.substring(0,8)}... → Exactly 1 committed, 4 blocked by PostgreSQL UNIQUE(transaction_id) & row locks!`,
     type: "race",
-    duration: 6000,
+    duration: 6500,
+  });
+
+  // Step 2: Winner moves to Inventory Service (Reserve)
+  await animatePacketAlongPath({
+    route: "coord-inv",
+    type: "success",
+    durationMs: 450,
+    destinationNodeId: "node-box-inv",
+  });
+
+  // Step 3: Inventory returns 200 OK to Coordinator
+  await animatePacketAlongPath({
+    route: "inv-coord",
+    type: "success",
+    durationMs: 350,
+    destinationNodeId: "node-box-coord",
+  });
+
+  // Step 4: Winner moves to Payment Service (Charge)
+  await animatePacketAlongPath({
+    route: "coord-pay",
+    type: "success",
+    durationMs: 450,
+    destinationNodeId: "node-box-pay",
+  });
+
+  // Step 5: Payment returns 200 OK back to Coordinator
+  await animatePacketAlongPath({
+    route: "pay-coord",
+    type: "success",
+    durationMs: 350,
+    destinationNodeId: "node-box-coord",
   });
 
   if (STATE.isSimulatedMode) {
@@ -887,12 +957,13 @@ DOM.btnDemoRace.addEventListener("click", async () => {
   DOM.topoCoordState.textContent = "IDLE";
 });
 
+// 4. Scenario: Crash Simulation & Celery Recovery
 DOM.btnDemoCrash.addEventListener("click", async () => {
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "CRASH SIMULATION";
 
-  // Phase 1: Client -> Coordinator
+  // Step 1: Client -> Coordinator
   await animatePacketAlongPath({
     route: "client-coord",
     type: "info",
@@ -900,7 +971,7 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  // Phase 2: Inventory Reserved OK
+  // Step 2: Inventory Reserved OK
   await animatePacketAlongPath({
     route: "coord-inv",
     type: "success",
@@ -908,7 +979,15 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
     destinationNodeId: "node-box-inv",
   });
 
-  // Phase 3: Crash mid-flight on Payment call (Stops at 50% & shatters)
+  // Step 3: Inventory response back to Coordinator
+  await animatePacketAlongPath({
+    route: "inv-coord",
+    type: "success",
+    durationMs: 350,
+    destinationNodeId: "node-box-coord",
+  });
+
+  // Step 4: Crash mid-flight on Payment call (Stops at 50% & shatters)
   await animatePacketAlongPath({
     route: "coord-pay",
     type: "danger",
@@ -921,7 +1000,7 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
   showToast({
     icon: "💥",
     title: "Simulated Process Death Triggered",
-    message: "Coordinator killed after reservation! Transaction orphaned in PAYMENT_PROCESSING. Awaiting Celery Beat recovery sweep...",
+    message: "Coordinator process killed mid-flight after reservation! Transaction orphaned in PAYMENT_PROCESSING. Awaiting Celery Beat sweep...",
     type: "race",
     duration: 5000,
   });
@@ -960,12 +1039,26 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
       destinationNodeId: "node-box-pay",
     });
 
+    await animatePacketAlongPath({
+      route: "pay-coord",
+      type: "purple",
+      durationMs: 350,
+      destinationNodeId: "node-box-coord",
+    });
+
     // Release inventory reservation
     await animatePacketAlongPath({
       route: "coord-inv",
       type: "warning",
       durationMs: 450,
       destinationNodeId: "node-box-inv",
+    });
+
+    await animatePacketAlongPath({
+      route: "inv-coord",
+      type: "warning",
+      durationMs: 350,
+      destinationNodeId: "node-box-coord",
     });
 
     STATE.stats.orphansRecovered++;
@@ -979,7 +1072,7 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
     showToast({
       icon: "🛡️",
       title: "Recovery Sweep Resolved Orphan",
-      message: `Transaction ${txId.substring(0,8)}... claimed into RECOVERY_IN_PROGRESS → Payment probed → Inventory released to COMPENSATED`,
+      message: `Transaction ${txId.substring(0,8)}... claimed into RECOVERY_IN_PROGRESS → Payment probed (NOT_CHARGED) → Inventory released to COMPENSATED`,
       type: "purple",
       duration: 6000,
     });
@@ -1006,6 +1099,259 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
   }, 4000);
 });
 
+// 5. Scenario: Custom Payload (FULL ANIMATION ROUND-TRIP + EXPLICIT ERROR REPORTING)
+DOM.btnToggleCustom.addEventListener("click", () => {
+  DOM.customDrawer.classList.toggle("hidden");
+});
+
+DOM.formCustomTx.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const productId = parseInt(document.getElementById("cust-product-id").value, 10);
+  const quantity = parseInt(document.getElementById("cust-qty").value, 10);
+  const amount = parseFloat(document.getElementById("cust-amount").value);
+  const isFailComp = document.getElementById("cust-flag-fail").checked;
+  const isCrash = document.getElementById("cust-flag-crash").checked;
+
+  const payload = {
+    product_id: isNaN(productId) ? 1 : productId,
+    quantity: isNaN(quantity) ? 1 : quantity,
+    amount: isNaN(amount) ? 500 : amount,
+  };
+
+  const customId = document.getElementById("cust-tx-id").value.trim();
+  if (customId) payload.transaction_id = customId;
+  if (isFailComp) payload.fail_compensation = true;
+  if (isCrash) payload.coordinator = true;
+
+  STATE.stats.dispatchedCount++;
+  DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
+  DOM.topoCoordState.textContent = "PROCESSING CUSTOM";
+  DOM.customDrawer.classList.add("hidden");
+
+  // Step 1: Client -> Coordinator
+  await animatePacketAlongPath({
+    route: "client-coord",
+    type: "info",
+    durationMs: 400,
+    destinationNodeId: "node-box-coord",
+  });
+
+  // Step 2: Coordinator -> Inventory
+  await animatePacketAlongPath({
+    route: "coord-inv",
+    type: "success",
+    durationMs: 450,
+    destinationNodeId: "node-box-inv",
+  });
+
+  if (STATE.isSimulatedMode) {
+    if (quantity <= 0) {
+      await animatePacketAlongPath({ route: "inv-coord", type: "danger", durationMs: 350, destinationNodeId: "node-box-coord" });
+      showToast({
+        icon: "❌",
+        title: "Inventory Reservation Failed",
+        message: "Backend Error: Quantity must be greater than 0. Transaction aborted.",
+        type: "race",
+      });
+      createSimulatedTransaction("INVENTORY_RESERVE_FAILED", customId, "Quantity must be greater than 0");
+    } else if (isCrash) {
+      await animatePacketAlongPath({ route: "inv-coord", type: "success", durationMs: 350, destinationNodeId: "node-box-coord" });
+      await animatePacketAlongPath({ route: "coord-pay", type: "danger", durationMs: 500, breakMidway: true });
+      triggerCrashedNode("coord");
+      showToast({
+        icon: "💥",
+        title: "Coordinator Process Crash Simulated",
+        message: "Coordinator killed after reservation! Transaction orphaned in PAYMENT_PROCESSING.",
+        type: "race",
+      });
+      createSimulatedTransaction("RECOVERY_IN_PROGRESS", customId);
+    } else if (amount === 9999 || isFailComp) {
+      await animatePacketAlongPath({ route: "inv-coord", type: "success", durationMs: 350, destinationNodeId: "node-box-coord" });
+      await animatePacketAlongPath({ route: "coord-pay", type: "danger", durationMs: 450, destinationNodeId: "node-box-pay" });
+      await animatePacketAlongPath({ route: "pay-coord", type: "danger", durationMs: 350, destinationNodeId: "node-box-coord" });
+      await animatePacketAlongPath({ route: "coord-inv", type: "warning", durationMs: 450, destinationNodeId: "node-box-inv" });
+      await animatePacketAlongPath({ route: "inv-coord", type: "warning", durationMs: 350, destinationNodeId: "node-box-coord" });
+      showToast({
+        icon: "🔄",
+        title: "Payment Declined & Compensated",
+        message: "Payment declined on $9,999 → Released inventory stock → Marked COMPENSATED",
+        type: "normal",
+      });
+      createSimulatedTransaction("COMPENSATED", customId);
+    } else {
+      await animatePacketAlongPath({ route: "inv-coord", type: "success", durationMs: 350, destinationNodeId: "node-box-coord" });
+      await animatePacketAlongPath({ route: "coord-pay", type: "success", durationMs: 450, destinationNodeId: "node-box-pay" });
+      await animatePacketAlongPath({ route: "pay-coord", type: "success", durationMs: 350, destinationNodeId: "node-box-coord" });
+      showToast({
+        icon: "⚡",
+        title: "Custom Saga Completed",
+        message: `Reserved Prod #${payload.product_id} (Qty: ${payload.quantity}) → Charged $${payload.amount} → Marked COMPLETED`,
+        type: "success",
+      });
+      createSimulatedTransaction("COMPLETED", customId);
+    }
+    DOM.topoCoordState.textContent = "IDLE";
+    return;
+  }
+
+  // Real backend call
+  const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  const txData = res.data || {};
+  const status = txData.status || (res.ok ? "COMPLETED" : "FAILED");
+  const detailedError = extractDetailedErrorMessage(res);
+
+  // Case 1: Inventory Reserve Failed
+  if (txData.error === "INVENTORY_RESERVE_FAILED" || res.status === 400 && txData.inventory_response) {
+    await animatePacketAlongPath({
+      route: "inv-coord",
+      type: "danger",
+      durationMs: 350,
+      destinationNodeId: "node-box-coord",
+    });
+
+    showToast({
+      icon: "❌",
+      title: "Inventory Reservation Failed",
+      message: `Backend Error: ${detailedError}. Transaction marked INVENTORY_RESERVE_FAILED.`,
+      type: "race",
+      duration: 6000,
+    });
+  }
+  // Case 2: Coordinator Crash Simulated
+  else if (isCrash || txData.detail === "Intentional crash") {
+    await animatePacketAlongPath({
+      route: "inv-coord",
+      type: "success",
+      durationMs: 350,
+      destinationNodeId: "node-box-coord",
+    });
+
+    await animatePacketAlongPath({
+      route: "coord-pay",
+      type: "danger",
+      durationMs: 500,
+      breakMidway: true,
+    });
+
+    triggerCrashedNode("coord");
+
+    showToast({
+      icon: "💥",
+      title: "Coordinator Process Death Simulated",
+      message: "Coordinator killed before charging payment! Transaction orphaned in PAYMENT_PROCESSING.",
+      type: "race",
+      duration: 6000,
+    });
+
+    setTimeout(async () => {
+      await animatePacketAlongPath({ route: "coord-pay", type: "purple", durationMs: 450, destinationNodeId: "node-box-pay" });
+      await animatePacketAlongPath({ route: "pay-coord", type: "purple", durationMs: 350, destinationNodeId: "node-box-coord" });
+      await animatePacketAlongPath({ route: "coord-inv", type: "warning", durationMs: 450, destinationNodeId: "node-box-inv" });
+      await animatePacketAlongPath({ route: "inv-coord", type: "warning", durationMs: 350, destinationNodeId: "node-box-coord" });
+      triggerRecoveredNode("coord");
+      STATE.stats.orphansRecovered++;
+      DOM.recOrphansRecovered.textContent = STATE.stats.orphansRecovered;
+      fetchTransactionsFeed();
+    }, 4000);
+  }
+  // Case 3: Payment Declined / Compensated
+  else if (status === "COMPENSATED" || status === "COMPENSATION_FAILED") {
+    await animatePacketAlongPath({
+      route: "inv-coord",
+      type: "success",
+      durationMs: 350,
+      destinationNodeId: "node-box-coord",
+    });
+
+    await animatePacketAlongPath({
+      route: "coord-pay",
+      type: "danger",
+      durationMs: 450,
+      destinationNodeId: "node-box-pay",
+    });
+
+    await animatePacketAlongPath({
+      route: "pay-coord",
+      type: "danger",
+      durationMs: 350,
+      destinationNodeId: "node-box-coord",
+    });
+
+    await animatePacketAlongPath({
+      route: "coord-inv",
+      type: "warning",
+      durationMs: 450,
+      destinationNodeId: "node-box-inv",
+    });
+
+    await animatePacketAlongPath({
+      route: "inv-coord",
+      type: "warning",
+      durationMs: 350,
+      destinationNodeId: "node-box-coord",
+    });
+
+    if (status === "COMPENSATION_FAILED") {
+      showToast({
+        icon: "❌",
+        title: "Compensation Release Failed",
+        message: `Inventory rejected stock release (fail_compensation flag enabled). Marked COMPENSATION_FAILED.`,
+        type: "race",
+        duration: 6000,
+      });
+    } else {
+      showToast({
+        icon: "🔄",
+        title: "Payment Declined & Compensated",
+        message: `Payment outcome: ${detailedError} → Stock auto-released to Inventory → Marked COMPENSATED.`,
+        type: "normal",
+        duration: 5500,
+      });
+    }
+  }
+  // Case 4: Happy Path Completed
+  else {
+    await animatePacketAlongPath({
+      route: "inv-coord",
+      type: "success",
+      durationMs: 350,
+      destinationNodeId: "node-box-coord",
+    });
+
+    await animatePacketAlongPath({
+      route: "coord-pay",
+      type: "success",
+      durationMs: 450,
+      destinationNodeId: "node-box-pay",
+    });
+
+    await animatePacketAlongPath({
+      route: "pay-coord",
+      type: "success",
+      durationMs: 350,
+      destinationNodeId: "node-box-coord",
+    });
+
+    showToast({
+      icon: "⚡",
+      title: "Custom Saga Completed",
+      message: `Reserved Prod #${payload.product_id} (Qty: ${payload.quantity}) → Charged $${payload.amount} → Marked COMPLETED.`,
+      type: "success",
+    });
+  }
+
+  if (txData.transaction_id) {
+    window.selectTransaction(txData.transaction_id);
+  }
+  fetchTransactionsFeed();
+  DOM.topoCoordState.textContent = "IDLE";
+});
+
+// Trigger Immediate Sweep Button
 DOM.btnTriggerSweep.addEventListener("click", async () => {
   STATE.stats.sagasSwept += 5;
   DOM.recSagasSwept.textContent = STATE.stats.sagasSwept;
@@ -1013,10 +1359,8 @@ DOM.btnTriggerSweep.addEventListener("click", async () => {
 
   DOM.recRedisLock.innerHTML = `<span class="badge badge-purple">LOCKED (EXEC)</span>`;
   
-  if (STATE.isLiveAnimPaced) {
-    animatePacketAlongPath({ route: "coord-inv", type: "purple", durationMs: 400, destinationNodeId: "node-box-inv" });
-    animatePacketAlongPath({ route: "coord-pay", type: "purple", durationMs: 400, destinationNodeId: "node-box-pay" });
-  }
+  animatePacketAlongPath({ route: "coord-inv", type: "purple", durationMs: 400, destinationNodeId: "node-box-inv" });
+  animatePacketAlongPath({ route: "coord-pay", type: "purple", durationMs: 400, destinationNodeId: "node-box-pay" });
 
   showToast({
     icon: "⏱️",
@@ -1030,43 +1374,22 @@ DOM.btnTriggerSweep.addEventListener("click", async () => {
   }, 2000);
 });
 
-DOM.btnToggleCustom.addEventListener("click", () => {
-  DOM.customDrawer.classList.toggle("hidden");
-});
-
-DOM.formCustomTx.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const payload = {
-    product_id: parseInt(document.getElementById("cust-product-id").value, 10),
-    quantity: parseInt(document.getElementById("cust-qty").value, 10),
-    amount: parseFloat(document.getElementById("cust-amount").value),
-  };
-
-  const customId = document.getElementById("cust-tx-id").value.trim();
-  if (customId) payload.transaction_id = customId;
-  if (document.getElementById("cust-flag-fail").checked) payload.fail_compensation = true;
-  if (document.getElementById("cust-flag-crash").checked) payload.coordinator = true;
-
-  animatePacketAlongPath({ route: "client-coord", type: "info", durationMs: 400, destinationNodeId: "node-box-coord" });
-
-  const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-
-  if (res.data && res.data.transaction_id) {
-    window.selectTransaction(res.data.transaction_id);
-    fetchTransactionsFeed();
-  }
-  DOM.customDrawer.classList.add("hidden");
-});
-
+// Retry Compensation for active transaction
 DOM.btnRetryActiveTx.addEventListener("click", async () => {
   if (!STATE.activeTxId) return;
-  animatePacketAlongPath({ route: "coord-inv", type: "warning", durationMs: 450, destinationNodeId: "node-box-inv" });
+  await animatePacketAlongPath({ route: "coord-inv", type: "warning", durationMs: 450, destinationNodeId: "node-box-inv" });
+  await animatePacketAlongPath({ route: "inv-coord", type: "warning", durationMs: 350, destinationNodeId: "node-box-coord" });
 
-  await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/${STATE.activeTxId}/retry-compensation/`, {
+  const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/${STATE.activeTxId}/retry-compensation/`, {
     method: "POST",
+  });
+
+  const detailedError = extractDetailedErrorMessage(res, "Retry compensation executed");
+  showToast({
+    icon: "🔄",
+    title: "Retry Compensation",
+    message: detailedError,
+    type: res.ok ? "success" : "race",
   });
 
   inspectTransaction(STATE.activeTxId, true);
@@ -1077,7 +1400,7 @@ DOM.btnRetryActiveTx.addEventListener("click", async () => {
 // Simulation Fallback Mode
 // ============================================================================
 
-function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null) {
+function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null, failureReason = null) {
   const txId = customId || crypto.randomUUID();
   const now = new Date().toISOString();
 
@@ -1095,6 +1418,10 @@ function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null) 
       { seq: 3, from_status: "PAYMENT_PROCESSING", to_status: "COMPENSATING", actor: "request", http_status_code: 400, http_payload: { error: "Insufficient funds" }, created_at: now },
       { seq: 4, from_status: "COMPENSATING", to_status: "COMPENSATED", actor: "request", http_status_code: 200, http_payload: { message: "Inventory released" }, created_at: now },
     ];
+  } else if (finalStatus === "INVENTORY_RESERVE_FAILED") {
+    events = [
+      { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVE_FAILED", actor: "request", http_status_code: 400, http_payload: { error: failureReason || "Quantity must be greater than 0" }, created_at: now },
+    ];
   } else if (finalStatus === "RECOVERY_IN_PROGRESS") {
     events = [
       { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVED", actor: "request", http_status_code: 200, http_payload: { message: "Reserved" }, created_at: now },
@@ -1107,8 +1434,9 @@ function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null) 
     transaction_id: txId,
     status: finalStatus,
     product_id: 1,
-    quantity: 1,
+    quantity: finalStatus === "INVENTORY_RESERVE_FAILED" ? 0 : 1,
     amount: finalStatus === "COMPENSATED" ? 9999 : 500,
+    failure_reason: failureReason,
     created_at: now,
     updated_at: now,
     events: events,
@@ -1116,7 +1444,9 @@ function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null) 
 
   STATE.transactions.unshift(newTx);
   STATE.stats.totalSagas++;
-  STATE.stats.locksEnforced++;
+  if (finalStatus !== "INVENTORY_RESERVE_FAILED") {
+    STATE.stats.locksEnforced++;
+  }
   DOM.statSagasTotal.textContent = STATE.stats.totalSagas;
   DOM.statLocksEnforced.textContent = STATE.stats.locksEnforced;
 
@@ -1125,14 +1455,8 @@ function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null) 
 }
 
 // ============================================================================
-// Controls, Toggles & Modals
+// Controls, Filters & Modals
 // ============================================================================
-
-DOM.toggleLiveAnim.addEventListener("change", () => {
-  STATE.isLiveAnimPaced = DOM.toggleLiveAnim.checked;
-  DOM.liveAnimText.textContent = STATE.isLiveAnimPaced ? "LIVE VIEW: ON (PACED)" : "LIVE VIEW: OFF";
-  DOM.liveAnimText.style.color = STATE.isLiveAnimPaced ? "var(--accent-blue)" : "var(--text-muted)";
-});
 
 DOM.filterTabs.forEach(tab => {
   tab.addEventListener("click", () => {
@@ -1208,10 +1532,8 @@ function startRecoveryCountdown() {
       DOM.recSagasSwept.textContent = STATE.stats.sagasSwept;
       localStorage.setItem("dtc_stat_swept", STATE.stats.sagasSwept);
 
-      if (STATE.isLiveAnimPaced) {
-        animatePacketAlongPath({ route: "coord-inv", type: "purple", durationMs: 400, destinationNodeId: "node-box-inv" });
-        animatePacketAlongPath({ route: "coord-pay", type: "purple", durationMs: 400, destinationNodeId: "node-box-pay" });
-      }
+      animatePacketAlongPath({ route: "coord-inv", type: "purple", durationMs: 400, destinationNodeId: "node-box-inv" });
+      animatePacketAlongPath({ route: "coord-pay", type: "purple", durationMs: 400, destinationNodeId: "node-box-pay" });
 
       DOM.topoCoordLease.textContent = "SWEEPING";
       DOM.recRedisLock.innerHTML = `<span class="badge badge-purple">SWEEPING LEASE</span>`;

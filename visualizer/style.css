@@ -250,20 +250,6 @@ body {
   font-family: var(--font-mono);
 }
 
-/* Live Animation Opt-In Toggle */
-.live-anim-toggle {
-  border-color: rgba(56, 189, 248, 0.4);
-  background: rgba(56, 189, 248, 0.08);
-}
-
-.live-anim-toggle input:checked + .switch-slider {
-  background: var(--accent-blue);
-}
-
-.live-anim-toggle .switch-text {
-  color: var(--accent-blue);
-}
-
 /* ==========================================================================
    Main Layout & Sections
    ========================================================================= */
@@ -980,6 +966,29 @@ body {
 .fmeta-val {
   font-size: 12px;
   font-weight: 700;
+}
+
+.fmeta-failure-banner {
+  grid-column: 1 / -1;
+  background: rgba(244, 63, 94, 0.15);
+  border: 1px solid rgba(244, 63, 94, 0.4);
+  border-radius: var(--radius-xs);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: #fecdd3;
+  font-family: var(--font-mono);
+}
+
+.fmeta-failure-icon {
+  font-size: 14px;
+}
+
+.fmeta-failure-text {
+  font-weight: 600;
+  color: #fda4af;
 }
 
 /* Timeline Stream */
