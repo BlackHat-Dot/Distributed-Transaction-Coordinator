@@ -239,12 +239,23 @@ async function loadCatalog(isInitial = false) {
     }
   }
 
+  // If no seats exist in database yet, automatically trigger seed restock
+  if (seatsRes.data.length === 0) {
+    const seedRes = await fetchJson(`${CONFIG.inventoryUrl}/seats/reset/`, { method: "POST" });
+    if (seedRes.ok) {
+      const refreshedSeats = await fetchJson(`${CONFIG.inventoryUrl}/seats/`);
+      if (refreshedSeats.ok && Array.isArray(refreshedSeats.data)) {
+        seatsRes.data = refreshedSeats.data;
+      }
+    }
+  }
+
   // Populate Seats Map
   seatsRes.data.forEach(seat => {
     STATE.seatsMap.set(seat.id, seat);
   });
 
-  if (isInitial) {
+  if (isInitial || !DOM.seatMatrix || DOM.seatMatrix.children.length === 0) {
     renderFullSeatMatrix();
     if (DOM.seatSkeleton) DOM.seatSkeleton.classList.add("hidden");
   } else {
@@ -798,6 +809,13 @@ function startDifferentialPolling() {
  *    smooth CSS transitions.
  */
 function reconcileSeatStates(newSeats) {
+  if (DOM.seatMatrix && DOM.seatMatrix.children.length === 0 && newSeats.length > 0) {
+    newSeats.forEach(seat => STATE.seatsMap.set(seat.id, seat));
+    renderFullSeatMatrix();
+    if (DOM.seatSkeleton) DOM.seatSkeleton.classList.add("hidden");
+    return;
+  }
+
   newSeats.forEach(newSeat => {
     const seatId = newSeat.id;
 

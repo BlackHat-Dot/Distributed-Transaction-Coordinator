@@ -21,12 +21,14 @@ django.setup()
 from inventory.models import Event, Seat
 from django.utils import timezone
 from datetime import timedelta
-if Event.objects.count() == 0:
-    event = Event.objects.create(name='World Premiere Concert', venue='Grand Hall', starts_at=timezone.now() + timedelta(days=14))
-    for r in ['A', 'B', 'C']:
+event = Event.objects.first()
+if not event:
+    event = Event.objects.create(name='Coldplay: Music of the Spheres World Tour', venue='Grand Arena Stadium', starts_at=timezone.now() + timedelta(days=14))
+if Seat.objects.count() == 0:
+    for r, price in [('A', 750.00), ('B', 500.00), ('C', 350.00)]:
         for num in range(1, 11):
-            Seat.objects.create(event=event, row=r, seat_number=str(num), price=500.00)
-    print('  -> Seeded 1 Event and 30 Seats.')
+            Seat.objects.create(event=event, row=r, seat_number=str(num), price=price, status=Seat.Status.AVAILABLE)
+    print('  -> Seeded 30 Seats across Rows A, B, and C.')
 " 2>/dev/null || true
 
 echo "[Inventory] Ensuring default admin superuser exists..."

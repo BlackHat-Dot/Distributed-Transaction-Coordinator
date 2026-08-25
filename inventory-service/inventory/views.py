@@ -444,14 +444,32 @@ def reset_seats(request):
     """
     Demo / Development Helper:
     Resets all seats in the venue catalog back to AVAILABLE, cleans up expired holds,
-    and clears all Redis hold keys.
+    and clears all Redis hold keys. If no seats exist, seeds 30 seats across rows A, B, and C.
     """
     with transaction.atomic():
-        Seat.objects.all().update(
-            status=Seat.Status.AVAILABLE,
-            held_until=None,
-            held_by_transaction_id=None,
-        )
+        if Seat.objects.count() == 0:
+            event = Event.objects.first()
+            if not event:
+                event = Event.objects.create(
+                    name="Coldplay: Music of the Spheres World Tour",
+                    venue="Grand Arena Stadium",
+                    starts_at=timezone.now() + timedelta(days=14),
+                )
+            for r, price in [("A", 750.00), ("B", 500.00), ("C", 350.00)]:
+                for num in range(1, 11):
+                    Seat.objects.create(
+                        event=event,
+                        row=r,
+                        seat_number=str(num),
+                        price=price,
+                        status=Seat.Status.AVAILABLE,
+                    )
+        else:
+            Seat.objects.all().update(
+                status=Seat.Status.AVAILABLE,
+                held_until=None,
+                held_by_transaction_id=None,
+            )
         Reservation.objects.all().delete()
 
     client = get_redis_client()
