@@ -57,6 +57,13 @@
     </div>
 
     <div class="nav-controls">
+      <a href="booking.html" class="btn btn-primary" id="btn-live-booking" style="padding: 6px 12px; font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;" title="Switch to Live Real-Time Seat Selection">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18v-2a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>🎭 Live Seat Selection</span>
+      </a>
+
+      <div class="nav-control-divider"></div>
+
       <!-- 1. DEMO ⟷ LIVE Sliding Mode Toggle -->
       <div class="sliding-toggle-group mode-toggle-container" id="mode-toggle-wrap">
         <span class="toggle-side-label toggle-label-demo" id="label-demo" onclick="window.setBackendMode(true)">DEMO</span>
@@ -123,7 +130,7 @@
       </div>
 
       <div class="scenario-bar">
-        <div class="scenario-label">Execute Live Scenarios:</div>
+        <div class="scenario-label">Execute Live Scenarios: (USE DEMO MODE)</div>
         <div class="scenario-buttons">
           <button class="btn btn-scenario btn-scenario-happy" id="btn-demo-happy">
             <span class="btn-icon">⚡</span>

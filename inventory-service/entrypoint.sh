@@ -29,5 +29,17 @@ if Event.objects.count() == 0:
     print('  -> Seeded 1 Event and 30 Seats.')
 " 2>/dev/null || true
 
+echo "[Inventory] Ensuring default admin superuser exists..."
+python manage.py shell -c "
+from django.contrib.auth import get_user_model
+User = get_user_model()
+if not User.objects.filter(username='admin').exists():
+    User.objects.create_superuser('admin', 'admin@example.com', 'admin')
+    print('  -> Created default admin superuser (username: admin, pass: admin)')
+" 2>/dev/null || true
+
+echo "[Inventory] Collecting static files..."
+python manage.py collectstatic --noinput
+
 echo "[Inventory] Starting service command: $@"
 exec "$@"

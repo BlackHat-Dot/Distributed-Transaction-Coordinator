@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DTC Arena • Live Real-Time Seat Selection & Saga Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="booking.css">
+</head>
+<body class="theme-dark">
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Navigation Header -->
+  <header class="app-header">
+    <div class="header-brand">
+      <div class="brand-badge">
+        <span class="pulse-dot"></span>
+        <span>REAL-TIME DTC ENGINE</span>
+      </div>
+      <h1>DTC Arena <span class="header-tag">Live Seat Allocation</span></h1>
+    </div>
+
+    <!-- Nav Switcher -->
+    <div class="header-nav">
+      <a href="index.html" class="nav-btn" title="Switch to Mission Control Topology">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+        <span>⚡ Mission Control Visualizer</span>
+      </a>
+      <a href="booking.html" class="nav-btn active">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18v-2a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>🎭 Live Seat Selection</span>
+      </a>
+    </div>
+
+    <!-- Service Health & Controls -->
+    <div class="header-actions">
+      <div class="service-pill" id="health-indicator" title="Inventory Service Status">
+        <span class="status-indicator online"></span>
+        <span id="health-text">Inventory: Online</span>
+      </div>
+      <button id="btn-restock" class="btn btn-outline btn-sm" title="Reset all 30 seats to AVAILABLE">
+        <span>🎟️ Reset Venue Seats</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Booking Canvas -->
+  <main class="booking-layout">
+    
+    <!-- Left Column: Cinema/Venue Map -->
+    <section class="venue-container">
+      
+      <!-- Event Hero Card -->
+      <div class="event-hero">
+        <div class="event-info">
+          <span class="event-badge">LIVE EVENT • TWO-PHASE CAS HOLDS</span>
+          <h2 id="event-title">Coldplay: Music of the Spheres World Tour</h2>
+          <p class="event-meta" id="event-meta">
+            <span>📍 Grand Arena Stadium</span>
+            <span class="meta-sep">•</span>
+            <span>📅 Tomorrow, 8:00 PM</span>
+            <span class="meta-sep">•</span>
+            <span>⏱️ 10-Min Ephemeral Holds</span>
+          </p>
+        </div>
+
+        <div class="event-stats">
+          <div class="stat-pill">
+            <span class="stat-num text-success" id="stat-available">--</span>
+            <span class="stat-label">Available</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-num text-warning" id="stat-held">--</span>
+            <span class="stat-label">Held</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-num text-danger" id="stat-booked">--</span>
+            <span class="stat-label">Booked</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cinema Screen Arc -->
+      <div class="screen-wrapper">
+        <div class="screen-curve"></div>
+        <div class="screen-glow"></div>
+        <span class="screen-label">STAGE / SCREEN THIS WAY</span>
+      </div>
+
+      <!-- Interactive Seat Grid Area -->
+      <div class="seat-matrix-wrapper" id="seat-matrix-wrapper">
+        <div class="seat-loading-skeleton" id="seat-skeleton">
+          <div class="skeleton-row"></div>
+          <div class="skeleton-row"></div>
+          <div class="skeleton-row"></div>
+        </div>
+        <div class="seat-matrix" id="seat-matrix">
+          <!-- Dynamic Tiers & Seats injected by booking.js -->
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="seat-legend">
+        <div class="legend-item">
+          <span class="legend-seat seat-available"></span>
+          <span>Available</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-seat seat-selected"></span>
+          <span>Your Hold</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-seat seat-held"></span>
+          <span>Held by Other</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-seat seat-booked"></span>
+          <span>Sold Out</span>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Right Column: Checkout & Saga Summary Drawer -->
+    <aside class="checkout-sidebar">
+      
+      <!-- Hold Countdown Widget (Visible when user has an active hold) -->
+      <div class="hold-timer-card hidden" id="hold-timer-card">
+        <div class="timer-header">
+          <div class="timer-title">
+            <span class="timer-pulse"></span>
+            <span>EPHEMERAL HOLD ACTIVE</span>
+          </div>
+          <button id="btn-cancel-hold" class="btn-text-link" title="Release seat back to venue">Release</button>
+        </div>
+        <div class="timer-display">
+          <div class="timer-clock" id="hold-clock">10:00</div>
+          <p class="timer-caption">Seat is locked for you in Redis & PostgreSQL. Server auto-sweeps on zero.</p>
+        </div>
+        <div class="timer-progress-bar">
+          <div class="timer-progress-fill" id="timer-progress-fill" style="width: 100%;"></div>
+        </div>
+      </div>
+
+      <!-- Selected Seat Summary Card -->
+      <div class="checkout-card">
+        <div class="card-header">
+          <h3>Booking Summary</h3>
+          <span class="tier-pill" id="summary-tier">No Selection</span>
+        </div>
+
+        <div class="summary-body" id="summary-empty">
+          <div class="empty-seat-state">
+            <div class="empty-icon">🎟️</div>
+            <p><strong>Click an available seat</strong> on the map to place an ephemeral 10-minute hold and proceed.</p>
+          </div>
+        </div>
+
+        <div class="summary-body hidden" id="summary-active">
+          <div class="ticket-stub">
+            <div class="stub-row">
+              <span class="stub-label">Selected Seat</span>
+              <strong class="stub-value highlight" id="summary-seat-label">Row A - Seat 1</strong>
+            </div>
+            <div class="stub-row">
+              <span class="stub-label">Tier</span>
+              <span class="stub-value" id="summary-seat-tier">VIP Recliner</span>
+            </div>
+            <div class="stub-row">
+              <span class="stub-label">Hold Transaction UUID</span>
+              <code class="stub-code" id="summary-tx-id">--</code>
+            </div>
+          </div>
+
+          <!-- Price Calculation -->
+          <div class="price-breakdown">
+            <div class="price-row">
+              <span>Seat Base Price</span>
+              <span id="summary-base-price">$500.00</span>
+            </div>
+            <div class="price-row">
+              <span>Booking Fee (Saga Guard)</span>
+              <span>$0.00</span>
+            </div>
+            <div class="price-divider"></div>
+            <div class="price-row total">
+              <strong>Total Amount</strong>
+              <strong class="total-amount" id="summary-total-price">$500.00</strong>
+            </div>
+          </div>
+
+          <!-- Payment Simulation Options -->
+          <div class="simulation-selector">
+            <label class="sim-label">Payment Gateway Simulation:</label>
+            <div class="sim-options">
+              <label class="sim-option selected" id="opt-happy">
+                <input type="radio" name="pay_sim" value="500" checked>
+                <div class="sim-opt-content">
+                  <strong>Standard Payment ($500)</strong>
+                  <small>Card approved → Saga marked COMPLETED</small>
+                </div>
+              </label>
+              <label class="sim-option" id="opt-decline">
+                <input type="radio" name="pay_sim" value="9999">
+                <div class="sim-opt-content">
+                  <strong>Declined Card ($9,999)</strong>
+                  <small>Card declined (HTTP 422) → Auto-compensate hold</small>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Checkout CTA -->
+          <button id="btn-proceed-pay" class="btn btn-primary btn-checkout">
+            <span>Proceed to Payment</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- DTC Architecture Guarantees Card -->
+      <div class="info-guarantees-card">
+        <h4>Distributed Systems Invariants</h4>
+        <ul>
+          <li><strong>PostgreSQL <code>select_for_update</code>:</strong> Zero double-bookings.</li>
+          <li><strong>Redis Speed Layer:</strong> 10-minute hold TTL shedding concurrent hold storms.</li>
+          <li><strong>Async Task Coordinator:</strong> WSGI threads never blocked on downstream I/O.</li>
+          <li><strong>Saga Compensating Release:</strong> Failed payment auto-releases seat.</li>
+        </ul>
+      </div>
+
+    </aside>
+
+  </main>
+
+  <!-- Saga Execution & E-Ticket Modal -->
+  <div class="modal-overlay hidden" id="saga-modal">
+    <div class="modal-card">
+      
+      <div class="modal-header">
+        <div class="modal-title-area">
+          <span class="saga-badge" id="modal-saga-badge">SAGA COORDINATOR ACTIVE</span>
+          <h3 id="modal-title">Orchestrating Distributed Transaction</h3>
+          <p id="modal-subtitle">Driving forward saga across Coordinator, Inventory, and Payment services...</p>
+        </div>
+      </div>
+
+      <!-- Live Saga Stepper Progress -->
+      <div class="saga-stepper">
+        
+        <div class="step-item active" id="step-1">
+          <div class="step-icon">1</div>
+          <div class="step-content">
+            <strong>1. Seat Allocation Hold</strong>
+            <small id="step-1-desc">Ephemeral hold verified in Inventory Service</small>
+          </div>
+          <span class="step-status" id="step-1-status">DONE</span>
+        </div>
+
+        <div class="step-item" id="step-2">
+          <div class="step-icon">2</div>
+          <div class="step-content">
+            <strong>2. Payment Authorization</strong>
+            <small id="step-2-desc">Dispatching card charge to Payment Gateway</small>
+          </div>
+          <span class="step-status" id="step-2-status">WAITING</span>
+        </div>
+
+        <div class="step-item" id="step-3">
+          <div class="step-icon">3</div>
+          <div class="step-content">
+            <strong id="step-3-title">3. Final Confirmation / Compensation</strong>
+            <small id="step-3-desc">Two-phase commit seat confirmation</small>
+          </div>
+          <span class="step-status" id="step-3-status">WAITING</span>
+        </div>
+
+      </div>
+
+      <!-- Result Container (Success / Compensation) -->
+      <div class="modal-result hidden" id="modal-result">
+        
+        <!-- Success E-Ticket -->
+        <div class="eticket-card hidden" id="eticket-card">
+          <div class="eticket-header">
+            <span class="eticket-brand">🎟️ DTC OFFICIAL E-TICKET</span>
+            <span class="eticket-status-badge">CONFIRMED</span>
+          </div>
+          <div class="eticket-body">
+            <div class="eticket-left">
+              <h4 id="ticket-event-name">Coldplay: Music of the Spheres</h4>
+              <p id="ticket-venue-name">Grand Arena Stadium • Tomorrow, 8:00 PM</p>
+              <div class="eticket-seat-box">
+                <span class="eticket-seat-label">SEAT ALLOCATION</span>
+                <strong class="eticket-seat-number" id="ticket-seat-number">Row A - Seat 1</strong>
+              </div>
+              <div class="eticket-ref">
+                <span>Transaction Ref:</span>
+                <code id="ticket-tx-id">--</code>
+              </div>
+            </div>
+            <div class="eticket-qr">
+              <div class="qr-box">
+                <div class="qr-mock"></div>
+                <span>SCAN AT GATE</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Compensation Failure Card -->
+        <div class="compensation-card hidden" id="compensation-card">
+          <div class="comp-header">
+            <div class="comp-icon">🔄</div>
+            <div>
+              <h4>Payment Declined — Compensating Action Executed</h4>
+              <p id="comp-reason">Payment gateway rejected amount $9,999 (HTTP 422 Unprocessable Content).</p>
+            </div>
+          </div>
+          <div class="comp-forensics">
+            <div class="forensic-row">
+              <span>Coordinator Action:</span>
+              <strong>Saga Compensation Triggered</strong>
+            </div>
+            <div class="forensic-row">
+              <span>Inventory Action:</span>
+              <strong>POST /seats/release/ Executed (Seat unlocked to AVAILABLE)</strong>
+            </div>
+            <div class="forensic-row">
+              <span>Final State:</span>
+              <span class="badge badge-comp">COMPENSATED</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="modal-footer">
+        <button id="btn-modal-close" class="btn btn-secondary" disabled>Processing Transaction...</button>
+        <a id="btn-view-forensics" href="#" class="btn btn-primary hidden" target="_blank">Inspect Forensic Audit Log ↗</a>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="booking.js"></script>
+</body>
+</html>
