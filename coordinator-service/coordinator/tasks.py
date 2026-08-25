@@ -50,3 +50,29 @@ def recover_stuck_transactions():
             client.eval(RELEASE_LOCK_SCRIPT, 1, LOCK_KEY, lock_token)
         except Exception as exc:
             logger.error("Failed to release lock '%s': %s", LOCK_KEY, exc)
+
+
+@shared_task(name="coordinator.tasks.execute_saga_task")
+def execute_saga_task(transaction_id, seat_id=None, amount=500, fail_compensation=False, correlation_id=None):
+    """
+    Task-Driven Saga Execution:
+    Executes the 3-phase saga pipeline asynchronously in a background Celery worker thread.
+    """
+    from coordinator.views import _run_saga_pipeline
+    logger.info("Executing async saga task for transaction_id=%s [correlation_id=%s]", transaction_id, correlation_id)
+    try:
+        parsed_tid = uuid.UUID(str(transaction_id))
+    except ValueError:
+        logger.error("Invalid transaction_id UUID passed to execute_saga_task: %s", transaction_id)
+        return "invalid_uuid"
+
+    response = _run_saga_pipeline(
+        transaction_id=parsed_tid,
+        seat_id=seat_id,
+        amount=amount,
+        fail_compensation=fail_compensation,
+        correlation_id=correlation_id,
+        actor="request",
+    )
+    logger.info("Async saga task completed for transaction_id=%s with status=%s", transaction_id, getattr(response, 'status_code', 'unknown'))
+    return "completed"

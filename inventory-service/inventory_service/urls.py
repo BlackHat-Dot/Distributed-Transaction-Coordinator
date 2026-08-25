@@ -1,18 +1,25 @@
 from django.contrib import admin
 from django.urls import path
 from inventory.views import (
-    product_list,
-    reserve_product, 
-    release_product,
+    event_list,
+    seat_list,
+    reserve_seat,
+    confirm_seat,
+    release_seat,
     reservation_check,
-    health_check
+    sweep_expired_holds,
+    health_check,
 )
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('products/', product_list),
-    path('products/reserve/', reserve_product),
-    path('products/release/', release_product),
+    path('events/', event_list),
+    path('seats/', seat_list),
+    path('seats/reserve/', reserve_seat),
+    path('seats/confirm/', confirm_seat),
+    path('seats/release/', release_seat),
+    path('seats/check/', reservation_check),
+    path('seats/sweep-expired/', sweep_expired_holds),
     path('reserve/check/', reservation_check),
-    path('health/', health_check)
+    path('health/', health_check),
 ]

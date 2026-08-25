@@ -5,10 +5,15 @@ from django.core.management.base import BaseCommand
 from coordinator.models import Transaction, SagaEvent
 from coordinator.saga_log import _set_status_with_event
 
-PAYMENT_CHECK_URL = "http://127.0.0.1:8001/payments/check/"
-INVENTORY_CHECK_URL = "http://127.0.0.1:8000/reserve/check/"
-INVENTORY_RELEASE_URL = "http://127.0.0.1:8000/products/release/"
-REQUEST_TIMEOUT = 5
+import os
+
+INVENTORY_BASE_URL = os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000").rstrip("/")
+PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rstrip("/")
+
+PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
+INVENTORY_CHECK_URL = f"{INVENTORY_BASE_URL}/reserve/check/"
+INVENTORY_RELEASE_URL = f"{INVENTORY_BASE_URL}/seats/release/"
+REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "5"))
 
 
 PAYMENT_CHARGED = "CHARGED"
@@ -141,11 +146,12 @@ class Command(BaseCommand):
 
 
     def _resolve_transaction(self, transaction_id):
-
+        headers = {"X-Correlation-ID": str(transaction_id)}
         try:
             payment_resp = requests.get(
                 PAYMENT_CHECK_URL,
                 params={"transaction_id": str(transaction_id)},
+                headers=headers,
                 timeout=REQUEST_TIMEOUT,
             )
         except requests.exceptions.RequestException:
@@ -181,6 +187,7 @@ class Command(BaseCommand):
             inventory_resp = requests.get(
                 INVENTORY_CHECK_URL,
                 params={"transaction_id": str(transaction_id)},
+                headers=headers,
                 timeout=REQUEST_TIMEOUT,
             )
         except requests.exceptions.RequestException:
@@ -229,10 +236,12 @@ class Command(BaseCommand):
             http_payload=None,
         )
 
+        headers = {"X-Correlation-ID": str(transaction_id)}
         try:
             resp = requests.post(
                 INVENTORY_RELEASE_URL,
                 json={"transaction_id": str(transaction_id)},
+                headers=headers,
                 timeout=REQUEST_TIMEOUT,
             )
         except requests.exceptions.RequestException:

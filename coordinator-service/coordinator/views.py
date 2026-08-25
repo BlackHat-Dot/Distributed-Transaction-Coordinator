@@ -1,3 +1,4 @@
+import os
 import uuid
 import requests
 
@@ -9,26 +10,26 @@ from django.utils import timezone
 
 from .models import Transaction, SagaEvent
 from .saga_log import _set_status_with_event
+from .middleware import get_correlation_id
 
 
-INVENTORY_RESERVE_URL = "http://127.0.0.1:8000/products/reserve/"
-INVENTORY_RELEASE_URL = "http://127.0.0.1:8000/products/release/"
-PAYMENT_CHARGE_URL = "http://127.0.0.1:8001/payments/charge/"
-PAYMENT_CHECK_URL = "http://127.0.0.1:8001/payments/check/"
-REQUEST_TIMEOUT = 5
+@api_view(["GET"])
+def health_check(request):
+    return Response({"status": "healthy", "service": "coordinator"})
 
 
+INVENTORY_BASE_URL = os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000").rstrip("/")
+PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rstrip("/")
 
-def _set_status(transaction_id, status, expected_status=None):
-
-    qs = Transaction.objects.filter(transaction_id=transaction_id)
-    if expected_status is not None:
-        qs = qs.filter(status=expected_status)
-    qs.update(status=status, updated_at=timezone.now())
+INVENTORY_RESERVE_URL = f"{INVENTORY_BASE_URL}/seats/reserve/"
+INVENTORY_CONFIRM_URL = f"{INVENTORY_BASE_URL}/seats/confirm/"
+INVENTORY_RELEASE_URL = f"{INVENTORY_BASE_URL}/seats/release/"
+PAYMENT_CHARGE_URL = f"{PAYMENT_BASE_URL}/payments/charge/"
+PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
+REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "5"))
 
 
 def _transport_status(exc, timeout_status, conn_status):
-
     return timeout_status if isinstance(exc, Timeout) else conn_status
 
 
@@ -42,13 +43,14 @@ def _parse_transaction_id(raw_tid):
         return None, Response({"error": "transaction_id must be a valid UUID"}, status=400)
 
 
-def _create_transaction_idempotent(transaction_id, product_id, quantity, amount):
+def _create_transaction_idempotent(transaction_id, seat_id, amount, product_id=None, quantity=1):
     try:
         with transaction.atomic():
             Transaction.objects.create(
                 transaction_id=transaction_id,
                 status=Transaction.Status.STARTED,
-                product_id=product_id,
+                seat_id=seat_id,
+                product_id=product_id or seat_id,
                 quantity=quantity,
                 amount=amount,
             )
@@ -61,12 +63,13 @@ def _create_transaction_idempotent(transaction_id, product_id, quantity, amount)
         )
 
 
-def _reserve_inventory(transaction_id, product_id, quantity):
-
+def _reserve_inventory(transaction_id, seat_id, correlation_id=None):
+    headers = {"X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id)}
     try:
         response = requests.post(
             INVENTORY_RESERVE_URL,
-            json={"product_id": product_id, "quantity": quantity, "transaction_id": transaction_id},
+            json={"seat_id": seat_id, "transaction_id": str(transaction_id)},
+            headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
         return response, None
@@ -75,31 +78,68 @@ def _reserve_inventory(transaction_id, product_id, quantity):
             e, Transaction.Status.INVENTORY_TIMEOUT, Transaction.Status.INVENTORY_CONNECTION_ERROR
         )
 
-        _set_status(transaction_id, status, expected_status=Transaction.Status.STARTED)
-        return None, Response({"transaction_id": transaction_id, "status": status}, status=504)
+        _set_status_with_event(
+            transaction_id,
+            status,
+            expected_status=Transaction.Status.STARTED,
+            actor=SagaEvent.ACTOR_REQUEST,
+            http_status_code=None,
+            http_payload=None,
+        )
+        return None, Response({"transaction_id": str(transaction_id), "status": status}, status=504)
 
 
-def _compensate(transaction_id, fail_compensation, payment_data):
+def _confirm_inventory(transaction_id, seat_id=None, correlation_id=None):
+    headers = {"X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id)}
+    try:
+        response = requests.post(
+            INVENTORY_CONFIRM_URL,
+            json={"seat_id": seat_id, "transaction_id": str(transaction_id)},
+            headers=headers,
+            timeout=REQUEST_TIMEOUT,
+        )
+        return response, None
+    except (Timeout, ConnectionError) as e:
+        return None, e
+
+
+def _compensate(transaction_id, fail_compensation, payment_data, payment_status_code=None, correlation_id=None):
     release_transaction_id = "fail-release" if fail_compensation else transaction_id
+    headers = {"X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id)}
 
-    _set_status(
+    _set_status_with_event(
         transaction_id,
         Transaction.Status.COMPENSATING,
-        expected_status=Transaction.Status.PAYMENT_PROCESSING,
+        expected_status=(
+            Transaction.Status.PAYMENT_PROCESSING,
+            Transaction.Status.PAYMENT_TIMEOUT,
+            Transaction.Status.PAYMENT_CONNECTION_ERROR,
+        ),
+        actor=SagaEvent.ACTOR_REQUEST,
+        http_status_code=payment_status_code,
+        http_payload=payment_data,
     )
 
     try:
         release_response = requests.post(
             INVENTORY_RELEASE_URL,
             json={"transaction_id": release_transaction_id},
+            headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
     except (Timeout, ConnectionError) as e:
-        _set_status(transaction_id, Transaction.Status.COMPENSATION_FAILED)
+        _set_status_with_event(
+            transaction_id,
+            Transaction.Status.COMPENSATION_FAILED,
+            expected_status=Transaction.Status.COMPENSATING,
+            actor=SagaEvent.ACTOR_REQUEST,
+            http_status_code=None,
+            http_payload=None,
+        )
         cause = _transport_status(e, Transaction.Status.TIMEOUT, Transaction.Status.CONNECTION_FAILED)
         return Response(
             {
-                "transaction_id": transaction_id,
+                "transaction_id": str(transaction_id),
                 "status": Transaction.Status.COMPENSATION_FAILED,
                 "cause": cause,
                 "error": "Could not reach Inventory during compensation",
@@ -107,53 +147,121 @@ def _compensate(transaction_id, fail_compensation, payment_data):
             status=503,
         )
 
+    resp_json = None
+    try:
+        resp_json = release_response.json()
+    except Exception:
+        pass
+
     if release_response.status_code == 200:
-        _set_status(transaction_id, Transaction.Status.COMPENSATED)
+        _set_status_with_event(
+            transaction_id,
+            Transaction.Status.COMPENSATED,
+            expected_status=Transaction.Status.COMPENSATING,
+            actor=SagaEvent.ACTOR_REQUEST,
+            http_status_code=release_response.status_code,
+            http_payload=resp_json,
+        )
         return Response(
             {
-                "transaction_id": transaction_id,
+                "transaction_id": str(transaction_id),
                 "status": Transaction.Status.COMPENSATED,
                 "payment_response": payment_data,
-                "compensation_response": release_response.json(),
+                "compensation_response": resp_json,
             },
             status=400,
         )
 
-    _set_status(transaction_id, Transaction.Status.COMPENSATION_FAILED)
+    _set_status_with_event(
+        transaction_id,
+        Transaction.Status.COMPENSATION_FAILED,
+        expected_status=Transaction.Status.COMPENSATING,
+        actor=SagaEvent.ACTOR_REQUEST,
+        http_status_code=release_response.status_code,
+        http_payload=resp_json,
+    )
     return Response(
         {
-            "transaction_id": transaction_id,
+            "transaction_id": str(transaction_id),
             "status": Transaction.Status.COMPENSATION_FAILED,
             "payment_response": payment_data,
-            "compensation_response": release_response.json(),
+            "compensation_response": resp_json,
         },
         status=500,
     )
 
 
-def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data):
-
+def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, payment_status_code=200, correlation_id=None, seat_id=None):
     if payment_data.get("status") == "CHARGED":
+        # Two-phase confirmation: attempt to confirm held seat
+        confirm_resp, confirm_err = _confirm_inventory(transaction_id, seat_id=seat_id, correlation_id=correlation_id)
 
-        _set_status(
+        if confirm_resp is not None and confirm_resp.status_code == 200:
+            confirm_json = None
+            try:
+                confirm_json = confirm_resp.json()
+            except Exception:
+                pass
+
+            _set_status_with_event(
+                transaction_id,
+                Transaction.Status.COMPLETED,
+                expected_status=(
+                    Transaction.Status.PAYMENT_PROCESSING,
+                    Transaction.Status.PAYMENT_TIMEOUT,
+                    Transaction.Status.PAYMENT_CONNECTION_ERROR,
+                ),
+                actor=SagaEvent.ACTOR_REQUEST,
+                http_status_code=payment_status_code,
+                http_payload={"payment": payment_data, "inventory": confirm_json},
+            )
+            return Response({
+                "transaction_id": str(transaction_id),
+                "status": Transaction.Status.COMPLETED,
+                "payment_response": payment_data,
+                "inventory_response": confirm_json,
+            })
+
+        # Payment succeeded but seat confirmation failed (e.g. 409 hold expired or inventory network failure).
+        # We MUST NOT silently mark COMPLETED on a stale hold — trigger compensation!
+        confirm_json = None
+        if confirm_resp is not None:
+            try:
+                confirm_json = confirm_resp.json()
+            except Exception:
+                pass
+
+        decline_payload = {
+            "error": "Seat hold expired or confirmation failed",
+            "payment": payment_data,
+            "inventory_confirm": confirm_json or str(confirm_err),
+        }
+        return _compensate(
             transaction_id,
-            Transaction.Status.COMPLETED,
-            expected_status=Transaction.Status.PAYMENT_PROCESSING,
+            fail_compensation,
+            decline_payload,
+            payment_status_code=confirm_resp.status_code if confirm_resp else 504,
+            correlation_id=correlation_id,
         )
-        return Response({
-            "transaction_id": transaction_id,
-            "status": Transaction.Status.COMPLETED,
-            "payment_response": payment_data,
-        })
-    return _compensate(transaction_id, fail_compensation, payment_data)
+
+    # Payment declined or failed
+    return _compensate(
+        transaction_id,
+        fail_compensation,
+        payment_data,
+        payment_status_code=payment_status_code,
+        correlation_id=correlation_id,
+    )
 
 
-def _charge_payment(transaction_id, amount, fail_compensation):
+def _charge_payment(transaction_id, amount, fail_compensation, correlation_id=None, seat_id=None):
+    headers = {"X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id)}
 
     try:
         payment_response = requests.post(
             PAYMENT_CHARGE_URL,
-            json={"transaction_id": transaction_id, "amount": amount},
+            json={"transaction_id": str(transaction_id), "amount": amount},
+            headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
     except (Timeout, ConnectionError) as e:
@@ -161,84 +269,233 @@ def _charge_payment(transaction_id, amount, fail_compensation):
             e, Transaction.Status.PAYMENT_TIMEOUT, Transaction.Status.PAYMENT_CONNECTION_ERROR
         )
     
-        _set_status(
+        _set_status_with_event(
             transaction_id,
             uncertain_status,
             expected_status=Transaction.Status.PAYMENT_PROCESSING,
+            actor=SagaEvent.ACTOR_REQUEST,
+            http_status_code=None,
+            http_payload=None,
         )
 
         try:
             payment_check = requests.get(
-                PAYMENT_CHECK_URL, params={"transaction_id": transaction_id}, timeout=REQUEST_TIMEOUT
+                PAYMENT_CHECK_URL,
+                params={"transaction_id": str(transaction_id)},
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
             )
         except (Timeout, ConnectionError):
             return Response(
                 {
-                    "transaction_id": transaction_id,
+                    "transaction_id": str(transaction_id),
                     "status": uncertain_status,
                     "error": "Payment outcome could not be determined",
                 },
                 status=503,
             )
 
-        return _finalize_payment_outcome(transaction_id, fail_compensation, payment_check.json())
+        check_data = None
+        try:
+            check_data = payment_check.json()
+        except Exception:
+            pass
 
-    return _finalize_payment_outcome(transaction_id, fail_compensation, payment_response.json())
+        return _finalize_payment_outcome(
+            transaction_id,
+            fail_compensation,
+            check_data or {},
+            payment_status_code=payment_check.status_code,
+            correlation_id=correlation_id,
+            seat_id=seat_id,
+        )
+
+    resp_data = None
+    try:
+        resp_data = payment_response.json()
+    except Exception:
+        pass
+
+    return _finalize_payment_outcome(
+        transaction_id,
+        fail_compensation,
+        resp_data or {},
+        payment_status_code=payment_response.status_code,
+        correlation_id=correlation_id,
+        seat_id=seat_id,
+    )
 
 
-
-@api_view(["POST"])
-def create_transaction(request):
+def _handle_create_transaction(request):
     transaction_id, error_response = _parse_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response
 
-    product_id = request.data.get("product_id", 1)
+    seat_id = request.data.get("seat_id") or request.data.get("product_id", 1)
     quantity = request.data.get("quantity", 1)
     amount = request.data.get("amount", 500)
 
     fail_compensation = request.data.get("fail_compensation", False)
+    correlation_id = getattr(request, "correlation_id", None) or str(transaction_id)
 
-    created, dup_response = _create_transaction_idempotent(transaction_id, product_id, quantity, amount)
+    created, dup_response = _create_transaction_idempotent(
+        transaction_id=transaction_id,
+        seat_id=seat_id,
+        amount=amount,
+        product_id=seat_id,
+        quantity=quantity,
+    )
     if not created:
         return dup_response
 
-    response, reserve_error = _reserve_inventory(transaction_id, product_id, quantity)
+def _run_saga_pipeline(
+    transaction_id,
+    seat_id=None,
+    amount=500,
+    fail_compensation=False,
+    correlation_id=None,
+    actor=SagaEvent.ACTOR_REQUEST,
+):
+    """
+    Core Saga Execution Engine:
+    Drives the 3-phase saga pipeline forward (reserve -> charge -> confirm / compensate).
+    Can be executed synchronously by a view or asynchronously by a Celery background worker.
+    """
+    correlation_id = correlation_id or str(transaction_id)
+    seat_id = seat_id or 1
+
+    response, reserve_error = _reserve_inventory(transaction_id, seat_id, correlation_id=correlation_id)
     if reserve_error:
         return reserve_error
 
-    if request.data.get("coordinator"):
-     
-        return Response({"detail": "Intentional crash"})
-
     if response.status_code != 200:
-        _set_status(transaction_id, Transaction.Status.INVENTORY_RESERVE_FAILED)
+        resp_json = None
+        try:
+            resp_json = response.json()
+        except Exception:
+            pass
+
+        _set_status_with_event(
+            transaction_id,
+            Transaction.Status.INVENTORY_RESERVE_FAILED,
+            expected_status=Transaction.Status.STARTED,
+            actor=actor,
+            http_status_code=response.status_code,
+            http_payload=resp_json,
+        )
         return Response(
             {
-                "transaction_id": transaction_id,
+                "transaction_id": str(transaction_id),
                 "error": Transaction.Status.INVENTORY_RESERVE_FAILED,
-                "inventory_response": response.json(),
+                "inventory_response": resp_json,
             },
             status=400,
         )
 
-    _set_status(
-            transaction_id,
-            Transaction.Status.INVENTORY_RESERVED,
-            expected_status=Transaction.Status.STARTED,
-        )
-    _set_status(
+    resp_json = None
+    try:
+        resp_json = response.json()
+    except Exception:
+        pass
+
+    _set_status_with_event(
+        transaction_id,
+        Transaction.Status.INVENTORY_RESERVED,
+        expected_status=Transaction.Status.STARTED,
+        actor=actor,
+        http_status_code=response.status_code,
+        http_payload=resp_json,
+    )
+    _set_status_with_event(
         transaction_id,
         Transaction.Status.PAYMENT_PROCESSING,
         expected_status=Transaction.Status.INVENTORY_RESERVED,
+        actor=actor,
+        http_status_code=None,
+        http_payload=None,
     )
 
-    return _charge_payment(transaction_id, amount, fail_compensation)
+    return _charge_payment(
+        transaction_id,
+        amount,
+        fail_compensation,
+        correlation_id=correlation_id,
+        seat_id=seat_id,
+    )
+
+
+def _handle_create_transaction(request):
+    transaction_id, error_response = _parse_transaction_id(request.data.get("transaction_id"))
+    if error_response:
+        return error_response
+
+    seat_id = request.data.get("seat_id") or request.data.get("product_id", 1)
+    quantity = request.data.get("quantity", 1)
+    amount = request.data.get("amount", 500)
+
+    fail_compensation = request.data.get("fail_compensation", False)
+    correlation_id = getattr(request, "correlation_id", None) or str(transaction_id)
+
+    created, dup_response = _create_transaction_idempotent(
+        transaction_id=transaction_id,
+        seat_id=seat_id,
+        amount=amount,
+        product_id=seat_id,
+        quantity=quantity,
+    )
+    if not created:
+        return dup_response
+
+    if request.data.get("coordinator"):
+        return Response({"detail": "Intentional crash"})
+
+    # Option B (Non-Blocking Task-Driven Execution):
+    # Determine whether to execute asynchronously (202 Accepted + Celery task) or synchronously
+    from django.conf import settings
+
+    if request.query_params.get("async") == "true" or request.headers.get("Prefer") == "respond-async":
+        is_async = True
+    elif request.query_params.get("sync") == "true" or request.headers.get("Prefer") == "respond-sync":
+        is_async = False
+    else:
+        # Default runtime behavior:
+        # - In testing mode (TESTING_SYNC_MODE=True), run synchronously for fast assertion compatibility
+        # - In live runtime (Docker/production), default to non-blocking Celery dispatch (Option B)
+        is_async = not getattr(settings, "TESTING_SYNC_MODE", False)
+
+    if is_async:
+        from .tasks import execute_saga_task
+        execute_saga_task.delay(
+            str(transaction_id),
+            seat_id=seat_id,
+            amount=amount,
+            fail_compensation=fail_compensation,
+            correlation_id=correlation_id,
+        )
+        return Response(
+            {
+                "transaction_id": str(transaction_id),
+                "status": "PENDING",
+                "poll_url": f"/transactions/{transaction_id}/",
+                "message": "Saga transaction accepted for asynchronous execution",
+            },
+            status=202,
+            headers={"Location": f"/transactions/{transaction_id}/"},
+        )
+
+    # Synchronous Execution Path
+    return _run_saga_pipeline(
+        transaction_id=transaction_id,
+        seat_id=seat_id,
+        amount=amount,
+        fail_compensation=fail_compensation,
+        correlation_id=correlation_id,
+        actor=SagaEvent.ACTOR_REQUEST,
+    )
 
 
 @api_view(["POST"])
 def retry_compensation(request, transaction_id):
-
     txn = Transaction.objects.exclude(
         status=Transaction.Status.COMPLETED
     ).filter(
@@ -259,10 +516,12 @@ def retry_compensation(request, transaction_id):
             "message": "Transaction is already compensated",
         })
 
+    headers = {"X-Correlation-ID": getattr(request, "correlation_id", None) or get_correlation_id() or str(transaction_id)}
     try:
         release_response = requests.post(
             INVENTORY_RELEASE_URL,
             json={"transaction_id": str(transaction_id)},
+            headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
     except (Timeout, ConnectionError) as e:
@@ -278,7 +537,7 @@ def retry_compensation(request, transaction_id):
         cause = _transport_status(e, "TIMEOUT", "CONNECTION_FAILED")
         return Response(
             {
-                "transaction_id": transaction_id,
+                "transaction_id": str(transaction_id),
                 "status": Transaction.Status.RETRY_COMPENSATION_FAILED,
                 "cause": cause,
                 "error": "Could not reach Inventory during retry compensation",
@@ -287,7 +546,6 @@ def retry_compensation(request, transaction_id):
         )
 
     if release_response.status_code == 200:
-
         transitioned = _set_status_with_event(
             transaction_id,
             to_status=Transaction.Status.COMPENSATED_ON_RETRY,
@@ -300,14 +558,14 @@ def retry_compensation(request, transaction_id):
         if not transitioned:
             current = Transaction.objects.get(transaction_id=transaction_id)
             return Response({
-                "transaction_id": transaction_id,
+                "transaction_id": str(transaction_id),
                 "status": current.status,
                 "message": "Transaction was concurrently resolved by another process",
                 "compensation_response": release_response.json(),
             })
 
         return Response({
-            "transaction_id": transaction_id,
+            "transaction_id": str(transaction_id),
             "status": Transaction.Status.COMPENSATED_ON_RETRY,
             "compensation_response": release_response.json(),
         })
@@ -322,7 +580,7 @@ def retry_compensation(request, transaction_id):
     )
     return Response(
         {
-            "transaction_id": transaction_id,
+            "transaction_id": str(transaction_id),
             "status": Transaction.Status.RETRY_COMPENSATION_FAILED,
             "compensation_response": release_response.json(),
         },
@@ -331,9 +589,18 @@ def retry_compensation(request, transaction_id):
 
 
 def _serialize_transaction(txn):
+    terminal_statuses = {
+        Transaction.Status.COMPLETED,
+        Transaction.Status.COMPENSATED,
+        Transaction.Status.INVENTORY_RESERVE_FAILED,
+        Transaction.Status.COMPENSATION_FAILED,
+        Transaction.Status.COMPENSATED_ON_RETRY,
+    }
     return {
         "transaction_id": str(txn.transaction_id),
         "status": txn.status,
+        "is_terminal": txn.status in terminal_statuses,
+        "seat_id": txn.seat_id,
         "product_id": txn.product_id,
         "quantity": txn.quantity,
         "amount": str(txn.amount),
@@ -344,20 +611,79 @@ def _serialize_transaction(txn):
 
 @api_view(["GET"])
 def get_transaction(request, transaction_id):
-    txn = Transaction.objects.get(transaction_id=transaction_id)
+    try:
+        txn = Transaction.objects.get(transaction_id=transaction_id)
+    except Transaction.DoesNotExist:
+        return Response({"detail": "Transaction not found"}, status=404)
     return Response(_serialize_transaction(txn))
+
+
+def _handle_list_transactions(request):
+    limit_param = request.GET.get("limit", 10)
+    offset_param = request.GET.get("offset", 0)
+    page_param = request.GET.get("page")
+    status_filter = request.GET.get("status")
+
+    try:
+        limit = max(1, min(int(limit_param), 100))
+    except (ValueError, TypeError):
+        limit = 10
+
+    if page_param is not None:
+        try:
+            page = max(1, int(page_param))
+            offset = (page - 1) * limit
+        except (ValueError, TypeError):
+            offset = 0
+    else:
+        try:
+            offset = max(0, int(offset_param))
+        except (ValueError, TypeError):
+            offset = 0
+
+    queryset = Transaction.objects.all().order_by("-created_at")
+
+    if status_filter:
+        queryset = queryset.filter(status=status_filter)
+
+    total_count = queryset.count()
+    txs = queryset[offset : offset + limit]
+
+    data = [_serialize_transaction(t) for t in txs]
+
+    return Response(
+        {
+            "count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "results": data,
+        }
+    )
+
+
+@api_view(["GET", "POST"])
+def transactions_endpoint(request):
+    if request.method == "GET":
+        return _handle_list_transactions(request)
+    return _handle_create_transaction(request)
+
+
+@api_view(["POST"])
+def create_transaction(request):
+    return _handle_create_transaction(request)
 
 
 @api_view(["GET"])
 def list_transactions(request):
-    transactions = Transaction.objects.all().order_by("-created_at")
-    return Response([_serialize_transaction(txn) for txn in transactions])
+    return _handle_list_transactions(request)
 
 
 @api_view(["GET"])
 def transaction_status_update(request, transaction_id):
-    updated = Transaction.objects.filter(transaction_id=transaction_id).update(
-        status=Transaction.Status.INVENTORY_RESERVED
+    updated = _set_status_with_event(
+        transaction_id,
+        to_status=Transaction.Status.INVENTORY_RESERVED,
+        actor=SagaEvent.ACTOR_REQUEST,
     )
     if not updated:
         return Response({"detail": "transaction not found"}, status=404)
@@ -378,7 +704,10 @@ def _serialize_event(event):
 
 @api_view(["GET"])
 def list_transaction_events(request, transaction_id):
-    txn = Transaction.objects.get(transaction_id=transaction_id)
+    try:
+        txn = Transaction.objects.get(transaction_id=transaction_id)
+    except Transaction.DoesNotExist:
+        return Response({"detail": "Transaction not found", "events": []}, status=404)
     events = txn.events.order_by("seq")
     return Response({
         "transaction_id": str(txn.transaction_id),

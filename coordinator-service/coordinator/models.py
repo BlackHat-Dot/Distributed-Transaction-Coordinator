@@ -33,6 +33,7 @@ class Transaction(models.Model):
         choices=Status.choices,
     )
 
+    seat_id = models.IntegerField(null=True)
     product_id = models.IntegerField(null=True)
     quantity = models.IntegerField(null=True)
 

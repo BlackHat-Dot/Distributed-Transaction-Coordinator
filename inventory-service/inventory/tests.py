@@ -1,34 +1,44 @@
 import uuid
+from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from unittest.mock import patch, MagicMock
 
 from django.db import connection
 from django.test import TestCase, TransactionTestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
-from .models import Product, Reservation
+from .models import Event, Seat, Reservation
 
 
-RESERVE_URL = "/products/reserve/"
-RELEASE_URL = "/products/release/"
+RESERVE_URL = "/seats/reserve/"
+CONFIRM_URL = "/seats/confirm/"
+RELEASE_URL = "/seats/release/"
 CHECK_URL = "/reserve/check/"
-PRODUCTS_URL = "/products/"
+EVENTS_URL = "/events/"
+SEATS_URL = "/seats/"
+SWEEP_URL = "/seats/sweep-expired/"
 HEALTH_URL = "/health/"
 
 
-def _mock_coordinator_ok():
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    return patch("inventory.views.requests.get", return_value=mock_resp)
+def _create_event(name="Rock Concert", venue="Grand Arena"):
+    return Event.objects.create(
+        name=name,
+        venue=venue,
+        starts_at=timezone.now() + timedelta(days=7),
+    )
 
 
-def _mock_coordinator_down():
-    from requests.exceptions import ConnectionError as RequestsConnectionError
-    return patch("inventory.views.requests.get", side_effect=RequestsConnectionError())
-
-
-def _create_product(name="Widget", stock=10):
-    return Product.objects.create(name=name, stock=stock)
+def _create_seat(event, row="A", seat_number="1", price=500.00, status=Seat.Status.AVAILABLE, held_until=None, held_by=None):
+    return Seat.objects.create(
+        event=event,
+        row=row,
+        seat_number=seat_number,
+        price=price,
+        status=status,
+        held_until=held_until,
+        held_by_transaction_id=held_by,
+    )
 
 
 class HealthCheckTests(TestCase):
@@ -41,63 +51,45 @@ class HealthCheckTests(TestCase):
         self.assertEqual(resp.data["status"], "healthy")
 
 
-class ProductListTests(TestCase):
+class EventAndSeatListTests(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.event = _create_event()
+        self.seat1 = _create_seat(self.event, row="A", seat_number="1")
+        self.seat2 = _create_seat(self.event, row="A", seat_number="2")
 
-    def test_empty_list(self):
-        resp = self.client.get(PRODUCTS_URL)
+    def test_list_events_includes_nested_seats(self):
+        resp = self.client.get(EVENTS_URL)
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data, [])
+        self.assertEqual(len(resp.data), 1)
+        self.assertEqual(resp.data[0]["name"], "Rock Concert")
+        self.assertEqual(len(resp.data[0]["seats"]), 2)
 
-    def test_returns_all_products(self):
-        Product.objects.create(name="Alpha", stock=5)
-        Product.objects.create(name="Beta", stock=3)
-        resp = self.client.get(PRODUCTS_URL)
+    def test_list_seats(self):
+        resp = self.client.get(SEATS_URL)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(len(resp.data), 2)
-        names = {p["name"] for p in resp.data}
-        self.assertIn("Alpha", names)
-        self.assertIn("Beta", names)
 
 
 class ReserveValidationTests(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.product = _create_product(stock=10)
+        self.event = _create_event()
+        self.seat = _create_seat(self.event)
 
-    def test_missing_product_id_returns_400(self):
+    def test_missing_seat_id_returns_400(self):
         resp = self.client.post(
             RESERVE_URL,
-            {"quantity": 1, "transaction_id": str(uuid.uuid4())},
+            {"transaction_id": str(uuid.uuid4())},
             format="json",
         )
         self.assertEqual(resp.status_code, 400)
-        self.assertIn("product_id", resp.data.get("error", ""))
+        self.assertIn("seat_id", resp.data.get("error", ""))
 
-    def test_missing_quantity_returns_400(self):
+    def test_invalid_seat_id_returns_400(self):
         resp = self.client.post(
             RESERVE_URL,
-            {"product_id": self.product.id, "transaction_id": str(uuid.uuid4())},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 400)
-
-    def test_zero_quantity_returns_400(self):
-        resp = self.client.post(
-            RESERVE_URL,
-            {"product_id": self.product.id, "quantity": 0,
-             "transaction_id": str(uuid.uuid4())},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 400)
-        self.assertIn("Quantity", resp.data.get("error", ""))
-
-    def test_negative_quantity_returns_400(self):
-        resp = self.client.post(
-            RESERVE_URL,
-            {"product_id": self.product.id, "quantity": -5,
-             "transaction_id": str(uuid.uuid4())},
+            {"seat_id": "invalid", "transaction_id": str(uuid.uuid4())},
             format="json",
         )
         self.assertEqual(resp.status_code, 400)
@@ -105,633 +97,537 @@ class ReserveValidationTests(TestCase):
     def test_missing_transaction_id_returns_400(self):
         resp = self.client.post(
             RESERVE_URL,
-            {"product_id": self.product.id, "quantity": 1},
+            {"seat_id": self.seat.id},
             format="json",
         )
         self.assertEqual(resp.status_code, 400)
-        self.assertIn("transaction_id", resp.data.get("error", ""))
 
-    def test_empty_body_returns_error(self):
-        resp = self.client.post(RESERVE_URL, {}, format="json")
-        self.assertNotEqual(resp.status_code, 500)
+    def test_invalid_uuid_returns_400(self):
+        resp = self.client.post(
+            RESERVE_URL,
+            {"seat_id": self.seat.id, "transaction_id": "not-a-uuid"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
 
-
-class ReserveHappyPathTests(TestCase):
-    def setUp(self):
-        self.client = APIClient()
-        self.product = _create_product(stock=10)
-
-    def test_successful_reserve_decrements_stock(self):
-        tid = str(uuid.uuid4())
-        with _mock_coordinator_ok():
-            resp = self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 3, "transaction_id": tid},
-                format="json",
-            )
-
-        self.assertEqual(resp.status_code, 200)
-        self.product.refresh_from_db()
-        self.assertEqual(self.product.stock, 7)
-
-    def test_successful_reserve_creates_reservation_row(self):
-        tid = str(uuid.uuid4())
-        with _mock_coordinator_ok():
-            self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 2, "transaction_id": tid},
-                format="json",
-            )
-
-        reservation = Reservation.objects.get(transaction_id=tid)
-        self.assertEqual(reservation.status, Reservation.Status.RESERVED)
-        self.assertEqual(reservation.quantity, 2)
-        self.assertEqual(reservation.product_id, self.product.id)
-
-    def test_successful_reserve_response_shape(self):
-        tid = str(uuid.uuid4())
-        with _mock_coordinator_ok():
-            resp = self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 4, "transaction_id": tid},
-                format="json",
-            )
-
-        self.assertIn("product_id", resp.data)
-        self.assertIn("quantity", resp.data)
-        self.assertIn("remaining", resp.data)
-        self.assertIn("transaction_id", resp.data)
-        self.assertIn("status", resp.data)
-        self.assertNotIn("detail", resp.data)
-        self.assertEqual(resp.data["remaining"], 6)
-        self.assertEqual(resp.data["transaction_id"], tid)
-        self.assertEqual(resp.data["status"], Reservation.Status.RESERVED)
-
-    def test_reserve_nonexistent_product_returns_404(self):
-        with _mock_coordinator_ok():
-            resp = self.client.post(
-                RESERVE_URL,
-                {"product_id": 99999, "quantity": 1, "transaction_id": str(uuid.uuid4())},
-                format="json",
-            )
+    def test_nonexistent_seat_returns_404(self):
+        resp = self.client.post(
+            RESERVE_URL,
+            {"seat_id": 99999, "transaction_id": str(uuid.uuid4())},
+            format="json",
+        )
         self.assertEqual(resp.status_code, 404)
 
 
-class ReserveInsufficientStockTests(TestCase):
+class ReserveSeatHoldTests(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.product = _create_product(stock=2)
+        self.event = _create_event()
+        self.seat = _create_seat(self.event, row="B", seat_number="5")
 
-    def test_insufficient_stock_returns_400(self):
-        with _mock_coordinator_ok():
-            resp = self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 5,
-                 "transaction_id": str(uuid.uuid4())},
-                format="json",
-            )
-        self.assertEqual(resp.status_code, 400)
-        self.assertIn("stock", resp.data.get("error", "").lower())
-
-    def test_insufficient_stock_does_not_decrement_stock(self):
+    def test_reserve_transitions_available_to_held_with_10m_expiry(self):
         tid = str(uuid.uuid4())
-        with _mock_coordinator_ok():
-            self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 5, "transaction_id": tid},
-                format="json",
-            )
-        self.product.refresh_from_db()
-        self.assertEqual(self.product.stock, 2)
-
-    def test_insufficient_stock_creates_no_reservation_row(self):
-        tid = str(uuid.uuid4())
-        with _mock_coordinator_ok():
-            self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 5, "transaction_id": tid},
-                format="json",
-            )
-        self.assertFalse(Reservation.objects.filter(transaction_id=tid).exists())
-
-    def test_exact_stock_quantity_succeeds(self):
-        tid = str(uuid.uuid4())
-        with _mock_coordinator_ok():
-            resp = self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 2, "transaction_id": tid},
-                format="json",
-            )
+        resp = self.client.post(
+            RESERVE_URL,
+            {"seat_id": self.seat.id, "transaction_id": tid},
+            format="json",
+        )
         self.assertEqual(resp.status_code, 200)
-        self.product.refresh_from_db()
-        self.assertEqual(self.product.stock, 0)
+        self.assertEqual(resp.data["status"], Reservation.Status.RESERVED)
+        self.assertEqual(resp.data["seat_id"], self.seat.id)
 
+        self.seat.refresh_from_db()
+        self.assertEqual(self.seat.status, Seat.Status.HELD)
+        self.assertEqual(str(self.seat.held_by_transaction_id), tid)
+        self.assertIsNotNone(self.seat.held_until)
+        # Verify hold expiry is approximately 10 minutes in the future
+        remaining_seconds = (self.seat.held_until - timezone.now()).total_seconds()
+        self.assertGreater(remaining_seconds, 580)
+        self.assertLessEqual(remaining_seconds, 600)
 
-class ReserveIdempotencyTests(TestCase):
-    def setUp(self):
-        self.client = APIClient()
-        self.product = _create_product(stock=10)
+        # Check reservation row
+        res = Reservation.objects.get(transaction_id=tid)
+        self.assertEqual(res.status, Reservation.Status.RESERVED)
+        self.assertEqual(res.seat_id, self.seat.id)
 
-    def test_duplicate_returns_200_with_existing_status(self):
+    def test_idempotent_reserve_same_transaction_returns_200(self):
         tid = str(uuid.uuid4())
-        with _mock_coordinator_ok():
-            self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 3, "transaction_id": tid},
-                format="json",
-            )
-            resp2 = self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 3, "transaction_id": tid},
-                format="json",
-            )
+        resp1 = self.client.post(
+            RESERVE_URL,
+            {"seat_id": self.seat.id, "transaction_id": tid},
+            format="json",
+        )
+        self.assertEqual(resp1.status_code, 200)
 
+        resp2 = self.client.post(
+            RESERVE_URL,
+            {"seat_id": self.seat.id, "transaction_id": tid},
+            format="json",
+        )
         self.assertEqual(resp2.status_code, 200)
-        self.assertEqual(resp2.data["status"], Reservation.Status.RESERVED)
-
-    def test_duplicate_does_not_decrement_stock_twice(self):
-        tid = str(uuid.uuid4())
-        with _mock_coordinator_ok():
-            self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 3, "transaction_id": tid},
-                format="json",
-            )
-            self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 3, "transaction_id": tid},
-                format="json",
-            )
-
-        self.product.refresh_from_db()
-        self.assertEqual(self.product.stock, 7)
-
-    def test_duplicate_creates_exactly_one_reservation_row(self):
-        tid = str(uuid.uuid4())
-        with _mock_coordinator_ok():
-            self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 3, "transaction_id": tid},
-                format="json",
-            )
-            self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 3, "transaction_id": tid},
-                format="json",
-            )
-
         self.assertEqual(Reservation.objects.filter(transaction_id=tid).count(), 1)
 
-    def test_duplicate_with_different_quantity_returns_original(self):
-        tid = str(uuid.uuid4())
-        with _mock_coordinator_ok():
-            self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 2, "transaction_id": tid},
-                format="json",
-            )
-            resp2 = self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 9, "transaction_id": tid},
-                format="json",
-            )
+    def test_reserve_conflicts_if_already_held_by_different_transaction(self):
+        tid1 = str(uuid.uuid4())
+        tid2 = str(uuid.uuid4())
 
-        self.assertEqual(resp2.data["transaction_id"], tid)
-        self.assertEqual(resp2.data["quantity"], 2)
-        self.assertEqual(resp2.data["product_id"], self.product.id)
-        self.assertIn("remaining", resp2.data)
-        self.assertEqual(
-            Reservation.objects.get(transaction_id=tid).quantity, 2
-        )
-        self.product.refresh_from_db()
-        self.assertEqual(self.product.stock, 8)
-
-
-class ReserveCallbackFailureTests(TestCase):
-    def setUp(self):
-        self.client = APIClient()
-        self.product = _create_product(stock=10)
-
-    def test_coordinator_connection_error_does_not_prevent_reservation(self):
-        tid = str(uuid.uuid4())
-        with _mock_coordinator_down():
-            resp = self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 1, "transaction_id": tid},
-                format="json",
-            )
-
-        self.assertEqual(resp.status_code, 200)
-        self.assertTrue(Reservation.objects.filter(transaction_id=tid).exists())
-
-    def test_coordinator_connection_error_still_decrements_stock(self):
-        tid = str(uuid.uuid4())
-        with _mock_coordinator_down():
-            self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 4, "transaction_id": tid},
-                format="json",
-            )
-
-        self.product.refresh_from_db()
-        self.assertEqual(self.product.stock, 6)
-
-    def test_coordinator_error_response_reports_callback_failure(self):
-        tid = str(uuid.uuid4())
-        with _mock_coordinator_down():
-            resp = self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 1, "transaction_id": tid},
-                format="json",
-            )
-
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["transaction_id"], tid)
-        self.assertEqual(resp.data["status"], Reservation.Status.RESERVED)
-        self.assertNotIn("detail", resp.data)
-
-    def test_coordinator_timeout_does_not_prevent_reservation(self):
-        from requests.exceptions import Timeout as RequestsTimeout
-        tid = str(uuid.uuid4())
-        with patch("inventory.views.requests.get", side_effect=RequestsTimeout()):
-            resp = self.client.post(
-                RESERVE_URL,
-                {"product_id": self.product.id, "quantity": 1, "transaction_id": tid},
-                format="json",
-            )
-
-        self.assertEqual(resp.status_code, 200)
-        self.assertTrue(Reservation.objects.filter(transaction_id=tid).exists())
-
-
-class ReleaseValidationTests(TestCase):
-
-    def setUp(self):
-        self.client = APIClient()
-
-    def test_missing_transaction_id_returns_404_or_error(self):
-        resp = self.client.post(RELEASE_URL, {}, format="json")
-        self.assertIn(resp.status_code, (400, 404))
-
-    def test_nonexistent_transaction_id_returns_404(self):
-        resp = self.client.post(
-            RELEASE_URL,
-            {"transaction_id": str(uuid.uuid4())},
+        resp1 = self.client.post(
+            RESERVE_URL,
+            {"seat_id": self.seat.id, "transaction_id": tid1},
             format="json",
         )
-        self.assertEqual(resp.status_code, 404)
-        self.assertIn("error", resp.data)
+        self.assertEqual(resp1.status_code, 200)
 
-    def test_nonexistent_release_does_not_change_any_stock(self):
-        product = _create_product(stock=5)
+        resp2 = self.client.post(
+            RESERVE_URL,
+            {"seat_id": self.seat.id, "transaction_id": tid2},
+            format="json",
+        )
+        self.assertEqual(resp2.status_code, 409)
+        self.assertIn("held", resp2.data["error"].lower())
+
+    def test_reserve_conflicts_if_already_booked(self):
+        self.seat.status = Seat.Status.BOOKED
+        self.seat.save()
+
+        tid = str(uuid.uuid4())
+        resp = self.client.post(
+            RESERVE_URL,
+            {"seat_id": self.seat.id, "transaction_id": tid},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 409)
+        self.assertIn("booked", resp.data["error"].lower())
+
+
+class ConfirmSeatTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.event = _create_event()
+        self.seat = _create_seat(self.event, row="C", seat_number="10")
+
+    def test_confirm_transitions_held_to_booked(self):
+        tid = str(uuid.uuid4())
+        # 1. Hold
         self.client.post(
-            RELEASE_URL,
-            {"transaction_id": str(uuid.uuid4())},
+            RESERVE_URL,
+            {"seat_id": self.seat.id, "transaction_id": tid},
             format="json",
         )
-        product.refresh_from_db()
-        self.assertEqual(product.stock, 5)
 
-    def test_intentional_failure_trigger_returns_500(self):
+        # 2. Confirm
         resp = self.client.post(
-            RELEASE_URL,
-            {"transaction_id": "fail-release"},
+            CONFIRM_URL,
+            {"transaction_id": tid},
             format="json",
         )
-        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["status"], "BOOKED")
 
+        self.seat.refresh_from_db()
+        self.assertEqual(self.seat.status, Seat.Status.BOOKED)
+        self.assertIsNone(self.seat.held_until)
 
-class ReleaseHappyPathTests(TestCase):
-    def setUp(self):
-        self.client = APIClient()
-        self.product = _create_product(stock=10)
+        res = Reservation.objects.get(transaction_id=tid)
+        self.assertEqual(res.status, Reservation.Status.BOOKED)
 
-    def _make_reservation(self, quantity=3):
-        tid = uuid.uuid4()
-        reservation = Reservation.objects.create(
-            product=self.product,
-            quantity=quantity,
+    def test_idempotent_confirm(self):
+        tid = str(uuid.uuid4())
+        self.client.post(RESERVE_URL, {"seat_id": self.seat.id, "transaction_id": tid}, format="json")
+        resp1 = self.client.post(CONFIRM_URL, {"transaction_id": tid}, format="json")
+        self.assertEqual(resp1.status_code, 200)
+
+        resp2 = self.client.post(CONFIRM_URL, {"transaction_id": tid}, format="json")
+        self.assertEqual(resp2.status_code, 200)
+        self.assertEqual(resp2.data["status"], "BOOKED")
+
+    def test_confirm_on_expired_hold_is_rejected_with_409(self):
+        """
+        Critical edge case: Payment succeeded, but seat hold expired before confirmation arrived.
+        Must return 409 HOLD_EXPIRED so coordinator triggers compensation rather than false COMPLETED.
+        """
+        tid = str(uuid.uuid4())
+        past_time = timezone.now() - timedelta(minutes=1)
+        self.seat.status = Seat.Status.HELD
+        self.seat.held_until = past_time
+        self.seat.held_by_transaction_id = uuid.UUID(tid)
+        self.seat.save()
+
+        Reservation.objects.create(
+            seat=self.seat,
             transaction_id=tid,
             status=Reservation.Status.RESERVED,
         )
-        self.product.stock -= quantity
-        self.product.save()
-        return reservation
 
-    def test_release_restores_stock(self):
-        reservation = self._make_reservation(quantity=3)
-        resp = self.client.post(
-            RELEASE_URL,
-            {"transaction_id": str(reservation.transaction_id)},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 200)
-        self.product.refresh_from_db()
-        self.assertEqual(self.product.stock, 10)  # 7 + 3
+        resp = self.client.post(CONFIRM_URL, {"transaction_id": tid}, format="json")
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.data["status"], "HOLD_EXPIRED")
+        self.assertIn("expired", resp.data["error"].lower())
 
-    def test_release_marks_reservation_as_released(self):
-        reservation = self._make_reservation(quantity=3)
-        self.client.post(
-            RELEASE_URL,
-            {"transaction_id": str(reservation.transaction_id)},
-            format="json",
-        )
-        reservation.refresh_from_db()
-        self.assertEqual(reservation.status, Reservation.Status.RELEASED)
-
-    def test_release_response_shape(self):
-        reservation = self._make_reservation()
-        resp = self.client.post(
-            RELEASE_URL,
-            {"transaction_id": str(reservation.transaction_id)},
-            format="json",
-        )
-        self.assertIn("message", resp.data)
-        self.assertIn("transaction_id", resp.data)
+        self.seat.refresh_from_db()
+        self.assertNotEqual(self.seat.status, Seat.Status.BOOKED)
 
 
-class ReleaseIdempotencyTests(TestCase):
+class ReleaseSeatTests(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.product = _create_product(stock=10)
+        self.event = _create_event()
+        self.seat = _create_seat(self.event, row="D", seat_number="1")
 
-    def _make_reservation(self, quantity=3):
-        tid = uuid.uuid4()
-        reservation = Reservation.objects.create(
-            product=self.product,
-            quantity=quantity,
-            transaction_id=tid,
-            status=Reservation.Status.RESERVED,
-        )
-        self.product.stock -= quantity
-        self.product.save()
-        return reservation
+    def test_release_restores_held_seat_to_available(self):
+        tid = str(uuid.uuid4())
+        self.client.post(RESERVE_URL, {"seat_id": self.seat.id, "transaction_id": tid}, format="json")
 
-    def test_double_release_does_not_restore_stock_twice(self):
-        reservation = self._make_reservation(quantity=3)
-        tid = str(reservation.transaction_id)
+        resp = self.client.post(RELEASE_URL, {"transaction_id": tid}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["status"], Reservation.Status.RELEASED)
 
+        self.seat.refresh_from_db()
+        self.assertEqual(self.seat.status, Seat.Status.AVAILABLE)
+        self.assertIsNone(self.seat.held_until)
+        self.assertIsNone(self.seat.held_by_transaction_id)
+
+    def test_idempotent_release(self):
+        tid = str(uuid.uuid4())
+        self.client.post(RESERVE_URL, {"seat_id": self.seat.id, "transaction_id": tid}, format="json")
         resp1 = self.client.post(RELEASE_URL, {"transaction_id": tid}, format="json")
         self.assertEqual(resp1.status_code, 200)
 
         resp2 = self.client.post(RELEASE_URL, {"transaction_id": tid}, format="json")
         self.assertEqual(resp2.status_code, 200)
 
-        self.product.refresh_from_db()
-        self.assertEqual(
-            self.product.stock,
-            10,
-            "Double release incorrectly restored stock twice",
-        )
-
-    def test_double_release_reservation_stays_released(self):
-        reservation = self._make_reservation()
-        tid = str(reservation.transaction_id)
-        self.client.post(RELEASE_URL, {"transaction_id": tid}, format="json")
-        self.client.post(RELEASE_URL, {"transaction_id": tid}, format="json")
-        reservation.refresh_from_db()
-        self.assertEqual(reservation.status, Reservation.Status.RELEASED)
-
-
 
 class ReservationCheckTests(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.product = _create_product(stock=10)
+        self.event = _create_event()
+        self.seat = _create_seat(self.event)
 
-    def test_check_reserved(self):
-        tid = uuid.uuid4()
-        Reservation.objects.create(
-            product=self.product,
-            quantity=1,
-            transaction_id=tid,
-            status=Reservation.Status.RESERVED,
-        )
-        resp = self.client.get(CHECK_URL, {"transaction_id": str(tid)})
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["status"], Reservation.Status.RESERVED)
-
-    def test_check_released(self):
-        tid = uuid.uuid4()
-        Reservation.objects.create(
-            product=self.product,
-            quantity=1,
-            transaction_id=tid,
-            status=Reservation.Status.RELEASED,
-        )
-        resp = self.client.get(CHECK_URL, {"transaction_id": str(tid)})
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["status"], Reservation.Status.RELEASED)
-
-    def test_check_not_found_returns_not_reserved(self):
-        resp = self.client.get(CHECK_URL, {"transaction_id": str(uuid.uuid4())})
+    def test_check_nonexistent_returns_not_reserved(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.get(CHECK_URL, {"transaction_id": tid})
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["status"], Reservation.Status.NOT_RESERVED)
 
-    def test_check_missing_transaction_id_returns_400(self):
-        resp = self.client.get(CHECK_URL)
-        self.assertEqual(resp.status_code, 400)
-        self.assertIn("transaction_id", resp.data.get("error", ""))
+    def test_check_reserved_returns_status(self):
+        tid = str(uuid.uuid4())
+        self.client.post(RESERVE_URL, {"seat_id": self.seat.id, "transaction_id": tid}, format="json")
+
+        resp = self.client.get(CHECK_URL, {"transaction_id": tid})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["status"], Reservation.Status.RESERVED)
 
 
-class ReserveConcurrencyTests(TransactionTestCase):
-    def test_concurrent_reserve_exactly_one_winner_when_stock_is_one(self):
-        product = Product.objects.create(name="LimitedItem", stock=1)
-        results = []
-
-        def do_reserve(_):
-            client = APIClient()
-            try:
-                with _mock_coordinator_ok():
-                    resp = client.post(
-                        RESERVE_URL,
-                        {
-                            "product_id": product.id,
-                            "quantity": 1,
-                            "transaction_id": str(uuid.uuid4()),
-                        },
-                        format="json",
-                    )
-                return resp.status_code
-            finally:
-                connection.close()
-
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = [executor.submit(do_reserve, i) for i in range(2)]
-            for future in as_completed(futures):
-                results.append(future.result())
-
-        for code in results:
-            self.assertNotEqual(code, 500, "Concurrent reserve produced a 500")
-
-        self.assertEqual(results.count(200), 1,
-                         f"Expected exactly 1 success, got: {results}")
-        self.assertEqual(results.count(400), 1,
-                         f"Expected exactly 1 failure, got: {results}")
-
-        product.refresh_from_db()
-        self.assertEqual(product.stock, 0,
-                         f"Expected stock=0 after one reservation, got: {product.stock}")
-
-        self.assertEqual(
-            Reservation.objects.filter(product=product).count(),
-            1,
-            "Expected exactly one Reservation row",
+class ExpiredHoldSweeperTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.event = _create_event()
+        # Seat 1: Expired hold (held_until 5 minutes ago)
+        self.expired_tid = uuid.uuid4()
+        self.expired_seat = _create_seat(
+            self.event,
+            row="E",
+            seat_number="1",
+            status=Seat.Status.HELD,
+            held_until=timezone.now() - timedelta(minutes=5),
+            held_by=self.expired_tid,
         )
-
-    def test_concurrent_reserve_both_succeed_when_stock_is_sufficient(self):
-        product = Product.objects.create(name="AbundantItem", stock=10)
-
-        def do_reserve(_):
-            client = APIClient()
-            try:
-                with _mock_coordinator_ok():
-                    resp = client.post(
-                        RESERVE_URL,
-                        {
-                            "product_id": product.id,
-                            "quantity": 3,
-                            "transaction_id": str(uuid.uuid4()),
-                        },
-                        format="json",
-                    )
-                return resp.status_code
-            finally:
-                connection.close()
-
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            results = list(executor.map(do_reserve, range(2)))
-
-        for code in results:
-            self.assertEqual(code, 200, f"Unexpected status: {results}")
-
-        product.refresh_from_db()
-        self.assertEqual(product.stock, 4)  # 10 - 3 - 3
-
-
-
-class ReleaseConcurrencyTests(TransactionTestCase):
-    def test_concurrent_release_restores_stock_exactly_once(self):
-        product = Product.objects.create(name="Widget", stock=7)
-        reservation = Reservation.objects.create(
-            product=product,
-            quantity=3,
-            transaction_id=uuid.uuid4(),
+        Reservation.objects.create(
+            seat=self.expired_seat,
+            transaction_id=self.expired_tid,
             status=Reservation.Status.RESERVED,
         )
 
-        product.stock -= 3
-        product.save()
-        tid = str(reservation.transaction_id)
-
-        def do_release(_):
-            client = APIClient()
-            try:
-                resp = client.post(RELEASE_URL, {"transaction_id": tid}, format="json")
-                return resp.status_code
-            finally:
-                connection.close()
-
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            results = list(executor.map(do_release, range(2)))
-
-        for code in results:
-            self.assertNotEqual(code, 500, f"Concurrent release produced a 500: {results}")
-
-        for code in results:
-            self.assertEqual(code, 200, f"Unexpected status: {results}")
-
-        product.refresh_from_db()
-        self.assertEqual(
-            product.stock,
-            7,
-            f"Expected stock=7 after idempotent double-release, got: {product.stock}",
+        # Seat 2: Active unexpired hold (held_until 8 minutes in future)
+        self.active_tid = uuid.uuid4()
+        self.active_seat = _create_seat(
+            self.event,
+            row="E",
+            seat_number="2",
+            status=Seat.Status.HELD,
+            held_until=timezone.now() + timedelta(minutes=8),
+            held_by=self.active_tid,
+        )
+        Reservation.objects.create(
+            seat=self.active_seat,
+            transaction_id=self.active_tid,
+            status=Reservation.Status.RESERVED,
         )
 
+    def test_sweeper_reclaims_only_expired_seats(self):
+        resp = self.client.post(SWEEP_URL)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["reclaimed_count"], 1)
 
-class ReserveConcurrentDuplicateIdempotencyTests(TransactionTestCase):
+        # Expired seat must be reset to AVAILABLE
+        self.expired_seat.refresh_from_db()
+        self.assertEqual(self.expired_seat.status, Seat.Status.AVAILABLE)
+        self.assertIsNone(self.expired_seat.held_until)
+        self.assertIsNone(self.expired_seat.held_by_transaction_id)
 
-    def test_concurrent_same_transaction_id_no_500_one_reservation(self):
-        product = Product.objects.create(name="RaceyItem", stock=10)
-        tid = str(uuid.uuid4())
+        # Active seat must remain HELD
+        self.active_seat.refresh_from_db()
+        self.assertEqual(self.active_seat.status, Seat.Status.HELD)
+        self.assertIsNotNone(self.active_seat.held_until)
+
+
+class ConcurrencySeatStressTests(TransactionTestCase):
+    """
+    Multi-threaded stress testing proving that N concurrent threads competing for the
+    same seat result in exactly 1 successful hold and N-1 clean conflicts.
+    """
+
+    def setUp(self):
+        self.event = _create_event()
+        self.seat = _create_seat(self.event, row="X", seat_number="99")
+
+    def test_n_concurrent_reserves_at_same_seat_yield_single_winner(self):
+        concurrency = 8
         results = []
 
-        def do_reserve(_):
+        def do_reserve(worker_id):
             client = APIClient()
+            tid = str(uuid.uuid4())
             try:
-                with _mock_coordinator_ok():
-                    resp = client.post(
-                        RESERVE_URL,
-                        {
-                            "product_id": product.id,
-                            "quantity": 2,
-                            "transaction_id": tid,
-                        },
-                        format="json",
-                    )
+                resp = client.post(
+                    RESERVE_URL,
+                    {"seat_id": self.seat.id, "transaction_id": tid},
+                    format="json",
+                )
                 return resp.status_code, resp.data
             finally:
                 connection.close()
 
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(do_reserve, i) for i in range(5)]
-            for future in as_completed(futures):
-                results.append(future.result())
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            futures = [executor.submit(do_reserve, i) for i in range(concurrency)]
+            for f in as_completed(futures):
+                results.append(f.result())
 
-        codes = [r[0] for r in results]
-        for code in codes:
-            self.assertIn(
-                code,
-                (200,),
-                f"Concurrent duplicate reserve produced unexpected status {code}. "
-                f"All codes: {codes}",
-            )
-
+        status_codes = [r[0] for r in results]
         self.assertEqual(
-            Reservation.objects.filter(transaction_id=tid).count(),
+            status_codes.count(200),
             1,
-            "Expected exactly one Reservation row for the shared transaction_id",
+            f"Expected exactly 1 winner with status 200, got: {status_codes}",
         )
-
-
-        product.refresh_from_db()
         self.assertEqual(
-            product.stock,
-            8,
-            f"Expected stock=8 (decremented once), got {product.stock}. "
-            "A concurrent loser may have double-decremented and not rolled back.",
+            status_codes.count(409),
+            concurrency - 1,
+            f"Expected {concurrency - 1} conflict responses with status 409, got: {status_codes}",
         )
 
-    def test_concurrent_same_transaction_id_all_responses_consistent(self):
-        product = Product.objects.create(name="ConsistencyItem", stock=10)
+        # Confirm DB state is HELD with exactly 1 reservation
+        self.seat.refresh_from_db()
+        self.assertEqual(self.seat.status, Seat.Status.HELD)
+        self.assertEqual(Reservation.objects.filter(seat=self.seat).count(), 1)
+
+
+class RedisVsDbDivergenceTests(TestCase):
+    """
+    Validates that PostgreSQL SELECT FOR UPDATE is the definitive authoritative source of truth
+    whenever the Redis speed layer state diverges from the database.
+    """
+
+    def setUp(self):
+        self.client = APIClient()
+        self.event = _create_event()
+        self.seat = _create_seat(self.event, row="F", seat_number="1")
+
+    def test_stale_redis_key_does_not_block_available_seat_in_db(self):
+        """
+        DIVERGENCE CASE 1: Redis holds a stale key from a crashed/abandoned client,
+        but DB row is AVAILABLE.
+        Expected: PostgreSQL row lock verifies AVAILABLE, grants the hold, and self-heals Redis.
+        """
+        mock_redis = MagicMock()
+        mock_redis.set.return_value = False  # Simulate Redis fast-path returning lock acquisition failure
+
+        with patch("inventory.views.get_redis_client", return_value=mock_redis):
+            tid = str(uuid.uuid4())
+            resp = self.client.post(
+                RESERVE_URL,
+                {"seat_id": self.seat.id, "transaction_id": tid},
+                format="json",
+            )
+            # Authoritative DB CAS overrides Redis false negative
+            self.assertEqual(resp.status_code, 200)
+            self.seat.refresh_from_db()
+            self.assertEqual(self.seat.status, Seat.Status.HELD)
+            self.assertEqual(str(self.seat.held_by_transaction_id), tid)
+
+    def test_evicted_redis_key_does_not_allow_double_booking_of_held_seat(self):
+        """
+        DIVERGENCE CASE 2: Redis key was evicted or expired early, but DB row is actively HELD.
+        Expected: Redis allows lock acquisition, but PostgreSQL SELECT FOR UPDATE detects HELD
+        and returns HTTP 409 Conflict.
+        """
+        active_tid = str(uuid.uuid4())
+        self.seat.status = Seat.Status.HELD
+        self.seat.held_until = timezone.now() + timedelta(minutes=5)
+        self.seat.held_by_transaction_id = uuid.UUID(active_tid)
+        self.seat.save()
+
+        mock_redis = MagicMock()
+        mock_redis.set.return_value = True  # Redis falsely says "key set, you have the lock"
+
+        with patch("inventory.views.get_redis_client", return_value=mock_redis):
+            new_tid = str(uuid.uuid4())
+            resp = self.client.post(
+                RESERVE_URL,
+                {"seat_id": self.seat.id, "transaction_id": new_tid},
+                format="json",
+            )
+            # DB authority blocks the request with 409 Conflict
+            self.assertEqual(resp.status_code, 409)
+            self.assertIn("held", resp.data.get("error", "").lower())
+            self.seat.refresh_from_db()
+            self.assertEqual(str(self.seat.held_by_transaction_id), active_tid)
+
+    def test_evicted_redis_key_does_not_allow_booking_of_already_booked_seat(self):
+        """
+        DIVERGENCE CASE 3: Redis key is absent, but DB row is BOOKED.
+        Expected: PostgreSQL SELECT FOR UPDATE detects BOOKED and returns HTTP 409 Conflict.
+        """
+        self.seat.status = Seat.Status.BOOKED
+        self.seat.save()
+
+        mock_redis = MagicMock()
+        mock_redis.set.return_value = True
+
+        with patch("inventory.views.get_redis_client", return_value=mock_redis):
+            tid = str(uuid.uuid4())
+            resp = self.client.post(
+                RESERVE_URL,
+                {"seat_id": self.seat.id, "transaction_id": tid},
+                format="json",
+            )
+            self.assertEqual(resp.status_code, 409)
+            self.assertIn("booked", resp.data.get("error", "").lower())
+
+    def test_redis_complete_outage_gracefully_falls_back_to_database(self):
+        """
+        DIVERGENCE CASE 4: Redis connection fails completely (Redis is down / socket timeout).
+        Expected: System falls back gracefully to DB row locking without throwing 500 error.
+        """
+        mock_redis = MagicMock()
+        mock_redis.set.side_effect = Exception("Redis connection refused: 6379")
+
+        with patch("inventory.views.get_redis_client", return_value=mock_redis):
+            tid = str(uuid.uuid4())
+            resp = self.client.post(
+                RESERVE_URL,
+                {"seat_id": self.seat.id, "transaction_id": tid},
+                format="json",
+            )
+            self.assertEqual(resp.status_code, 200)
+            self.seat.refresh_from_db()
+            self.assertEqual(self.seat.status, Seat.Status.HELD)
+
+
+class SeatModelAndEdgeCaseTests(TestCase):
+    """
+    Validates model constraints, serialization, and edge-case lifecycle transitions.
+    """
+
+    def setUp(self):
+        self.client = APIClient()
+        self.event = _create_event(name="Jazz Night")
+        self.seat1 = _create_seat(self.event, row="G", seat_number="1")
+        self.seat2 = _create_seat(self.event, row="G", seat_number="2")
+
+    def test_unique_seat_constraint_enforced_at_db_level(self):
+        from django.db import IntegrityError
+        with self.assertRaises(IntegrityError):
+            _create_seat(self.event, row="G", seat_number="1")
+
+    def test_confirm_seat_without_prior_reservation_returns_404(self):
+        resp = self.client.post(
+            CONFIRM_URL,
+            {"transaction_id": str(uuid.uuid4())},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 404)
+
+    def test_confirm_seat_when_seat_already_booked_by_same_transaction_is_idempotent_200(self):
         tid = str(uuid.uuid4())
-        results = []
+        self.client.post(RESERVE_URL, {"seat_id": self.seat1.id, "transaction_id": tid}, format="json")
+        self.client.post(CONFIRM_URL, {"transaction_id": tid}, format="json")
+        
+        # Subsequent confirm call for same transaction is idempotent
+        resp = self.client.post(CONFIRM_URL, {"transaction_id": tid}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["status"], "BOOKED")
 
-        def do_reserve(_):
-            client = APIClient()
-            try:
-                with _mock_coordinator_ok():
-                    resp = client.post(
-                        RESERVE_URL,
-                        {"product_id": product.id, "quantity": 1, "transaction_id": tid},
-                        format="json",
-                    )
-                return resp.status_code, resp.data
-            finally:
-                connection.close()
+    def test_release_seat_for_nonexistent_reservation_returns_404(self):
+        resp = self.client.post(
+            RELEASE_URL,
+            {"transaction_id": str(uuid.uuid4())},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 404)
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            futures = [executor.submit(do_reserve, i) for i in range(3)]
-            for future in as_completed(futures):
-                results.append(future.result())
+    def test_sweep_command_with_mixed_seat_states(self):
+        """
+        Verifies sweeper handles a mixed catalog:
+        - 1 expired held seat -> reclaimed to AVAILABLE
+        - 1 active held seat -> untouched HELD
+        - 1 booked seat -> untouched BOOKED
+        - 1 available seat -> untouched AVAILABLE
+        """
+        # Expired held seat
+        tid_exp = str(uuid.uuid4())
+        seat_exp = _create_seat(
+            self.event,
+            row="H",
+            seat_number="1",
+            status=Seat.Status.HELD,
+            held_until=timezone.now() - timedelta(minutes=15),
+            held_by=uuid.UUID(tid_exp),
+        )
+        Reservation.objects.create(seat=seat_exp, transaction_id=tid_exp, status=Reservation.Status.RESERVED)
 
-        for code, data in results:
-            self.assertEqual(code, 200)
-            self.assertIn("message", data)
-            self.assertEqual(str(data.get("transaction_id")), tid)
-            self.assertEqual(data.get("status"), Reservation.Status.RESERVED)
-            self.assertEqual(data.get("product_id"), product.id)
-            self.assertEqual(data.get("quantity"), 1)
-            self.assertIn("remaining", data)
-            self.assertNotIn("detail", data)
+        # Active held seat
+        tid_act = str(uuid.uuid4())
+        seat_act = _create_seat(
+            self.event,
+            row="H",
+            seat_number="2",
+            status=Seat.Status.HELD,
+            held_until=timezone.now() + timedelta(minutes=5),
+            held_by=uuid.UUID(tid_act),
+        )
+        Reservation.objects.create(seat=seat_act, transaction_id=tid_act, status=Reservation.Status.RESERVED)
 
+        # Booked seat
+        seat_bk = _create_seat(self.event, row="H", seat_number="3", status=Seat.Status.BOOKED)
+
+        # Run sweep
+        resp = self.client.post(SWEEP_URL)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["reclaimed_count"], 1)
+
+        seat_exp.refresh_from_db()
+        self.assertEqual(seat_exp.status, Seat.Status.AVAILABLE)
+
+        seat_act.refresh_from_db()
+        self.assertEqual(seat_act.status, Seat.Status.HELD)
+
+        seat_bk.refresh_from_db()
+        self.assertEqual(seat_bk.status, Seat.Status.BOOKED)
+
+
+class InventoryCorrelationIdMiddlewareTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_incoming_correlation_id_is_returned_in_response(self):
+        cid = "inv-corr-id-" + str(uuid.uuid4())
+        resp = self.client.get(HEALTH_URL, HTTP_X_CORRELATION_ID=cid)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get("X-Correlation-ID"), cid)
+
+    def test_missing_correlation_id_generates_uuid(self):
+        resp = self.client.get(HEALTH_URL)
+        self.assertEqual(resp.status_code, 200)
+        cid = resp.get("X-Correlation-ID")
+        self.assertTrue(cid)
+        uuid.UUID(cid)

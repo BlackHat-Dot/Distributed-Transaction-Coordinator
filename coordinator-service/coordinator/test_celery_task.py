@@ -7,22 +7,50 @@ from coordinator_service.celery import app as celery_app
 from coordinator.tasks import (
     LOCK_KEY,
     LOCK_TIMEOUT,
-    get_redis_client,
     recover_stuck_transactions,
 )
 
 
+class MockRedisClient:
+    """Hermetic in-memory Redis client simulating distributed lock operations and Lua scripts."""
+
+    def __init__(self):
+        self._store = {}
+
+    def set(self, key, value, nx=False, ex=None):
+        if nx and key in self._store:
+            return False
+        self._store[key] = value
+        return True
+
+    def get(self, key):
+        return self._store.get(key)
+
+    def delete(self, *keys):
+        for k in keys:
+            self._store.pop(k, None)
+
+    def eval(self, script, numkeys, key, arg):
+        if self._store.get(key) == arg:
+            self._store.pop(key, None)
+            return 1
+        return 0
+
+
 class CeleryTaskLockingTests(TestCase):
     def setUp(self):
-        self.redis_client = get_redis_client()
-        self.redis_client.delete(LOCK_KEY)
+        self.mock_redis = MockRedisClient()
+        self._redis_patcher = patch(
+            "coordinator.tasks.get_redis_client", return_value=self.mock_redis
+        )
+        self._redis_patcher.start()
 
     def tearDown(self):
-        self.redis_client.delete(LOCK_KEY)
+        self._redis_patcher.stop()
 
     def test_task_runs_command_and_releases_lock(self):
         with patch("coordinator.tasks.call_command") as mock_call_command:
-            with self.assertLogs("coordinator.tasks", level="INFO") as cm:                              
+            with self.assertLogs("coordinator.tasks", level="INFO") as cm:
                 result = recover_stuck_transactions()
 
             self.assertEqual(result, "completed")
@@ -32,11 +60,11 @@ class CeleryTaskLockingTests(TestCase):
             self.assertIn("Starting recovery_stuck_transactions task run", log_output)
             self.assertIn("recovery_stuck_transactions task run completed normally", log_output)
 
-            self.assertIsNone(self.redis_client.get(LOCK_KEY))
+            self.assertIsNone(self.mock_redis.get(LOCK_KEY))
 
     def test_task_skips_when_lock_already_held(self):
         existing_token = "existing-worker-lock-token"
-        self.redis_client.set(LOCK_KEY, existing_token, ex=LOCK_TIMEOUT)
+        self.mock_redis.set(LOCK_KEY, existing_token, ex=LOCK_TIMEOUT)
 
         with patch("coordinator.tasks.call_command") as mock_call_command:
             with self.assertLogs("coordinator.tasks", level="INFO") as cm:
@@ -50,22 +78,25 @@ class CeleryTaskLockingTests(TestCase):
             self.assertIn("previous run is still in progress", log_output)
             self.assertIn(LOCK_KEY, log_output)
 
-            stored_token = self.redis_client.get(LOCK_KEY)
-            self.assertEqual(stored_token.decode("utf-8") if isinstance(stored_token, bytes) else stored_token, existing_token)
+            stored_token = self.mock_redis.get(LOCK_KEY)
+            self.assertEqual(
+                stored_token.decode("utf-8") if isinstance(stored_token, bytes) else stored_token,
+                existing_token,
+            )
 
     def test_lock_released_in_finally_on_exception(self):
         with patch("coordinator.tasks.call_command", side_effect=RuntimeError("Command failed")):
             with self.assertRaises(RuntimeError):
                 recover_stuck_transactions()
 
-            self.assertIsNone(self.redis_client.get(LOCK_KEY))
+            self.assertIsNone(self.mock_redis.get(LOCK_KEY))
 
     def test_lock_ttl_and_parameters(self):
         mock_redis = MagicMock()
         mock_redis.set.return_value = True
 
         with patch("coordinator.tasks.get_redis_client", return_value=mock_redis), \
-             patch("coordinator.tasks.call_command") as mock_call_command:
+             patch("coordinator.tasks.call_command"):
             recover_stuck_transactions()
 
             mock_redis.set.assert_called_once()
@@ -83,4 +114,4 @@ class CeleryTaskLockingTests(TestCase):
 
     def test_celery_app_configuration(self):
         self.assertEqual(celery_app.main, "coordinator")
-        self.assertEqual(settings.CELERY_BROKER_URL, "redis://localhost:6379/0")
+        self.assertTrue(settings.CELERY_BROKER_URL.startswith("redis://"))

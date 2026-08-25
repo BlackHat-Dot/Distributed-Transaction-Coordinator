@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DTC Mission Control — Distributed Transaction Coordinator Observability</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=2.2">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -468,6 +468,16 @@
             </tbody>
           </table>
         </div>
+
+        <!-- Numbered Pagination Bar (10 per page) -->
+        <div class="tx-pagination-bar" id="tx-pagination-bar">
+          <div class="tx-pagination-info" id="tx-pagination-info">
+            Showing <span id="tx-page-range" class="font-mono">1–10</span> of <span id="tx-page-total" class="font-mono">0</span> transactions
+          </div>
+          <div class="tx-pagination-controls" id="tx-pagination-controls">
+            <!-- Dynamic page number buttons: [‹] [1] [2] [3] ... [›] -->
+          </div>
+        </div>
       </section>
 
       <section class="panel forensic-panel">
@@ -652,6 +662,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2.2"></script>
 </body>
 </html>

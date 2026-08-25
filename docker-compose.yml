@@ -1,0 +1,195 @@
+services:
+  # NOTE ON BLAST RADIUS & DATABASE TOPOLOGY TRADEOFF:
+  # All 3 microservices share a single PostgreSQL container hosting 3 distinct databases
+  # (coordinator_db, inventory_db, payment_db). This enforces strict logical schema isolation
+  # and connection pooling per service while optimizing local-dev resource footprint.
+  # BLAST RADIUS TRADEOFF: A physical crash or container failure of this single Postgres instance
+  # will simultaneously take down storage for all 3 microservices. In production, this would be
+  # replaced by 3 separate managed RDS/Cloud SQL instances for physical blast radius isolation.
+  postgres:
+    image: postgres:16-alpine
+    container_name: dtc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_MULTIPLE_DATABASES: ${POSTGRES_MULTIPLE_DATABASES:-coordinator_db,inventory_db,payment_db}
+    volumes:
+      - ./docker/postgres/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh:ro
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: dtc-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  inventory:
+    build:
+      context: ./inventory-service
+      dockerfile: Dockerfile
+    container_name: dtc-inventory
+    restart: unless-stopped
+    environment:
+      DB_NAME: ${INVENTORY_DB_NAME:-inventory_db}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_HOST: ${POSTGRES_HOST:-postgres}
+      DB_PORT: ${POSTGRES_PORT:-5432}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DEBUG: ${DEBUG:-True}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
+      SECRET_KEY: ${SECRET_KEY:-django-insecure-inventory-secret}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  payment:
+    build:
+      context: ./payment-service
+      dockerfile: Dockerfile
+    container_name: dtc-payment
+    restart: unless-stopped
+    environment:
+      DB_NAME: ${PAYMENT_DB_NAME:-payment_db}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_HOST: ${POSTGRES_HOST:-postgres}
+      DB_PORT: ${POSTGRES_PORT:-5432}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DEBUG: ${DEBUG:-True}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
+      SECRET_KEY: ${SECRET_KEY:-django-insecure-payment-secret}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  coordinator:
+    build:
+      context: ./coordinator-service
+      dockerfile: Dockerfile
+    container_name: dtc-coordinator
+    restart: unless-stopped
+    environment:
+      DB_NAME: ${COORDINATOR_DB_NAME:-coordinator_db}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_HOST: ${POSTGRES_HOST:-postgres}
+      DB_PORT: ${POSTGRES_PORT:-5432}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      INVENTORY_SERVICE_URL: ${INVENTORY_SERVICE_URL:-http://inventory:8000}
+      PAYMENT_SERVICE_URL: ${PAYMENT_SERVICE_URL:-http://payment:8001}
+      DEBUG: ${DEBUG:-True}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
+      SECRET_KEY: ${SECRET_KEY:-django-insecure-coordinator-secret}
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-5}
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      inventory:
+        condition: service_healthy
+      payment:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  celery_worker:
+    build:
+      context: ./coordinator-service
+      dockerfile: Dockerfile
+    container_name: dtc-celery-worker
+    restart: unless-stopped
+    command: ["celery", "-A", "coordinator_service", "worker", "-l", "info"]
+    environment:
+      DB_NAME: ${COORDINATOR_DB_NAME:-coordinator_db}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_HOST: ${POSTGRES_HOST:-postgres}
+      DB_PORT: ${POSTGRES_PORT:-5432}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      INVENTORY_SERVICE_URL: ${INVENTORY_SERVICE_URL:-http://inventory:8000}
+      PAYMENT_SERVICE_URL: ${PAYMENT_SERVICE_URL:-http://payment:8001}
+      SECRET_KEY: ${SECRET_KEY:-django-insecure-coordinator-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      coordinator:
+        condition: service_healthy
+
+  celery_beat:
+    build:
+      context: ./coordinator-service
+      dockerfile: Dockerfile
+    container_name: dtc-celery-beat
+    restart: unless-stopped
+    command: ["celery", "-A", "coordinator_service", "beat", "-l", "info"]
+    environment:
+      DB_NAME: ${COORDINATOR_DB_NAME:-coordinator_db}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_HOST: ${POSTGRES_HOST:-postgres}
+      DB_PORT: ${POSTGRES_PORT:-5432}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      INVENTORY_SERVICE_URL: ${INVENTORY_SERVICE_URL:-http://inventory:8000}
+      PAYMENT_SERVICE_URL: ${PAYMENT_SERVICE_URL:-http://payment:8001}
+      SECRET_KEY: ${SECRET_KEY:-django-insecure-coordinator-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      celery_worker:
+        condition: service_started
+
+  visualizer:
+    build:
+      context: ./visualizer
+      dockerfile: Dockerfile
+    image: dtc-visualizer:latest
+    container_name: dtc-visualizer
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:

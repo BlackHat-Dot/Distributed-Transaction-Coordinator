@@ -287,3 +287,21 @@ class ConcurrentChargeTests(TransactionTestCase):
         self.assertEqual(
             Payment.objects.filter(transaction_id=tid).count(), 1
         )
+
+
+class PaymentCorrelationIdMiddlewareTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_incoming_correlation_id_is_returned_in_response(self):
+        cid = "pay-corr-id-" + str(uuid.uuid4())
+        resp = self.client.get("/health/", HTTP_X_CORRELATION_ID=cid)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get("X-Correlation-ID"), cid)
+
+    def test_missing_correlation_id_generates_uuid(self):
+        resp = self.client.get("/health/")
+        self.assertEqual(resp.status_code, 200)
+        cid = resp.get("X-Correlation-ID")
+        self.assertTrue(cid)
+        uuid.UUID(cid)

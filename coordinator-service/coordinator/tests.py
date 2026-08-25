@@ -21,7 +21,14 @@ def _charged_response():
 def _reserve_ok_response():
     mock = MagicMock()
     mock.status_code = 200
-    mock.json.return_value = {"message": "Inventory reserved"}
+    mock.json.return_value = {"message": "Seat reserved", "seat_id": 1}
+    return mock
+
+
+def _confirm_ok_response():
+    mock = MagicMock()
+    mock.status_code = 200
+    mock.json.return_value = {"message": "Seat confirmed", "seat_id": 1, "status": "BOOKED"}
     return mock
 
 
@@ -35,7 +42,11 @@ class _SagaOkPatch:
         self._get_patcher = patch("coordinator.views.requests.get")
         self.post_mock = self._post_patcher.start()
         self.get_mock = self._get_patcher.start()
-        self.post_mock.side_effect = [_reserve_ok_response(), _charged_response()]
+        self.post_mock.side_effect = [
+            _reserve_ok_response(),
+            _charged_response(),
+            _confirm_ok_response(),
+        ]
         return self.post_mock, self.get_mock
 
     def __exit__(self, *args):
@@ -56,7 +67,7 @@ class TransactionIdGenerationTests(TestCase):
         tid = resp.data["transaction_id"]
         uuid.UUID(str(tid))
         self.assertEqual(Transaction.objects.count(), 1)
-        self.assertEqual(post_mock.call_count, 2)
+        self.assertEqual(post_mock.call_count, 3)
 
     def test_client_supplied_transaction_id_is_used_verbatim(self):
         tid = str(uuid.uuid4())

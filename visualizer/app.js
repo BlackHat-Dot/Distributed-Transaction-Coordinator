@@ -54,6 +54,12 @@ const STATE = {
     inv: { online: false, latency: null, crashed: false },
     pay: { online: false, latency: null, crashed: false },
   },
+  pagination: {
+    currentPage: 1,
+    pageSize: 10,
+    totalCount: 0,
+    totalPages: 1,
+  },
   sweepCountdown: 90,
 };
 
@@ -247,6 +253,10 @@ const DOM = {
   filterTabs: document.querySelectorAll(".filter-tab"),
   tbodyTxFeed: document.getElementById("tbody-tx-feed"),
   btnManualPoll: document.getElementById("btn-manual-poll"),
+  txPaginationBar: document.getElementById("tx-pagination-bar"),
+  txPageRange: document.getElementById("tx-page-range"),
+  txPageTotal: document.getElementById("tx-page-total"),
+  txPaginationControls: document.getElementById("tx-pagination-controls"),
 
   forensicMetaCard: document.getElementById("forensic-meta-card"),
   fmetaId: document.getElementById("fmeta-id"),
@@ -372,17 +382,24 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   const startTime = performance.now();
 
+  const isBodyMethod = ["POST", "PUT", "PATCH"].includes((options.method || "GET").toUpperCase());
+  const defaultHeaders = {
+    Accept: "application/json",
+  };
+  if (isBodyMethod) {
+    defaultHeaders["Content-Type"] = "application/json";
+  }
+
   try {
     const response = await fetch(url, {
       ...options,
       signal: controller.signal,
       headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
+        ...defaultHeaders,
         ...(options.headers || {}),
       },
     });
-    const duration = Math.round(performance.now() - startTime);
+    const duration = Math.max(1, Math.round(performance.now() - startTime));
     clearTimeout(timeoutId);
 
     let data = null;
@@ -393,7 +410,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
       data = { raw: text };
     }
 
-    return { ok: response.ok, status: response.status, data, latency: duration };
+    return { ok: response.ok, status: response.status, data, latency: duration, headers: response.headers };
   } catch (err) {
     clearTimeout(timeoutId);
     return { ok: false, status: 0, error: err.message, latency: null };
@@ -431,14 +448,19 @@ async function checkServiceHealth() {
     return;
   }
 
-  const coordRes = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/all/`);
-  updateHealthUI("coord", coordRes.ok, coordRes.latency);
+  try {
+    const [coordRes, invRes, payRes] = await Promise.all([
+      fetchWithTimeout(`${CONFIG.coordinatorUrl}/health/`, {}, 2500),
+      fetchWithTimeout(`${CONFIG.inventoryUrl}/health/`, {}, 2500),
+      fetchWithTimeout(`${CONFIG.paymentUrl}/health/`, {}, 2500),
+    ]);
 
-  const invRes = await fetchWithTimeout(`${CONFIG.inventoryUrl}/health/`, {}, 2000);
-  updateHealthUI("inv", invRes.ok || invRes.status === 200, invRes.latency);
-
-  const payRes = await fetchWithTimeout(`${CONFIG.paymentUrl}/payments/check/`, {}, 2000);
-  updateHealthUI("pay", payRes.ok || payRes.status === 200 || payRes.status === 400, payRes.latency);
+    updateHealthUI("coord", coordRes.ok || coordRes.status === 200, coordRes.latency);
+    updateHealthUI("inv", invRes.ok || invRes.status === 200, invRes.latency);
+    updateHealthUI("pay", payRes.ok || payRes.status === 200, payRes.latency);
+  } catch (e) {
+    console.warn("Health check error:", e);
+  }
 }
 
 function updateHealthUI(nodeKey, isOnline, latency) {
@@ -632,55 +654,99 @@ function animatePacketAlongPath({
   });
 }
 
-async function fetchTransactionsFeed() {
+async function fetchTransactionsFeed(targetPage = STATE.pagination.currentPage) {
+  STATE.pagination.currentPage = targetPage;
+  const pageSize = STATE.pagination.pageSize;
+  const offset = (targetPage - 1) * pageSize;
+  const statusParam = STATE.activeFilter !== "ALL" ? `&status=${STATE.activeFilter}` : "";
+
   if (STATE.isSimulatedMode) {
-    renderTransactionsTable(STATE.transactions);
+    let filtered = STATE.transactions;
+    if (STATE.activeFilter === "IN_FLIGHT") {
+      filtered = filtered.filter(t => ["STARTED", "INVENTORY_RESERVED", "PAYMENT_PROCESSING", "COMPENSATING", "RECOVERY_IN_PROGRESS"].includes(t.status));
+    } else if (STATE.activeFilter === "COMPLETED") {
+      filtered = filtered.filter(t => t.status === "COMPLETED");
+    } else if (STATE.activeFilter === "COMPENSATED") {
+      filtered = filtered.filter(t => ["COMPENSATED", "COMPENSATED_ON_RETRY"].includes(t.status));
+    } else if (STATE.activeFilter === "FAILED") {
+      filtered = filtered.filter(t => t.status.includes("FAILED") || t.status.includes("TIMEOUT"));
+    }
+
+    const totalFiltered = filtered.length;
+    STATE.pagination.totalCount = totalFiltered;
+    STATE.pagination.totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+
+    const pageSlice = filtered.slice(offset, offset + pageSize);
+    renderTransactionsTable(pageSlice, totalFiltered, STATE.transactions.length);
+    renderPaginationControls();
     return;
   }
 
-  const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/all/`);
-  if (res.ok && Array.isArray(res.data)) {
-    STATE.transactions = res.data;
-    STATE.stats.totalSagas = res.data.length;
-    DOM.statSagasTotal.textContent = res.data.length;
+  const url = `${CONFIG.coordinatorUrl}/transactions/?limit=${pageSize}&offset=${offset}${statusParam}`;
+  const res = await fetchWithTimeout(url);
 
-    const lockedRows = res.data.filter(t => t.status !== "STARTED" && t.status !== "INVENTORY_RESERVE_FAILED").length;
+  if (res.ok && res.data) {
+    let list = [];
+    let totalFiltered = 0;
+    let overallTotal = 0;
+
+    if (res.data.results && Array.isArray(res.data.results)) {
+      list = res.data.results;
+      totalFiltered = typeof res.data.count === "number" ? res.data.count : list.length;
+      overallTotal = typeof res.data.total === "number" ? res.data.total : totalFiltered;
+    } else if (Array.isArray(res.data)) {
+      list = res.data;
+      const totalCountHdr = res.headers?.get("x-total-count");
+      const overallTotalHdr = res.headers?.get("x-overall-total");
+      totalFiltered = totalCountHdr ? parseInt(totalCountHdr, 10) : list.length;
+      overallTotal = overallTotalHdr ? parseInt(overallTotalHdr, 10) : totalFiltered;
+    }
+
+    STATE.transactions = list;
+    STATE.stats.totalSagas = overallTotal;
+    if (DOM.statSagasTotal) DOM.statSagasTotal.textContent = overallTotal;
+
+    STATE.pagination.totalCount = totalFiltered;
+    STATE.pagination.totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+
+    const lockedRows = list.filter(t => t.status !== "STARTED" && t.status !== "INVENTORY_RESERVE_FAILED").length;
     STATE.stats.locksEnforced = Math.max(STATE.stats.locksEnforced, lockedRows);
-    DOM.statLocksEnforced.textContent = STATE.stats.locksEnforced;
+    if (DOM.statLocksEnforced) DOM.statLocksEnforced.textContent = STATE.stats.locksEnforced;
 
-    renderTransactionsTable(res.data);
+    renderTransactionsTable(list, totalFiltered, overallTotal);
+    renderPaginationControls();
 
     if (STATE.activeTxId) {
       inspectTransaction(STATE.activeTxId, false);
     }
   } else {
-    if (STATE.transactions.length === 0) {
-      DOM.tbodyTxFeed.innerHTML = `<tr><td colspan="5" class="table-empty text-danger">⚠️ Coordinator Service offline at ${CONFIG.coordinatorUrl}. Start the service or toggle DEMO MODE above.</td></tr>`;
+    if (!STATE.transactions || STATE.transactions.length === 0) {
+      if (DOM.tbodyTxFeed) {
+        DOM.tbodyTxFeed.innerHTML = `<tr><td colspan="5" class="table-empty text-danger">⚠️ Coordinator Service offline at ${CONFIG.coordinatorUrl}. Start the service or toggle DEMO MODE above.</td></tr>`;
+      }
+      if (DOM.txPageRange) DOM.txPageRange.textContent = "0–0";
+      if (DOM.txPageTotal) DOM.txPageTotal.textContent = "0";
     }
   }
 }
 
-function renderTransactionsTable(list) {
-  DOM.badgeTotalTx.textContent = `${list.length} Total`;
-  DOM.topoCoordEvents.textContent = `${list.length} sagas`;
+function renderTransactionsTable(list, totalFiltered, overallTotal) {
+  DOM.badgeTotalTx.textContent = `${overallTotal !== undefined ? overallTotal : list.length} Total`;
+  DOM.topoCoordEvents.textContent = `${overallTotal !== undefined ? overallTotal : list.length} sagas`;
 
-  let filtered = list;
-  if (STATE.activeFilter === "IN_FLIGHT") {
-    filtered = list.filter(t => ["STARTED", "INVENTORY_RESERVED", "PAYMENT_PROCESSING", "COMPENSATING", "RECOVERY_IN_PROGRESS"].includes(t.status));
-  } else if (STATE.activeFilter === "COMPLETED") {
-    filtered = list.filter(t => t.status === "COMPLETED");
-  } else if (STATE.activeFilter === "COMPENSATED") {
-    filtered = list.filter(t => ["COMPENSATED", "COMPENSATED_ON_RETRY"].includes(t.status));
-  } else if (STATE.activeFilter === "FAILED") {
-    filtered = list.filter(t => t.status.includes("FAILED") || t.status.includes("TIMEOUT"));
-  }
-
-  if (filtered.length === 0) {
+  if (!list || list.length === 0) {
     DOM.tbodyTxFeed.innerHTML = `<tr><td colspan="5" class="table-empty">No transactions found for filter: ${STATE.activeFilter}</td></tr>`;
+    if (DOM.txPageRange) DOM.txPageRange.textContent = "0–0";
+    if (DOM.txPageTotal) DOM.txPageTotal.textContent = "0";
     return;
   }
 
-  DOM.tbodyTxFeed.innerHTML = filtered.map(tx => {
+  const startIdx = (STATE.pagination.currentPage - 1) * STATE.pagination.pageSize + 1;
+  const endIdx = startIdx + list.length - 1;
+  if (DOM.txPageRange) DOM.txPageRange.textContent = `${startIdx}–${endIdx}`;
+  if (DOM.txPageTotal) DOM.txPageTotal.textContent = `${totalFiltered}`;
+
+  DOM.tbodyTxFeed.innerHTML = list.map(tx => {
     const isActive = tx.transaction_id === STATE.activeTxId;
     const shortId = tx.transaction_id.substring(0, 8) + "...";
     const statusBadge = getStatusBadgeHTML(tx.status);
@@ -701,6 +767,62 @@ function renderTransactionsTable(list) {
     `;
   }).join("");
 }
+
+function renderPaginationControls() {
+  if (!DOM.txPaginationControls) return;
+
+  const current = STATE.pagination.currentPage;
+  const totalPages = STATE.pagination.totalPages;
+
+  if (totalPages <= 1) {
+    DOM.txPaginationControls.innerHTML = `
+      <button class="page-btn active" disabled>1</button>
+    `;
+    return;
+  }
+
+  let html = "";
+
+  // Previous button
+  html += `<button class="page-btn" ${current === 1 ? 'disabled' : ''} onclick="window.goToTransactionPage(${current - 1})" title="Previous Page">‹</button>`;
+
+  // Build page numbers (e.g. 1, 2, 3, 4, 5 or with ellipsis)
+  const maxButtons = 5;
+  let startPage = Math.max(1, current - 2);
+  let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+
+  if (endPage - startPage < maxButtons - 1) {
+    startPage = Math.max(1, endPage - maxButtons + 1);
+  }
+
+  if (startPage > 1) {
+    html += `<button class="page-btn ${current === 1 ? 'active' : ''}" onclick="window.goToTransactionPage(1)">1</button>`;
+    if (startPage > 2) {
+      html += `<span class="page-ellipsis">…</span>`;
+    }
+  }
+
+  for (let p = startPage; p <= endPage; p++) {
+    html += `<button class="page-btn ${p === current ? 'active' : ''}" onclick="window.goToTransactionPage(${p})">${p}</button>`;
+  }
+
+  if (endPage < totalPages) {
+    if (endPage < totalPages - 1) {
+      html += `<span class="page-ellipsis">…</span>`;
+    }
+    html += `<button class="page-btn ${current === totalPages ? 'active' : ''}" onclick="window.goToTransactionPage(${totalPages})">${totalPages}</button>`;
+  }
+
+  // Next button
+  html += `<button class="page-btn" ${current === totalPages ? 'disabled' : ''} onclick="window.goToTransactionPage(${current + 1})" title="Next Page">›</button>`;
+
+  DOM.txPaginationControls.innerHTML = html;
+}
+
+window.goToTransactionPage = function(pageNumber) {
+  if (pageNumber < 1 || pageNumber > STATE.pagination.totalPages) return;
+  fetchTransactionsFeed(pageNumber);
+};
 
 function getStatusBadgeHTML(status) {
   if (!status) return `<span class="badge badge-neutral">UNKNOWN</span>`;
@@ -1598,7 +1720,7 @@ DOM.filterTabs.forEach(tab => {
     DOM.filterTabs.forEach(t => t.classList.remove("active"));
     tab.classList.add("active");
     STATE.activeFilter = tab.getAttribute("data-filter");
-    renderTransactionsTable(STATE.transactions);
+    fetchTransactionsFeed(1);
   });
 });
 

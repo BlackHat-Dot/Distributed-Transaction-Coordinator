@@ -1,4 +1,4 @@
-﻿# Distributed Saga Coordinator (DTC)
+# Distributed Saga Coordinator (DTC)
 
 A robust, production-grade implementation of the **Distributed Saga Pattern** (Orchestration style) across three independent microservices in Python/Django: **Coordinator Service**, **Inventory Service**, and **Payment Service**.
 
@@ -86,6 +86,14 @@ There are two primary ways to implement a Saga:
 1. **Centralized Forensic Visibility:** An operator can query `GET /transactions/<id>/events/` and see the complete timeline of the distributed transaction in one place.
 2. **Deterministic Crash Recovery:** If a node crashes mid-flight, a centralized recovery sweep knows exactly what step was executing and can query downstream endpoints to reconcile.
 
+### Database Topology & Blast Radius Tradeoff
+
+In this deployment, each microservice connects to its own independent database (`coordinator_db`, `inventory_db`, `payment_db`) hosted within a single shared PostgreSQL container:
+
+- **Logical Isolation (Enforced):** Strict database-per-service isolation is maintained at the application and schema layer. There are zero cross-database queries, zero cross-service foreign keys, and independent connection pools.
+- **Physical Blast Radius Tradeoff:** Because all three databases reside on a single PostgreSQL server instance in Docker, a catastrophic crash or hardware outage of the Postgres container takes down storage for all three services simultaneously.
+- **Production Architecture:** In a production deployment, this single container is replaced with three physically separate managed database instances (e.g. AWS RDS / GCP Cloud SQL) to eliminate the shared blast radius. For development and portfolio demonstration, the single container optimizes memory footprint and port management without compromising architectural schema boundaries.
+
 ---
 
 ## 3. How to Run This Project
@@ -112,13 +120,32 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Configure Database & Environment Variables
-Create a PostgreSQL database for each service (or configure your `.env` files in each service directory):
-- `dtc_coordinator`
-- `dtc_inventory`
-- `dtc_payment`
+### One-Command Quick Start (Docker Compose — Recommended)
 
-### 3. Run Migrations for All Services
+Start the entire distributed system (3 microservices, PostgreSQL with isolated databases, Redis distributed lock cache, Celery Worker, Celery Beat recovery sweeper, and Mission Control Visualizer) with a single command:
+
+```bash
+docker compose up --build
+```
+
+- **Mission Control Visualizer:** [http://localhost:3000](http://localhost:3000)
+- **Coordinator Service:** [http://localhost:8002](http://localhost:8002)
+- **Inventory Service:** [http://localhost:8000](http://localhost:8000)
+- **Payment Service:** [http://localhost:8001](http://localhost:8001)
+
+All database migrations and seed data are applied automatically on startup with zero manual configuration.
+
+---
+
+### Manual Local Setup (Without Docker)
+
+#### 1. Configure Environment Variables
+Copy `.env.example` to `.env` or set environment variables:
+```bash
+cp .env.example .env
+```
+
+#### 2. Run Migrations for All Services
 
 ```bash
 # Terminal 1 - Inventory Service
@@ -134,32 +161,29 @@ cd coordinator-service
 python manage.py migrate
 ```
 
-### 4. Start the Services
+#### 3. Start the Services
 
 Open 3 separate terminals to run each service on its designated port:
 
 ```bash
 # Terminal 1: Inventory Service (Port 8000)
 cd inventory-service
-python manage.py runserver 127.0.0.1:8000
+python manage.py runserver 0.0.0.0:8000
 
 # Terminal 2: Payment Service (Port 8001)
 cd payment-service
-python manage.py runserver 127.0.0.1:8001
+python manage.py runserver 0.0.0.0:8001
 
 # Terminal 3: Coordinator Service (Port 8002)
 cd coordinator-service
-python manage.py runserver 127.0.0.1:8002
+python manage.py runserver 0.0.0.0:8002
 ```
 
-### 5. Start Background Crash Recovery (Celery)
+#### 4. Start Background Crash Recovery (Celery)
 
 ```bash
 # In coordinator-service directory:
-# Start Celery Worker
 celery -A coordinator_service worker -l info
-
-# Start Celery Beat (Schedules recovery sweep every 90 seconds)
 celery -A coordinator_service beat -l info
 ```
 

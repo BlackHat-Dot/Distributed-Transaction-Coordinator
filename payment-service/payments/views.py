@@ -14,6 +14,11 @@ TWO_PLACES = Decimal("0.01")
 NOT_CHARGED = "NOT_CHARGED"
 
 
+@api_view(["GET"])
+def health_check(request):
+    return Response({"status": "healthy", "service": "payment"})
+
+
 def _validate_uuid(value):
     try:
         return uuid.UUID(str(value))
