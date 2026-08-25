@@ -224,6 +224,7 @@ const DOM = {
   btnDemoRace: document.getElementById("btn-demo-race"),
   btnDemoCrash: document.getElementById("btn-demo-crash"),
   btnToggleCustom: document.getElementById("btn-toggle-custom"),
+  btnResetSeats: document.getElementById("btn-reset-seats"),
   customDrawer: document.getElementById("custom-payload-drawer"),
   formCustomTx: document.getElementById("form-custom-tx"),
 
@@ -1056,8 +1057,8 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
 
   showToast({
     icon: "⚡",
-    title: "Happy Path Saga Completed",
-    message: "Inventory row-locked & reserved → Payment charged ($500.00) → Transaction marked COMPLETED",
+    title: "Happy Path Saga Dispatched",
+    message: "Reserving next available seat → Charging payment ($500.00) → Marked COMPLETED",
     type: "success",
   });
 
@@ -1067,9 +1068,10 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     return;
   }
 
+  const nextSeatId = await getNextAvailableSeatId();
   const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
     method: "POST",
-    body: JSON.stringify({ product_id: 1, quantity: 1, amount: 500 }),
+    body: JSON.stringify({ seat_id: nextSeatId, quantity: 1, amount: 500 }),
   });
 
   if (res.ok && res.data && res.data.transaction_id) {
@@ -1136,7 +1138,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
   showToast({
     icon: "🔄",
     title: "Compensating Saga Executed",
-    message: "Payment declined (HTTP 422: Testing failure amount $9,999) → Stock auto-released to Inventory → Marked COMPENSATED",
+    message: "Payment declined (HTTP 422: Testing failure amount $9,999) → Seat hold auto-released to Inventory → Marked COMPENSATED",
     type: "normal",
   });
 
@@ -1146,9 +1148,10 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     return;
   }
 
+  const nextSeatId = await getNextAvailableSeatId();
   const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
     method: "POST",
-    body: JSON.stringify({ product_id: 1, quantity: 1, amount: 9999 }),
+    body: JSON.stringify({ seat_id: nextSeatId, quantity: 1, amount: 9999 }),
   });
 
   if (res.data && res.data.transaction_id) {
@@ -1157,6 +1160,58 @@ DOM.btnDemoFail.addEventListener("click", async () => {
   }
   DOM.topoCoordState.textContent = "IDLE";
 });
+
+async function getNextAvailableSeatId() {
+  try {
+    const res = await fetchWithTimeout(`${CONFIG.inventoryUrl}/seats/`);
+    if (res.ok && Array.isArray(res.data)) {
+      const available = res.data.find(s => s.status === "AVAILABLE");
+      if (available) return available.id;
+      // If none available, sweep or pick random
+      const sweepRes = await fetchWithTimeout(`${CONFIG.inventoryUrl}/seats/sweep-expired/`, { method: "POST" });
+      if (sweepRes.ok && sweepRes.data && sweepRes.data.reclaimed_count > 0) {
+        const refreshed = await fetchWithTimeout(`${CONFIG.inventoryUrl}/seats/`);
+        if (refreshed.ok && Array.isArray(refreshed.data)) {
+          const reclaimed = refreshed.data.find(s => s.status === "AVAILABLE");
+          if (reclaimed) return reclaimed.id;
+        }
+      }
+    }
+  } catch (e) {}
+  return 1;
+}
+
+if (DOM.btnResetSeats) {
+  DOM.btnResetSeats.addEventListener("click", async () => {
+    try {
+      const res = await fetchWithTimeout(`${CONFIG.inventoryUrl}/seats/reset/`, { method: "POST" });
+      if (res.ok) {
+        showToast({
+          icon: "🎟️",
+          title: "Venue Restocked",
+          message: "All 30 venue seats have been reset to AVAILABLE! Ready for new bookings.",
+          type: "success",
+          duration: 4000,
+        });
+        fetchTransactionsFeed();
+      } else {
+        showToast({
+          icon: "❌",
+          title: "Reset Failed",
+          message: "Could not reset venue seats. Verify Inventory service is running.",
+          type: "danger",
+        });
+      }
+    } catch (e) {
+      showToast({
+        icon: "❌",
+        title: "Network Error",
+        message: e.message,
+        type: "danger",
+      });
+    }
+  });
+}
 
 DOM.btnDemoRace.addEventListener("click", async () => {
   const sharedTxId = crypto.randomUUID();

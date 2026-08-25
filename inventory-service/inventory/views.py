@@ -437,3 +437,37 @@ def sweep_expired_holds(request):
             "reclaimed_count": reclaimed_count,
         }
     )
+
+
+@api_view(["POST"])
+def reset_seats(request):
+    """
+    Demo / Development Helper:
+    Resets all seats in the venue catalog back to AVAILABLE, cleans up expired holds,
+    and clears all Redis hold keys.
+    """
+    with transaction.atomic():
+        Seat.objects.all().update(
+            status=Seat.Status.AVAILABLE,
+            held_until=None,
+            held_by_transaction_id=None,
+        )
+        Reservation.objects.all().delete()
+
+    client = get_redis_client()
+    if client:
+        try:
+            keys = client.keys("seat:*")
+            if keys:
+                client.delete(*keys)
+        except Exception:
+            pass
+
+    return Response(
+        {
+            "message": "All venue seats have been reset to AVAILABLE",
+            "total_seats": Seat.objects.count(),
+            "available_seats": Seat.objects.filter(status=Seat.Status.AVAILABLE).count(),
+        },
+        status=200,
+    )
