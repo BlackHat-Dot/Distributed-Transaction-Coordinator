@@ -1027,52 +1027,55 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  await animatePacketAlongPath({
-    route: "coord-inv",
-    type: "success",
-    durationMs: 450,
-    destinationNodeId: "node-box-inv",
-  });
-
-  await animatePacketAlongPath({
-    route: "inv-coord",
-    type: "success",
-    durationMs: 350,
-    destinationNodeId: "node-box-coord",
-  });
-
-  await animatePacketAlongPath({
-    route: "coord-pay",
-    type: "success",
-    durationMs: 450,
-    destinationNodeId: "node-box-pay",
-  });
-
-  await animatePacketAlongPath({
-    route: "pay-coord",
-    type: "success",
-    durationMs: 350,
-    destinationNodeId: "node-box-coord",
-  });
-
-  showToast({
-    icon: "⚡",
-    title: "Happy Path Saga Dispatched",
-    message: "Reserving next available seat → Charging payment ($500.00) → Marked COMPLETED",
-    type: "success",
-  });
-
   if (STATE.isSimulatedMode) {
+    await animatePacketAlongPath({ route: "coord-inv", type: "success", durationMs: 450, destinationNodeId: "node-box-inv" });
+    await animatePacketAlongPath({ route: "inv-coord", type: "success", durationMs: 350, destinationNodeId: "node-box-coord" });
+    await animatePacketAlongPath({ route: "coord-pay", type: "success", durationMs: 450, destinationNodeId: "node-box-pay" });
+    await animatePacketAlongPath({ route: "pay-coord", type: "success", durationMs: 350, destinationNodeId: "node-box-coord" });
+
+    showToast({
+      icon: "⚡",
+      title: "Happy Path Saga (Simulated Mode)",
+      message: "Reserving next available seat → Charging payment ($500.00) → Marked COMPLETED",
+      type: "success",
+    });
+
     createSimulatedTransaction("COMPLETED");
     DOM.topoCoordState.textContent = "IDLE";
     return;
   }
 
   const nextSeatId = await getNextAvailableSeatId();
+  const t0 = performance.now();
   const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
     method: "POST",
     body: JSON.stringify({ seat_id: nextSeatId, quantity: 1, amount: 500 }),
   });
+  const latencyMs = Math.round(performance.now() - t0);
+  const isAsync = (res.status === 202);
+
+  await animatePacketAlongPath({ route: "coord-inv", type: isAsync ? "purple" : "success", durationMs: 350, destinationNodeId: "node-box-inv" });
+  await animatePacketAlongPath({ route: "inv-coord", type: isAsync ? "purple" : "success", durationMs: 300, destinationNodeId: "node-box-coord" });
+  await animatePacketAlongPath({ route: "coord-pay", type: isAsync ? "purple" : "success", durationMs: 350, destinationNodeId: "node-box-pay" });
+  await animatePacketAlongPath({ route: "pay-coord", type: isAsync ? "purple" : "success", durationMs: 300, destinationNodeId: "node-box-coord" });
+
+  if (isAsync) {
+    showToast({
+      icon: "⚡",
+      title: `⚡ Async Saga Dispatched (202 Accepted · ${latencyMs}ms)`,
+      message: `🚀 [Mode: ASYNCHRONOUS] Task enqueued to Celery background worker! Client unblocked in ${latencyMs}ms. Celery worker is executing Reserve → Charge → Confirm.`,
+      type: "success",
+      duration: 6500,
+    });
+  } else {
+    showToast({
+      icon: "🔁",
+      title: `🔁 Sync Saga Completed (200 OK · ${latencyMs}ms)`,
+      message: `⏱️ [Mode: SYNCHRONOUS] Blocking execution finished in ${latencyMs}ms. Seat #${nextSeatId} Reserved → Payment Charged ($500.00) → Confirmed.`,
+      type: "success",
+      duration: 6500,
+    });
+  }
 
   if (res.ok && res.data && res.data.transaction_id) {
     window.selectTransaction(res.data.transaction_id);
@@ -1093,66 +1096,59 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     destinationNodeId: "node-box-coord",
   });
 
-  await animatePacketAlongPath({
-    route: "coord-inv",
-    type: "success",
-    durationMs: 450,
-    destinationNodeId: "node-box-inv",
-  });
-
-  await animatePacketAlongPath({
-    route: "inv-coord",
-    type: "success",
-    durationMs: 350,
-    destinationNodeId: "node-box-coord",
-  });
-
-  await animatePacketAlongPath({
-    route: "coord-pay",
-    type: "danger",
-    durationMs: 450,
-    destinationNodeId: "node-box-pay",
-  });
-
-  await animatePacketAlongPath({
-    route: "pay-coord",
-    type: "danger",
-    durationMs: 350,
-    destinationNodeId: "node-box-coord",
-  });
-
-  await animatePacketAlongPath({
-    route: "coord-inv",
-    type: "warning",
-    durationMs: 450,
-    destinationNodeId: "node-box-inv",
-  });
-
-  await animatePacketAlongPath({
-    route: "inv-coord",
-    type: "warning",
-    durationMs: 350,
-    destinationNodeId: "node-box-coord",
-  });
-
-  showToast({
-    icon: "🔄",
-    title: "Compensating Saga Executed",
-    message: "Payment declined (HTTP 422: Testing failure amount $9,999) → Seat hold auto-released to Inventory → Marked COMPENSATED",
-    type: "normal",
-  });
-
   if (STATE.isSimulatedMode) {
+    await animatePacketAlongPath({ route: "coord-inv", type: "success", durationMs: 450, destinationNodeId: "node-box-inv" });
+    await animatePacketAlongPath({ route: "inv-coord", type: "success", durationMs: 350, destinationNodeId: "node-box-coord" });
+    await animatePacketAlongPath({ route: "coord-pay", type: "danger", durationMs: 450, destinationNodeId: "node-box-pay" });
+    await animatePacketAlongPath({ route: "pay-coord", type: "danger", durationMs: 350, destinationNodeId: "node-box-coord" });
+    await animatePacketAlongPath({ route: "coord-inv", type: "warning", durationMs: 450, destinationNodeId: "node-box-inv" });
+    await animatePacketAlongPath({ route: "inv-coord", type: "warning", durationMs: 350, destinationNodeId: "node-box-coord" });
+
+    showToast({
+      icon: "🔄",
+      title: "Compensating Saga Executed (Simulated)",
+      message: "Payment declined (HTTP 422: Testing failure amount $9,999) → Seat hold auto-released to Inventory → Marked COMPENSATED",
+      type: "normal",
+    });
+
     createSimulatedTransaction("COMPENSATED");
     DOM.topoCoordState.textContent = "IDLE";
     return;
   }
 
   const nextSeatId = await getNextAvailableSeatId();
+  const t0 = performance.now();
   const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
     method: "POST",
     body: JSON.stringify({ seat_id: nextSeatId, quantity: 1, amount: 9999 }),
   });
+  const latencyMs = Math.round(performance.now() - t0);
+  const isAsync = (res.status === 202);
+
+  await animatePacketAlongPath({ route: "coord-inv", type: "success", durationMs: 350, destinationNodeId: "node-box-inv" });
+  await animatePacketAlongPath({ route: "inv-coord", type: "success", durationMs: 300, destinationNodeId: "node-box-coord" });
+  await animatePacketAlongPath({ route: "coord-pay", type: "danger", durationMs: 350, destinationNodeId: "node-box-pay" });
+  await animatePacketAlongPath({ route: "pay-coord", type: "danger", durationMs: 300, destinationNodeId: "node-box-coord" });
+  await animatePacketAlongPath({ route: "coord-inv", type: "warning", durationMs: 350, destinationNodeId: "node-box-inv" });
+  await animatePacketAlongPath({ route: "inv-coord", type: "warning", durationMs: 300, destinationNodeId: "node-box-coord" });
+
+  if (isAsync) {
+    showToast({
+      icon: "🔄",
+      title: `⚡ Async Compensation Dispatched (202 Accepted · ${latencyMs}ms)`,
+      message: `🚀 [Mode: ASYNCHRONOUS] Payment declined on $9,999. Celery worker is auto-releasing seat #${nextSeatId} hold in background. Marked COMPENSATED.`,
+      type: "normal",
+      duration: 6500,
+    });
+  } else {
+    showToast({
+      icon: "🔄",
+      title: `🔁 Sync Compensation Completed (${res.status} · ${latencyMs}ms)`,
+      message: `⏱️ [Mode: SYNCHRONOUS] Payment declined on $9,999. Coordinator immediately executed POST /seats/release/ rollback. Marked COMPENSATED.`,
+      type: "normal",
+      duration: 6500,
+    });
+  }
 
   if (res.data && res.data.transaction_id) {
     window.selectTransaction(res.data.transaction_id);
