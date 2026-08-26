@@ -1135,16 +1135,16 @@ DOM.btnDemoFail.addEventListener("click", async () => {
   if (isAsync) {
     showToast({
       icon: "🔄",
-      title: `⚡ Async Compensation Dispatched (202 Accepted · ${latencyMs}ms)`,
-      message: `🚀 [Mode: ASYNCHRONOUS] Payment declined on $9,999. Celery worker is auto-releasing seat #${nextSeatId} hold in background. Marked COMPENSATED.`,
+      title: `Async Compensation Dispatched (202 Accepted · ${latencyMs}ms)`,
+      message: `[Mode: ASYNCHRONOUS] Payment declined on $9,999. Celery worker is auto-releasing seat #${nextSeatId} hold in background. Marked COMPENSATED.`,
       type: "normal",
       duration: 6500,
     });
   } else {
     showToast({
       icon: "🔄",
-      title: `🔁 Sync Compensation Completed (${res.status} · ${latencyMs}ms)`,
-      message: `⏱️ [Mode: SYNCHRONOUS] Payment declined on $9,999. Coordinator immediately executed POST /seats/release/ rollback. Marked COMPENSATED.`,
+      title: `Sync Compensation Completed (${res.status} · ${latencyMs}ms)`,
+      message: `[Mode: SYNCHRONOUS] Payment declined on $9,999. Coordinator immediately executed POST /seats/release/ rollback. Marked COMPENSATED.`,
       type: "normal",
       duration: 6500,
     });
