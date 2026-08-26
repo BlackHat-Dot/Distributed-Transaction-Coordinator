@@ -1062,8 +1062,8 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
   if (isAsync) {
     showToast({
       icon: "⚡",
-      title: `⚡ Async Saga Dispatched (202 Accepted · ${latencyMs}ms)`,
-      message: `🚀 [Mode: ASYNCHRONOUS] Task enqueued to Celery background worker! Client unblocked in ${latencyMs}ms. Celery worker is executing Reserve → Charge → Confirm.`,
+      title: `Async Saga Dispatched (202 Accepted · ${latencyMs}ms)`,
+      message: `[Mode: ASYNCHRONOUS] Task enqueued to Celery background worker! Client unblocked in ${latencyMs}ms. Celery worker is executing Reserve → Charge → Confirm.`,
       type: "success",
       duration: 6500,
     });
