@@ -52,12 +52,15 @@ echo "[Coordinator] Collecting static files..."
 mkdir -p staticfiles
 python manage.py collectstatic --noinput
 
-PORT="${PORT:-8002}"
-if [ $# -eq 0 ]; then
+# Always start embedded Celery Worker & Beat in background if not a dedicated celery process
+if [[ "$*" != *"celery"* ]]; then
   echo "[Coordinator] Starting embedded Celery Worker & Celery Beat in background..."
   celery -A coordinator_service worker -l info --concurrency=2 &
   celery -A coordinator_service beat -l info &
+fi
 
+PORT="${PORT:-8002}"
+if [ $# -eq 0 ]; then
   echo "[Coordinator] Starting Gunicorn on 0.0.0.0:$PORT..."
   exec gunicorn coordinator_service.wsgi:application --bind "0.0.0.0:$PORT" --workers 2 --threads 2 --worker-class gthread --timeout 30
 else
