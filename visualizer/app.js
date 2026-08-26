@@ -1054,10 +1054,10 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
   const latencyMs = Math.round(performance.now() - t0);
   const isAsync = (res.status === 202);
 
-  await animatePacketAlongPath({ route: "coord-inv", type: isAsync ? "purple" : "success", durationMs: 350, destinationNodeId: "node-box-inv" });
-  await animatePacketAlongPath({ route: "inv-coord", type: isAsync ? "purple" : "success", durationMs: 300, destinationNodeId: "node-box-coord" });
-  await animatePacketAlongPath({ route: "coord-pay", type: isAsync ? "purple" : "success", durationMs: 350, destinationNodeId: "node-box-pay" });
-  await animatePacketAlongPath({ route: "pay-coord", type: isAsync ? "purple" : "success", durationMs: 300, destinationNodeId: "node-box-coord" });
+  await animatePacketAlongPath({ route: "coord-inv", type: "success", durationMs: 350, destinationNodeId: "node-box-inv" });
+  await animatePacketAlongPath({ route: "inv-coord", type: "success", durationMs: 300, destinationNodeId: "node-box-coord" });
+  await animatePacketAlongPath({ route: "coord-pay", type: "success", durationMs: 350, destinationNodeId: "node-box-pay" });
+  await animatePacketAlongPath({ route: "pay-coord", type: "success", durationMs: 300, destinationNodeId: "node-box-coord" });
 
   if (isAsync) {
     showToast({
