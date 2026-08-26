@@ -1436,7 +1436,9 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   e.preventDefault();
   const seatId = parseInt(document.getElementById("cust-seat-id").value, 10) || 31;
   const amount = parseFloat(document.getElementById("cust-amount").value) || 500;
-  const execMode = document.getElementById("cust-exec-mode")?.value || "async";
+  // execMode is always "sync" — async Celery dispatch is disabled on Railway
+  // The hidden input #cust-exec-mode already has value="sync"
+  const execMode = "sync";
   const isFailComp = document.getElementById("cust-flag-fail").checked;
   const isCrash = document.getElementById("cust-flag-crash").checked;
 
@@ -1456,8 +1458,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.customDrawer.classList.add("hidden");
 
-  // Always synchronous — async Celery dispatch is disabled on Railway
-  const execMode = "sync";
   DOM.topoCoordState.textContent = "🔁 SYNC · Holding HTTP · Calling Inventory...";
 
   // Animate live pipeline: Step 1 → Inventory Reserve
