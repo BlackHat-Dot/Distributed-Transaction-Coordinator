@@ -36,6 +36,40 @@ else:
     print(f'[Payment] Proceeding with startup.')
 " || true
 
+echo "[Payment] Ensuring isolated database 'payment_db' exists on PostgreSQL..."
+python -c "
+import os, psycopg2
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from urllib.parse import urlparse
+
+db_url = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL')
+target_db = os.getenv('DB_NAME', 'payment_db')
+
+if db_url and os.getenv('SHARE_SINGLE_DB') != 'true':
+    u = urlparse(db_url)
+    maintenance_db = u.path.lstrip('/') or 'postgres'
+    try:
+        conn = psycopg2.connect(
+            dbname=maintenance_db,
+            user=u.username,
+            password=u.password,
+            host=u.hostname,
+            port=u.port or 5432
+        )
+        conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+        cur = conn.cursor()
+        cur.execute('SELECT 1 FROM pg_database WHERE datname = %s', (target_db,))
+        if not cur.fetchone():
+            cur.execute(f'CREATE DATABASE {target_db}')
+            print(f'  -> Created isolated database: {target_db}')
+        else:
+            print(f'  -> Database {target_db} is ready.')
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f'  -> Note on DB check: {e}')
+" || true
+
 echo "[Payment] Applying database migrations..."
 python manage.py migrate --noinput
 

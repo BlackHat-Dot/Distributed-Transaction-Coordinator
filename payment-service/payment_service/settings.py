@@ -83,10 +83,11 @@ DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
 
 if DATABASE_URL:
     url = urlparse(DATABASE_URL)
+    db_name = os.getenv("DB_NAME", "payment_db") if os.getenv("SHARE_SINGLE_DB") != "true" else (url.path.lstrip("/") or "railway")
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
-            "NAME": url.path.lstrip("/") or os.getenv("DB_NAME", os.getenv("PGDATABASE", "payment_db")),
+            "NAME": db_name,
             "USER": url.username or os.getenv("DB_USER", os.getenv("PGUSER", "postgres")),
             "PASSWORD": url.password or os.getenv("DB_PASSWORD", os.getenv("PGPASSWORD", "postgres")),
             "HOST": url.hostname or os.getenv("DB_HOST", os.getenv("PGHOST", "localhost")),
