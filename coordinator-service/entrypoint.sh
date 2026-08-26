@@ -54,8 +54,12 @@ python manage.py collectstatic --noinput
 
 PORT="${PORT:-8002}"
 if [ $# -eq 0 ]; then
+  echo "[Coordinator] Starting embedded Celery Worker & Celery Beat in background..."
+  celery -A coordinator_service worker -l info --concurrency=2 &
+  celery -A coordinator_service beat -l info &
+
   echo "[Coordinator] Starting Gunicorn on 0.0.0.0:$PORT..."
-  exec gunicorn coordinator_service.wsgi:application --bind "0.0.0.0:$PORT" --workers 4 --threads 4 --worker-class gthread --timeout 30
+  exec gunicorn coordinator_service.wsgi:application --bind "0.0.0.0:$PORT" --workers 2 --threads 2 --worker-class gthread --timeout 30
 else
   echo "[Coordinator] Starting custom command: $@"
   exec "$@"
