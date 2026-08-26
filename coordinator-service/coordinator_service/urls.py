@@ -8,6 +8,7 @@ from coordinator.views import (
     list_transaction_events,
     health_check,
     transactions_endpoint,
+    trigger_recovery_sweep,
 )
 
 
@@ -21,4 +22,5 @@ urlpatterns = [
     path("transactions/<uuid:transaction_id>/", get_transaction),
     path("transactions/all/", list_transactions),
     path("transactions/feed/", list_transactions),
+    path("recovery/sweep/", trigger_recovery_sweep),
 ]

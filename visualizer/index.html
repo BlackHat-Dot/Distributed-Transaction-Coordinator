@@ -201,32 +201,42 @@
         <form id="form-custom-tx" class="custom-form">
           <div class="form-grid">
             <div class="form-field">
+              <label>Target Venue Seat (Inventory PK):</label>
+              <select id="cust-seat-id" class="form-control" style="background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-subtle); padding: 7px 10px; border-radius: var(--radius-xs); font-family: var(--font-mono); font-size: 11.5px;">
+                <option value="">Loading active seats...</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Seat Tier Price ($) [Locked]:</label>
+              <input type="number" id="cust-amount" value="500" min="0" step="0.01" readonly style="background: rgba(255, 255, 255, 0.04); color: var(--text-secondary); cursor: not-allowed; border: 1px solid var(--border-subtle); padding: 7px 10px; border-radius: var(--radius-xs); font-family: var(--font-mono); font-size: 11.5px;" title="Price is strictly bound to the selected seat tier (VIP: $750, Premium: $500, Standard: $350) and cannot be manually modified.">
+            </div>
+            <div class="form-field">
               <label>Transaction ID (Optional UUID):</label>
-              <input type="text" id="cust-tx-id" placeholder="Auto-generated if empty">
+              <input type="text" id="cust-tx-id" placeholder="Auto-generated if blank">
             </div>
             <div class="form-field">
-              <label>Product ID:</label>
-              <input type="number" id="cust-product-id" value="1" min="0">
-            </div>
-            <div class="form-field">
-              <label>Quantity:</label>
-              <input type="number" id="cust-qty" value="1" min="0">
-            </div>
-            <div class="form-field">
-              <label>Amount ($):</label>
-              <input type="number" id="cust-amount" value="500" min="0">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                <label style="margin-bottom: 0;">Execution Pipeline Mode:</label>
+                <span id="btn-exec-info" title="⚡ Async: Instant response (202 Accepted) + background worker.&#10;🔁 Sync: Waits until all microservices finish (200 OK)." style="width: 18px; height: 18px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.35); color: #60a5fa; font-family: var(--font-mono); font-size: 10.5px; font-weight: bold; transition: transform 0.15s ease;">
+                  i
+                </span>
+              </div>
+              <select id="cust-exec-mode" class="form-control" style="background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-subtle); padding: 7px 10px; border-radius: var(--radius-xs); font-size: 11.5px;">
+                <option value="async" selected>⚡ Asynchronous (Background Celery Worker)</option>
+                <option value="sync">🔁 Synchronous (Wait for Complete Response)</option>
+              </select>
             </div>
           </div>
           <div class="form-actions">
-            <label class="checkbox-tag">
+            <label class="checkbox-tag" title="Simulate 500 error on hold release rollback">
               <input type="checkbox" id="cust-flag-fail">
               <span><code>fail_compensation</code> (Simulate Release Failure)</span>
             </label>
-            <label class="checkbox-tag">
+            <label class="checkbox-tag" title="Simulate Coordinator process killed mid-flight">
               <input type="checkbox" id="cust-flag-crash">
-              <span><code>coordinator</code> (Simulate Coordinator Crash)</span>
+              <span><code>coordinator</code> (Simulate Process Crash)</span>
             </label>
-            <button type="submit" class="btn btn-primary btn-sm">Dispatch Transaction</button>
+            <button type="submit" class="btn btn-primary btn-sm">Dispatch Seat Booking Saga</button>
           </div>
         </form>
       </div>
@@ -412,11 +422,14 @@
           <h4>CELERY BEAT CRASH RECOVERY WORKER & DISTRIBUTED LEASE MONITOR</h4>
           <span class="badge badge-purple">90s SWEEP SCHEDULE</span>
         </div>
-        <div class="rec-actions">
+        <div class="rec-actions" style="display: flex; align-items: center; gap: 8px;">
           <button id="btn-trigger-sweep" class="btn btn-xs btn-outline" title="Trigger an immediate recovery sweep">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             Trigger Immediate Sweep
           </button>
+          <span class="scenario-info-btn" id="btn-sweep-info" title="Note: Clicking 'Trigger Immediate Sweep' runs with threshold_seconds = 0 to bypass the 30-second wait for immediate demo verification." style="width: 22px; height: 22px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.35); color: #c084fc; font-family: var(--font-mono); font-size: 11px; font-weight: bold;">
+            i
+          </span>
         </div>
       </div>
       <div class="recovery-grid">

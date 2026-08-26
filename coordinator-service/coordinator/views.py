@@ -104,7 +104,7 @@ def _confirm_inventory(transaction_id, seat_id=None, correlation_id=None):
 
 
 def _compensate(transaction_id, fail_compensation, payment_data, payment_status_code=None, correlation_id=None):
-    release_transaction_id = "fail-release" if fail_compensation else transaction_id
+    release_transaction_id = "fail-release" if fail_compensation else str(transaction_id)
     headers = {"X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id)}
 
     _set_status_with_event(
@@ -713,4 +713,21 @@ def list_transaction_events(request, transaction_id):
         "transaction_id": str(txn.transaction_id),
         "status": txn.status,
         "events": [_serialize_event(e) for e in events],
+    })
+
+
+@api_view(["POST"])
+def trigger_recovery_sweep(request):
+    """
+    On-Demand Recovery Sweep Trigger:
+    Immediately runs recovery for stuck transactions with a short threshold.
+    """
+    import io
+    from django.core.management import call_command
+    out = io.StringIO()
+    threshold_seconds = int(request.data.get("threshold_seconds", 0) if request.data else 0)
+    call_command("recovery_stuck_transactions", threshold_seconds=threshold_seconds, stdout=out)
+    return Response({
+        "message": "Recovery sweep complete",
+        "output": out.getvalue().strip(),
     })

@@ -28,8 +28,20 @@ INVENTORY_NOT_RESERVED = Transaction.Status.NOT_RESERVED
 class Command(BaseCommand):
     help = "Recovers transactions stuck in non-terminal states due to coordinator crashes."
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--threshold-seconds",
+            type=int,
+            default=int(os.getenv("RECOVERY_THRESHOLD_SECONDS", "10")),
+            help="Age in seconds before a stuck transaction is eligible for recovery sweep (default: 10s).",
+        )
+
     def handle(self, *args, **options):
-        threshold = timezone.now() - timedelta(minutes=5)
+        threshold_seconds = options.get("threshold_seconds")
+        if threshold_seconds is None:
+            threshold_seconds = int(os.getenv("RECOVERY_THRESHOLD_SECONDS", "10"))
+
+        threshold = timezone.now() - timedelta(seconds=threshold_seconds)
 
         self.recover_payment_processing(threshold)
         self.recover_reserved(threshold)
