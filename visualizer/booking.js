@@ -840,6 +840,31 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
     hideHoldTimer();
     updateCheckoutSummary();
     loadCatalog(false);
+  } else {
+    // SAGA ERROR / TIMEOUT / CONFLICT
+    DOM.step2.className = "step-item compensated";
+    DOM.step2Status.textContent = status || "FAILED";
+
+    DOM.step3.className = "step-item compensated";
+    DOM.step3Title.textContent = "3. Transaction Terminated";
+    DOM.step3Desc.textContent = `Coordinator resolved saga state to ${status}.`;
+    DOM.step3Status.textContent = status || "FAILED";
+
+    if (DOM.modalTitle) DOM.modalTitle.textContent = `Transaction ${status}`;
+    if (DOM.modalSubtitle) DOM.modalSubtitle.textContent = `The saga reached terminal state: ${status}.`;
+
+    if (DOM.compensationCard) {
+      DOM.compensationCard.classList.remove("hidden");
+      if (DOM.compReason) {
+        DOM.compReason.textContent = `Terminal Status: ${status}. Downstream service response was not verified within SLA.`;
+      }
+    }
+
+    if (STATE.myHold && STATE.myHold.timerInterval) clearInterval(STATE.myHold.timerInterval);
+    STATE.myHold = null;
+    hideHoldTimer();
+    updateCheckoutSummary();
+    loadCatalog(false);
   }
 
   if (DOM.btnProceedPay) DOM.btnProceedPay.disabled = false;

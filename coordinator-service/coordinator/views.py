@@ -580,6 +580,13 @@ def _serialize_transaction(txn):
         Transaction.Status.INVENTORY_RESERVE_FAILED,
         Transaction.Status.COMPENSATION_FAILED,
         Transaction.Status.COMPENSATED_ON_RETRY,
+        Transaction.Status.RETRY_COMPENSATION_FAILED,
+        Transaction.Status.TIMEOUT,
+        Transaction.Status.PAYMENT_TIMEOUT,
+        Transaction.Status.PAYMENT_FAILED,
+        Transaction.Status.PAYMENT_CONNECTION_ERROR,
+        Transaction.Status.INVENTORY_TIMEOUT,
+        Transaction.Status.INVENTORY_CONNECTION_ERROR,
     }
     return {
         "transaction_id": str(txn.transaction_id),
