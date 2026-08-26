@@ -50,6 +50,14 @@ CORS_EXPOSE_HEADERS = [
     "content-type",
 ]
 
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip() for origin in os.getenv(
+        "CSRF_TRUSTED_ORIGINS",
+        "https://*.railway.app,https://*.up.railway.app,http://localhost:3000,http://127.0.0.1:3000"
+    ).split(",") if origin.strip()
+]
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 ROOT_URLCONF = 'payment_service.urls'
 
 TEMPLATES = [
@@ -69,16 +77,44 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'payment_service.wsgi.application'
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME", "payment_db"),
-        "USER": os.getenv("DB_USER", "postgres"),
-        "PASSWORD": os.getenv("DB_PASSWORD", "postgres"),
-        "HOST": os.getenv("DB_HOST", "localhost"),
-        "PORT": os.getenv("DB_PORT", "5432"),
+from urllib.parse import urlparse
+
+DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
+
+if DATABASE_URL:
+    url = urlparse(DATABASE_URL)
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": url.path.lstrip("/") or os.getenv("DB_NAME", os.getenv("PGDATABASE", "payment_db")),
+            "USER": url.username or os.getenv("DB_USER", os.getenv("PGUSER", "postgres")),
+            "PASSWORD": url.password or os.getenv("DB_PASSWORD", os.getenv("PGPASSWORD", "postgres")),
+            "HOST": url.hostname or os.getenv("DB_HOST", os.getenv("PGHOST", "localhost")),
+            "PORT": str(url.port or os.getenv("DB_PORT", os.getenv("PGPORT", "5432"))),
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("DB_NAME", os.getenv("PGDATABASE", "payment_db")),
+            "USER": os.getenv("DB_USER", os.getenv("PGUSER", "postgres")),
+            "PASSWORD": os.getenv("DB_PASSWORD", os.getenv("PGPASSWORD", "postgres")),
+            "HOST": os.getenv("DB_HOST", os.getenv("PGHOST", "localhost")),
+            "PORT": str(os.getenv("DB_PORT", os.getenv("PGPORT", "5432"))),
+        }
+    }
+
+CELERY_BROKER_URL = os.getenv(
+    "REDIS_URL",
+    os.getenv(
+        "REDIS_PRIVATE_URL",
+        os.getenv(
+            "REDIS_PUBLIC_URL",
+            os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+        )
+    )
+)
 
 AUTH_PASSWORD_VALIDATORS = [
     {

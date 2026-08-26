@@ -6,4 +6,4 @@ COPY . /app
 
 EXPOSE 3000
 
-CMD ["python", "-m", "http.server", "3000"]
+CMD ["sh", "-c", "python -m http.server ${PORT:-3000}"]

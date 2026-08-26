@@ -17,4 +17,4 @@ COPY . .
 RUN chmod +x entrypoint.sh
 
 ENTRYPOINT ["./entrypoint.sh"]
-CMD ["gunicorn", "coordinator_service.wsgi:application", "--bind", "0.0.0.0:8002", "--workers", "4", "--threads", "4", "--worker-class", "gthread", "--timeout", "30"]
+CMD []

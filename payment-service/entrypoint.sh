@@ -1,14 +1,40 @@
 #!/bin/bash
 set -e
 
-DB_HOST="${DB_HOST:-postgres}"
-DB_PORT="${DB_PORT:-5432}"
+# Auto-detect and navigate to service directory if started from repo root
+if [ ! -f "manage.py" ]; then
+  if [ -d "payment-service" ]; then
+    cd payment-service
+  fi
+fi
 
-echo "[Payment] Waiting for PostgreSQL ($DB_HOST:$DB_PORT)..."
-while ! python -c "import socket; s = socket.socket(); s.settimeout(1); s.connect(('$DB_HOST', int('$DB_PORT'))); s.close()" 2>/dev/null; do
-  sleep 0.5
-done
-echo "[Payment] PostgreSQL is reachable."
+echo "[Payment] Checking PostgreSQL connectivity..."
+python -c "
+import os, sys, socket, time
+from urllib.parse import urlparse
+
+db_url = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL')
+if db_url:
+    u = urlparse(db_url)
+    host = u.hostname or 'localhost'
+    port = u.port or 5432
+else:
+    host = os.getenv('PGHOST', os.getenv('DB_HOST', 'postgres'))
+    port = int(os.getenv('PGPORT', os.getenv('DB_PORT', '5432')))
+
+for attempt in range(20):
+    try:
+        s = socket.socket()
+        s.settimeout(2)
+        s.connect((host, port))
+        s.close()
+        print(f'[Payment] PostgreSQL at {host}:{port} is reachable.')
+        break
+    except Exception as e:
+        time.sleep(0.8)
+else:
+    print(f'[Payment] Proceeding with startup.')
+" || true
 
 echo "[Payment] Applying database migrations..."
 python manage.py migrate --noinput
@@ -25,5 +51,11 @@ if not User.objects.filter(username='admin').exists():
 echo "[Payment] Collecting static files..."
 python manage.py collectstatic --noinput
 
-echo "[Payment] Starting service command: $@"
-exec "$@"
+PORT="${PORT:-8001}"
+if [ $# -eq 0 ]; then
+  echo "[Payment] Starting Gunicorn on 0.0.0.0:$PORT..."
+  exec gunicorn payment_service.wsgi:application --bind "0.0.0.0:$PORT" --workers 4 --threads 4 --worker-class gthread --timeout 30
+else
+  echo "[Payment] Starting custom command: $@"
+  exec "$@"
+fi
