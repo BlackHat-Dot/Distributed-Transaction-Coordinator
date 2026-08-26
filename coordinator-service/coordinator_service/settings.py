@@ -12,7 +12,8 @@ SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-#)8x**j4@!pjsa4qr%1##8k=4$
 DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "t")
 
 import sys
-TESTING_SYNC_MODE = 'test' in sys.argv
+# Force sync if running tests OR if FORCE_SYNC env var is set to true
+TESTING_SYNC_MODE = 'test' in sys.argv or os.getenv("FORCE_SYNC", "false").lower() in ("true", "1", "t")
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",") if os.getenv("ALLOWED_HOSTS") else ["*"]
 
