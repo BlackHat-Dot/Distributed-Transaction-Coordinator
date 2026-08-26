@@ -67,6 +67,7 @@ if not User.objects.filter(username='admin').exists():
 " 2>/dev/null || true
 
 echo "[Inventory] Collecting static files..."
+mkdir -p staticfiles
 python manage.py collectstatic --noinput
 
 PORT="${PORT:-8000}"
