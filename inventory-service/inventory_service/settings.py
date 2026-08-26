@@ -86,7 +86,7 @@ DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
 
 if DATABASE_URL:
     url = urlparse(DATABASE_URL)
-    db_name = os.getenv("DB_NAME", "inventory_db") if os.getenv("SHARE_SINGLE_DB") != "true" else (url.path.lstrip("/") or "railway")
+    db_name = url.path.lstrip("/") or os.getenv("DB_NAME", "inventory_db")
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
