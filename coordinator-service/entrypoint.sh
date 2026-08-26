@@ -52,10 +52,10 @@ echo "[Coordinator] Collecting static files..."
 mkdir -p staticfiles
 python manage.py collectstatic --noinput
 
-# Substitute PORT in supervisord.conf (Railway sets $PORT at runtime)
+APP_DIR="$(pwd)"
 export PORT="${PORT:-8002}"
 
-echo "[Coordinator] Generating supervisord.conf for PORT=$PORT..."
+echo "[Coordinator] Generating supervisord.conf for PORT=$PORT in $APP_DIR..."
 cat > /tmp/supervisord.conf << SUPEOF
 [supervisord]
 nodaemon=true
@@ -66,7 +66,8 @@ pidfile=/tmp/supervisord.pid
 
 [program:gunicorn]
 command=gunicorn coordinator_service.wsgi:application --bind 0.0.0.0:${PORT} --workers 2 --threads 2 --worker-class gthread --timeout 120
-directory=%(here)s
+directory=${APP_DIR}
+environment=PYTHONPATH="${APP_DIR}"
 autostart=true
 autorestart=true
 stdout_logfile=/dev/stdout
@@ -76,7 +77,8 @@ stderr_logfile_maxbytes=0
 
 [program:celery_worker]
 command=celery -A coordinator_service worker -l info --concurrency=2
-directory=%(here)s
+directory=${APP_DIR}
+environment=PYTHONPATH="${APP_DIR}"
 autostart=true
 autorestart=true
 startsecs=5
@@ -88,7 +90,8 @@ stderr_logfile_maxbytes=0
 
 [program:celery_beat]
 command=celery -A coordinator_service beat -l info
-directory=%(here)s
+directory=${APP_DIR}
+environment=PYTHONPATH="${APP_DIR}"
 autostart=true
 autorestart=true
 startsecs=5
