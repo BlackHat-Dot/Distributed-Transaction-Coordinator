@@ -698,8 +698,11 @@ async function initiateSagaCheckout() {
     }),
   });
 
-  if (res.status === 202 || res.ok) {
-    // Non-blocking 202 accepted or 200 completed: Start polling transaction status
+  if (res.ok && res.status === 200 && res.data && res.data.status) {
+    // Instant completion (sync execution fallback)
+    handleSagaTerminalState(res.data.status, txId, selectedAmount);
+  } else if (res.status === 202 || res.ok) {
+    // Non-blocking 202 accepted: Start polling transaction status
     pollSagaStatus(txId, selectedAmount);
   } else {
     showToast({

@@ -450,24 +450,28 @@ def _handle_create_transaction(request):
         is_async = not getattr(settings, "TESTING_SYNC_MODE", False)
 
     if is_async:
-        from .tasks import execute_saga_task
-        execute_saga_task.delay(
-            str(transaction_id),
-            seat_id=seat_id,
-            amount=amount,
-            fail_compensation=fail_compensation,
-            correlation_id=correlation_id,
-        )
-        return Response(
-            {
-                "transaction_id": str(transaction_id),
-                "status": "PENDING",
-                "poll_url": f"/transactions/{transaction_id}/",
-                "message": "Saga transaction accepted for asynchronous execution",
-            },
-            status=202,
-            headers={"Location": f"/transactions/{transaction_id}/"},
-        )
+        try:
+            from .tasks import execute_saga_task
+            execute_saga_task.delay(
+                str(transaction_id),
+                seat_id=seat_id,
+                amount=amount,
+                fail_compensation=fail_compensation,
+                correlation_id=correlation_id,
+            )
+            return Response(
+                {
+                    "transaction_id": str(transaction_id),
+                    "status": "PENDING",
+                    "poll_url": f"/transactions/{transaction_id}/",
+                    "message": "Saga transaction accepted for asynchronous execution",
+                },
+                status=202,
+                headers={"Location": f"/transactions/{transaction_id}/"},
+            )
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Celery dispatch unavailable (%s), executing synchronously", exc)
 
     return _run_saga_pipeline(
         transaction_id=transaction_id,
