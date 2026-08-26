@@ -440,7 +440,35 @@ def _handle_create_transaction(request):
     if request.data.get("coordinator"):
         return Response({"detail": "Intentional crash"})
 
-    # Always execute synchronously — no Celery / async dispatch
+    correlation_id = getattr(request, "correlation_id", None) or str(transaction_id)
+
+    # Dispatch asynchronously via Celery (supervisord keeps the worker alive)
+    try:
+        from .tasks import execute_saga_task
+        execute_saga_task.delay(
+            str(transaction_id),
+            seat_id=seat_id,
+            amount=amount,
+            fail_compensation=fail_compensation,
+            correlation_id=correlation_id,
+        )
+        return Response(
+            {
+                "transaction_id": str(transaction_id),
+                "status": "PENDING",
+                "poll_url": f"/transactions/{transaction_id}/",
+                "message": "Saga transaction accepted for asynchronous execution",
+            },
+            status=202,
+            headers={"Location": f"/transactions/{transaction_id}/"},
+        )
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Celery unavailable (%s) — falling back to synchronous execution", exc
+        )
+
+    # Sync fallback if Celery broker is unreachable
     return _run_saga_pipeline(
         transaction_id=transaction_id,
         seat_id=seat_id,
