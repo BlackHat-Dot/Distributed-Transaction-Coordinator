@@ -55,5 +55,49 @@ python manage.py collectstatic --noinput
 # Substitute PORT in supervisord.conf (Railway sets $PORT at runtime)
 export PORT="${PORT:-8002}"
 
+echo "[Coordinator] Generating supervisord.conf for PORT=$PORT..."
+cat > /tmp/supervisord.conf << SUPEOF
+[supervisord]
+nodaemon=true
+logfile=/dev/stdout
+logfile_maxbytes=0
+loglevel=info
+pidfile=/tmp/supervisord.pid
+
+[program:gunicorn]
+command=gunicorn coordinator_service.wsgi:application --bind 0.0.0.0:${PORT} --workers 2 --threads 2 --worker-class gthread --timeout 120
+directory=%(here)s
+autostart=true
+autorestart=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+
+[program:celery_worker]
+command=celery -A coordinator_service worker -l info --concurrency=2
+directory=%(here)s
+autostart=true
+autorestart=true
+startsecs=5
+startretries=3
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+
+[program:celery_beat]
+command=celery -A coordinator_service beat -l info
+directory=%(here)s
+autostart=true
+autorestart=true
+startsecs=5
+startretries=3
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+SUPEOF
+
 echo "[Coordinator] Starting supervisord (gunicorn + celery worker + celery beat)..."
-exec supervisord -c supervisord.conf
+exec supervisord -c /tmp/supervisord.conf

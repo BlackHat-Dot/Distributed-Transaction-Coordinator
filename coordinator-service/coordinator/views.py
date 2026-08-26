@@ -442,10 +442,31 @@ def _handle_create_transaction(request):
 
     correlation_id = getattr(request, "correlation_id", None) or str(transaction_id)
 
-    # NOTE: Async Celery dispatch is disabled.
-    # Railway single-container deployments cannot reliably run a Celery worker
-    # as a background process alongside Gunicorn. The saga pipeline runs
-    # synchronously inside the HTTP request instead.
+    # Try async via Celery (supervisord keeps worker alive alongside gunicorn)
+    try:
+        from .tasks import execute_saga_task
+        execute_saga_task.delay(
+            str(transaction_id),
+            seat_id=seat_id,
+            amount=amount,
+            fail_compensation=fail_compensation,
+            correlation_id=correlation_id,
+        )
+        return Response(
+            {
+                "transaction_id": str(transaction_id),
+                "status": "PENDING",
+                "poll_url": f"/transactions/{transaction_id}/",
+                "message": "Saga dispatched to Celery worker",
+            },
+            status=202,
+            headers={"Location": f"/transactions/{transaction_id}/"},
+        )
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Celery unavailable (%s) — running synchronously", exc)
+
+    # Fallback: run synchronously if Celery is not available
     return _run_saga_pipeline(
         transaction_id=transaction_id,
         seat_id=seat_id,

@@ -1436,9 +1436,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   e.preventDefault();
   const seatId = parseInt(document.getElementById("cust-seat-id").value, 10) || 31;
   const amount = parseFloat(document.getElementById("cust-amount").value) || 500;
-  // execMode is always "sync" — async Celery dispatch is disabled on Railway
-  // The hidden input #cust-exec-mode already has value="sync"
-  const execMode = "sync";
+  const execMode = document.getElementById("cust-exec-mode")?.value || "async";
   const isFailComp = document.getElementById("cust-flag-fail").checked;
   const isCrash = document.getElementById("cust-flag-crash").checked;
 
@@ -1458,29 +1456,32 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.customDrawer.classList.add("hidden");
 
-  DOM.topoCoordState.textContent = "🔁 SYNC · Holding HTTP · Calling Inventory...";
+  if (execMode === "async") {
+    DOM.topoCoordState.textContent = "⚡ ASYNC DISPATCH (NON-BLOCKING)";
+  } else {
+    DOM.topoCoordState.textContent = "🔁 SYNC · Holding HTTP · Calling Inventory...";
+  }
 
-  // Animate live pipeline: Step 1 → Inventory Reserve
+  // Animate: Client → Coordinator
+  await animatePacketAlongPath({ route: "client-coord", type: "info", durationMs: 300, destinationNodeId: "node-box-coord" });
+
+  const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/?${execMode === "sync" ? "sync=true" : "async=true"}`;
+
+  // Animate live pipeline steps while HTTP request is in-flight
   await animatePacketAlongPath({ route: "coord-inv", type: "info", durationMs: 300, destinationNodeId: "node-box-inv" });
-  DOM.topoCoordState.textContent = "🔁 SYNC · Inventory Reserved · Calling Payment...";
+  if (execMode === "sync") DOM.topoCoordState.textContent = "🔁 SYNC · Inventory Reserved · Calling Payment...";
 
-  const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/?sync=true`;
-
-  // Measure precise client HTTP roundtrip latency
-  const t0 = performance.now();
-
-  // Animate Step 2 → Payment (fires while HTTP request is in-flight)
   const payAnimPromise = (async () => {
     await new Promise(r => setTimeout(r, 100));
     await animatePacketAlongPath({ route: "inv-coord", type: "success", durationMs: 250, destinationNodeId: "node-box-coord" });
-    DOM.topoCoordState.textContent = "🔁 SYNC · Charging Payment Gateway...";
-    await animatePacketAlongPath({ route: "coord-pay", type: "info", durationMs: 300, destinationNodeId: "node-box-pay" });
+    if (execMode === "sync") {
+      DOM.topoCoordState.textContent = "🔁 SYNC · Charging Payment Gateway...";
+      await animatePacketAlongPath({ route: "coord-pay", type: "info", durationMs: 300, destinationNodeId: "node-box-pay" });
+    }
   })();
 
-  const res = await fetchWithTimeout(endpointUrl, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  const t0 = performance.now();
+  const res = await fetchWithTimeout(endpointUrl, { method: "POST", body: JSON.stringify(payload) });
   await payAnimPromise;
   const latencyMs = Math.round(performance.now() - t0);
 
@@ -1490,24 +1491,12 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
 
   if (txData.error === "INVENTORY_RESERVE_FAILED" || (res.status === 400 && txData.inventory_response)) {
     await animatePacketAlongPath({ route: "inv-coord", type: "danger", durationMs: 300, destinationNodeId: "node-box-coord" });
-    showToast({
-      icon: "❌",
-      title: "Seat Reservation Conflict / Locked",
-      message: `[${res.status} in ${latencyMs}ms] Inventory Error: ${detailedError}. Transaction rejected.`,
-      type: "race",
-      duration: 6000,
-    });
+    showToast({ icon: "❌", title: "Seat Reservation Conflict / Locked", message: `[${res.status} in ${latencyMs}ms] ${detailedError}`, type: "race", duration: 6000 });
   }
   else if (isCrash || txData.detail === "Intentional crash") {
     await animatePacketAlongPath({ route: "coord-pay", type: "danger", durationMs: 400, breakMidway: true });
     triggerCrashedNode("coord");
-    showToast({
-      icon: "💥",
-      title: "Process Crash Simulated",
-      message: `Coordinator process crashed mid-flight! Transaction orphaned in database. Awaiting Celery Beat sweep.`,
-      type: "race",
-      duration: 8000,
-    });
+    showToast({ icon: "💥", title: "Process Crash Simulated", message: `Coordinator crashed mid-flight! Transaction orphaned. Awaiting Celery Beat sweep.`, type: "race", duration: 8000 });
     setTimeout(() => { triggerRecoveredNode("coord"); DOM.topoCoordState.textContent = "IDLE"; }, 2500);
   }
   else if (status === "COMPENSATED" || status === "COMPENSATION_FAILED") {
@@ -1515,27 +1504,23 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
     DOM.topoCoordState.textContent = "🔁 SYNC · Payment Declined · Compensating...";
     await animatePacketAlongPath({ route: "coord-inv", type: "warning", durationMs: 350, destinationNodeId: "node-box-inv" });
     await animatePacketAlongPath({ route: "inv-coord", type: "warning", durationMs: 300, destinationNodeId: "node-box-coord" });
-    showToast({
-      icon: "🔄",
-      title: "Payment Declined & Compensated",
-      message: `[${res.status} in ${latencyMs}ms] Payment declined ($${amount}) → Auto-released hold on Seat #${seatId} → Marked COMPENSATED`,
-      type: "normal",
-      duration: 6000,
-    });
+    showToast({ icon: "🔄", title: "Payment Declined & Compensated", message: `[${res.status} in ${latencyMs}ms] $${amount} declined → seat released → COMPENSATED`, type: "normal", duration: 6000 });
+  }
+  else if (execMode === "async" && res.status === 202) {
+    // ⚡ ASYNC: Celery worker picked it up — animate background steps
+    showToast({ icon: "⚡", title: `Async Pipeline: 202 Accepted (${latencyMs}ms)`, message: `Client released in ${latencyMs}ms! Celery worker now running steps in background. Live polling updates below...`, type: "success", duration: 6500 });
+    animatePacketAlongPath({ route: "coord-inv", type: "purple", durationMs: 400, destinationNodeId: "node-box-inv" });
+    setTimeout(() => animatePacketAlongPath({ route: "inv-coord", type: "purple", durationMs: 350, destinationNodeId: "node-box-coord" }), 450);
+    setTimeout(() => animatePacketAlongPath({ route: "coord-pay", type: "purple", durationMs: 400, destinationNodeId: "node-box-pay" }), 850);
+    setTimeout(() => animatePacketAlongPath({ route: "pay-coord", type: "purple", durationMs: 350, destinationNodeId: "node-box-coord" }), 1300);
   }
   else {
-    // 🔁 SYNC SUCCESS: Full pipeline completed
+    // 🔁 SYNC SUCCESS
     await animatePacketAlongPath({ route: "pay-coord", type: "success", durationMs: 300, destinationNodeId: "node-box-coord" });
     DOM.topoCoordState.textContent = "🔁 SYNC · Confirming Seat in Inventory...";
     await animatePacketAlongPath({ route: "coord-inv", type: "success", durationMs: 300, destinationNodeId: "node-box-inv" });
     await animatePacketAlongPath({ route: "inv-coord", type: "success", durationMs: 250, destinationNodeId: "node-box-coord" });
-    showToast({
-      icon: "🔁",
-      title: `Sync Pipeline: HTTP 200 OK (${latencyMs}ms)`,
-      message: `⏱️ Coordinator → Inventory Reserve → Payment Charge → Inventory Confirm — completed in ${latencyMs}ms. Marked COMPLETED.`,
-      type: "success",
-      duration: 6500,
-    });
+    showToast({ icon: "🔁", title: `Sync Pipeline: 200 OK (${latencyMs}ms)`, message: `Coordinator → Inventory Reserve → Payment Charge → Inventory Confirm — completed in ${latencyMs}ms. COMPLETED.`, type: "success", duration: 6500 });
   }
 
   if (txData.transaction_id) {
