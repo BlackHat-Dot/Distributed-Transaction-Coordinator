@@ -440,39 +440,7 @@ def _handle_create_transaction(request):
     if request.data.get("coordinator"):
         return Response({"detail": "Intentional crash"})
 
-    from django.conf import settings
-
-    if request.query_params.get("async") == "true" or request.headers.get("Prefer") == "respond-async":
-        is_async = True
-    elif request.query_params.get("sync") == "true" or request.headers.get("Prefer") == "respond-sync":
-        is_async = False
-    else:
-        is_async = not getattr(settings, "TESTING_SYNC_MODE", False)
-
-    if is_async:
-        try:
-            from .tasks import execute_saga_task
-            execute_saga_task.delay(
-                str(transaction_id),
-                seat_id=seat_id,
-                amount=amount,
-                fail_compensation=fail_compensation,
-                correlation_id=correlation_id,
-            )
-            return Response(
-                {
-                    "transaction_id": str(transaction_id),
-                    "status": "PENDING",
-                    "poll_url": f"/transactions/{transaction_id}/",
-                    "message": "Saga transaction accepted for asynchronous execution",
-                },
-                status=202,
-                headers={"Location": f"/transactions/{transaction_id}/"},
-            )
-        except Exception as exc:
-            import logging
-            logging.getLogger(__name__).warning("Celery dispatch unavailable (%s), executing synchronously", exc)
-
+    # Always execute synchronously — no Celery / async dispatch
     return _run_saga_pipeline(
         transaction_id=transaction_id,
         seat_id=seat_id,
