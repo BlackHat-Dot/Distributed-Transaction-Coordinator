@@ -45,6 +45,9 @@
       <button id="btn-restock" class="btn btn-outline btn-sm" title="Reset all 30 seats to AVAILABLE">
         <span>🎟️ Reset Venue Seats</span>
       </button>
+      <button id="btn-config" class="btn btn-icon" title="Configure endpoints" style="display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; background: rgba(255,255,255,0.06); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); cursor: pointer;">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
     </div>
   </header>
 
@@ -345,6 +348,38 @@
         <a id="btn-view-forensics" href="#" class="btn btn-primary hidden" target="_blank">Inspect Forensic Audit Log ↗</a>
       </div>
 
+    </div>
+  </div>
+
+  <!-- Target Environment Configuration Modal -->
+  <div id="modal-config" class="modal-backdrop hidden" style="position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 9999;">
+    <div class="modal-card" style="background: var(--bg-card, #121826); border: 1px solid var(--border-color, #2a3449); border-radius: 12px; width: 100%; max-width: 460px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: #fff;">⚙️ Target Environment Configuration</h3>
+        <button id="btn-close-config" style="background: none; border: none; color: #8892b0; font-size: 1.3rem; cursor: pointer;">✕</button>
+      </div>
+      <form id="form-config" style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <label style="font-size: 0.8rem; font-weight: 600; color: #8892b0;">Coordinator Base URL:</label>
+          <input type="text" id="cfg-coord-url" value="http://127.0.0.1:8002" style="background: rgba(255,255,255,0.05); border: 1px solid #2a3449; border-radius: 6px; padding: 8px 12px; color: #fff; font-family: monospace; font-size: 0.85rem;">
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <label style="font-size: 0.8rem; font-weight: 600; color: #8892b0;">Inventory Base URL:</label>
+          <input type="text" id="cfg-inv-url" value="http://127.0.0.1:8000" style="background: rgba(255,255,255,0.05); border: 1px solid #2a3449; border-radius: 6px; padding: 8px 12px; color: #fff; font-family: monospace; font-size: 0.85rem;">
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <label style="font-size: 0.8rem; font-weight: 600; color: #8892b0;">Payment Base URL:</label>
+          <input type="text" id="cfg-pay-url" value="http://127.0.0.1:8001" style="background: rgba(255,255,255,0.05); border: 1px solid #2a3449; border-radius: 6px; padding: 8px 12px; color: #fff; font-family: monospace; font-size: 0.85rem;">
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <label style="font-size: 0.8rem; font-weight: 600; color: #8892b0;">Polling Frequency (ms):</label>
+          <input type="number" id="cfg-poll-ms" value="2500" min="500" step="500" style="background: rgba(255,255,255,0.05); border: 1px solid #2a3449; border-radius: 6px; padding: 8px 12px; color: #fff; font-family: monospace; font-size: 0.85rem;">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px;">
+          <button type="button" id="btn-reset-cfg" style="background: rgba(255,255,255,0.08); border: 1px solid #2a3449; border-radius: 6px; padding: 8px 14px; color: #ccd6f6; cursor: pointer; font-weight: 600; font-size: 0.85rem;">Reset Defaults</button>
+          <button type="submit" style="background: #3b82f6; border: none; border-radius: 6px; padding: 8px 16px; color: #fff; cursor: pointer; font-weight: 600; font-size: 0.85rem;">Save & Reconnect</button>
+        </div>
+      </form>
     </div>
   </div>
 

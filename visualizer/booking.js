@@ -9,12 +9,12 @@
  * - Zero-jank background differential reconciliation engine.
  */
 
-// Service Configuration
+// Service Configuration (Dynamically synced with localStorage)
 const CONFIG = {
-  inventoryUrl: "http://localhost:8000",
-  coordinatorUrl: "http://localhost:8002",
-  paymentUrl: "http://localhost:8001",
-  pollIntervalMs: 2500,
+  inventoryUrl: localStorage.getItem("dtc_cfg_inv") || "http://localhost:8000",
+  coordinatorUrl: localStorage.getItem("dtc_cfg_coord") || "http://localhost:8002",
+  paymentUrl: localStorage.getItem("dtc_cfg_pay") || "http://localhost:8001",
+  pollIntervalMs: parseInt(localStorage.getItem("dtc_cfg_poll") || "2500", 10),
 };
 
 // Global Reactive Application State
@@ -202,6 +202,67 @@ function initEventListeners() {
       loadCatalog(false);
     });
   }
+
+  // Config Modal Integration
+  initConfigModal();
+}
+
+function initConfigModal() {
+  const btnConfig = document.getElementById("btn-config");
+  const modalConfig = document.getElementById("modal-config");
+  const btnCloseConfig = document.getElementById("btn-close-config");
+  const formConfig = document.getElementById("form-config");
+  const cfgCoordUrl = document.getElementById("cfg-coord-url");
+  const cfgInvUrl = document.getElementById("cfg-inv-url");
+  const cfgPayUrl = document.getElementById("cfg-pay-url");
+  const cfgPollMs = document.getElementById("cfg-poll-ms");
+  const btnResetCfg = document.getElementById("btn-reset-cfg");
+
+  if (!btnConfig || !modalConfig) return;
+
+  btnConfig.addEventListener("click", () => {
+    if (cfgCoordUrl) cfgCoordUrl.value = CONFIG.coordinatorUrl;
+    if (cfgInvUrl) cfgInvUrl.value = CONFIG.inventoryUrl;
+    if (cfgPayUrl) cfgPayUrl.value = CONFIG.paymentUrl;
+    if (cfgPollMs) cfgPollMs.value = CONFIG.pollIntervalMs;
+    modalConfig.classList.remove("hidden");
+  });
+
+  btnCloseConfig?.addEventListener("click", () => modalConfig.classList.add("hidden"));
+  modalConfig.addEventListener("click", (e) => {
+    if (e.target === modalConfig) modalConfig.classList.add("hidden");
+  });
+
+  btnResetCfg?.addEventListener("click", () => {
+    if (cfgCoordUrl) cfgCoordUrl.value = "http://127.0.0.1:8002";
+    if (cfgInvUrl) cfgInvUrl.value = "http://127.0.0.1:8000";
+    if (cfgPayUrl) cfgPayUrl.value = "http://127.0.0.1:8001";
+    if (cfgPollMs) cfgPollMs.value = "2500";
+  });
+
+  formConfig?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    CONFIG.coordinatorUrl = (cfgCoordUrl.value || "").trim().replace(/\/+$/, "");
+    CONFIG.inventoryUrl = (cfgInvUrl.value || "").trim().replace(/\/+$/, "");
+    CONFIG.paymentUrl = (cfgPayUrl.value || "").trim().replace(/\/+$/, "");
+    CONFIG.pollIntervalMs = parseInt(cfgPollMs.value, 10) || 2500;
+
+    localStorage.setItem("dtc_cfg_coord", CONFIG.coordinatorUrl);
+    localStorage.setItem("dtc_cfg_inv", CONFIG.inventoryUrl);
+    localStorage.setItem("dtc_cfg_pay", CONFIG.paymentUrl);
+    localStorage.setItem("dtc_cfg_poll", CONFIG.pollIntervalMs);
+
+    modalConfig.classList.add("hidden");
+    showToast({
+      title: "Config Saved",
+      message: "Target service endpoints updated.",
+      type: "success",
+      icon: "⚙️",
+    });
+
+    loadCatalog(true);
+    startDifferentialPolling();
+  });
 }
 
 /* ==========================================================================
