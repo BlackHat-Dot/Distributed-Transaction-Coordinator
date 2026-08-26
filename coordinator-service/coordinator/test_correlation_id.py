@@ -27,7 +27,6 @@ class CorrelationIdMiddlewareTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         cid = resp.get("X-Correlation-ID")
         self.assertTrue(cid)
-        # Verify valid UUID format
         uuid.UUID(cid)
 
     def test_logging_filter_injects_correlation_id(self):
@@ -72,7 +71,6 @@ class CorrelationIdOutboundPropagationTests(TransactionTestCase):
         self.assertEqual(resp.get("X-Correlation-ID"), custom_cid)
         self.assertEqual(len(captured_headers), 3)
 
-        # Assert reserve, charge, and confirm received X-Correlation-ID
         for url, headers in captured_headers:
             self.assertEqual(
                 headers.get("X-Correlation-ID"),

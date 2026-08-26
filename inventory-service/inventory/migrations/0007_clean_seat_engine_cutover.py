@@ -1,15 +1,3 @@
-# Migration 0007: Clean Schema Cutover from Generic Product Stock to Real-Time Seat Allocation Engine
-#
-# DESIGN & CUTOVER RATIONALE:
-# This migration executes a clean schema replacement:
-# 1. The legacy generic `Product(name, stock)` model is dropped entirely, eliminating the scalar decrement model.
-# 2. Introduces `Event(name, venue, starts_at)` to represent bookable shows/events.
-# 3. Introduces `Seat(event, row, seat_number, price, status, held_until, held_by_transaction_id)`
-#    supporting two-phase seat allocation ([AVAILABLE, HELD, BOOKED]) and ephemeral hold timeouts.
-# 4. Updates `Reservation` to directly reference `Seat` rather than scalar `product`/`quantity`.
-#
-# This clean cutover eliminates all obsolete stock counters and avoids carrying dead schema baggage.
-
 import django.db.models.deletion
 from django.db import migrations, models
 import django.utils.timezone

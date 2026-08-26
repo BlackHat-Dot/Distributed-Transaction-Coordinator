@@ -1,11 +1,3 @@
-"""
-Non-Blocking Coordinator Concurrency & WSGI Thread Starvation Load Test
-========================================================================
-This test fires concurrent transaction submissions against the Coordinator while
-measuring latency of concurrent health check and transaction acceptance requests.
-It proves that downstream I/O does not block the Coordinator's WSGI request threads.
-"""
-
 import time
 import uuid
 import requests
@@ -13,7 +5,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 COORDINATOR_URL = "http://127.0.0.1:8002"
 
-# Configure thread-safe session with connection pooling
 session = requests.Session()
 adapter = requests.adapters.HTTPAdapter(pool_connections=50, pool_maxsize=50)
 session.mount("http://", adapter)
@@ -45,19 +36,15 @@ def run_load_test(concurrent_txns=20, concurrent_health_pings=20):
     print(f"STARTING NON-BLOCKING CONCURRENCY LOAD TEST ({concurrent_txns} TXNs + {concurrent_health_pings} Pings)")
     print("=" * 70)
 
-    # 1. Warm-up ping
     status, warmup_ms = ping_health()
     print(f"[Baseline] Health check latency: {warmup_ms:.2f}ms (HTTP {status})")
 
-    # 2. Fire concurrent transactions and interleaved health checks simultaneously
     tx_results = []
     health_results = []
 
     start_all = time.perf_counter()
     with ThreadPoolExecutor(max_workers=concurrent_txns + concurrent_health_pings) as executor:
-        # Submit transaction tasks
         tx_futures = [executor.submit(submit_async_transaction, i) for i in range(concurrent_txns)]
-        # Interleave health pings during transaction burst
         health_futures = [executor.submit(ping_health) for _ in range(concurrent_health_pings)]
 
         for f in as_completed(tx_futures):
@@ -68,7 +55,6 @@ def run_load_test(concurrent_txns=20, concurrent_health_pings=20):
 
     total_burst_time = time.perf_counter() - start_all
 
-    # 3. Analyze Transaction Submission Metrics
     tx_statuses = [r[0] for r in tx_results]
     tx_latencies = [r[1] for r in tx_results]
     accepted_202_count = tx_statuses.count(202)
@@ -78,7 +64,6 @@ def run_load_test(concurrent_txns=20, concurrent_health_pings=20):
     max_tx_latency = max(tx_latencies)
     min_tx_latency = min(tx_latencies)
 
-    # 4. Analyze Interleaved Health Check Metrics
     health_latencies = [r[1] for r in health_results]
     avg_health_latency = sum(health_latencies) / len(health_latencies)
     min_health_latency = min(health_latencies)
@@ -93,7 +78,6 @@ def run_load_test(concurrent_txns=20, concurrent_health_pings=20):
     print(f"Thread Starvation Detected:       {'NO (Non-Blocking Verified)' if avg_health_latency < 50 else 'YES'}")
     print("=" * 70)
 
-    # 5. Wait briefly and poll one transaction to prove Celery completed it in background
     sample_tid = tx_results[0][2]
     time.sleep(1.0)
     poll_res = session.get(f"{COORDINATOR_URL}/transactions/{sample_tid}/")
@@ -102,7 +86,6 @@ def run_load_test(concurrent_txns=20, concurrent_health_pings=20):
     print(f"  -> Final Status: {polled_data.get('status')}")
     print(f"  -> Is Terminal:  {polled_data.get('is_terminal')}")
 
-    # Inspect SagaEvent count
     events_res = session.get(f"{COORDINATOR_URL}/transactions/{sample_tid}/events/")
     events_data = events_res.json()
     print(f"  -> SagaEvents Recorded: {len(events_data.get('events', []))} events")

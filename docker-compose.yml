@@ -1,11 +1,4 @@
 services:
-  # NOTE ON BLAST RADIUS & DATABASE TOPOLOGY TRADEOFF:
-  # All 3 microservices share a single PostgreSQL container hosting 3 distinct databases
-  # (coordinator_db, inventory_db, payment_db). This enforces strict logical schema isolation
-  # and connection pooling per service while optimizing local-dev resource footprint.
-  # BLAST RADIUS TRADEOFF: A physical crash or container failure of this single Postgres instance
-  # will simultaneously take down storage for all 3 microservices. In production, this would be
-  # replaced by 3 separate managed RDS/Cloud SQL instances for physical blast radius isolation.
   postgres:
     image: postgres:16-alpine
     container_name: dtc-postgres

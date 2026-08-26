@@ -54,10 +54,6 @@ def recover_stuck_transactions():
 
 @shared_task(name="coordinator.tasks.execute_saga_task")
 def execute_saga_task(transaction_id, seat_id=None, amount=500, fail_compensation=False, correlation_id=None):
-    """
-    Task-Driven Saga Execution:
-    Executes the 3-phase saga pipeline asynchronously in a background Celery worker thread.
-    """
     from coordinator.views import _run_saga_pipeline
     logger.info("Executing async saga task for transaction_id=%s [correlation_id=%s]", transaction_id, correlation_id)
     try:

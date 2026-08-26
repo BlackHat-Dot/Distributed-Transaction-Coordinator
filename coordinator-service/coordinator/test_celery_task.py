@@ -12,8 +12,6 @@ from coordinator.tasks import (
 
 
 class MockRedisClient:
-    """Hermetic in-memory Redis client simulating distributed lock operations and Lua scripts."""
-
     def __init__(self):
         self._store = {}
 

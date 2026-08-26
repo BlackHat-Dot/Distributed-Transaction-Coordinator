@@ -28,11 +28,9 @@ class NonBlockingSagaTaskTests(TestCase):
         self.assertEqual(resp.data["transaction_id"], tid)
         self.assertEqual(resp.get("Location"), f"/transactions/{tid}/")
 
-        # Verify DB transaction was created in STARTED state
         txn = Transaction.objects.get(transaction_id=tid)
         self.assertEqual(txn.status, Transaction.Status.STARTED)
 
-        # Verify task was enqueued
         mock_delay.assert_called_once()
 
     def test_get_transaction_polling_endpoint(self):
@@ -50,7 +48,6 @@ class NonBlockingSagaTaskTests(TestCase):
         self.assertEqual(resp.data["status"], Transaction.Status.STARTED)
         self.assertFalse(resp.data["is_terminal"])
 
-        # Update to terminal status
         txn.status = Transaction.Status.COMPLETED
         txn.save()
 
@@ -91,7 +88,6 @@ class NonBlockingSagaTaskTests(TestCase):
         txn = Transaction.objects.get(transaction_id=tid)
         self.assertEqual(txn.status, Transaction.Status.COMPLETED)
 
-        # Inspect SagaEvents written by async task
         events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
         self.assertEqual(len(events), 3)
         self.assertEqual(events[0].from_status, "STARTED")

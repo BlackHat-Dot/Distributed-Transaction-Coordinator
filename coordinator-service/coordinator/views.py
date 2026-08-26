@@ -193,7 +193,6 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
 
 def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, payment_status_code=200, correlation_id=None, seat_id=None):
     if payment_data.get("status") == "CHARGED":
-        # Two-phase confirmation: attempt to confirm held seat
         confirm_resp, confirm_err = _confirm_inventory(transaction_id, seat_id=seat_id, correlation_id=correlation_id)
 
         if confirm_resp is not None and confirm_resp.status_code == 200:
@@ -222,8 +221,6 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
                 "inventory_response": confirm_json,
             })
 
-        # Payment succeeded but seat confirmation failed (e.g. 409 hold expired or inventory network failure).
-        # We MUST NOT silently mark COMPLETED on a stale hold — trigger compensation!
         confirm_json = None
         if confirm_resp is not None:
             try:
@@ -244,7 +241,6 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
             correlation_id=correlation_id,
         )
 
-    # Payment declined or failed
     return _compensate(
         transaction_id,
         fail_compensation,
@@ -356,11 +352,6 @@ def _run_saga_pipeline(
     correlation_id=None,
     actor=SagaEvent.ACTOR_REQUEST,
 ):
-    """
-    Core Saga Execution Engine:
-    Drives the 3-phase saga pipeline forward (reserve -> charge -> confirm / compensate).
-    Can be executed synchronously by a view or asynchronously by a Celery background worker.
-    """
     correlation_id = correlation_id or str(transaction_id)
     seat_id = seat_id or 1
 
@@ -449,8 +440,6 @@ def _handle_create_transaction(request):
     if request.data.get("coordinator"):
         return Response({"detail": "Intentional crash"})
 
-    # Option B (Non-Blocking Task-Driven Execution):
-    # Determine whether to execute asynchronously (202 Accepted + Celery task) or synchronously
     from django.conf import settings
 
     if request.query_params.get("async") == "true" or request.headers.get("Prefer") == "respond-async":
@@ -458,9 +447,6 @@ def _handle_create_transaction(request):
     elif request.query_params.get("sync") == "true" or request.headers.get("Prefer") == "respond-sync":
         is_async = False
     else:
-        # Default runtime behavior:
-        # - In testing mode (TESTING_SYNC_MODE=True), run synchronously for fast assertion compatibility
-        # - In live runtime (Docker/production), default to non-blocking Celery dispatch (Option B)
         is_async = not getattr(settings, "TESTING_SYNC_MODE", False)
 
     if is_async:
@@ -483,7 +469,6 @@ def _handle_create_transaction(request):
             headers={"Location": f"/transactions/{transaction_id}/"},
         )
 
-    # Synchronous Execution Path
     return _run_saga_pipeline(
         transaction_id=transaction_id,
         seat_id=seat_id,
@@ -718,10 +703,6 @@ def list_transaction_events(request, transaction_id):
 
 @api_view(["POST"])
 def trigger_recovery_sweep(request):
-    """
-    On-Demand Recovery Sweep Trigger:
-    Immediately runs recovery for stuck transactions with a short threshold.
-    """
     import io
     from django.core.management import call_command
     out = io.StringIO()

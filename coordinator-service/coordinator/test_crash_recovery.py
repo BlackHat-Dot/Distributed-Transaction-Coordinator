@@ -76,8 +76,7 @@ class CrashRecoveryTests(TransactionTestCase):
         
         events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
         self.assertEqual(len(events), 4)
-        
-        # Pre-crash forward events from first life
+
         self.assertEqual(events[0].seq, 1)
         self.assertEqual(events[0].from_status, Transaction.Status.STARTED)
         self.assertEqual(events[0].to_status, Transaction.Status.INVENTORY_RESERVED)
@@ -88,7 +87,6 @@ class CrashRecoveryTests(TransactionTestCase):
         self.assertEqual(events[1].to_status, Transaction.Status.PAYMENT_PROCESSING)
         self.assertEqual(events[1].actor, SagaEvent.ACTOR_REQUEST)
 
-        # Post-crash recovery events
         self.assertEqual(events[2].seq, 3)
         self.assertEqual(events[2].from_status, Transaction.Status.PAYMENT_PROCESSING)
         self.assertEqual(events[2].to_status, Transaction.Status.RECOVERY_IN_PROGRESS)
@@ -166,7 +164,6 @@ class CrashRecoveryTests(TransactionTestCase):
         events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
         self.assertEqual(len(events), 5)
 
-        # Pre-crash forward events
         self.assertEqual(events[0].seq, 1)
         self.assertEqual(events[0].from_status, Transaction.Status.STARTED)
         self.assertEqual(events[0].to_status, Transaction.Status.INVENTORY_RESERVED)
@@ -177,7 +174,6 @@ class CrashRecoveryTests(TransactionTestCase):
         self.assertEqual(events[1].to_status, Transaction.Status.PAYMENT_PROCESSING)
         self.assertEqual(events[1].actor, SagaEvent.ACTOR_REQUEST)
 
-        # Post-crash recovery events
         self.assertEqual(events[2].seq, 3)
         self.assertEqual(events[2].from_status, Transaction.Status.PAYMENT_PROCESSING)
         self.assertEqual(events[2].to_status, Transaction.Status.RECOVERY_IN_PROGRESS)

@@ -54,7 +54,6 @@ def _validate_reserve_input(data):
     if not data:
         return None, None, Response({"message": "no input values"}, status=400)
 
-    # Support seat_id (primary) and product_id as seat_id fallback
     seat_id = data.get("seat_id") or data.get("product_id")
     if seat_id is None:
         return None, None, Response({"error": "seat_id is required"}, status=400)
@@ -94,18 +93,6 @@ def _seat_response(seat, reservation, transaction_id, status_code=200):
 
 @api_view(["POST"])
 def reserve_seat(request):
-    """
-    Two-Phase Hold Phase:
-    Atomically transitions a Seat from AVAILABLE to HELD with a 10-minute hold expiry.
-
-    Concurrency & Authority Discipline:
-    - Fast-Path Speed Layer: Attempts `SET seat:{seat_id} {tx_id} NX EX 600` in Redis to
-      shed concurrent hold storms in-memory.
-    - Single Source of Truth: PostgreSQL row locking (`Seat.objects.select_for_update()`) inside
-      `transaction.atomic()` is the sole authoritative authority for seat state.
-    - If Redis and PostgreSQL ever diverge (e.g. cold cache, key eviction, or crash), PostgreSQL
-      strictly governs availability and self-heals Redis.
-    """
     seat_id, transaction_id, error_response = _validate_reserve_input(request.data)
     if error_response:
         return error_response
@@ -139,18 +126,15 @@ def reserve_seat(request):
 
             now = timezone.now()
 
-            # 1. Idempotency Check: Same transaction already holds or booked this seat
             if seat.held_by_transaction_id and str(seat.held_by_transaction_id) == str(transaction_id):
                 reservation = Reservation.objects.filter(transaction_id=transaction_id).first()
                 return _seat_response(seat, reservation, transaction_id, status_code=200)
 
-            # 2. Availability Check: Seat is AVAILABLE or has an expired HELD status
             is_available = (seat.status == Seat.Status.AVAILABLE) or (
                 seat.status == Seat.Status.HELD and seat.held_until and seat.held_until < now
             )
 
             if not is_available:
-                # Conflict: Seat is already booked or actively held by another transaction
                 conflict_reason = (
                     "Seat is already booked"
                     if seat.status == Seat.Status.BOOKED
@@ -166,7 +150,6 @@ def reserve_seat(request):
                     status=409,
                 )
 
-            # 3. Transition to HELD
             seat.status = Seat.Status.HELD
             seat.held_until = now + timedelta(minutes=10)
             seat.held_by_transaction_id = transaction_id
@@ -177,7 +160,6 @@ def reserve_seat(request):
                 defaults={"seat": seat, "status": Reservation.Status.RESERVED},
             )
 
-            # Ensure Redis speed layer is populated if fast-path had a cache-miss
             if client and not acquired_fast_path:
                 try:
                     client.set(redis_key, str(transaction_id), ex=600)
@@ -187,7 +169,6 @@ def reserve_seat(request):
             return _seat_response(seat, reservation, transaction_id, status_code=200)
 
     except IntegrityError:
-        # Concurrent duplicate insert on unique constraint
         existing = Reservation.objects.filter(transaction_id=transaction_id).first()
         if existing and existing.seat:
             return _seat_response(existing.seat, existing, transaction_id, status_code=200)
@@ -196,15 +177,6 @@ def reserve_seat(request):
 
 @api_view(["POST"])
 def confirm_seat(request):
-    """
-    Two-Phase Confirm Phase:
-    On payment success, transitions a Seat from HELD to BOOKED.
-
-    Stale Hold Protection:
-    If `held_until` has passed before confirmation arrives (e.g. payment was slower
-    than the 10-minute hold window), confirmation is REJECTED with HTTP 409 and status
-    'HOLD_EXPIRED'. The coordinator catches this and triggers compensation.
-    """
     raw_tid = request.data.get("transaction_id")
     if not raw_tid:
         return Response({"error": "transaction_id is required"}, status=400)
@@ -230,7 +202,6 @@ def confirm_seat(request):
         seat = Seat.objects.select_for_update().get(id=reservation.seat_id)
         now = timezone.now()
 
-        # 1. Idempotent return if already booked
         if seat.status == Seat.Status.BOOKED and str(seat.held_by_transaction_id) == str(tid):
             return Response(
                 {
@@ -242,7 +213,6 @@ def confirm_seat(request):
                 status=200,
             )
 
-        # 2. Guard against expired holds or stolen holds
         if (
             seat.status != Seat.Status.HELD
             or str(seat.held_by_transaction_id) != str(tid)
@@ -258,7 +228,6 @@ def confirm_seat(request):
                 status=409,
             )
 
-        # 3. Transition HELD -> BOOKED
         seat.status = Seat.Status.BOOKED
         seat.held_until = None
         seat.save()
@@ -266,7 +235,6 @@ def confirm_seat(request):
         reservation.status = Reservation.Status.BOOKED
         reservation.save()
 
-        # Delete Redis hold key now that seat is permanently booked
         if client:
             try:
                 client.delete(f"seat:{seat.id}")
@@ -286,10 +254,6 @@ def confirm_seat(request):
 
 @api_view(["POST"])
 def release_seat(request):
-    """
-    Two-Phase Release / Compensation Phase:
-    Releases a held seat back to AVAILABLE on payment decline, timeout, or compensation.
-    """
     raw_tid = request.data.get("transaction_id")
     if not raw_tid:
         return Response({"error": "transaction_id is required"}, status=400)
@@ -356,9 +320,6 @@ def release_seat(request):
 
 @api_view(["GET"])
 def reservation_check(request):
-    """
-    Ground-truth query endpoint used by the coordinator crash recovery sweep.
-    """
     raw_tid = request.query_params.get("transaction_id")
     if not raw_tid:
         return Response({"error": "transaction_id is required"}, status=400)
@@ -387,11 +348,6 @@ def reservation_check(request):
 
 @api_view(["POST"])
 def sweep_expired_holds(request):
-    """
-    Expired-Hold Sweeper:
-    Finds HELD seats past `held_until` and atomically restores them to AVAILABLE,
-    purging the corresponding Redis fast-path keys to maintain lock consistency.
-    """
     now = timezone.now()
     expired_seats = list(
         Seat.objects.filter(status=Seat.Status.HELD, held_until__lt=now).values_list(
@@ -441,11 +397,6 @@ def sweep_expired_holds(request):
 
 @api_view(["POST"])
 def reset_seats(request):
-    """
-    Demo / Development Helper:
-    Resets all seats in the venue catalog back to AVAILABLE, cleans up expired holds,
-    and clears all Redis hold keys. If no seats exist, seeds 30 seats across rows A, B, and C.
-    """
     with transaction.atomic():
         if Seat.objects.count() == 0:
             event = Event.objects.first()

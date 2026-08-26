@@ -55,7 +55,6 @@ class ForwardSagaEventTests(TransactionTestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["status"], Transaction.Status.COMPLETED)
 
-        # Inspect events endpoint
         events_resp = self.client.get(f"/transactions/{tid}/events/")
         self.assertEqual(events_resp.status_code, 200)
         self.assertEqual(events_resp.data["status"], Transaction.Status.COMPLETED)
@@ -63,20 +62,17 @@ class ForwardSagaEventTests(TransactionTestCase):
         events = events_resp.data["events"]
         self.assertEqual(len(events), 3, f"Expected 3 forward events, got: {events}")
 
-        # Event 1: STARTED -> INVENTORY_RESERVED
         self.assertEqual(events[0]["seq"], 1)
         self.assertEqual(events[0]["from_status"], Transaction.Status.STARTED)
         self.assertEqual(events[0]["to_status"], Transaction.Status.INVENTORY_RESERVED)
         self.assertEqual(events[0]["actor"], SagaEvent.ACTOR_REQUEST)
         self.assertEqual(events[0]["http_status_code"], 200)
 
-        # Event 2: INVENTORY_RESERVED -> PAYMENT_PROCESSING
         self.assertEqual(events[1]["seq"], 2)
         self.assertEqual(events[1]["from_status"], Transaction.Status.INVENTORY_RESERVED)
         self.assertEqual(events[1]["to_status"], Transaction.Status.PAYMENT_PROCESSING)
         self.assertEqual(events[1]["actor"], SagaEvent.ACTOR_REQUEST)
 
-        # Event 3: PAYMENT_PROCESSING -> COMPLETED
         self.assertEqual(events[2]["seq"], 3)
         self.assertEqual(events[2]["from_status"], Transaction.Status.PAYMENT_PROCESSING)
         self.assertEqual(events[2]["to_status"], Transaction.Status.COMPLETED)
@@ -116,32 +112,27 @@ class ForwardSagaEventTests(TransactionTestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.data["status"], Transaction.Status.COMPENSATED)
 
-        # Verify event trail
         events_resp = self.client.get(f"/transactions/{tid}/events/")
         self.assertEqual(events_resp.status_code, 200)
         events = events_resp.data["events"]
         self.assertEqual(len(events), 4, f"Expected 4 events on compensation path, got: {events}")
 
-        # Event 1: STARTED -> INVENTORY_RESERVED
         self.assertEqual(events[0]["seq"], 1)
         self.assertEqual(events[0]["from_status"], Transaction.Status.STARTED)
         self.assertEqual(events[0]["to_status"], Transaction.Status.INVENTORY_RESERVED)
         self.assertEqual(events[0]["actor"], SagaEvent.ACTOR_REQUEST)
 
-        # Event 2: INVENTORY_RESERVED -> PAYMENT_PROCESSING
         self.assertEqual(events[1]["seq"], 2)
         self.assertEqual(events[1]["from_status"], Transaction.Status.INVENTORY_RESERVED)
         self.assertEqual(events[1]["to_status"], Transaction.Status.PAYMENT_PROCESSING)
         self.assertEqual(events[1]["actor"], SagaEvent.ACTOR_REQUEST)
 
-        # Event 3: PAYMENT_PROCESSING -> COMPENSATING (captures 422 decline)
         self.assertEqual(events[2]["seq"], 3)
         self.assertEqual(events[2]["from_status"], Transaction.Status.PAYMENT_PROCESSING)
         self.assertEqual(events[2]["to_status"], Transaction.Status.COMPENSATING)
         self.assertEqual(events[2]["actor"], SagaEvent.ACTOR_REQUEST)
         self.assertEqual(events[2]["http_status_code"], 422)
 
-        # Event 4: COMPENSATING -> COMPENSATED (captures 200 seat release)
         self.assertEqual(events[3]["seq"], 4)
         self.assertEqual(events[3]["from_status"], Transaction.Status.COMPENSATING)
         self.assertEqual(events[3]["to_status"], Transaction.Status.COMPENSATED)
@@ -149,11 +140,6 @@ class ForwardSagaEventTests(TransactionTestCase):
         self.assertEqual(events[3]["http_status_code"], 200)
 
     def test_payment_succeeded_but_seat_hold_expired_triggers_compensation(self):
-        """
-        Tests that when payment succeeds but seat confirmation fails with 409 HOLD_EXPIRED,
-        the coordinator triggers compensation and marks transaction COMPENSATED,
-        never falsely marking COMPLETED on a stale hold.
-        """
         tid = str(uuid.uuid4())
 
         def mock_post(url, *args, **kwargs):
@@ -189,7 +175,6 @@ class ForwardSagaEventTests(TransactionTestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.data["status"], Transaction.Status.COMPENSATED)
 
-        # Transaction status must be COMPENSATED
         txn = Transaction.objects.get(transaction_id=tid)
         self.assertEqual(txn.status, Transaction.Status.COMPENSATED)
 
@@ -214,7 +199,6 @@ class ForwardSagaEventTests(TransactionTestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.data["error"], Transaction.Status.INVENTORY_RESERVE_FAILED)
 
-        # Verify event trail
         events_resp = self.client.get(f"/transactions/{tid}/events/")
         events = events_resp.data["events"]
         self.assertEqual(len(events), 1)
@@ -225,7 +209,6 @@ class ForwardSagaEventTests(TransactionTestCase):
         self.assertEqual(events[0]["http_status_code"], 409)
 
     def test_recovery_sweep_roll_forward_and_roll_back_events(self):
-        # 1. Roll-forward case
         tid_forward = str(uuid.uuid4())
         txn_f = Transaction.objects.create(
             transaction_id=tid_forward,
@@ -251,7 +234,6 @@ class ForwardSagaEventTests(TransactionTestCase):
         self.assertEqual(events_f[1]["actor"], SagaEvent.ACTOR_RECOVERY)
         self.assertEqual(events_f[1]["http_status_code"], 200)
 
-        # 2. Roll-back case
         tid_back = str(uuid.uuid4())
         txn_b = Transaction.objects.create(
             transaction_id=tid_back,

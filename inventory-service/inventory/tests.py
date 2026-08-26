@@ -140,12 +140,10 @@ class ReserveSeatHoldTests(TestCase):
         self.assertEqual(self.seat.status, Seat.Status.HELD)
         self.assertEqual(str(self.seat.held_by_transaction_id), tid)
         self.assertIsNotNone(self.seat.held_until)
-        # Verify hold expiry is approximately 10 minutes in the future
         remaining_seconds = (self.seat.held_until - timezone.now()).total_seconds()
         self.assertGreater(remaining_seconds, 580)
         self.assertLessEqual(remaining_seconds, 600)
 
-        # Check reservation row
         res = Reservation.objects.get(transaction_id=tid)
         self.assertEqual(res.status, Reservation.Status.RESERVED)
         self.assertEqual(res.seat_id, self.seat.id)
@@ -208,14 +206,12 @@ class ConfirmSeatTests(TestCase):
 
     def test_confirm_transitions_held_to_booked(self):
         tid = str(uuid.uuid4())
-        # 1. Hold
         self.client.post(
             RESERVE_URL,
             {"seat_id": self.seat.id, "transaction_id": tid},
             format="json",
         )
 
-        # 2. Confirm
         resp = self.client.post(
             CONFIRM_URL,
             {"transaction_id": tid},
@@ -242,10 +238,6 @@ class ConfirmSeatTests(TestCase):
         self.assertEqual(resp2.data["status"], "BOOKED")
 
     def test_confirm_on_expired_hold_is_rejected_with_409(self):
-        """
-        Critical edge case: Payment succeeded, but seat hold expired before confirmation arrived.
-        Must return 409 HOLD_EXPIRED so coordinator triggers compensation rather than false COMPLETED.
-        """
         tid = str(uuid.uuid4())
         past_time = timezone.now() - timedelta(minutes=1)
         self.seat.status = Seat.Status.HELD
@@ -322,7 +314,6 @@ class ExpiredHoldSweeperTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.event = _create_event()
-        # Seat 1: Expired hold (held_until 5 minutes ago)
         self.expired_tid = uuid.uuid4()
         self.expired_seat = _create_seat(
             self.event,
@@ -338,7 +329,6 @@ class ExpiredHoldSweeperTests(TestCase):
             status=Reservation.Status.RESERVED,
         )
 
-        # Seat 2: Active unexpired hold (held_until 8 minutes in future)
         self.active_tid = uuid.uuid4()
         self.active_seat = _create_seat(
             self.event,
@@ -359,24 +349,17 @@ class ExpiredHoldSweeperTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["reclaimed_count"], 1)
 
-        # Expired seat must be reset to AVAILABLE
         self.expired_seat.refresh_from_db()
         self.assertEqual(self.expired_seat.status, Seat.Status.AVAILABLE)
         self.assertIsNone(self.expired_seat.held_until)
         self.assertIsNone(self.expired_seat.held_by_transaction_id)
 
-        # Active seat must remain HELD
         self.active_seat.refresh_from_db()
         self.assertEqual(self.active_seat.status, Seat.Status.HELD)
         self.assertIsNotNone(self.active_seat.held_until)
 
 
 class ConcurrencySeatStressTests(TransactionTestCase):
-    """
-    Multi-threaded stress testing proving that N concurrent threads competing for the
-    same seat result in exactly 1 successful hold and N-1 clean conflicts.
-    """
-
     def setUp(self):
         self.event = _create_event()
         self.seat = _create_seat(self.event, row="X", seat_number="99")
@@ -415,31 +398,20 @@ class ConcurrencySeatStressTests(TransactionTestCase):
             f"Expected {concurrency - 1} conflict responses with status 409, got: {status_codes}",
         )
 
-        # Confirm DB state is HELD with exactly 1 reservation
         self.seat.refresh_from_db()
         self.assertEqual(self.seat.status, Seat.Status.HELD)
         self.assertEqual(Reservation.objects.filter(seat=self.seat).count(), 1)
 
 
 class RedisVsDbDivergenceTests(TestCase):
-    """
-    Validates that PostgreSQL SELECT FOR UPDATE is the definitive authoritative source of truth
-    whenever the Redis speed layer state diverges from the database.
-    """
-
     def setUp(self):
         self.client = APIClient()
         self.event = _create_event()
         self.seat = _create_seat(self.event, row="F", seat_number="1")
 
     def test_stale_redis_key_does_not_block_available_seat_in_db(self):
-        """
-        DIVERGENCE CASE 1: Redis holds a stale key from a crashed/abandoned client,
-        but DB row is AVAILABLE.
-        Expected: PostgreSQL row lock verifies AVAILABLE, grants the hold, and self-heals Redis.
-        """
         mock_redis = MagicMock()
-        mock_redis.set.return_value = False  # Simulate Redis fast-path returning lock acquisition failure
+        mock_redis.set.return_value = False
 
         with patch("inventory.views.get_redis_client", return_value=mock_redis):
             tid = str(uuid.uuid4())
@@ -448,18 +420,12 @@ class RedisVsDbDivergenceTests(TestCase):
                 {"seat_id": self.seat.id, "transaction_id": tid},
                 format="json",
             )
-            # Authoritative DB CAS overrides Redis false negative
             self.assertEqual(resp.status_code, 200)
             self.seat.refresh_from_db()
             self.assertEqual(self.seat.status, Seat.Status.HELD)
             self.assertEqual(str(self.seat.held_by_transaction_id), tid)
 
     def test_evicted_redis_key_does_not_allow_double_booking_of_held_seat(self):
-        """
-        DIVERGENCE CASE 2: Redis key was evicted or expired early, but DB row is actively HELD.
-        Expected: Redis allows lock acquisition, but PostgreSQL SELECT FOR UPDATE detects HELD
-        and returns HTTP 409 Conflict.
-        """
         active_tid = str(uuid.uuid4())
         self.seat.status = Seat.Status.HELD
         self.seat.held_until = timezone.now() + timedelta(minutes=5)
@@ -467,7 +433,7 @@ class RedisVsDbDivergenceTests(TestCase):
         self.seat.save()
 
         mock_redis = MagicMock()
-        mock_redis.set.return_value = True  # Redis falsely says "key set, you have the lock"
+        mock_redis.set.return_value = True
 
         with patch("inventory.views.get_redis_client", return_value=mock_redis):
             new_tid = str(uuid.uuid4())
@@ -476,17 +442,12 @@ class RedisVsDbDivergenceTests(TestCase):
                 {"seat_id": self.seat.id, "transaction_id": new_tid},
                 format="json",
             )
-            # DB authority blocks the request with 409 Conflict
             self.assertEqual(resp.status_code, 409)
             self.assertIn("held", resp.data.get("error", "").lower())
             self.seat.refresh_from_db()
             self.assertEqual(str(self.seat.held_by_transaction_id), active_tid)
 
     def test_evicted_redis_key_does_not_allow_booking_of_already_booked_seat(self):
-        """
-        DIVERGENCE CASE 3: Redis key is absent, but DB row is BOOKED.
-        Expected: PostgreSQL SELECT FOR UPDATE detects BOOKED and returns HTTP 409 Conflict.
-        """
         self.seat.status = Seat.Status.BOOKED
         self.seat.save()
 
@@ -504,10 +465,6 @@ class RedisVsDbDivergenceTests(TestCase):
             self.assertIn("booked", resp.data.get("error", "").lower())
 
     def test_redis_complete_outage_gracefully_falls_back_to_database(self):
-        """
-        DIVERGENCE CASE 4: Redis connection fails completely (Redis is down / socket timeout).
-        Expected: System falls back gracefully to DB row locking without throwing 500 error.
-        """
         mock_redis = MagicMock()
         mock_redis.set.side_effect = Exception("Redis connection refused: 6379")
 
@@ -524,10 +481,6 @@ class RedisVsDbDivergenceTests(TestCase):
 
 
 class SeatModelAndEdgeCaseTests(TestCase):
-    """
-    Validates model constraints, serialization, and edge-case lifecycle transitions.
-    """
-
     def setUp(self):
         self.client = APIClient()
         self.event = _create_event(name="Jazz Night")
@@ -552,7 +505,6 @@ class SeatModelAndEdgeCaseTests(TestCase):
         self.client.post(RESERVE_URL, {"seat_id": self.seat1.id, "transaction_id": tid}, format="json")
         self.client.post(CONFIRM_URL, {"transaction_id": tid}, format="json")
         
-        # Subsequent confirm call for same transaction is idempotent
         resp = self.client.post(CONFIRM_URL, {"transaction_id": tid}, format="json")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["status"], "BOOKED")
@@ -566,14 +518,6 @@ class SeatModelAndEdgeCaseTests(TestCase):
         self.assertEqual(resp.status_code, 404)
 
     def test_sweep_command_with_mixed_seat_states(self):
-        """
-        Verifies sweeper handles a mixed catalog:
-        - 1 expired held seat -> reclaimed to AVAILABLE
-        - 1 active held seat -> untouched HELD
-        - 1 booked seat -> untouched BOOKED
-        - 1 available seat -> untouched AVAILABLE
-        """
-        # Expired held seat
         tid_exp = str(uuid.uuid4())
         seat_exp = _create_seat(
             self.event,
@@ -585,7 +529,6 @@ class SeatModelAndEdgeCaseTests(TestCase):
         )
         Reservation.objects.create(seat=seat_exp, transaction_id=tid_exp, status=Reservation.Status.RESERVED)
 
-        # Active held seat
         tid_act = str(uuid.uuid4())
         seat_act = _create_seat(
             self.event,
@@ -597,10 +540,8 @@ class SeatModelAndEdgeCaseTests(TestCase):
         )
         Reservation.objects.create(seat=seat_act, transaction_id=tid_act, status=Reservation.Status.RESERVED)
 
-        # Booked seat
         seat_bk = _create_seat(self.event, row="H", seat_number="3", status=Seat.Status.BOOKED)
 
-        # Run sweep
         resp = self.client.post(SWEEP_URL)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["reclaimed_count"], 1)

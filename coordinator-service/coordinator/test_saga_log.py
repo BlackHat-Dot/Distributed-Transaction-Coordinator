@@ -261,17 +261,11 @@ class SetStatusWithEventConcurrencyTests(TransactionTestCase):
 
 
 class SagaEventAtomicRollbackTests(TransactionTestCase):
-    """
-    Verifies that Transaction status update and SagaEvent insert are strictly atomic:
-    if SagaEvent.create fails for any reason, the Transaction status change is rolled back.
-    """
-
     def test_status_update_rolls_back_if_event_creation_fails(self):
         from unittest.mock import patch
         txn = _make_transaction(Transaction.Status.STARTED)
         tid = txn.transaction_id
 
-        # Patch SagaEvent.objects.create to raise an IntegrityError or RuntimeError
         with patch.object(SagaEvent.objects, "create", side_effect=IntegrityError("Forced DB constraint failure")):
             with self.assertRaises(IntegrityError):
                 _set_status_with_event(
@@ -281,7 +275,6 @@ class SagaEventAtomicRollbackTests(TransactionTestCase):
                     actor=SagaEvent.ACTOR_REQUEST,
                 )
 
-        # Confirm Transaction status remained STARTED in DB (atomic rollback occurred)
         txn.refresh_from_db()
         self.assertEqual(
             txn.status,
@@ -289,5 +282,4 @@ class SagaEventAtomicRollbackTests(TransactionTestCase):
             "Transaction status was modified despite SagaEvent.create failure — atomicity violated!",
         )
 
-        # Confirm no orphaned SagaEvent was created
         self.assertEqual(SagaEvent.objects.filter(transaction=txn).count(), 0)
