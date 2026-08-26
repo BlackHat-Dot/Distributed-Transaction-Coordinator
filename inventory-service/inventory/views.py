@@ -38,7 +38,23 @@ def event_list(request):
 
 @api_view(["GET"])
 def seat_list(request):
-    seats = Seat.objects.all().select_related("event")
+    if Seat.objects.count() == 0:
+        event = Event.objects.first()
+        if not event:
+            event = Event.objects.create(
+                name='Coldplay: Music of the Spheres World Tour',
+                venue='Grand Arena Stadium',
+                starts_at=timezone.now() + timedelta(days=14)
+            )
+        seats_to_create = []
+        for r, price in [('A', 750.00), ('B', 500.00), ('C', 350.00)]:
+            for num in range(1, 11):
+                seats_to_create.append(
+                    Seat(event=event, row=r, seat_number=str(num), price=price, status=Seat.Status.AVAILABLE)
+                )
+        Seat.objects.bulk_create(seats_to_create)
+
+    seats = Seat.objects.all().select_related("event").order_by("id")
     serializer = SeatSerializer(seats, many=True)
     return Response(serializer.data)
 
