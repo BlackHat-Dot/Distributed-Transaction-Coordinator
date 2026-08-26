@@ -688,7 +688,7 @@ async function initiateSagaCheckout() {
   // Open Saga Orchestration Stepper Modal
   openSagaModal(seat, selectedAmount);
 
-  // Dispatch Non-Blocking Transaction Request (HTTP 202 Accepted)
+  // POST to Coordinator — synchronous execution on Railway (returns 200 directly)
   const res = await fetchJson(`${CONFIG.coordinatorUrl}/transactions/`, {
     method: "POST",
     body: JSON.stringify({
@@ -698,16 +698,20 @@ async function initiateSagaCheckout() {
     }),
   });
 
-  if (res.ok && res.status === 200 && res.data && res.data.status) {
-    // Instant completion (sync execution fallback)
-    handleSagaTerminalState(res.data.status, txId, selectedAmount);
-  } else if (res.status === 202 || res.ok) {
-    // Non-blocking 202 accepted: Start polling transaction status
-    pollSagaStatus(txId, selectedAmount);
+  if (res.ok && res.data && res.data.status) {
+    if (res.status === 202) {
+      // Async: Celery picked it up — start polling
+      pollSagaStatus(txId, selectedAmount);
+    } else {
+      // Sync: Coordinator returned final result immediately (200)
+      handleSagaTerminalState(res.data.status, txId, selectedAmount);
+    }
   } else {
+    // Show failure reason
+    handleSagaTerminalState("FAILED", txId, selectedAmount);
     showToast({
       title: "Coordinator Error",
-      message: (res.data && res.data.error) || "Could not dispatch transaction to Coordinator",
+      message: (res.data && res.data.error) || "Could not reach Coordinator service.",
       type: "danger",
     });
     if (DOM.btnProceedPay) DOM.btnProceedPay.disabled = false;
@@ -731,9 +735,11 @@ function openSagaModal(seat, amount) {
   if (DOM.eticketCard) DOM.eticketCard.classList.add("hidden");
   if (DOM.compensationCard) DOM.compensationCard.classList.add("hidden");
 
+  // Note: Async Celery is disabled on this Railway deployment.
+  // The saga runs synchronously — the modal will resolve in ~1-2 seconds.
   if (DOM.btnModalClose) {
     DOM.btnModalClose.disabled = true;
-    DOM.btnModalClose.textContent = "Orchestrating Saga...";
+    DOM.btnModalClose.textContent = "Processing...";
   }
 
   if (DOM.btnViewForensics) {
