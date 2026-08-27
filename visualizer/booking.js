@@ -209,6 +209,48 @@ function initEventListeners() {
     });
   }
 
+  // Seat Matrix Capturing Phase Interceptor: Drop rapid clicks before child listeners
+  if (DOM.seatMatrix) {
+    DOM.seatMatrix.addEventListener("click", (e) => {
+      const tile = e.target.closest(".seat-tile");
+      if (!tile) return;
+      const seatId = parseInt(tile.dataset.seatId, 10);
+      if (!seatId) return;
+
+      // Allow clicks to release the user's currently held seat
+      if (STATE.myHold && STATE.myHold.seatId === seatId && !STATE.isActionInProgress) {
+        return;
+      }
+
+      // If user holds a seat or a hold action is in-flight, intercept and kill event
+      if (STATE.isActionInProgress || STATE.myHold !== null || STATE.pendingHoldSeatId !== null) {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        e.preventDefault();
+
+        tile.style.animation = "shake 0.4s ease-in-out";
+        setTimeout(() => (tile.style.animation = ""), 400);
+
+        if (DOM.holdTimerCard) {
+          DOM.holdTimerCard.style.animation = "pulse-glow 0.6s ease-in-out 2";
+          setTimeout(() => (DOM.holdTimerCard.style.animation = ""), 1200);
+        }
+
+        const heldId = (STATE.myHold && STATE.myHold.seatId) || STATE.pendingHoldSeatId;
+        const heldSeat = STATE.seatsMap.get(heldId);
+        const heldLabel = heldSeat ? `Seat ${heldSeat.row}${heldSeat.seat_number}` : "a seat";
+
+        showToast({
+          title: "Single Seat Limit Enforced",
+          message: `Maximum 1 seat booking is allowed per session. You currently hold ${heldLabel}. Please release your hold first to select a different seat.`,
+          type: "warning",
+          icon: "🔒",
+          duration: 3500,
+        });
+      }
+    }, true); // Use Capturing Phase
+  }
+
   // Config Modal Integration
   initConfigModal();
 }

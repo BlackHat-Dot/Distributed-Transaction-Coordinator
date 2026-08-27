@@ -567,11 +567,13 @@ body {
   text-decoration: line-through;
 }
 
-/* Single Seat Restriction: When user holds a seat, other available seats are locked */
+/* Single Seat Restriction: When user holds a seat, other available seats are completely unclickable */
 .has-active-hold .seat-tile[data-status="AVAILABLE"] {
-  cursor: not-allowed;
-  opacity: 0.45;
-  filter: grayscale(0.25);
+  cursor: not-allowed !important;
+  opacity: 0.35 !important;
+  filter: grayscale(0.4) !important;
+  pointer-events: none !important;
+  user-select: none !important;
   transition: opacity 0.2s ease, filter 0.2s ease;
 }
 
