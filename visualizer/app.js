@@ -1543,7 +1543,7 @@ DOM.btnTriggerSweep.addEventListener("click", async () => {
   DOM.topoCoordLease.textContent = "SWEEPING";
   if (DOM.topoWorkerStatus) {
     DOM.topoWorkerStatus.textContent = "SWEEPING";
-    DOM.topoWorkerStatus.className = "text-purple font-mono";
+    DOM.topoWorkerStatus.setAttribute("class", "text-purple font-mono");
   }
   
   animatePacketAlongPath({ route: "coord-inv", type: "purple", durationMs: 400, destinationNodeId: "node-box-inv" });
@@ -1581,7 +1581,7 @@ DOM.btnTriggerSweep.addEventListener("click", async () => {
     DOM.recRedisLock.innerHTML = `<span class="badge badge-success">IDLE / READY</span>`;
     if (DOM.topoWorkerStatus) {
       DOM.topoWorkerStatus.textContent = "IDLE";
-      DOM.topoWorkerStatus.className = "text-success font-mono";
+      DOM.topoWorkerStatus.setAttribute("class", "text-success font-mono");
     }
   }, 2000);
 });
@@ -1801,7 +1801,7 @@ function startRecoveryCountdown() {
       DOM.recRedisLock.innerHTML = `<span class="badge badge-purple">SWEEPING LEASE</span>`;
       if (DOM.topoWorkerStatus) {
         DOM.topoWorkerStatus.textContent = "SWEEPING";
-        DOM.topoWorkerStatus.className = "text-purple font-mono";
+        DOM.topoWorkerStatus.setAttribute("class", "text-purple font-mono");
       }
 
       if (!STATE.isSimulatedMode) {
@@ -1824,7 +1824,7 @@ function startRecoveryCountdown() {
         DOM.recRedisLock.innerHTML = `<span class="badge badge-success">IDLE / READY</span>`;
         if (DOM.topoWorkerStatus) {
           DOM.topoWorkerStatus.textContent = "IDLE";
-          DOM.topoWorkerStatus.className = "text-success font-mono";
+          DOM.topoWorkerStatus.setAttribute("class", "text-success font-mono");
         }
       }, 3000);
     }

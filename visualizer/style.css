@@ -1931,10 +1931,10 @@ button, input, select, textarea {
 }
 
 .font-mono { font-family: var(--font-mono); }
-.text-success { color: var(--accent-green); }
-.text-accent { color: var(--accent-blue); }
-.text-danger { color: var(--accent-rose); }
-.text-purple { color: var(--accent-purple); }
+.text-success { color: var(--accent-green); fill: var(--accent-green); }
+.text-accent { color: var(--accent-blue); fill: var(--accent-blue); }
+.text-danger { color: var(--accent-rose); fill: var(--accent-rose); }
+.text-purple { color: var(--accent-purple); fill: var(--accent-purple); }
 .hidden { display: none !important; }
 
 @media (max-width: 1200px) {
