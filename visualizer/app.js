@@ -1838,14 +1838,14 @@ function startRecoveryCountdown() {
 }
 
 const DEFAULT_CANVAS_NODES = {
-  client:     { x: 30,  y: 140, width: 130, height: 115 },
-  worker:     { x: 240, y: 20,  width: 220, height: 78 },
-  coord:      { x: 240, y: 135, width: 220, height: 120 },
-  "db-coord": { x: 265, y: 295, width: 170, height: 44 },
-  inv:        { x: 570, y: 30,  width: 210, height: 95 },
-  "db-inv":   { x: 590, y: 155, width: 170, height: 44 },
-  pay:        { x: 570, y: 230, width: 210, height: 95 },
-  "db-pay":   { x: 590, y: 355, width: 170, height: 44 },
+  client:     { x: 30,  y: 135, width: 130, height: 115 },
+  worker:     { x: 230, y: 20,  width: 220, height: 78 },
+  coord:      { x: 230, y: 135, width: 220, height: 120 },
+  "db-coord": { x: 255, y: 285, width: 170, height: 44 },
+  inv:        { x: 530, y: 35,  width: 210, height: 95 },
+  "db-inv":   { x: 550, y: 155, width: 170, height: 44 },
+  pay:        { x: 530, y: 230, width: 210, height: 95 },
+  "db-pay":   { x: 550, y: 350, width: 170, height: 44 },
 };
 
 const CanvasEngine = {
@@ -1889,18 +1889,26 @@ const CanvasEngine = {
 
     if (!this.container || !this.svg || !this.world) return;
 
-    try {
-      const savedNodes = localStorage.getItem("dtc_topology_nodes");
-      if (savedNodes) {
-        const parsed = JSON.parse(savedNodes);
-        Object.keys(DEFAULT_CANVAS_NODES).forEach((k) => {
-          if (parsed[k] && typeof parsed[k].x === "number" && typeof parsed[k].y === "number") {
-            this.nodes[k] = { ...DEFAULT_CANVAS_NODES[k], x: parsed[k].x, y: parsed[k].y };
-          }
-        });
+    const TOPOLOGY_SCHEMA_VER = "dtc_topo_v4";
+    if (localStorage.getItem("dtc_topo_schema") !== TOPOLOGY_SCHEMA_VER) {
+      localStorage.removeItem("dtc_topology_nodes");
+      localStorage.removeItem("dtc_topology_viewport");
+      localStorage.setItem("dtc_topo_schema", TOPOLOGY_SCHEMA_VER);
+      this.nodes = JSON.parse(JSON.stringify(DEFAULT_CANVAS_NODES));
+    } else {
+      try {
+        const savedNodes = localStorage.getItem("dtc_topology_nodes");
+        if (savedNodes) {
+          const parsed = JSON.parse(savedNodes);
+          Object.keys(DEFAULT_CANVAS_NODES).forEach((k) => {
+            if (parsed[k] && typeof parsed[k].x === "number" && typeof parsed[k].y === "number") {
+              this.nodes[k] = { ...DEFAULT_CANVAS_NODES[k], x: parsed[k].x, y: parsed[k].y };
+            }
+          });
+        }
+      } catch (e) {
+        console.warn("Could not load saved topology nodes", e);
       }
-    } catch (e) {
-      console.warn("Could not load saved topology nodes", e);
     }
 
     try {
