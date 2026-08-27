@@ -843,11 +843,12 @@ button, input, select, textarea {
 
 .topology-canvas-container {
   width: 100%;
-  height: 380px;
-  min-height: 320px;
+  height: 540px;
+  min-height: 480px;
   background: #050811;
-  border: 1px solid rgba(51, 65, 85, 0.4);
-  border-radius: var(--radius-md);
+  border: 1.5px solid rgba(99, 102, 241, 0.45);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   position: relative;
   overflow: hidden;
   user-select: none;
@@ -860,7 +861,8 @@ button, input, select, textarea {
 
 [data-theme="light"] .topology-canvas-container {
   background: #f8fafc;
-  border-color: #cbd5e1;
+  border: 1.5px solid #94a3b8;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
 }
 
 #topology-svg {
@@ -942,7 +944,7 @@ button, input, select, textarea {
 }
 
 .topo-node-group:hover .node-box {
-  stroke-width: 2.2;
+  stroke-width: 2.4;
   filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.4));
 }
 
@@ -963,23 +965,24 @@ button, input, select, textarea {
 .node-box {
   fill: #0b1324;
   stroke: #1e293b;
-  stroke-width: 1.5;
+  stroke-width: 1.8;
   transition: stroke 0.25s ease, fill 0.25s ease;
 }
 
 [data-theme="light"] .node-box {
   fill: #ffffff;
-  stroke: #cbd5e1;
+  stroke: #94a3b8;
+  stroke-width: 1.8;
 }
 
-.node-box-client { stroke: #0284c7; }
-.node-box-coord  { stroke: #6366f1; stroke-width: 2; }
-.node-box-inv    { stroke: #059669; }
-.node-box-pay    { stroke: #d97706; }
-.node-box-beat   { stroke: #ec4899; stroke-width: 1.8; }
-.node-box-worker { stroke: #a855f7; stroke-width: 1.8; }
-.node-box-db     { stroke: #3b82f6; stroke-width: 1.4; }
-.node-box-db-redis { stroke: #ef4444 !important; }
+.node-box-client { stroke: #0284c7; stroke-width: 2; }
+.node-box-coord  { stroke: #6366f1; stroke-width: 2.2; }
+.node-box-inv    { stroke: #059669; stroke-width: 2; }
+.node-box-pay    { stroke: #d97706; stroke-width: 2; }
+.node-box-beat   { stroke: #ec4899; stroke-width: 2; }
+.node-box-worker { stroke: #a855f7; stroke-width: 2; }
+.node-box-db     { stroke: #3b82f6; stroke-width: 1.6; }
+.node-box-db-redis { stroke: #ef4444 !important; stroke-width: 1.8 !important; }
 
 .node-header-beat   { fill: rgba(236, 72, 153, 0.15); }
 [data-theme="light"] .node-header-beat { fill: rgba(236, 72, 153, 0.08); }

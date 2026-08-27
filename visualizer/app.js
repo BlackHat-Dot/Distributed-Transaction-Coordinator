@@ -1861,382 +1861,391 @@ function startRecoveryCountdown() {
 }
 
 const DEFAULT_CANVAS_NODES = {
-        client:            { x: 45,  y: 245, width: 165, height: 105 },
-        beat:              { x: 280, y: 15,  width: 220, height: 58 },
-        "db-redis-broker": { x: 45,  y: 35,  width: 185, height: 44 },
-        worker:            { x: 280, y: 145, width: 220, height: 68 },
-        "db-redis-cache":  { x: 545, y: 25,  width: 195, height: 44 },
-        coord:             { x: 280, y: 245, width: 220, height: 120 },
-        "db-coord":        { x: 305, y: 395, width: 170, height: 44 },
-        inv:               { x: 545, y: 135, width: 200, height: 95 },
-        "db-inv":          { x: 785, y: 160, width: 165, height: 44 },
-        pay:               { x: 545, y: 275, width: 200, height: 95 },
-        "db-pay":          { x: 785, y: 300, width: 165, height: 44 },
-      };
+  // Left Column
+  "db-redis-broker": { x: 180, y: 110, width: 185, height: 44 },
+  client:            { x: 180, y: 300, width: 165, height: 105 },
 
-      const CanvasEngine = {
-        container: null,
-        svg: null,
-        world: null,
-        bgRect: null,
-        zoomLabel: null,
-        btnZoomIn: null,
-        btnZoomOut: null,
-        btnFitView: null,
-        btnResetLayout: null,
+  // Center Column
+  beat:              { x: 410, y: 40,  width: 220, height: 58 },
+  worker:            { x: 410, y: 160, width: 220, height: 68 },
+  coord:             { x: 410, y: 290, width: 220, height: 120 },
+  "db-coord":        { x: 435, y: 450, width: 170, height: 44 },
 
-        panX: 0,
-        panY: 0,
-        zoom: 1.0,
-        minZoom: 0.35,
-        maxZoom: 2.5,
+  // Right-Center Column
+  "db-redis-cache":  { x: 520, y: 50,  width: 195, height: 44 },
+  inv:               { x: 640, y: 200, width: 200, height: 95 },
+  pay:               { x: 640, y: 360, width: 200, height: 95 },
 
-        nodes: JSON.parse(JSON.stringify(DEFAULT_CANVAS_NODES)),
+  // Far-Right Column
+  "db-inv":          { x: 820, y: 80,  width: 165, height: 44 },
+  "db-pay":          { x: 820, y: 430, width: 165, height: 44 },
+};
 
-        isDraggingNode: false,
-        activeDragNodeKey: null,
-        dragStartMouse: { x: 0, y: 0 },
-        dragStartNodePos: { x: 0, y: 0 },
+const CanvasEngine = {
+  container: null,
+  svg: null,
+  world: null,
+  bgRect: null,
+  zoomLabel: null,
+  btnZoomIn: null,
+  btnZoomOut: null,
+  btnFitView: null,
+  btnResetLayout: null,
 
-        isPanning: false,
-        panStartMouse: { x: 0, y: 0 },
-        panStartPos: { x: 0, y: 0 },
+  panX: 0,
+  panY: 0,
+  zoom: 1.0,
+  minZoom: 0.35,
+  maxZoom: 2.5,
 
-        init() {
-          this.container = document.getElementById("topology-canvas-container");
-          this.svg = document.getElementById("topology-svg");
-          this.world = document.getElementById("canvas-world");
-          this.bgRect = document.getElementById("canvas-bg-rect");
-          this.zoomLabel = document.getElementById("canvas-zoom-label");
-          this.btnZoomIn = document.getElementById("btn-canvas-zoom-in");
-          this.btnZoomOut = document.getElementById("btn-canvas-zoom-out");
-          this.btnFitView = document.getElementById("btn-canvas-fit-view");
-          this.btnResetLayout = document.getElementById("btn-canvas-reset-layout");
+  nodes: JSON.parse(JSON.stringify(DEFAULT_CANVAS_NODES)),
 
-          if (!this.container || !this.svg || !this.world) return;
+  isDraggingNode: false,
+  activeDragNodeKey: null,
+  dragStartMouse: { x: 0, y: 0 },
+  dragStartNodePos: { x: 0, y: 0 },
 
-          const TOPOLOGY_SCHEMA_VER = "dtc_topo_v8";
-          if (localStorage.getItem("dtc_topo_schema") !== TOPOLOGY_SCHEMA_VER) {
-            localStorage.removeItem("dtc_topology_nodes");
-            localStorage.removeItem("dtc_topology_viewport");
-            localStorage.setItem("dtc_topo_schema", TOPOLOGY_SCHEMA_VER);
-            this.nodes = JSON.parse(JSON.stringify(DEFAULT_CANVAS_NODES));
-          } else {
-            try {
-              const savedNodes = localStorage.getItem("dtc_topology_nodes");
-              if (savedNodes) {
-                const parsed = JSON.parse(savedNodes);
-                Object.keys(DEFAULT_CANVAS_NODES).forEach((k) => {
-                  if (parsed[k] && typeof parsed[k].x === "number" && typeof parsed[k].y === "number") {
-                    this.nodes[k] = { ...DEFAULT_CANVAS_NODES[k], x: parsed[k].x, y: parsed[k].y };
-                  }
-                });
-              }
-            } catch (e) {
-              console.warn("Could not load saved topology nodes", e);
-            }
-          }
+  isPanning: false,
+  panStartMouse: { x: 0, y: 0 },
+  panStartPos: { x: 0, y: 0 },
 
-          try {
-            const savedVp = localStorage.getItem("dtc_topology_viewport");
-            if (savedVp) {
-              const vp = JSON.parse(savedVp);
-              if (typeof vp.panX === "number") this.panX = vp.panX;
-              if (typeof vp.panY === "number") this.panY = vp.panY;
-              if (typeof vp.zoom === "number") this.zoom = Math.min(Math.max(vp.zoom, this.minZoom), this.maxZoom);
-            }
-          } catch (e) {
-            console.warn("Could not load saved topology viewport", e);
-          }
+  init() {
+    this.container = document.getElementById("topology-canvas-container");
+    this.svg = document.getElementById("topology-svg");
+    this.world = document.getElementById("canvas-world");
+    this.bgRect = document.getElementById("canvas-bg-rect");
+    this.zoomLabel = document.getElementById("canvas-zoom-label");
+    this.btnZoomIn = document.getElementById("btn-canvas-zoom-in");
+    this.btnZoomOut = document.getElementById("btn-canvas-zoom-out");
+    this.btnFitView = document.getElementById("btn-canvas-fit-view");
+    this.btnResetLayout = document.getElementById("btn-canvas-reset-layout");
 
-          this.bindEvents();
-          this.applyTransform();
-          this.renderNodePositions();
-          this.updateEdges();
-        },
+    if (!this.container || !this.svg || !this.world) return;
 
-        bindEvents() {
-          this.container.addEventListener("wheel", (e) => this.onWheel(e), { passive: false });
-          this.container.addEventListener("mousedown", (e) => this.onMouseDown(e));
-          window.addEventListener("mousemove", (e) => this.onMouseMove(e));
-          window.addEventListener("mouseup", (e) => this.onMouseUp(e));
-
-          if (this.btnZoomIn) this.btnZoomIn.addEventListener("click", () => this.zoomBy(1.2));
-          if (this.btnZoomOut) this.btnZoomOut.addEventListener("click", () => this.zoomBy(1 / 1.2));
-          if (this.btnFitView) this.btnFitView.addEventListener("click", () => this.fitView());
-          if (this.btnResetLayout) this.btnResetLayout.addEventListener("click", () => this.resetLayout());
-
-          document.querySelectorAll(".topo-node-group").forEach((group) => {
-            group.addEventListener("mousedown", (e) => this.onNodeMouseDown(e, group));
-            group.addEventListener("dblclick", (e) => {
-              e.stopPropagation();
-              const key = group.getAttribute("data-node-key");
-              if (key && this.nodes[key]) {
-                this.focusNode(key);
-              }
-            });
-          });
-
-          window.addEventListener("resize", () => {
-            this.updateEdges();
-          });
-        },
-
-        onMouseDown(e) {
-          if (e.target.closest(".topo-node-group")) return;
-          this.isPanning = true;
-          this.panStartMouse = { x: e.clientX, y: e.clientY };
-          this.panStartPos = { x: this.panX, y: this.panY };
-          this.container.style.cursor = "grabbing";
-        },
-
-        onNodeMouseDown(e, group) {
-          e.stopPropagation();
-          const key = group.getAttribute("data-node-key");
-          if (!key || !this.nodes[key]) return;
-
-          this.isDraggingNode = true;
-          this.activeDragNodeKey = key;
-          this.dragStartMouse = { x: e.clientX, y: e.clientY };
-          this.dragStartNodePos = { x: this.nodes[key].x, y: this.nodes[key].y };
-          group.classList.add("dragging");
-          this.container.style.cursor = "move";
-        },
-
-        onMouseMove(e) {
-          if (this.isPanning) {
-            const dx = e.clientX - this.panStartMouse.x;
-            const dy = e.clientY - this.panStartMouse.y;
-            this.panX = this.panStartPos.x + dx;
-            this.panY = this.panStartPos.y + dy;
-            this.applyTransform();
-          } else if (this.isDraggingNode && this.activeDragNodeKey) {
-            const dx = (e.clientX - this.dragStartMouse.x) / this.zoom;
-            const dy = (e.clientY - this.dragStartMouse.y) / this.zoom;
-            this.nodes[this.activeDragNodeKey].x = Math.round(this.dragStartNodePos.x + dx);
-            this.nodes[this.activeDragNodeKey].y = Math.round(this.dragStartNodePos.y + dy);
-            this.renderNodePositions();
-            this.updateEdges();
-          }
-        },
-
-        onMouseUp() {
-          if (this.isPanning) {
-            this.isPanning = false;
-            this.container.style.cursor = "grab";
-            this.saveViewport();
-          }
-          if (this.isDraggingNode) {
-            const group = document.getElementById(`node-group-${this.activeDragNodeKey}`);
-            if (group) group.classList.remove("dragging");
-            this.isDraggingNode = false;
-            this.activeDragNodeKey = null;
-            this.container.style.cursor = "grab";
-            this.saveNodes();
-          }
-        },
-
-        onWheel(e) {
-          e.preventDefault();
-          const rect = this.container.getBoundingClientRect();
-          const mouseX = e.clientX - rect.left;
-          const mouseY = e.clientY - rect.top;
-
-          const zoomFactor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-          const newZoom = Math.min(Math.max(this.zoom * zoomFactor, this.minZoom), this.maxZoom);
-          if (newZoom === this.zoom) return;
-
-          this.panX = mouseX - (mouseX - this.panX) * (newZoom / this.zoom);
-          this.panY = mouseY - (mouseY - this.panY) * (newZoom / this.zoom);
-          this.zoom = newZoom;
-
-          this.applyTransform();
-          this.saveViewport();
-        },
-
-        zoomBy(factor) {
-          if (!this.container) return;
-          const rect = this.container.getBoundingClientRect();
-          const centerX = rect.width / 2;
-          const centerY = rect.height / 2;
-
-          const newZoom = Math.min(Math.max(this.zoom * factor, this.minZoom), this.maxZoom);
-          if (newZoom === this.zoom) return;
-
-          this.panX = centerX - (centerX - this.panX) * (newZoom / this.zoom);
-          this.panY = centerY - (centerY - this.panY) * (newZoom / this.zoom);
-          this.zoom = newZoom;
-
-          this.applyTransform();
-          this.saveViewport();
-        },
-
-        applyTransform() {
-          if (this.world) {
-            this.world.setAttribute(
-              "transform",
-              `translate(${this.panX.toFixed(2)}, ${this.panY.toFixed(2)}) scale(${this.zoom.toFixed(3)})`
-            );
-          }
-          if (this.zoomLabel) {
-            this.zoomLabel.textContent = `${Math.round(this.zoom * 100)}%`;
-          }
-        },
-
-        renderNodePositions() {
-          Object.keys(this.nodes).forEach((key) => {
-            const group = document.getElementById(`node-group-${key}`);
-            if (group && this.nodes[key]) {
-              group.setAttribute("transform", `translate(${this.nodes[key].x}, ${this.nodes[key].y})`);
+    const TOPOLOGY_SCHEMA_VER = "dtc_topo_v9";
+    if (localStorage.getItem("dtc_topo_schema") !== TOPOLOGY_SCHEMA_VER) {
+      localStorage.removeItem("dtc_topology_nodes");
+      localStorage.removeItem("dtc_topology_viewport");
+      localStorage.setItem("dtc_topo_schema", TOPOLOGY_SCHEMA_VER);
+      this.nodes = JSON.parse(JSON.stringify(DEFAULT_CANVAS_NODES));
+    } else {
+      try {
+        const savedNodes = localStorage.getItem("dtc_topology_nodes");
+        if (savedNodes) {
+          const parsed = JSON.parse(savedNodes);
+          Object.keys(DEFAULT_CANVAS_NODES).forEach((k) => {
+            if (parsed[k] && typeof parsed[k].x === "number" && typeof parsed[k].y === "number") {
+              this.nodes[k] = { ...DEFAULT_CANVAS_NODES[k], x: parsed[k].x, y: parsed[k].y };
             }
           });
-        },
+        }
+      } catch (e) {
+        console.warn("Could not load saved topology nodes", e);
+      }
+    }
 
-        getDynamicPathD(sourceKey, targetKey) {
-          const s = this.nodes[sourceKey];
-          const t = this.nodes[targetKey];
-          if (!s || !t) return "";
+    try {
+      const savedVp = localStorage.getItem("dtc_topology_viewport");
+      if (savedVp) {
+        const vp = JSON.parse(savedVp);
+        if (typeof vp.panX === "number") this.panX = vp.panX;
+        if (typeof vp.panY === "number") this.panY = vp.panY;
+        if (typeof vp.zoom === "number") this.zoom = Math.min(Math.max(vp.zoom, this.minZoom), this.maxZoom);
+      } else {
+        setTimeout(() => this.fitView(), 30);
+      }
+    } catch (e) {
+      console.warn("Could not load saved topology viewport", e);
+    }
 
-          const dx = t.x - s.x;
-          const dy = t.y - s.y;
+    this.bindEvents();
+    this.applyTransform();
+    this.renderNodePositions();
+    this.updateEdges();
+  },
 
-          let p1, p2, c1, c2;
+  bindEvents() {
+    this.container.addEventListener("wheel", (e) => this.onWheel(e), { passive: false });
+    this.container.addEventListener("mousedown", (e) => this.onMouseDown(e));
+    window.addEventListener("mousemove", (e) => this.onMouseMove(e));
+    window.addEventListener("mouseup", (e) => this.onMouseUp(e));
 
-          if (Math.abs(dx) >= Math.abs(dy)) {
-            if (dx >= 0) {
-              p1 = { x: s.x + s.width, y: s.y + s.height / 2 };
-              p2 = { x: t.x, y: t.y + t.height / 2 };
-              const curDx = Math.max((p2.x - p1.x) * 0.5, 30);
-              c1 = { x: p1.x + curDx, y: p1.y };
-              c2 = { x: p2.x - curDx, y: p2.y };
-            } else {
-              p1 = { x: s.x, y: s.y + s.height / 2 };
-              p2 = { x: t.x + t.width, y: t.y + t.height / 2 };
-              const curDx = Math.max((p1.x - p2.x) * 0.5, 30);
-              c1 = { x: p1.x - curDx, y: p1.y };
-              c2 = { x: p2.x + curDx, y: p2.y };
-            }
-          }
-          else if (dy > 0) {
-            p1 = { x: s.x + s.width / 2, y: s.y + s.height };
-            p2 = { x: t.x + t.width / 2, y: t.y };
-            const curDy = Math.max((p2.y - p1.y) * 0.5, 30);
-            c1 = { x: p1.x, y: p1.y + curDy };
-            c2 = { x: p2.x, y: p2.y - curDy };
-          }
-          else {
-            p1 = { x: s.x + s.width / 2, y: s.y };
-            p2 = { x: t.x + t.width / 2, y: t.y + t.height };
-            const curDy = Math.max((p1.y - p2.y) * 0.5, 30);
-            c1 = { x: p1.x, y: p1.y - curDy };
-            c2 = { x: p2.x, y: p2.y + curDy };
-          }
+    if (this.btnZoomIn) this.btnZoomIn.addEventListener("click", () => this.zoomBy(1.2));
+    if (this.btnZoomOut) this.btnZoomOut.addEventListener("click", () => this.zoomBy(1 / 1.2));
+    if (this.btnFitView) this.btnFitView.addEventListener("click", () => this.fitView());
+    if (this.btnResetLayout) this.btnResetLayout.addEventListener("click", () => this.resetLayout());
 
-          return `M ${p1.x} ${p1.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${p2.x} ${p2.y}`;
-        },
+    document.querySelectorAll(".topo-node-group").forEach((group) => {
+      group.addEventListener("mousedown", (e) => this.onNodeMouseDown(e, group));
+      group.addEventListener("dblclick", (e) => {
+        e.stopPropagation();
+        const key = group.getAttribute("data-node-key");
+        if (key && this.nodes[key]) {
+          this.focusNode(key);
+        }
+      });
+    });
 
-        updateEdges() {
-          const pathClientCoord = document.getElementById("path-client-coord");
-          const pathCoordInv = document.getElementById("path-coord-inv");
-          const pathCoordPay = document.getElementById("path-coord-pay");
-          const pathInvCoord = document.getElementById("path-inv-coord");
-          const pathPayCoord = document.getElementById("path-pay-coord");
-          const pathBeatDbBroker = document.getElementById("path-beat-dbbroker");
-          const pathDbBrokerWorker = document.getElementById("path-dbbroker-worker");
-          const pathWorkerDbCache = document.getElementById("path-worker-dbcache");
-          const pathInvDbCache = document.getElementById("path-inv-dbcache");
-          const pathWorkerCoord = document.getElementById("path-worker-coord");
-          const pathCoordDbCoord = document.getElementById("path-coord-dbcoord");
-          const pathInvDbInv = document.getElementById("path-inv-dbinv");
-          const pathPayDbPay = document.getElementById("path-pay-dbpay");
+    window.addEventListener("resize", () => {
+      this.updateEdges();
+    });
+  },
 
-          const dClientCoord = this.getDynamicPathD("client", "coord");
-          const dCoordInv = this.getDynamicPathD("coord", "inv");
-          const dCoordPay = this.getDynamicPathD("coord", "pay");
-          const dInvCoord = this.getDynamicPathD("inv", "coord");
-          const dPayCoord = this.getDynamicPathD("pay", "coord");
-          const dBeatDbBroker = this.getDynamicPathD("beat", "db-redis-broker");
-          const dDbBrokerWorker = this.getDynamicPathD("db-redis-broker", "worker");
-          const dWorkerDbCache = this.getDynamicPathD("worker", "db-redis-cache");
-          const dInvDbCache = this.getDynamicPathD("inv", "db-redis-cache");
-          const dWorkerCoord = this.getDynamicPathD("worker", "coord");
-          const dCoordDbCoord = this.getDynamicPathD("coord", "db-coord");
-          const dInvDbInv = this.getDynamicPathD("inv", "db-inv");
-          const dPayDbPay = this.getDynamicPathD("pay", "db-pay");
+  onMouseDown(e) {
+    if (e.target.closest(".topo-node-group")) return;
+    this.isPanning = true;
+    this.panStartMouse = { x: e.clientX, y: e.clientY };
+    this.panStartPos = { x: this.panX, y: this.panY };
+    this.container.style.cursor = "grabbing";
+  },
 
-          if (pathClientCoord) pathClientCoord.setAttribute("d", dClientCoord);
-          if (pathCoordInv) pathCoordInv.setAttribute("d", dCoordInv);
-          if (pathCoordPay) pathCoordPay.setAttribute("d", dCoordPay);
-          if (pathInvCoord) pathInvCoord.setAttribute("d", dInvCoord);
-          if (pathPayCoord) pathPayCoord.setAttribute("d", dPayCoord);
-          if (pathBeatDbBroker) pathBeatDbBroker.setAttribute("d", dBeatDbBroker);
-          if (pathDbBrokerWorker) pathDbBrokerWorker.setAttribute("d", dDbBrokerWorker);
-          if (pathWorkerDbCache) pathWorkerDbCache.setAttribute("d", dWorkerDbCache);
-          if (pathInvDbCache) pathInvDbCache.setAttribute("d", dInvDbCache);
-          if (pathWorkerCoord) pathWorkerCoord.setAttribute("d", dWorkerCoord);
-          if (pathCoordDbCoord) pathCoordDbCoord.setAttribute("d", dCoordDbCoord);
-          if (pathInvDbInv) pathInvDbInv.setAttribute("d", dInvDbInv);
-          if (pathPayDbPay) pathPayDbPay.setAttribute("d", dPayDbPay);
-        },
+  onNodeMouseDown(e, group) {
+    e.stopPropagation();
+    const key = group.getAttribute("data-node-key");
+    if (!key || !this.nodes[key]) return;
 
-        fitView() {
-          if (!this.container) return;
-          const rect = this.container.getBoundingClientRect();
-          const cWidth = rect.width || 800;
-          const cHeight = rect.height || 360;
+    this.isDraggingNode = true;
+    this.activeDragNodeKey = key;
+    this.dragStartMouse = { x: e.clientX, y: e.clientY };
+    this.dragStartNodePos = { x: this.nodes[key].x, y: this.nodes[key].y };
+    group.classList.add("dragging");
+    this.container.style.cursor = "move";
+  },
 
-          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-          Object.values(this.nodes).forEach((n) => {
-            minX = Math.min(minX, n.x);
-            minY = Math.min(minY, n.y);
-            maxX = Math.max(maxX, n.x + n.width);
-            maxY = Math.max(maxY, n.y + n.height);
-          });
+  onMouseMove(e) {
+    if (this.isPanning) {
+      const dx = e.clientX - this.panStartMouse.x;
+      const dy = e.clientY - this.panStartMouse.y;
+      this.panX = this.panStartPos.x + dx;
+      this.panY = this.panStartPos.y + dy;
+      this.applyTransform();
+    } else if (this.isDraggingNode && this.activeDragNodeKey) {
+      const dx = (e.clientX - this.dragStartMouse.x) / this.zoom;
+      const dy = (e.clientY - this.dragStartMouse.y) / this.zoom;
+      this.nodes[this.activeDragNodeKey].x = Math.round(this.dragStartNodePos.x + dx);
+      this.nodes[this.activeDragNodeKey].y = Math.round(this.dragStartNodePos.y + dy);
+      this.renderNodePositions();
+      this.updateEdges();
+    }
+  },
 
-          const bWidth = maxX - minX;
-          const bHeight = maxY - minY;
-          const padding = 50;
+  onMouseUp() {
+    if (this.isPanning) {
+      this.isPanning = false;
+      this.container.style.cursor = "grab";
+      this.saveViewport();
+    }
+    if (this.isDraggingNode) {
+      const group = document.getElementById(`node-group-${this.activeDragNodeKey}`);
+      if (group) group.classList.remove("dragging");
+      this.isDraggingNode = false;
+      this.activeDragNodeKey = null;
+      this.container.style.cursor = "grab";
+      this.saveNodes();
+    }
+  },
 
-          const scaleX = (cWidth - padding * 2) / bWidth;
-          const scaleY = (cHeight - padding * 2) / bHeight;
-          const newZoom = Math.min(Math.max(Math.min(scaleX, scaleY), this.minZoom), 1.3);
+  onWheel(e) {
+    e.preventDefault();
+    const rect = this.container.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
 
-          this.zoom = newZoom;
-          this.panX = (cWidth - bWidth * newZoom) / 2 - minX * newZoom;
-          this.panY = (cHeight - bHeight * newZoom) / 2 - minY * newZoom;
+    const zoomFactor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const newZoom = Math.min(Math.max(this.zoom * zoomFactor, this.minZoom), this.maxZoom);
+    if (newZoom === this.zoom) return;
 
-          this.applyTransform();
-          this.saveViewport();
-        },
+    this.panX = mouseX - (mouseX - this.panX) * (newZoom / this.zoom);
+    this.panY = mouseY - (mouseY - this.panY) * (newZoom / this.zoom);
+    this.zoom = newZoom;
 
-        focusNode(nodeKey) {
-          const node = this.nodes[nodeKey];
-          if (!node || !this.container) return;
+    this.applyTransform();
+    this.saveViewport();
+  },
 
-          const rect = this.container.getBoundingClientRect();
-          const cWidth = rect.width || 800;
-          const cHeight = rect.height || 360;
+  zoomBy(factor) {
+    if (!this.container) return;
+    const rect = this.container.getBoundingClientRect();
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
 
-          this.zoom = 1.15;
-          this.panX = cWidth / 2 - (node.x + node.width / 2) * this.zoom;
-          this.panY = cHeight / 2 - (node.y + node.height / 2) * this.zoom;
+    const newZoom = Math.min(Math.max(this.zoom * factor, this.minZoom), this.maxZoom);
+    if (newZoom === this.zoom) return;
 
-          this.applyTransform();
-          this.saveViewport();
-        },
+    this.panX = centerX - (centerX - this.panX) * (newZoom / this.zoom);
+    this.panY = centerY - (centerY - this.panY) * (newZoom / this.zoom);
+    this.zoom = newZoom;
 
-        resetLayout() {
-          this.nodes = JSON.parse(JSON.stringify(DEFAULT_CANVAS_NODES));
-          this.renderNodePositions();
-          this.updateEdges();
-          this.fitView();
-          this.saveNodes();
-          this.saveViewport();
-        },
+    this.applyTransform();
+    this.saveViewport();
+  },
 
-        saveNodes() {
-          localStorage.setItem("dtc_topology_nodes", JSON.stringify(this.nodes));
-        },
+  applyTransform() {
+    if (this.world) {
+      this.world.setAttribute(
+        "transform",
+        `translate(${this.panX.toFixed(2)}, ${this.panY.toFixed(2)}) scale(${this.zoom.toFixed(3)})`
+      );
+    }
+    if (this.zoomLabel) {
+      this.zoomLabel.textContent = `${Math.round(this.zoom * 100)}%`;
+    }
+  },
+
+  renderNodePositions() {
+    Object.keys(this.nodes).forEach((key) => {
+      const group = document.getElementById(`node-group-${key}`);
+      if (group && this.nodes[key]) {
+        group.setAttribute("transform", `translate(${this.nodes[key].x}, ${this.nodes[key].y})`);
+      }
+    });
+  },
+
+  getDynamicPathD(sourceKey, targetKey) {
+    const s = this.nodes[sourceKey];
+    const t = this.nodes[targetKey];
+    if (!s || !t) return "";
+
+    const dx = t.x - s.x;
+    const dy = t.y - s.y;
+
+    let p1, p2, c1, c2;
+
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      if (dx >= 0) {
+        p1 = { x: s.x + s.width, y: s.y + s.height / 2 };
+        p2 = { x: t.x, y: t.y + t.height / 2 };
+        const curDx = Math.max((p2.x - p1.x) * 0.5, 30);
+        c1 = { x: p1.x + curDx, y: p1.y };
+        c2 = { x: p2.x - curDx, y: p2.y };
+      } else {
+        p1 = { x: s.x, y: s.y + s.height / 2 };
+        p2 = { x: t.x + t.width, y: t.y + t.height / 2 };
+        const curDx = Math.max((p1.x - p2.x) * 0.5, 30);
+        c1 = { x: p1.x - curDx, y: p1.y };
+        c2 = { x: p2.x + curDx, y: p2.y };
+      }
+    }
+    else if (dy > 0) {
+      p1 = { x: s.x + s.width / 2, y: s.y + s.height };
+      p2 = { x: t.x + t.width / 2, y: t.y };
+      const curDy = Math.max((p2.y - p1.y) * 0.5, 30);
+      c1 = { x: p1.x, y: p1.y + curDy };
+      c2 = { x: p2.x, y: p2.y - curDy };
+    }
+    else {
+      p1 = { x: s.x + s.width / 2, y: s.y };
+      p2 = { x: t.x + t.width / 2, y: t.y + t.height };
+      const curDy = Math.max((p1.y - p2.y) * 0.5, 30);
+      c1 = { x: p1.x, y: p1.y - curDy };
+      c2 = { x: p2.x, y: p2.y + curDy };
+    }
+
+    return `M ${p1.x} ${p1.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${p2.x} ${p2.y}`;
+  },
+
+  updateEdges() {
+    const pathClientCoord = document.getElementById("path-client-coord");
+    const pathCoordInv = document.getElementById("path-coord-inv");
+    const pathCoordPay = document.getElementById("path-coord-pay");
+    const pathInvCoord = document.getElementById("path-inv-coord");
+    const pathPayCoord = document.getElementById("path-pay-coord");
+    const pathBeatDbBroker = document.getElementById("path-beat-dbbroker");
+    const pathDbBrokerWorker = document.getElementById("path-dbbroker-worker");
+    const pathWorkerDbCache = document.getElementById("path-worker-dbcache");
+    const pathInvDbCache = document.getElementById("path-inv-dbcache");
+    const pathWorkerCoord = document.getElementById("path-worker-coord");
+    const pathCoordDbCoord = document.getElementById("path-coord-dbcoord");
+    const pathInvDbInv = document.getElementById("path-inv-dbinv");
+    const pathPayDbPay = document.getElementById("path-pay-dbpay");
+
+    const dClientCoord = this.getDynamicPathD("client", "coord");
+    const dCoordInv = this.getDynamicPathD("coord", "inv");
+    const dCoordPay = this.getDynamicPathD("coord", "pay");
+    const dInvCoord = this.getDynamicPathD("inv", "coord");
+    const dPayCoord = this.getDynamicPathD("pay", "coord");
+    const dBeatDbBroker = this.getDynamicPathD("beat", "db-redis-broker");
+    const dDbBrokerWorker = this.getDynamicPathD("db-redis-broker", "worker");
+    const dWorkerDbCache = this.getDynamicPathD("worker", "db-redis-cache");
+    const dInvDbCache = this.getDynamicPathD("inv", "db-redis-cache");
+    const dWorkerCoord = this.getDynamicPathD("worker", "coord");
+    const dCoordDbCoord = this.getDynamicPathD("coord", "db-coord");
+    const dInvDbInv = this.getDynamicPathD("inv", "db-inv");
+    const dPayDbPay = this.getDynamicPathD("pay", "db-pay");
+
+    if (pathClientCoord) pathClientCoord.setAttribute("d", dClientCoord);
+    if (pathCoordInv) pathCoordInv.setAttribute("d", dCoordInv);
+    if (pathCoordPay) pathCoordPay.setAttribute("d", dCoordPay);
+    if (pathInvCoord) pathInvCoord.setAttribute("d", dInvCoord);
+    if (pathPayCoord) pathPayCoord.setAttribute("d", dPayCoord);
+    if (pathBeatDbBroker) pathBeatDbBroker.setAttribute("d", dBeatDbBroker);
+    if (pathDbBrokerWorker) pathDbBrokerWorker.setAttribute("d", dDbBrokerWorker);
+    if (pathWorkerDbCache) pathWorkerDbCache.setAttribute("d", dWorkerDbCache);
+    if (pathInvDbCache) pathInvDbCache.setAttribute("d", dInvDbCache);
+    if (pathWorkerCoord) pathWorkerCoord.setAttribute("d", dWorkerCoord);
+    if (pathCoordDbCoord) pathCoordDbCoord.setAttribute("d", dCoordDbCoord);
+    if (pathInvDbInv) pathInvDbInv.setAttribute("d", dInvDbInv);
+    if (pathPayDbPay) pathPayDbPay.setAttribute("d", dPayDbPay);
+  },
+
+  fitView() {
+    if (!this.container) return;
+    const rect = this.container.getBoundingClientRect();
+    const cWidth = rect.width || 1000;
+    const cHeight = rect.height || 540;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    Object.values(this.nodes).forEach((n) => {
+      minX = Math.min(minX, n.x);
+      minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x + n.width);
+      maxY = Math.max(maxY, n.y + n.height);
+    });
+
+    const bWidth = maxX - minX;
+    const bHeight = maxY - minY;
+    const padding = 55;
+
+    const scaleX = (cWidth - padding * 2) / bWidth;
+    const scaleY = (cHeight - padding * 2) / bHeight;
+    const newZoom = Math.min(Math.max(Math.min(scaleX, scaleY), this.minZoom), 1.15);
+
+    this.zoom = newZoom;
+    this.panX = (cWidth - bWidth * newZoom) / 2 - minX * newZoom;
+    this.panY = (cHeight - bHeight * newZoom) / 2 - minY * newZoom;
+
+    this.applyTransform();
+    this.saveViewport();
+  },
+
+  focusNode(nodeKey) {
+    const node = this.nodes[nodeKey];
+    if (!node || !this.container) return;
+
+    const rect = this.container.getBoundingClientRect();
+    const cWidth = rect.width || 1000;
+    const cHeight = rect.height || 540;
+
+    this.zoom = 1.15;
+    this.panX = cWidth / 2 - (node.x + node.width / 2) * this.zoom;
+    this.panY = cHeight / 2 - (node.y + node.height / 2) * this.zoom;
+
+    this.applyTransform();
+    this.saveViewport();
+  },
+
+  resetLayout() {
+    this.nodes = JSON.parse(JSON.stringify(DEFAULT_CANVAS_NODES));
+    this.renderNodePositions();
+    this.updateEdges();
+    this.fitView();
+    this.saveNodes();
+    this.saveViewport();
+  },
+
+  saveNodes() {
+    localStorage.setItem("dtc_topology_nodes", JSON.stringify(this.nodes));
+  },
 
   saveViewport() {
     localStorage.setItem(
