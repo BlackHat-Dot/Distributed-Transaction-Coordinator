@@ -575,8 +575,10 @@ function animatePacketAlongPath({
       "coord-pay": "path-coord-pay",
       "inv-coord": "path-inv-coord",
       "pay-coord": "path-pay-coord",
-      "beat-dbredis": "path-beat-dbredis",
-      "dbredis-worker": "path-dbredis-worker",
+      "beat-dbbroker": "path-beat-dbbroker",
+      "dbbroker-worker": "path-dbbroker-worker",
+      "worker-dbcache": "path-worker-dbcache",
+      "inv-dbcache": "path-inv-dbcache",
       "worker-coord": "path-worker-coord",
       "coord-dbcoord": "path-coord-dbcoord",
       "inv-dbinv": "path-inv-dbinv",
@@ -1549,19 +1551,23 @@ async function triggerRecoverySweepAnimation() {
   DOM.topoCoordLease.textContent = "SWEEPING";
   DOM.recRedisLock.innerHTML = `<span class="badge badge-purple">SWEEPING LEASE</span>`;
 
-  // Stage 1: Celery Beat -> Redis Message Broker (Push Scheduled Task)
-  animatePacketAlongPath({ route: "beat-dbredis", type: "purple", durationMs: 380, destinationNodeId: "node-box-db-redis" });
+  // Stage 1: Celery Beat -> Redis Message Broker (Push Scheduled Trigger)
+  animatePacketAlongPath({ route: "beat-dbbroker", type: "purple", durationMs: 380, destinationNodeId: "node-box-db-redis-broker" });
   await sleep(340);
 
-  // Stage 2: Redis Message Broker -> Recovery Worker (Pop Task & Claim Lease)
-  animatePacketAlongPath({ route: "dbredis-worker", type: "purple", durationMs: 340, destinationNodeId: "node-box-worker" });
+  // Stage 2: Redis Message Broker -> Recovery Worker (Pop Task)
+  animatePacketAlongPath({ route: "dbbroker-worker", type: "purple", durationMs: 340, destinationNodeId: "node-box-worker" });
   await sleep(300);
 
-  // Stage 3: Recovery Worker -> Coordinator Service (Sweep Sagas)
+  // Stage 3: Recovery Worker -> Redis Mutex & Cache (Claim 2h Lease Lock)
+  animatePacketAlongPath({ route: "worker-dbcache", type: "purple", durationMs: 340, destinationNodeId: "node-box-db-redis-cache" });
+  await sleep(300);
+
+  // Stage 4: Recovery Worker -> Coordinator Service (Sweep Stale Sagas)
   animatePacketAlongPath({ route: "worker-coord", type: "purple", durationMs: 380, destinationNodeId: "node-box-coord" });
   await sleep(320);
 
-  // Stage 4: Coordinator -> Inventory & Payment Services (Probe Ground Truth)
+  // Stage 5: Coordinator -> Inventory & Payment Services (Probe Ground Truth)
   animatePacketAlongPath({ route: "coord-inv", type: "purple", durationMs: 420, destinationNodeId: "node-box-inv" });
   animatePacketAlongPath({ route: "coord-pay", type: "purple", durationMs: 420, destinationNodeId: "node-box-pay" });
 }
@@ -1855,481 +1861,389 @@ function startRecoveryCountdown() {
 }
 
 const DEFAULT_CANVAS_NODES = {
-  client:     { x: 30,  y: 250, width: 165, height: 105 },
-  beat:       { x: 230, y: 15,  width: 220, height: 58 },
-  "db-redis": { x: 245, y: 95,  width: 190, height: 44 },
-  worker:     { x: 230, y: 160, width: 220, height: 68 },
-  coord:      { x: 230, y: 250, width: 220, height: 120 },
-  "db-coord": { x: 255, y: 390, width: 170, height: 44 },
-  inv:        { x: 530, y: 120, width: 210, height: 95 },
-  "db-inv":   { x: 770, y: 145, width: 165, height: 44 },
-  pay:        { x: 530, y: 280, width: 210, height: 95 },
-  "db-pay":   { x: 770, y: 305, width: 165, height: 44 },
-};
+        client:            { x: 45,  y: 245, width: 165, height: 105 },
+        beat:              { x: 280, y: 15,  width: 220, height: 58 },
+        "db-redis-broker": { x: 45,  y: 35,  width: 185, height: 44 },
+        worker:            { x: 280, y: 145, width: 220, height: 68 },
+        "db-redis-cache":  { x: 545, y: 25,  width: 195, height: 44 },
+        coord:             { x: 280, y: 245, width: 220, height: 120 },
+        "db-coord":        { x: 305, y: 395, width: 170, height: 44 },
+        inv:               { x: 545, y: 135, width: 200, height: 95 },
+        "db-inv":          { x: 785, y: 160, width: 165, height: 44 },
+        pay:               { x: 545, y: 275, width: 200, height: 95 },
+        "db-pay":          { x: 785, y: 300, width: 165, height: 44 },
+      };
 
-const CanvasEngine = {
-  container: null,
-  svg: null,
-  world: null,
-  bgRect: null,
-  zoomLabel: null,
-  btnZoomIn: null,
-  btnZoomOut: null,
-  btnFitView: null,
-  btnResetLayout: null,
+      const CanvasEngine = {
+        container: null,
+        svg: null,
+        world: null,
+        bgRect: null,
+        zoomLabel: null,
+        btnZoomIn: null,
+        btnZoomOut: null,
+        btnFitView: null,
+        btnResetLayout: null,
 
-  panX: 0,
-  panY: 0,
-  zoom: 1.0,
-  minZoom: 0.35,
-  maxZoom: 2.5,
+        panX: 0,
+        panY: 0,
+        zoom: 1.0,
+        minZoom: 0.35,
+        maxZoom: 2.5,
 
-  nodes: JSON.parse(JSON.stringify(DEFAULT_CANVAS_NODES)),
+        nodes: JSON.parse(JSON.stringify(DEFAULT_CANVAS_NODES)),
 
-  isDraggingNode: false,
-  activeDragNodeKey: null,
-  dragStartMouse: { x: 0, y: 0 },
-  dragStartNodePos: { x: 0, y: 0 },
+        isDraggingNode: false,
+        activeDragNodeKey: null,
+        dragStartMouse: { x: 0, y: 0 },
+        dragStartNodePos: { x: 0, y: 0 },
 
-  isPanning: false,
-  panStartMouse: { x: 0, y: 0 },
-  panStartPos: { x: 0, y: 0 },
+        isPanning: false,
+        panStartMouse: { x: 0, y: 0 },
+        panStartPos: { x: 0, y: 0 },
 
-  init() {
-    this.container = document.getElementById("topology-canvas-container");
-    this.svg = document.getElementById("topology-svg");
-    this.world = document.getElementById("canvas-world");
-    this.bgRect = document.getElementById("canvas-bg-rect");
-    this.zoomLabel = document.getElementById("canvas-zoom-label");
-    this.btnZoomIn = document.getElementById("btn-canvas-zoom-in");
-    this.btnZoomOut = document.getElementById("btn-canvas-zoom-out");
-    this.btnFitView = document.getElementById("btn-canvas-fit-view");
-    this.btnResetLayout = document.getElementById("btn-canvas-reset-layout");
+        init() {
+          this.container = document.getElementById("topology-canvas-container");
+          this.svg = document.getElementById("topology-svg");
+          this.world = document.getElementById("canvas-world");
+          this.bgRect = document.getElementById("canvas-bg-rect");
+          this.zoomLabel = document.getElementById("canvas-zoom-label");
+          this.btnZoomIn = document.getElementById("btn-canvas-zoom-in");
+          this.btnZoomOut = document.getElementById("btn-canvas-zoom-out");
+          this.btnFitView = document.getElementById("btn-canvas-fit-view");
+          this.btnResetLayout = document.getElementById("btn-canvas-reset-layout");
 
-    if (!this.container || !this.svg || !this.world) return;
+          if (!this.container || !this.svg || !this.world) return;
 
-    const TOPOLOGY_SCHEMA_VER = "dtc_topo_v7";
-    if (localStorage.getItem("dtc_topo_schema") !== TOPOLOGY_SCHEMA_VER) {
-      localStorage.removeItem("dtc_topology_nodes");
-      localStorage.removeItem("dtc_topology_viewport");
-      localStorage.setItem("dtc_topo_schema", TOPOLOGY_SCHEMA_VER);
-      this.nodes = JSON.parse(JSON.stringify(DEFAULT_CANVAS_NODES));
-    } else {
-      try {
-        const savedNodes = localStorage.getItem("dtc_topology_nodes");
-        if (savedNodes) {
-          const parsed = JSON.parse(savedNodes);
-          Object.keys(DEFAULT_CANVAS_NODES).forEach((k) => {
-            if (parsed[k] && typeof parsed[k].x === "number" && typeof parsed[k].y === "number") {
-              this.nodes[k] = { ...DEFAULT_CANVAS_NODES[k], x: parsed[k].x, y: parsed[k].y };
+          const TOPOLOGY_SCHEMA_VER = "dtc_topo_v8";
+          if (localStorage.getItem("dtc_topo_schema") !== TOPOLOGY_SCHEMA_VER) {
+            localStorage.removeItem("dtc_topology_nodes");
+            localStorage.removeItem("dtc_topology_viewport");
+            localStorage.setItem("dtc_topo_schema", TOPOLOGY_SCHEMA_VER);
+            this.nodes = JSON.parse(JSON.stringify(DEFAULT_CANVAS_NODES));
+          } else {
+            try {
+              const savedNodes = localStorage.getItem("dtc_topology_nodes");
+              if (savedNodes) {
+                const parsed = JSON.parse(savedNodes);
+                Object.keys(DEFAULT_CANVAS_NODES).forEach((k) => {
+                  if (parsed[k] && typeof parsed[k].x === "number" && typeof parsed[k].y === "number") {
+                    this.nodes[k] = { ...DEFAULT_CANVAS_NODES[k], x: parsed[k].x, y: parsed[k].y };
+                  }
+                });
+              }
+            } catch (e) {
+              console.warn("Could not load saved topology nodes", e);
+            }
+          }
+
+          try {
+            const savedVp = localStorage.getItem("dtc_topology_viewport");
+            if (savedVp) {
+              const vp = JSON.parse(savedVp);
+              if (typeof vp.panX === "number") this.panX = vp.panX;
+              if (typeof vp.panY === "number") this.panY = vp.panY;
+              if (typeof vp.zoom === "number") this.zoom = Math.min(Math.max(vp.zoom, this.minZoom), this.maxZoom);
+            }
+          } catch (e) {
+            console.warn("Could not load saved topology viewport", e);
+          }
+
+          this.bindEvents();
+          this.applyTransform();
+          this.renderNodePositions();
+          this.updateEdges();
+        },
+
+        bindEvents() {
+          this.container.addEventListener("wheel", (e) => this.onWheel(e), { passive: false });
+          this.container.addEventListener("mousedown", (e) => this.onMouseDown(e));
+          window.addEventListener("mousemove", (e) => this.onMouseMove(e));
+          window.addEventListener("mouseup", (e) => this.onMouseUp(e));
+
+          if (this.btnZoomIn) this.btnZoomIn.addEventListener("click", () => this.zoomBy(1.2));
+          if (this.btnZoomOut) this.btnZoomOut.addEventListener("click", () => this.zoomBy(1 / 1.2));
+          if (this.btnFitView) this.btnFitView.addEventListener("click", () => this.fitView());
+          if (this.btnResetLayout) this.btnResetLayout.addEventListener("click", () => this.resetLayout());
+
+          document.querySelectorAll(".topo-node-group").forEach((group) => {
+            group.addEventListener("mousedown", (e) => this.onNodeMouseDown(e, group));
+            group.addEventListener("dblclick", (e) => {
+              e.stopPropagation();
+              const key = group.getAttribute("data-node-key");
+              if (key && this.nodes[key]) {
+                this.focusNode(key);
+              }
+            });
+          });
+
+          window.addEventListener("resize", () => {
+            this.updateEdges();
+          });
+        },
+
+        onMouseDown(e) {
+          if (e.target.closest(".topo-node-group")) return;
+          this.isPanning = true;
+          this.panStartMouse = { x: e.clientX, y: e.clientY };
+          this.panStartPos = { x: this.panX, y: this.panY };
+          this.container.style.cursor = "grabbing";
+        },
+
+        onNodeMouseDown(e, group) {
+          e.stopPropagation();
+          const key = group.getAttribute("data-node-key");
+          if (!key || !this.nodes[key]) return;
+
+          this.isDraggingNode = true;
+          this.activeDragNodeKey = key;
+          this.dragStartMouse = { x: e.clientX, y: e.clientY };
+          this.dragStartNodePos = { x: this.nodes[key].x, y: this.nodes[key].y };
+          group.classList.add("dragging");
+          this.container.style.cursor = "move";
+        },
+
+        onMouseMove(e) {
+          if (this.isPanning) {
+            const dx = e.clientX - this.panStartMouse.x;
+            const dy = e.clientY - this.panStartMouse.y;
+            this.panX = this.panStartPos.x + dx;
+            this.panY = this.panStartPos.y + dy;
+            this.applyTransform();
+          } else if (this.isDraggingNode && this.activeDragNodeKey) {
+            const dx = (e.clientX - this.dragStartMouse.x) / this.zoom;
+            const dy = (e.clientY - this.dragStartMouse.y) / this.zoom;
+            this.nodes[this.activeDragNodeKey].x = Math.round(this.dragStartNodePos.x + dx);
+            this.nodes[this.activeDragNodeKey].y = Math.round(this.dragStartNodePos.y + dy);
+            this.renderNodePositions();
+            this.updateEdges();
+          }
+        },
+
+        onMouseUp() {
+          if (this.isPanning) {
+            this.isPanning = false;
+            this.container.style.cursor = "grab";
+            this.saveViewport();
+          }
+          if (this.isDraggingNode) {
+            const group = document.getElementById(`node-group-${this.activeDragNodeKey}`);
+            if (group) group.classList.remove("dragging");
+            this.isDraggingNode = false;
+            this.activeDragNodeKey = null;
+            this.container.style.cursor = "grab";
+            this.saveNodes();
+          }
+        },
+
+        onWheel(e) {
+          e.preventDefault();
+          const rect = this.container.getBoundingClientRect();
+          const mouseX = e.clientX - rect.left;
+          const mouseY = e.clientY - rect.top;
+
+          const zoomFactor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+          const newZoom = Math.min(Math.max(this.zoom * zoomFactor, this.minZoom), this.maxZoom);
+          if (newZoom === this.zoom) return;
+
+          this.panX = mouseX - (mouseX - this.panX) * (newZoom / this.zoom);
+          this.panY = mouseY - (mouseY - this.panY) * (newZoom / this.zoom);
+          this.zoom = newZoom;
+
+          this.applyTransform();
+          this.saveViewport();
+        },
+
+        zoomBy(factor) {
+          if (!this.container) return;
+          const rect = this.container.getBoundingClientRect();
+          const centerX = rect.width / 2;
+          const centerY = rect.height / 2;
+
+          const newZoom = Math.min(Math.max(this.zoom * factor, this.minZoom), this.maxZoom);
+          if (newZoom === this.zoom) return;
+
+          this.panX = centerX - (centerX - this.panX) * (newZoom / this.zoom);
+          this.panY = centerY - (centerY - this.panY) * (newZoom / this.zoom);
+          this.zoom = newZoom;
+
+          this.applyTransform();
+          this.saveViewport();
+        },
+
+        applyTransform() {
+          if (this.world) {
+            this.world.setAttribute(
+              "transform",
+              `translate(${this.panX.toFixed(2)}, ${this.panY.toFixed(2)}) scale(${this.zoom.toFixed(3)})`
+            );
+          }
+          if (this.zoomLabel) {
+            this.zoomLabel.textContent = `${Math.round(this.zoom * 100)}%`;
+          }
+        },
+
+        renderNodePositions() {
+          Object.keys(this.nodes).forEach((key) => {
+            const group = document.getElementById(`node-group-${key}`);
+            if (group && this.nodes[key]) {
+              group.setAttribute("transform", `translate(${this.nodes[key].x}, ${this.nodes[key].y})`);
             }
           });
-        }
-      } catch (e) {
-        console.warn("Could not load saved topology nodes", e);
-      }
-    }
+        },
 
-    try {
-      const savedVp = localStorage.getItem("dtc_topology_viewport");
-      if (savedVp) {
-        const vp = JSON.parse(savedVp);
-        if (typeof vp.panX === "number") this.panX = vp.panX;
-        if (typeof vp.panY === "number") this.panY = vp.panY;
-        if (typeof vp.zoom === "number") this.zoom = Math.min(Math.max(vp.zoom, this.minZoom), this.maxZoom);
-      }
-    } catch (e) {
-      console.warn("Could not load saved viewport", e);
-    }
+        getDynamicPathD(sourceKey, targetKey) {
+          const s = this.nodes[sourceKey];
+          const t = this.nodes[targetKey];
+          if (!s || !t) return "";
 
-    this.applyAllNodePositions();
-    this.updateEdges();
-    this.applyTransform();
+          const dx = t.x - s.x;
+          const dy = t.y - s.y;
 
-    this.bindEvents();
+          let p1, p2, c1, c2;
 
-    if (!localStorage.getItem("dtc_topology_viewport")) {
-      setTimeout(() => this.fitView(), 50);
-    }
-  },
+          if (Math.abs(dx) >= Math.abs(dy)) {
+            if (dx >= 0) {
+              p1 = { x: s.x + s.width, y: s.y + s.height / 2 };
+              p2 = { x: t.x, y: t.y + t.height / 2 };
+              const curDx = Math.max((p2.x - p1.x) * 0.5, 30);
+              c1 = { x: p1.x + curDx, y: p1.y };
+              c2 = { x: p2.x - curDx, y: p2.y };
+            } else {
+              p1 = { x: s.x, y: s.y + s.height / 2 };
+              p2 = { x: t.x + t.width, y: t.y + t.height / 2 };
+              const curDx = Math.max((p1.x - p2.x) * 0.5, 30);
+              c1 = { x: p1.x - curDx, y: p1.y };
+              c2 = { x: p2.x + curDx, y: p2.y };
+            }
+          }
+          else if (dy > 0) {
+            p1 = { x: s.x + s.width / 2, y: s.y + s.height };
+            p2 = { x: t.x + t.width / 2, y: t.y };
+            const curDy = Math.max((p2.y - p1.y) * 0.5, 30);
+            c1 = { x: p1.x, y: p1.y + curDy };
+            c2 = { x: p2.x, y: p2.y - curDy };
+          }
+          else {
+            p1 = { x: s.x + s.width / 2, y: s.y };
+            p2 = { x: t.x + t.width / 2, y: t.y + t.height };
+            const curDy = Math.max((p1.y - p2.y) * 0.5, 30);
+            c1 = { x: p1.x, y: p1.y - curDy };
+            c2 = { x: p2.x, y: p2.y + curDy };
+          }
 
-  applyAllNodePositions() {
-    Object.keys(this.nodes).forEach((key) => {
-      const group = document.getElementById(`node-group-${key}`);
-      if (group) {
-        const n = this.nodes[key];
-        group.setAttribute("transform", `translate(${n.x}, ${n.y})`);
-      }
-    });
-  },
+          return `M ${p1.x} ${p1.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${p2.x} ${p2.y}`;
+        },
 
-  applyTransform() {
-    if (!this.world) return;
-    this.world.setAttribute("transform", `translate(${this.panX}, ${this.panY}) scale(${this.zoom})`);
-    if (this.zoomLabel) {
-      this.zoomLabel.textContent = `${Math.round(this.zoom * 100)}%`;
-    }
-  },
+        updateEdges() {
+          const pathClientCoord = document.getElementById("path-client-coord");
+          const pathCoordInv = document.getElementById("path-coord-inv");
+          const pathCoordPay = document.getElementById("path-coord-pay");
+          const pathInvCoord = document.getElementById("path-inv-coord");
+          const pathPayCoord = document.getElementById("path-pay-coord");
+          const pathBeatDbBroker = document.getElementById("path-beat-dbbroker");
+          const pathDbBrokerWorker = document.getElementById("path-dbbroker-worker");
+          const pathWorkerDbCache = document.getElementById("path-worker-dbcache");
+          const pathInvDbCache = document.getElementById("path-inv-dbcache");
+          const pathWorkerCoord = document.getElementById("path-worker-coord");
+          const pathCoordDbCoord = document.getElementById("path-coord-dbcoord");
+          const pathInvDbInv = document.getElementById("path-inv-dbinv");
+          const pathPayDbPay = document.getElementById("path-pay-dbpay");
 
-  saveState() {
-    try {
-      localStorage.setItem("dtc_topology_nodes", JSON.stringify(this.nodes));
-      localStorage.setItem(
-        "dtc_topology_viewport",
-        JSON.stringify({ panX: this.panX, panY: this.panY, zoom: this.zoom })
-      );
-    } catch (e) {
-    }
-  },
+          const dClientCoord = this.getDynamicPathD("client", "coord");
+          const dCoordInv = this.getDynamicPathD("coord", "inv");
+          const dCoordPay = this.getDynamicPathD("coord", "pay");
+          const dInvCoord = this.getDynamicPathD("inv", "coord");
+          const dPayCoord = this.getDynamicPathD("pay", "coord");
+          const dBeatDbBroker = this.getDynamicPathD("beat", "db-redis-broker");
+          const dDbBrokerWorker = this.getDynamicPathD("db-redis-broker", "worker");
+          const dWorkerDbCache = this.getDynamicPathD("worker", "db-redis-cache");
+          const dInvDbCache = this.getDynamicPathD("inv", "db-redis-cache");
+          const dWorkerCoord = this.getDynamicPathD("worker", "coord");
+          const dCoordDbCoord = this.getDynamicPathD("coord", "db-coord");
+          const dInvDbInv = this.getDynamicPathD("inv", "db-inv");
+          const dPayDbPay = this.getDynamicPathD("pay", "db-pay");
 
-  getDynamicPathD(sourceKey, targetKey) {
-    const s = this.nodes[sourceKey];
-    const t = this.nodes[targetKey];
-    if (!s || !t) return "";
+          if (pathClientCoord) pathClientCoord.setAttribute("d", dClientCoord);
+          if (pathCoordInv) pathCoordInv.setAttribute("d", dCoordInv);
+          if (pathCoordPay) pathCoordPay.setAttribute("d", dCoordPay);
+          if (pathInvCoord) pathInvCoord.setAttribute("d", dInvCoord);
+          if (pathPayCoord) pathPayCoord.setAttribute("d", dPayCoord);
+          if (pathBeatDbBroker) pathBeatDbBroker.setAttribute("d", dBeatDbBroker);
+          if (pathDbBrokerWorker) pathDbBrokerWorker.setAttribute("d", dDbBrokerWorker);
+          if (pathWorkerDbCache) pathWorkerDbCache.setAttribute("d", dWorkerDbCache);
+          if (pathInvDbCache) pathInvDbCache.setAttribute("d", dInvDbCache);
+          if (pathWorkerCoord) pathWorkerCoord.setAttribute("d", dWorkerCoord);
+          if (pathCoordDbCoord) pathCoordDbCoord.setAttribute("d", dCoordDbCoord);
+          if (pathInvDbInv) pathInvDbInv.setAttribute("d", dInvDbInv);
+          if (pathPayDbPay) pathPayDbPay.setAttribute("d", dPayDbPay);
+        },
 
-    const sCenter = { x: s.x + s.width / 2, y: s.y + s.height / 2 };
-    const tCenter = { x: t.x + t.width / 2, y: t.y + t.height / 2 };
+        fitView() {
+          if (!this.container) return;
+          const rect = this.container.getBoundingClientRect();
+          const cWidth = rect.width || 800;
+          const cHeight = rect.height || 360;
 
-    let p1 = { x: 0, y: 0 };
-    let p2 = { x: 0, y: 0 };
-    let c1 = { x: 0, y: 0 };
-    let c2 = { x: 0, y: 0 };
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          Object.values(this.nodes).forEach((n) => {
+            minX = Math.min(minX, n.x);
+            minY = Math.min(minY, n.y);
+            maxX = Math.max(maxX, n.x + n.width);
+            maxY = Math.max(maxY, n.y + n.height);
+          });
 
-    const dx = tCenter.x - sCenter.x;
-    const dy = tCenter.y - sCenter.y;
+          const bWidth = maxX - minX;
+          const bHeight = maxY - minY;
+          const padding = 50;
 
-    if (dx >= (s.width + t.width) * 0.35) {
-      p1 = { x: s.x + s.width, y: s.y + s.height / 2 };
-      p2 = { x: t.x, y: t.y + t.height / 2 };
-      const curDx = Math.max((p2.x - p1.x) * 0.5, 30);
-      c1 = { x: p1.x + curDx, y: p1.y };
-      c2 = { x: p2.x - curDx, y: p2.y };
-    }
-    else if (dx <= -(s.width + t.width) * 0.35) {
-      p1 = { x: s.x, y: s.y + s.height / 2 };
-      p2 = { x: t.x + t.width, y: t.y + t.height / 2 };
-      const curDx = Math.max((p1.x - p2.x) * 0.5, 30);
-      c1 = { x: p1.x - curDx, y: p1.y };
-      c2 = { x: p2.x + curDx, y: p2.y };
-    }
-    else if (dy > 0) {
-      p1 = { x: s.x + s.width / 2, y: s.y + s.height };
-      p2 = { x: t.x + t.width / 2, y: t.y };
-      const curDy = Math.max((p2.y - p1.y) * 0.5, 30);
-      c1 = { x: p1.x, y: p1.y + curDy };
-      c2 = { x: p2.x, y: p2.y - curDy };
-    }
-    else {
-      p1 = { x: s.x + s.width / 2, y: s.y };
-      p2 = { x: t.x + t.width / 2, y: t.y + t.height };
-      const curDy = Math.max((p1.y - p2.y) * 0.5, 30);
-      c1 = { x: p1.x, y: p1.y - curDy };
-      c2 = { x: p2.x, y: p2.y + curDy };
-    }
+          const scaleX = (cWidth - padding * 2) / bWidth;
+          const scaleY = (cHeight - padding * 2) / bHeight;
+          const newZoom = Math.min(Math.max(Math.min(scaleX, scaleY), this.minZoom), 1.3);
 
-    return `M ${p1.x} ${p1.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${p2.x} ${p2.y}`;
-  },
+          this.zoom = newZoom;
+          this.panX = (cWidth - bWidth * newZoom) / 2 - minX * newZoom;
+          this.panY = (cHeight - bHeight * newZoom) / 2 - minY * newZoom;
 
-  updateEdges() {
-    const pathClientCoord = document.getElementById("path-client-coord");
-    const pathCoordInv = document.getElementById("path-coord-inv");
-    const pathCoordPay = document.getElementById("path-coord-pay");
-    const pathInvCoord = document.getElementById("path-inv-coord");
-    const pathPayCoord = document.getElementById("path-pay-coord");
-    const pathBeatDbRedis = document.getElementById("path-beat-dbredis");
-    const pathDbRedisWorker = document.getElementById("path-dbredis-worker");
-    const pathWorkerCoord = document.getElementById("path-worker-coord");
-    const pathCoordDbCoord = document.getElementById("path-coord-dbcoord");
-    const pathInvDbInv = document.getElementById("path-inv-dbinv");
-    const pathPayDbPay = document.getElementById("path-pay-dbpay");
+          this.applyTransform();
+          this.saveViewport();
+        },
 
-    const dClientCoord = this.getDynamicPathD("client", "coord");
-    const dCoordInv = this.getDynamicPathD("coord", "inv");
-    const dCoordPay = this.getDynamicPathD("coord", "pay");
-    const dInvCoord = this.getDynamicPathD("inv", "coord");
-    const dPayCoord = this.getDynamicPathD("pay", "coord");
-    const dBeatDbRedis = this.getDynamicPathD("beat", "db-redis");
-    const dDbRedisWorker = this.getDynamicPathD("db-redis", "worker");
-    const dWorkerCoord = this.getDynamicPathD("worker", "coord");
-    const dCoordDbCoord = this.getDynamicPathD("coord", "db-coord");
-    const dInvDbInv = this.getDynamicPathD("inv", "db-inv");
-    const dPayDbPay = this.getDynamicPathD("pay", "db-pay");
+        focusNode(nodeKey) {
+          const node = this.nodes[nodeKey];
+          if (!node || !this.container) return;
 
-    if (pathClientCoord) pathClientCoord.setAttribute("d", dClientCoord);
-    if (pathCoordInv) pathCoordInv.setAttribute("d", dCoordInv);
-    if (pathCoordPay) pathCoordPay.setAttribute("d", dCoordPay);
-    if (pathInvCoord) pathInvCoord.setAttribute("d", dInvCoord);
-    if (pathPayCoord) pathPayCoord.setAttribute("d", dPayCoord);
-    if (pathBeatDbRedis) pathBeatDbRedis.setAttribute("d", dBeatDbRedis);
-    if (pathDbRedisWorker) pathDbRedisWorker.setAttribute("d", dDbRedisWorker);
-    if (pathWorkerCoord) pathWorkerCoord.setAttribute("d", dWorkerCoord);
-    if (pathCoordDbCoord) pathCoordDbCoord.setAttribute("d", dCoordDbCoord);
-    if (pathInvDbInv) pathInvDbInv.setAttribute("d", dInvDbInv);
-    if (pathPayDbPay) pathPayDbPay.setAttribute("d", dPayDbPay);
-  },
+          const rect = this.container.getBoundingClientRect();
+          const cWidth = rect.width || 800;
+          const cHeight = rect.height || 360;
 
-  fitView() {
-    if (!this.container) return;
-    const rect = this.container.getBoundingClientRect();
-    const cWidth = rect.width || 800;
-    const cHeight = rect.height || 360;
+          this.zoom = 1.15;
+          this.panX = cWidth / 2 - (node.x + node.width / 2) * this.zoom;
+          this.panY = cHeight / 2 - (node.y + node.height / 2) * this.zoom;
 
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    Object.values(this.nodes).forEach((n) => {
-      minX = Math.min(minX, n.x);
-      minY = Math.min(minY, n.y);
-      maxX = Math.max(maxX, n.x + n.width);
-      maxY = Math.max(maxY, n.y + n.height);
-    });
+          this.applyTransform();
+          this.saveViewport();
+        },
 
-    const bWidth = maxX - minX;
-    const bHeight = maxY - minY;
-    const padding = 50;
+        resetLayout() {
+          this.nodes = JSON.parse(JSON.stringify(DEFAULT_CANVAS_NODES));
+          this.renderNodePositions();
+          this.updateEdges();
+          this.fitView();
+          this.saveNodes();
+          this.saveViewport();
+        },
 
-    const scaleX = (cWidth - padding * 2) / bWidth;
-    const scaleY = (cHeight - padding * 2) / bHeight;
-    const newZoom = Math.min(Math.max(Math.min(scaleX, scaleY), this.minZoom), 1.3);
+        saveNodes() {
+          localStorage.setItem("dtc_topology_nodes", JSON.stringify(this.nodes));
+        },
 
-    this.zoom = newZoom;
-    this.panX = (cWidth - bWidth * newZoom) / 2 - minX * newZoom;
-    this.panY = (cHeight - bHeight * newZoom) / 2 - minY * newZoom;
-
-    this.applyTransform();
-    this.saveState();
-  },
-
-  focusNode(nodeKey) {
-    const node = this.nodes[nodeKey];
-    if (!node || !this.container) return;
-
-    const rect = this.container.getBoundingClientRect();
-    const cWidth = rect.width || 800;
-    const cHeight = rect.height || 360;
-
-    this.zoom = 1.15;
-    this.panX = cWidth / 2 - (node.x + node.width / 2) * this.zoom;
-    this.panY = cHeight / 2 - (node.y + node.height / 2) * this.zoom;
-
-    this.applyTransform();
-    this.saveState();
-  },
-
-  resetLayout() {
-    this.nodes = JSON.parse(JSON.stringify(DEFAULT_CANVAS_NODES));
-    this.applyAllNodePositions();
-    this.updateEdges();
-    this.fitView();
-    this.saveState();
-  },
-
-  bindEvents() {
-    
-    window.addEventListener("keydown", (e) => {
-      if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
-
-      if (e.key === "+" || e.key === "=") {
-        e.preventDefault();
-        CanvasEngine.btnZoomIn?.click();
-      } else if (e.key === "-" || e.key === "_") {
-        e.preventDefault();
-        CanvasEngine.btnZoomOut?.click();
-      } else if (e.key === "0") {
-        e.preventDefault();
-        CanvasEngine.fitView();
-      }
-    });
-
-    const nodeGroups = this.svg.querySelectorAll(".topo-node-group");
-    nodeGroups.forEach((group) => {
-      const nodeKey = group.getAttribute("data-node-key");
-
-      group.addEventListener("mousedown", (e) => {
-        if (e.button !== 0) return;
-        e.stopPropagation();
-        this.isDraggingNode = true;
-        this.activeDragNodeKey = nodeKey;
-        this.dragStartMouse = { x: e.clientX, y: e.clientY };
-        this.dragStartNodePos = { x: this.nodes[nodeKey].x, y: this.nodes[nodeKey].y };
-        group.classList.add("is-dragging");
-      });
-
-      group.addEventListener("touchstart", (e) => {
-        if (e.touches.length !== 1) return;
-        e.stopPropagation();
-        this.isDraggingNode = true;
-        this.activeDragNodeKey = nodeKey;
-        this.dragStartMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        this.dragStartNodePos = { x: this.nodes[nodeKey].x, y: this.nodes[nodeKey].y };
-        group.classList.add("is-dragging");
-      }, { passive: false });
-
-      group.addEventListener("dblclick", (e) => {
-        e.stopPropagation();
-        this.focusNode(nodeKey);
-      });
-    });
-
-    window.addEventListener("mousemove", (e) => {
-      if (this.isDraggingNode && this.activeDragNodeKey) {
-        const dx = (e.clientX - this.dragStartMouse.x) / this.zoom;
-        const dy = (e.clientY - this.dragStartMouse.y) / this.zoom;
-        const node = this.nodes[this.activeDragNodeKey];
-        node.x = Math.round(this.dragStartNodePos.x + dx);
-        node.y = Math.round(this.dragStartNodePos.y + dy);
-
-        const group = document.getElementById(`node-group-${this.activeDragNodeKey}`);
-        if (group) {
-          group.setAttribute("transform", `translate(${node.x}, ${node.y})`);
-        }
-        this.updateEdges();
-        return;
-      }
-
-      if (this.isPanning) {
-        this.panX = this.panStartPos.x + (e.clientX - this.panStartMouse.x);
-        this.panY = this.panStartPos.y + (e.clientY - this.panStartMouse.y);
-        this.applyTransform();
-      }
-    });
-
-    window.addEventListener("mouseup", () => {
-      if (this.isDraggingNode) {
-        this.isDraggingNode = false;
-        if (this.activeDragNodeKey) {
-          const group = document.getElementById(`node-group-${this.activeDragNodeKey}`);
-          if (group) group.classList.remove("is-dragging");
-          this.activeDragNodeKey = null;
-        }
-        this.saveState();
-      }
-
-      if (this.isPanning) {
-        this.isPanning = false;
-        this.container.classList.remove("is-panning");
-        this.saveState();
-      }
-    });
-
-    window.addEventListener("touchmove", (e) => {
-      if (this.isDraggingNode && this.activeDragNodeKey && e.touches.length === 1) {
-        e.preventDefault();
-        const dx = (e.touches[0].clientX - this.dragStartMouse.x) / this.zoom;
-        const dy = (e.touches[0].clientY - this.dragStartMouse.y) / this.zoom;
-        const node = this.nodes[this.activeDragNodeKey];
-        node.x = Math.round(this.dragStartNodePos.x + dx);
-        node.y = Math.round(this.dragStartNodePos.y + dy);
-
-        const group = document.getElementById(`node-group-${this.activeDragNodeKey}`);
-        if (group) {
-          group.setAttribute("transform", `translate(${node.x}, ${node.y})`);
-        }
-        this.updateEdges();
-      } else if (this.isPanning && e.touches.length === 1) {
-        e.preventDefault();
-        this.panX = this.panStartPos.x + (e.touches[0].clientX - this.panStartMouse.x);
-        this.panY = this.panStartPos.y + (e.touches[0].clientY - this.panStartMouse.y);
-        this.applyTransform();
-      }
-    }, { passive: false });
-
-    window.addEventListener("touchend", () => {
-      if (this.isDraggingNode) {
-        this.isDraggingNode = false;
-        if (this.activeDragNodeKey) {
-          const group = document.getElementById(`node-group-${this.activeDragNodeKey}`);
-          if (group) group.classList.remove("is-dragging");
-          this.activeDragNodeKey = null;
-        }
-        this.saveState();
-      }
-      if (this.isPanning) {
-        this.isPanning = false;
-        this.container.classList.remove("is-panning");
-        this.saveState();
-      }
-    });
-
-    if (this.bgRect) {
-      this.bgRect.addEventListener("mousedown", (e) => {
-        if (e.button !== 0) return;
-        this.isPanning = true;
-        this.panStartMouse = { x: e.clientX, y: e.clientY };
-        this.panStartPos = { x: this.panX, y: this.panY };
-        this.container.classList.add("is-panning");
-      });
-
-      this.bgRect.addEventListener("touchstart", (e) => {
-        if (e.touches.length !== 1) return;
-        this.isPanning = true;
-        this.panStartMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        this.panStartPos = { x: this.panX, y: this.panY };
-        this.container.classList.add("is-panning");
-      }, { passive: false });
-    }
-
-    this.container.addEventListener("wheel", (e) => {
-      e.preventDefault();
-      const rect = this.container.getBoundingClientRect();
-      const cursorX = e.clientX - rect.left;
-      const cursorY = e.clientY - rect.top;
-
-      const delta = e.deltaY < 0 ? 0.01 : -0.01;
-      const newZoom = Math.min(Math.max(Math.round((this.zoom + delta) * 100) / 100, this.minZoom), this.maxZoom);
-
-      if (newZoom === this.zoom) return;
-
-      this.panX = cursorX - (cursorX - this.panX) * (newZoom / this.zoom);
-      this.panY = cursorY - (cursorY - this.panY) * (newZoom / this.zoom);
-      this.zoom = newZoom;
-
-      this.applyTransform();
-      this.saveState();
-    }, { passive: false });
-
-    if (this.btnZoomIn) {
-      this.btnZoomIn.addEventListener("click", () => {
-        const rect = this.container.getBoundingClientRect();
-        const cx = (rect.width || 800) / 2;
-        const cy = (rect.height || 360) / 2;
-        const newZoom = Math.min(Math.round((this.zoom + 0.01) * 100) / 100, this.maxZoom);
-        this.panX = cx - (cx - this.panX) * (newZoom / this.zoom);
-        this.panY = cy - (cy - this.panY) * (newZoom / this.zoom);
-        this.zoom = newZoom;
-        this.applyTransform();
-        this.saveState();
-      });
-    }
-
-    if (this.btnZoomOut) {
-      this.btnZoomOut.addEventListener("click", () => {
-        const rect = this.container.getBoundingClientRect();
-        const cx = (rect.width || 800) / 2;
-        const cy = (rect.height || 360) / 2;
-        const newZoom = Math.max(Math.round((this.zoom - 0.01) * 100) / 100, this.minZoom);
-        this.panX = cx - (cx - this.panX) * (newZoom / this.zoom);
-        this.panY = cy - (cy - this.panY) * (newZoom / this.zoom);
-        this.zoom = newZoom;
-        this.applyTransform();
-        this.saveState();
-      });
-    }
-
-    if (this.btnFitView) {
-      this.btnFitView.addEventListener("click", () => this.fitView());
-    }
-
-    if (this.btnResetLayout) {
-      this.btnResetLayout.addEventListener("click", () => {
-        this.resetLayout();
-        showToast({
-          icon: "🔄",
-          title: "Topology Layout Reset",
-          message: "Node positions and zoom restored to default configuration.",
-          type: "normal",
-        });
-      });
-    }
-  },
+  saveViewport() {
+    localStorage.setItem(
+      "dtc_topology_viewport",
+      JSON.stringify({ panX: this.panX, panY: this.panY, zoom: this.zoom })
+    );
+  }
 };
 
 const TECH_STACK_CONFIG = [
