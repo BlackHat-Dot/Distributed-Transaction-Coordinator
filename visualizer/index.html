@@ -83,6 +83,11 @@
         Architecture
       </button>
 
+      <button id="btn-view-stack" class="btn btn-outline" title="View Project Tech Stack">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+        View Stack
+      </button>
+
       <div class="sliding-toggle-group theme-toggle-container" id="theme-toggle-wrap">
         <span class="toggle-side-icon toggle-icon-light" id="icon-theme-light" title="Light Theme" onclick="window.setDashboardTheme('light')">☀️</span>
         <label class="switch-toggle" for="toggle-theme" title="Toggle between Light and Dark theme">
@@ -247,10 +252,20 @@
         
         <div class="topology-header-controls">
           <div class="topology-legend">
-            <span class="legend-item"><span class="dot dot-green"></span> Reserve / Charge</span>
-            <span class="legend-item"><span class="dot dot-blue"></span> Probe / Status</span>
-            <span class="legend-item"><span class="dot dot-orange"></span> Compensate</span>
-            <span class="legend-item"><span class="dot dot-red"></span> Conflict / Crash</span>
+            <div class="legend-group">
+              <span class="legend-type-label">NODES:</span>
+              <span class="legend-item"><span class="legend-type-icon">🔷</span> Service</span>
+              <span class="legend-item"><span class="legend-type-icon">🗄️</span> Database</span>
+              <span class="legend-item"><span class="legend-type-icon">⚙️</span> Worker</span>
+            </div>
+            <div class="legend-divider"></div>
+            <div class="legend-group">
+              <span class="legend-type-label">FLOW:</span>
+              <span class="legend-item"><span class="dot dot-green"></span> Reserve / Charge</span>
+              <span class="legend-item"><span class="dot dot-blue"></span> Probe / Status</span>
+              <span class="legend-item"><span class="dot dot-orange"></span> Compensate</span>
+              <span class="legend-item"><span class="dot dot-red"></span> Conflict / Crash</span>
+            </div>
           </div>
         </div>
       </div>
@@ -311,6 +326,10 @@
               <feGaussianBlur stdDeviation="4" result="blur" />
               <feComposite in="SourceGraphic" in2="blur" operator="over" />
             </filter>
+            <filter id="glow-purple" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
 
             <linearGradient id="grad-client-coord" x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.3"/>
@@ -324,22 +343,43 @@
               <stop offset="0%" stop-color="#818cf8" stop-opacity="0.6"/>
               <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.6"/>
             </linearGradient>
+            <linearGradient id="grad-worker-coord" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#c084fc" stop-opacity="0.6"/>
+              <stop offset="100%" stop-color="#818cf8" stop-opacity="0.6"/>
+            </linearGradient>
+            <linearGradient id="grad-coord-dbcoord" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#818cf8" stop-opacity="0.6"/>
+              <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.6"/>
+            </linearGradient>
+            <linearGradient id="grad-inv-dbinv" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#34d399" stop-opacity="0.6"/>
+              <stop offset="100%" stop-color="#10b981" stop-opacity="0.6"/>
+            </linearGradient>
+            <linearGradient id="grad-pay-dbpay" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.6"/>
+              <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.6"/>
+            </linearGradient>
           </defs>
 
           <rect id="canvas-bg-rect" width="100%" height="100%" fill="url(#canvas-dot-grid)"></rect>
 
           <g id="canvas-world">
             <g id="edges-layer">
-              <path id="path-client-coord" class="topo-edge" d="" stroke="url(#grad-client-coord)" stroke-width="2.5"  fill="none"/>
+              <path id="path-client-coord" class="topo-edge" d="" stroke="url(#grad-client-coord)" stroke-width="2.5" fill="none"/>
               <path id="path-coord-inv" class="topo-edge" d="" stroke="url(#grad-coord-inv)" stroke-width="2.5" fill="none"/>
               <path id="path-coord-pay" class="topo-edge" d="" stroke="url(#grad-coord-pay)" stroke-width="2.5" fill="none"/>
               <path id="path-inv-coord" d="" stroke="none" fill="none"/>
               <path id="path-pay-coord" d="" stroke="none" fill="none"/>
+              <path id="path-worker-coord" class="topo-edge topo-edge-worker" d="" stroke="url(#grad-worker-coord)" stroke-width="2" stroke-dasharray="4,4" fill="none"/>
+              <path id="path-coord-dbcoord" class="topo-edge topo-edge-db" d="" stroke="url(#grad-coord-dbcoord)" stroke-width="2" fill="none"/>
+              <path id="path-inv-dbinv" class="topo-edge topo-edge-db" d="" stroke="url(#grad-inv-dbinv)" stroke-width="2" fill="none"/>
+              <path id="path-pay-dbpay" class="topo-edge topo-edge-db" d="" stroke="url(#grad-pay-dbpay)" stroke-width="2" fill="none"/>
             </g>
 
             <g id="pulse-layer"></g>
 
             <g id="nodes-layer">
+              <!-- 1. Client / API Node -->
               <g class="topo-node-group" id="node-group-client" data-node-key="client" title="Double click to focus node • Drag to reposition">
                 <rect id="node-box-client" class="node-box node-box-client" width="130" height="115" rx="12"/>
                 <circle cx="26" cy="26" r="10" fill="#0284c7" opacity="0.2"/>
@@ -353,8 +393,24 @@
                 <text x="116" y="96" class="node-stat-val font-mono" id="topo-client-active" text-anchor="end">0</text>
               </g>
 
+              <!-- 2. Recovery Worker Node (Celery Beat) -->
+              <g class="topo-node-group" id="node-group-worker" data-node-key="worker" title="Double click to focus node • Drag to reposition">
+                <rect id="node-box-worker" class="node-box node-box-worker" width="220" height="78" rx="12"/>
+                <rect class="node-header-bar node-header-worker" x="0" y="0" width="220" height="28" rx="12"/>
+                <circle cx="20" cy="14" r="7" fill="#a855f7" opacity="0.35"/>
+                <text x="20" y="18" font-size="9" fill="#c084fc" text-anchor="middle">⚙️</text>
+                <text x="34" y="18" class="node-title" style="font-size: 10.5px;">RECOVERY SWEEP WORKER</text>
+                
+                <text x="14" y="46" class="node-stat-label">Worker Engine</text>
+                <text x="206" y="46" class="node-stat-val text-purple font-mono" text-anchor="end" style="font-size: 9px;">Celery Beat</text>
+                
+                <text x="14" y="66" class="node-stat-label">Schedule / State</text>
+                <text x="206" y="66" class="node-stat-val font-mono" text-anchor="end" style="font-size: 9px;"><span class="text-accent" id="topo-worker-interval">90s</span> • <span class="text-success" id="topo-worker-status">IDLE</span></text>
+              </g>
+
+              <!-- 3. Coordinator Service Node -->
               <g class="topo-node-group" id="node-group-coord" data-node-key="coord" title="Double click to focus node • Drag to reposition">
-                <rect id="node-box-coord" class="node-box node-box-coord" width="220" height="155" rx="14"/>
+                <rect id="node-box-coord" class="node-box node-box-coord" width="220" height="120" rx="14"/>
                 <rect class="node-header-bar" x="0" y="0" width="220" height="38" rx="14"/>
                 <circle cx="24" cy="20" r="8" fill="#6366f1" opacity="0.4"/>
                 <text x="24" y="24" font-size="10" fill="#a5b4fc" text-anchor="middle" id="icon-coord">⚙️</text>
@@ -369,41 +425,79 @@
                 
                 <text x="16" y="106" class="node-stat-label">Recovery Lease</text>
                 <text x="204" y="106" class="node-stat-val text-success font-mono" id="topo-coord-lease" text-anchor="end">READY</text>
-
-                <rect x="14" y="122" width="192" height="22" rx="4" fill="#0f172a" stroke="#334155" stroke-width="1"/>
-                <text x="110" y="137" font-size="9.5" fill="#94a3b8" text-anchor="middle" font-family="var(--font-mono)">PostgreSQL • dtc_coordinator</text>
               </g>
 
+              <!-- 4. Dedicated DB Node: Coordinator -->
+              <g class="topo-node-group" id="node-group-db-coord" data-node-key="db-coord" title="Double click to focus node • Drag to reposition">
+                <rect id="node-box-db-coord" class="node-box node-box-db" width="170" height="44" rx="8"/>
+                <circle cx="22" cy="22" r="10" fill="#3b82f6" opacity="0.2"/>
+                <g transform="translate(14, 14) scale(0.65)" stroke="#60a5fa" fill="none" stroke-width="2">
+                  <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                  <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                  <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                </g>
+                <text x="42" y="20" class="node-title font-mono" style="font-size: 10px;">dtc_coordinator</text>
+                <text x="42" y="33" class="node-port-sub" style="font-size: 8px; fill: #64748b;">PostgreSQL Database</text>
+              </g>
+
+              <!-- 5. Inventory Service Node -->
               <g class="topo-node-group" id="node-group-inv" data-node-key="inv" title="Double click to focus node • Drag to reposition">
-                <rect id="node-box-inv" class="node-box node-box-inv" width="220" height="110" rx="12"/>
+                <rect id="node-box-inv" class="node-box node-box-inv" width="210" height="95" rx="12"/>
                 <text x="16" y="24" class="node-title" id="title-inv">INVENTORY SERVICE</text>
                 <text x="16" y="38" class="node-port-sub">Port 8000 • Row-Locking</text>
-                <line x1="14" y1="46" x2="206" y2="46" stroke="#1e293b" stroke-width="1"/>
+                <line x1="14" y1="46" x2="196" y2="46" stroke="#1e293b" stroke-width="1"/>
                 
                 <text x="16" y="64" class="node-stat-label">Row Lock</text>
-                <text x="204" y="64" class="node-stat-val text-success font-mono" id="topo-inv-lock" text-anchor="end">SELECT FOR UPDATE</text>
+                <text x="194" y="64" class="node-stat-val text-success font-mono" id="topo-inv-lock" text-anchor="end">SELECT FOR UPDATE</text>
                 
                 <text x="16" y="84" class="node-stat-label">Idempotency</text>
-                <text x="204" y="84" class="node-stat-val text-accent font-mono" id="topo-inv-idem" text-anchor="end">GUARANTEED</text>
-                
-                <text x="16" y="100" class="node-stat-label" style="font-size: 8.5px; fill: #64748b; font-family: var(--font-mono);">PostgreSQL • dtc_inventory</text>
+                <text x="194" y="84" class="node-stat-val text-accent font-mono" id="topo-inv-idem" text-anchor="end">GUARANTEED</text>
               </g>
 
+              <!-- 6. Dedicated DB Node: Inventory -->
+              <g class="topo-node-group" id="node-group-db-inv" data-node-key="db-inv" title="Double click to focus node • Drag to reposition">
+                <rect id="node-box-db-inv" class="node-box node-box-db" width="170" height="44" rx="8"/>
+                <circle cx="22" cy="22" r="10" fill="#10b981" opacity="0.2"/>
+                <g transform="translate(14, 14) scale(0.65)" stroke="#34d399" fill="none" stroke-width="2">
+                  <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                  <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                  <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                </g>
+                <text x="42" y="20" class="node-title font-mono" style="font-size: 10px;">dtc_inventory</text>
+                <text x="42" y="33" class="node-port-sub" style="font-size: 8px; fill: #64748b;">PostgreSQL Database</text>
+              </g>
+
+              <!-- 7. Payment Service Node -->
               <g class="topo-node-group" id="node-group-pay" data-node-key="pay" title="Double click to focus node • Drag to reposition">
-                <rect id="node-box-pay" class="node-box node-box-pay" width="220" height="110" rx="12"/>
+                <rect id="node-box-pay" class="node-box node-box-pay" width="210" height="95" rx="12"/>
                 <text x="16" y="24" class="node-title" id="title-pay">PAYMENT SERVICE</text>
                 <text x="16" y="38" class="node-port-sub">Port 8001 • Idempotent Gateway</text>
-                <line x1="14" y1="46" x2="206" y2="46" stroke="#1e293b" stroke-width="1"/>
+                <line x1="14" y1="46" x2="196" y2="46" stroke="#1e293b" stroke-width="1"/>
                 
                 <text x="16" y="64" class="node-stat-label">Idempotency</text>
-                <text x="204" y="64" class="node-stat-val text-success font-mono" id="pay-idempotency-key" text-anchor="end">DB UNIQUE KEY</text>
+                <text x="194" y="64" class="node-stat-val text-success font-mono" id="pay-idempotency-key" text-anchor="end">DB UNIQUE KEY</text>
                 
                 <text x="16" y="84" class="node-stat-label">Constraint</text>
-                <text x="204" y="84" class="node-stat-val font-mono" id="pay-constraint-label" text-anchor="end" style="font-size: 9px; fill: #38bdf8;">UNIQUE(tx_id)</text>
-                <title>PostgreSQL Constraint: UNIQUE (transaction_id) on payments_payment table — prevents duplicate charges under concurrency</title>
-                
-                <text x="16" y="100" class="node-stat-label" style="font-size: 8.5px; fill: #64748b; font-family: var(--font-mono);">PostgreSQL • dtc_payment</text>
+                <text x="194" y="84" class="node-stat-val font-mono" id="pay-constraint-label" text-anchor="end" style="font-size: 9px; fill: #38bdf8;">UNIQUE(tx_id)</text>
               </g>
+
+              <!-- 8. Dedicated DB Node: Payment -->
+              <g class="topo-node-group" id="node-group-db-pay" data-node-key="db-pay" title="Double click to focus node • Drag to reposition">
+                <rect id="node-box-db-pay" class="node-box node-box-db" width="170" height="44" rx="8"/>
+                <circle cx="22" cy="22" r="10" fill="#f59e0b" opacity="0.2"/>
+                <g transform="translate(14, 14) scale(0.65)" stroke="#fbbf24" fill="none" stroke-width="2">
+                  <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                  <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                  <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                </g>
+                <text x="42" y="20" class="node-title font-mono" style="font-size: 10px;">dtc_payment</text>
+                <text x="42" y="33" class="node-port-sub" style="font-size: 8px; fill: #64748b;">PostgreSQL Database</text>
+              </g>
+            </g>
+          </g>
+        </svg>
+      </div>
+    </section>
             </g>
           </g>
         </svg>
@@ -605,6 +699,25 @@
           <h4>6. Microservice Isolation</h4>
           <p>Three independent Django services, three separate PostgreSQL databases. Zero shared database state. Completely isolated domain boundaries.</p>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-stack" class="modal-backdrop hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+          <h3 style="margin: 0;">Tech Stack</h3>
+        </div>
+        <button class="btn btn-icon btn-close-modal" id="btn-close-stack">✕</button>
+      </div>
+      <div class="modal-body stack-grid" id="stack-items-container">
+        <!-- Rendered statically / dynamically from manifest parser -->
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">Manifests: requirements.txt (microservices)</span>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-close-stack-footer">Close</button>
       </div>
     </div>
   </div>

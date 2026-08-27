@@ -212,6 +212,11 @@ const DOM = {
   iconThemeLight: document.getElementById("icon-theme-light"),
   iconThemeDark: document.getElementById("icon-theme-dark"),
   btnHowItWorks: document.getElementById("btn-how-it-works"),
+  btnViewStack: document.getElementById("btn-view-stack"),
+  modalStack: document.getElementById("modal-stack"),
+  btnCloseStack: document.getElementById("btn-close-stack"),
+  btnCloseStackFooter: document.getElementById("btn-close-stack-footer"),
+  stackItemsContainer: document.getElementById("stack-items-container"),
   btnConfig: document.getElementById("btn-config"),
 
   statRacesDefended: document.getElementById("stat-race-defended"),
@@ -242,6 +247,8 @@ const DOM = {
   topoCoordState: document.getElementById("topo-coord-state"),
   topoCoordEvents: document.getElementById("topo-coord-events"),
   topoCoordLease: document.getElementById("topo-coord-lease"),
+  topoWorkerInterval: document.getElementById("topo-worker-interval"),
+  topoWorkerStatus: document.getElementById("topo-worker-status"),
 
   recCountdownVal: document.getElementById("rec-countdown-val"),
   recProgressFill: document.getElementById("rec-progress-fill"),
@@ -1534,6 +1541,10 @@ DOM.btnTriggerSweep.addEventListener("click", async () => {
 
   DOM.recRedisLock.innerHTML = `<span class="badge badge-purple">LOCKED (EXEC)</span>`;
   DOM.topoCoordLease.textContent = "SWEEPING";
+  if (DOM.topoWorkerStatus) {
+    DOM.topoWorkerStatus.textContent = "SWEEPING";
+    DOM.topoWorkerStatus.className = "text-purple font-mono";
+  }
   
   animatePacketAlongPath({ route: "coord-inv", type: "purple", durationMs: 400, destinationNodeId: "node-box-inv" });
   animatePacketAlongPath({ route: "coord-pay", type: "purple", durationMs: 400, destinationNodeId: "node-box-pay" });
@@ -1568,6 +1579,10 @@ DOM.btnTriggerSweep.addEventListener("click", async () => {
   setTimeout(() => {
     DOM.topoCoordLease.textContent = "READY";
     DOM.recRedisLock.innerHTML = `<span class="badge badge-success">IDLE / READY</span>`;
+    if (DOM.topoWorkerStatus) {
+      DOM.topoWorkerStatus.textContent = "IDLE";
+      DOM.topoWorkerStatus.className = "text-success font-mono";
+    }
   }, 2000);
 });
 
@@ -1784,6 +1799,10 @@ function startRecoveryCountdown() {
 
       DOM.topoCoordLease.textContent = "SWEEPING";
       DOM.recRedisLock.innerHTML = `<span class="badge badge-purple">SWEEPING LEASE</span>`;
+      if (DOM.topoWorkerStatus) {
+        DOM.topoWorkerStatus.textContent = "SWEEPING";
+        DOM.topoWorkerStatus.className = "text-purple font-mono";
+      }
 
       if (!STATE.isSimulatedMode) {
         try {
@@ -1803,21 +1822,30 @@ function startRecoveryCountdown() {
       setTimeout(() => {
         DOM.topoCoordLease.textContent = "READY";
         DOM.recRedisLock.innerHTML = `<span class="badge badge-success">IDLE / READY</span>`;
+        if (DOM.topoWorkerStatus) {
+          DOM.topoWorkerStatus.textContent = "IDLE";
+          DOM.topoWorkerStatus.className = "text-success font-mono";
+        }
       }, 3000);
     }
 
     DOM.sweepCountdown.textContent = `${STATE.sweepCountdown}s`;
     DOM.recCountdownVal.textContent = `${STATE.sweepCountdown}s`;
+    if (DOM.topoWorkerInterval) DOM.topoWorkerInterval.textContent = `${STATE.sweepCountdown}s`;
     const pct = ((90 - STATE.sweepCountdown) / 90) * 100;
     DOM.recProgressFill.style.width = `${100 - pct}%`;
   }, 1000);
 }
 
 const DEFAULT_CANVAS_NODES = {
-  client: { x: 30,  y: 70,  width: 130, height: 115 },
-  coord:  { x: 260, y: 50,  width: 220, height: 155 },
-  inv:    { x: 580, y: 20,  width: 220, height: 110 },
-  pay:    { x: 580, y: 160, width: 220, height: 110 },
+  client:     { x: 30,  y: 140, width: 130, height: 115 },
+  worker:     { x: 240, y: 20,  width: 220, height: 78 },
+  coord:      { x: 240, y: 135, width: 220, height: 120 },
+  "db-coord": { x: 265, y: 295, width: 170, height: 44 },
+  inv:        { x: 570, y: 30,  width: 210, height: 95 },
+  "db-inv":   { x: 590, y: 155, width: 170, height: 44 },
+  pay:        { x: 570, y: 230, width: 210, height: 95 },
+  "db-pay":   { x: 590, y: 355, width: 170, height: 44 },
 };
 
 const CanvasEngine = {
@@ -1981,18 +2009,30 @@ const CanvasEngine = {
     const pathCoordPay = document.getElementById("path-coord-pay");
     const pathInvCoord = document.getElementById("path-inv-coord");
     const pathPayCoord = document.getElementById("path-pay-coord");
+    const pathWorkerCoord = document.getElementById("path-worker-coord");
+    const pathCoordDbCoord = document.getElementById("path-coord-dbcoord");
+    const pathInvDbInv = document.getElementById("path-inv-dbinv");
+    const pathPayDbPay = document.getElementById("path-pay-dbpay");
 
     const dClientCoord = this.getDynamicPathD("client", "coord");
     const dCoordInv = this.getDynamicPathD("coord", "inv");
     const dCoordPay = this.getDynamicPathD("coord", "pay");
     const dInvCoord = this.getDynamicPathD("inv", "coord");
     const dPayCoord = this.getDynamicPathD("pay", "coord");
+    const dWorkerCoord = this.getDynamicPathD("worker", "coord");
+    const dCoordDbCoord = this.getDynamicPathD("coord", "db-coord");
+    const dInvDbInv = this.getDynamicPathD("inv", "db-inv");
+    const dPayDbPay = this.getDynamicPathD("pay", "db-pay");
 
     if (pathClientCoord) pathClientCoord.setAttribute("d", dClientCoord);
     if (pathCoordInv) pathCoordInv.setAttribute("d", dCoordInv);
     if (pathCoordPay) pathCoordPay.setAttribute("d", dCoordPay);
     if (pathInvCoord) pathInvCoord.setAttribute("d", dInvCoord);
     if (pathPayCoord) pathPayCoord.setAttribute("d", dPayCoord);
+    if (pathWorkerCoord) pathWorkerCoord.setAttribute("d", dWorkerCoord);
+    if (pathCoordDbCoord) pathCoordDbCoord.setAttribute("d", dCoordDbCoord);
+    if (pathInvDbInv) pathInvDbInv.setAttribute("d", dInvDbInv);
+    if (pathPayDbPay) pathPayDbPay.setAttribute("d", dPayDbPay);
   },
 
   fitView() {
@@ -2259,6 +2299,137 @@ const CanvasEngine = {
   },
 };
 
+const TECH_STACK_CONFIG = [
+  {
+    name: "Django",
+    category: "Framework / ORM",
+    desc: "Core backend framework providing MVC architecture and relational ORM across all microservices.",
+    icon: "server"
+  },
+  {
+    name: "Django REST Framework",
+    category: "API Toolkit",
+    desc: "Serialization, viewsets, and RESTful HTTP interface layer.",
+    icon: "network"
+  },
+  {
+    name: "PostgreSQL (Psycopg2)",
+    category: "Relational Database",
+    desc: "ACID database adapter supporting SELECT FOR UPDATE row-locks and UNIQUE idempotency keys.",
+    icon: "database"
+  },
+  {
+    name: "Celery",
+    category: "Task Queue",
+    desc: "Asynchronous task execution engine and background saga orchestrator.",
+    icon: "clock"
+  },
+  {
+    name: "Redis",
+    category: "In-Memory Broker & Mutex",
+    desc: "Task message broker and distributed Redis lock provider for crash recovery leases.",
+    icon: "database"
+  },
+  {
+    name: "Gunicorn",
+    category: "WSGI Server",
+    desc: "Production gthread WSGI application server handling concurrent HTTP traffic.",
+    icon: "server"
+  },
+  {
+    name: "Supervisor",
+    category: "Process Supervisor",
+    desc: "Process management system coordinating Gunicorn, Celery Worker, and Celery Beat in containers.",
+    icon: "server"
+  },
+  {
+    name: "WhiteNoise",
+    category: "Static Server",
+    desc: "Embedded production static asset serving middleware.",
+    icon: "package"
+  },
+  {
+    name: "Requests",
+    category: "HTTP Client",
+    desc: "Synchronous RPC client for inter-service HTTP communication.",
+    icon: "network"
+  },
+  {
+    name: "django-cors-headers",
+    category: "Security Middleware",
+    desc: "Cross-Origin Resource Sharing (CORS) header configuration for visualizer frontend.",
+    icon: "shield"
+  },
+  {
+    name: "python-dotenv",
+    category: "Config Management",
+    desc: "12-factor environment variable loading from .env manifests.",
+    icon: "package"
+  }
+];
+
+function getTechStackIconSvg(iconType) {
+  switch (iconType) {
+    case "server":
+      return `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`;
+    case "database":
+      return `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>`;
+    case "network":
+      return `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+    case "clock":
+      return `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+    case "shield":
+      return `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`;
+    case "package":
+    default:
+      return `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`;
+  }
+}
+
+function initTechStackModal() {
+  if (!DOM.stackItemsContainer) return;
+  if (!TECH_STACK_CONFIG || TECH_STACK_CONFIG.length === 0) {
+    DOM.stackItemsContainer.innerHTML = `<div class="stack-card" style="grid-column: 1 / -1; justify-content: center; color: var(--text-muted);">No manifest dependencies detected</div>`;
+    return;
+  }
+
+  DOM.stackItemsContainer.innerHTML = TECH_STACK_CONFIG.map(item => `
+    <div class="stack-card">
+      <div class="stack-icon-wrap">
+        ${getTechStackIconSvg(item.icon || "package")}
+      </div>
+      <div class="stack-card-content">
+        <span class="stack-badge">${item.category || "Dependency"}</span>
+        <h4>${item.name}</h4>
+        <p>${item.desc || "Runtime package dependency"}</p>
+      </div>
+    </div>
+  `).join("");
+
+  if (DOM.btnViewStack) {
+    DOM.btnViewStack.addEventListener("click", () => {
+      DOM.modalStack?.classList.remove("hidden");
+    });
+  }
+  if (DOM.btnCloseStack) {
+    DOM.btnCloseStack.addEventListener("click", () => {
+      DOM.modalStack?.classList.add("hidden");
+    });
+  }
+  if (DOM.btnCloseStackFooter) {
+    DOM.btnCloseStackFooter.addEventListener("click", () => {
+      DOM.modalStack?.classList.add("hidden");
+    });
+  }
+  if (DOM.modalStack) {
+    DOM.modalStack.addEventListener("click", (e) => {
+      if (e.target === DOM.modalStack) {
+        DOM.modalStack.classList.add("hidden");
+      }
+    });
+  }
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   const savedTheme = localStorage.getItem("dtc_theme") || "dark";
   window.setDashboardTheme(savedTheme);
@@ -2270,6 +2441,7 @@ window.addEventListener("DOMContentLoaded", () => {
   DOM.recSagasSwept.textContent = STATE.stats.sagasSwept;
 
   CanvasEngine.init();
+  initTechStackModal();
   checkServiceHealth();
   fetchTransactionsFeed();
   startRecoveryCountdown();
