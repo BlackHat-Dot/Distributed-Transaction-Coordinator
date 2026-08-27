@@ -9,12 +9,12 @@
  * - Zero-jank background differential reconciliation engine.
  */
 
-// Service Configuration (Dynamically synced with localStorage)
+// Service Configuration (Locked to Production Invariants)
 const CONFIG = {
-  inventoryUrl: localStorage.getItem("dtc_cfg_inv") || "http://localhost:8000",
-  coordinatorUrl: localStorage.getItem("dtc_cfg_coord") || "http://localhost:8002",
-  paymentUrl: localStorage.getItem("dtc_cfg_pay") || "http://localhost:8001",
-  pollIntervalMs: parseInt(localStorage.getItem("dtc_cfg_poll") || "2500", 10),
+  coordinatorUrl: "https://coordinator-production-4685.up.railway.app",
+  inventoryUrl: "https://inventory-production-9e43.up.railway.app",
+  paymentUrl: "https://payment-production-bcb1.up.railway.app",
+  pollIntervalMs: 1500,
 };
 
 // Global Reactive Application State
@@ -229,39 +229,10 @@ function initConfigModal() {
   });
 
   btnCloseConfig?.addEventListener("click", () => modalConfig.classList.add("hidden"));
+  const btnCloseConfigFooter = document.getElementById("btn-close-config-footer");
+  btnCloseConfigFooter?.addEventListener("click", () => modalConfig.classList.add("hidden"));
   modalConfig.addEventListener("click", (e) => {
     if (e.target === modalConfig) modalConfig.classList.add("hidden");
-  });
-
-  btnResetCfg?.addEventListener("click", () => {
-    if (cfgCoordUrl) cfgCoordUrl.value = "http://127.0.0.1:8002";
-    if (cfgInvUrl) cfgInvUrl.value = "http://127.0.0.1:8000";
-    if (cfgPayUrl) cfgPayUrl.value = "http://127.0.0.1:8001";
-    if (cfgPollMs) cfgPollMs.value = "2500";
-  });
-
-  formConfig?.addEventListener("submit", (e) => {
-    e.preventDefault();
-    CONFIG.coordinatorUrl = (cfgCoordUrl.value || "").trim().replace(/\/+$/, "");
-    CONFIG.inventoryUrl = (cfgInvUrl.value || "").trim().replace(/\/+$/, "");
-    CONFIG.paymentUrl = (cfgPayUrl.value || "").trim().replace(/\/+$/, "");
-    CONFIG.pollIntervalMs = parseInt(cfgPollMs.value, 10) || 2500;
-
-    localStorage.setItem("dtc_cfg_coord", CONFIG.coordinatorUrl);
-    localStorage.setItem("dtc_cfg_inv", CONFIG.inventoryUrl);
-    localStorage.setItem("dtc_cfg_pay", CONFIG.paymentUrl);
-    localStorage.setItem("dtc_cfg_poll", CONFIG.pollIntervalMs);
-
-    modalConfig.classList.add("hidden");
-    showToast({
-      title: "Config Saved",
-      message: "Target service endpoints updated.",
-      type: "success",
-      icon: "⚙️",
-    });
-
-    loadCatalog(true);
-    startDifferentialPolling();
   });
 }
 

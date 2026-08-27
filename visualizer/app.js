@@ -28,10 +28,10 @@ window.copyTxUUIDToClipboard = function(uuid, btnElement) {
 };
 
 const CONFIG = {
-  coordinatorUrl: localStorage.getItem("dtc_cfg_coord") || "http://127.0.0.1:8002",
-  inventoryUrl: localStorage.getItem("dtc_cfg_inv") || "http://127.0.0.1:8000",
-  paymentUrl: localStorage.getItem("dtc_cfg_pay") || "http://127.0.0.1:8001",
-  pollIntervalMs: parseInt(localStorage.getItem("dtc_cfg_poll") || "1500", 10),
+  coordinatorUrl: "https://coordinator-production-4685.up.railway.app",
+  inventoryUrl: "https://inventory-production-9e43.up.railway.app",
+  paymentUrl: "https://payment-production-bcb1.up.railway.app",
+  pollIntervalMs: 1500,
 };
 
 const STATE = {
@@ -1781,38 +1781,22 @@ if (DOM.toggleTheme) {
 DOM.btnHowItWorks.addEventListener("click", () => DOM.modalArch.classList.remove("hidden"));
 DOM.btnCloseArch.addEventListener("click", () => DOM.modalArch.classList.add("hidden"));
 DOM.btnConfig.addEventListener("click", () => {
-  DOM.cfgCoordUrl.value = CONFIG.coordinatorUrl;
-  DOM.cfgInvUrl.value = CONFIG.inventoryUrl;
-  DOM.cfgPayUrl.value = CONFIG.paymentUrl;
-  DOM.cfgPollMs.value = CONFIG.pollIntervalMs;
+  if (DOM.cfgCoordUrl) DOM.cfgCoordUrl.value = CONFIG.coordinatorUrl;
+  if (DOM.cfgInvUrl) DOM.cfgInvUrl.value = CONFIG.inventoryUrl;
+  if (DOM.cfgPayUrl) DOM.cfgPayUrl.value = CONFIG.paymentUrl;
+  if (DOM.cfgPollMs) DOM.cfgPollMs.value = CONFIG.pollIntervalMs;
   DOM.modalConfig.classList.remove("hidden");
 });
-DOM.btnCloseConfig.addEventListener("click", () => DOM.modalConfig.classList.add("hidden"));
-
-DOM.formConfig.addEventListener("submit", (e) => {
-  e.preventDefault();
-  CONFIG.coordinatorUrl = DOM.cfgCoordUrl.value.trim();
-  CONFIG.inventoryUrl = DOM.cfgInvUrl.value.trim();
-  CONFIG.paymentUrl = DOM.cfgPayUrl.value.trim();
-  CONFIG.pollIntervalMs = parseInt(DOM.cfgPollMs.value, 10) || 1500;
-
-  localStorage.setItem("dtc_cfg_coord", CONFIG.coordinatorUrl);
-  localStorage.setItem("dtc_cfg_inv", CONFIG.inventoryUrl);
-  localStorage.setItem("dtc_cfg_pay", CONFIG.paymentUrl);
-  localStorage.setItem("dtc_cfg_poll", CONFIG.pollIntervalMs);
-
-  DOM.modalConfig.classList.add("hidden");
-  CanvasEngine.init();
-  checkServiceHealth();
-  fetchTransactionsFeed();
-});
-
-DOM.btnResetCfg.addEventListener("click", () => {
-  DOM.cfgCoordUrl.value = "http://127.0.0.1:8002";
-  DOM.cfgInvUrl.value = "http://127.0.0.1:8000";
-  DOM.cfgPayUrl.value = "http://127.0.0.1:8001";
-  DOM.cfgPollMs.value = "1500";
-});
+DOM.btnCloseConfig?.addEventListener("click", () => DOM.modalConfig.classList.add("hidden"));
+const btnCloseConfigFooter = document.getElementById("btn-close-config-footer");
+if (btnCloseConfigFooter) {
+  btnCloseConfigFooter.addEventListener("click", () => DOM.modalConfig.classList.add("hidden"));
+}
+if (DOM.modalConfig) {
+  DOM.modalConfig.addEventListener("click", (e) => {
+    if (e.target === DOM.modalConfig) DOM.modalConfig.classList.add("hidden");
+  });
+}
 
 
 function startRecoveryCountdown() {

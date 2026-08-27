@@ -351,35 +351,52 @@
     </div>
   </div>
 
-  <!-- Target Environment Configuration Modal -->
+  <!-- Target Environment Configuration Modal (Locked) -->
   <div id="modal-config" class="modal-backdrop hidden" style="position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 9999;">
     <div class="modal-card" style="background: var(--bg-card, #121826); border: 1px solid var(--border-color, #2a3449); border-radius: 12px; width: 100%; max-width: 460px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: #fff;">⚙️ Target Environment Configuration</h3>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: #fff;">⚙️ Target Environment Configuration</h3>
+          <span style="font-size: 9.5px; padding: 2px 6px; border-radius: 4px; background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); font-weight: 700;">🔒 LOCKED</span>
+        </div>
         <button id="btn-close-config" style="background: none; border: none; color: #8892b0; font-size: 1.3rem; cursor: pointer;">✕</button>
       </div>
-      <form id="form-config" style="display: flex; flex-direction: column; gap: 14px;">
+      <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 10px 12px; font-size: 0.78rem; color: #fca5a5; margin-bottom: 16px; line-height: 1.4;">
+        🔒 <strong>Production Invariant Enforced:</strong> Live service endpoints and polling telemetry frequency are locked from user editing to prevent system misconfiguration.
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 14px;">
         <div style="display: flex; flex-direction: column; gap: 6px;">
-          <label style="font-size: 0.8rem; font-weight: 600; color: #8892b0;">Coordinator Base URL:</label>
-          <input type="text" id="cfg-coord-url" value="http://127.0.0.1:8002" style="background: rgba(255,255,255,0.05); border: 1px solid #2a3449; border-radius: 6px; padding: 8px 12px; color: #fff; font-family: monospace; font-size: 0.85rem;">
-        </div>
-        <div style="display: flex; flex-direction: column; gap: 6px;">
-          <label style="font-size: 0.8rem; font-weight: 600; color: #8892b0;">Inventory Base URL:</label>
-          <input type="text" id="cfg-inv-url" value="http://127.0.0.1:8000" style="background: rgba(255,255,255,0.05); border: 1px solid #2a3449; border-radius: 6px; padding: 8px 12px; color: #fff; font-family: monospace; font-size: 0.85rem;">
-        </div>
-        <div style="display: flex; flex-direction: column; gap: 6px;">
-          <label style="font-size: 0.8rem; font-weight: 600; color: #8892b0;">Payment Base URL:</label>
-          <input type="text" id="cfg-pay-url" value="http://127.0.0.1:8001" style="background: rgba(255,255,255,0.05); border: 1px solid #2a3449; border-radius: 6px; padding: 8px 12px; color: #fff; font-family: monospace; font-size: 0.85rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label style="font-size: 0.8rem; font-weight: 600; color: #8892b0;">Coordinator Base URL:</label>
+            <span style="font-size: 0.7rem; color: #64748b;">Read-only</span>
+          </div>
+          <input type="text" id="cfg-coord-url" value="https://coordinator-production-4685.up.railway.app" readonly disabled style="background: rgba(0,0,0,0.3); border: 1px solid #2a3449; border-radius: 6px; padding: 8px 12px; color: #94a3b8; font-family: monospace; font-size: 0.85rem; cursor: not-allowed;">
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px;">
-          <label style="font-size: 0.8rem; font-weight: 600; color: #8892b0;">Polling Frequency (ms):</label>
-          <input type="number" id="cfg-poll-ms" value="2500" min="500" step="500" style="background: rgba(255,255,255,0.05); border: 1px solid #2a3449; border-radius: 6px; padding: 8px 12px; color: #fff; font-family: monospace; font-size: 0.85rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label style="font-size: 0.8rem; font-weight: 600; color: #8892b0;">Inventory Base URL:</label>
+            <span style="font-size: 0.7rem; color: #64748b;">Read-only</span>
+          </div>
+          <input type="text" id="cfg-inv-url" value="https://inventory-production-9e43.up.railway.app" readonly disabled style="background: rgba(0,0,0,0.3); border: 1px solid #2a3449; border-radius: 6px; padding: 8px 12px; color: #94a3b8; font-family: monospace; font-size: 0.85rem; cursor: not-allowed;">
         </div>
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px;">
-          <button type="button" id="btn-reset-cfg" style="background: rgba(255,255,255,0.08); border: 1px solid #2a3449; border-radius: 6px; padding: 8px 14px; color: #ccd6f6; cursor: pointer; font-weight: 600; font-size: 0.85rem;">Reset Defaults</button>
-          <button type="submit" style="background: #3b82f6; border: none; border-radius: 6px; padding: 8px 16px; color: #fff; cursor: pointer; font-weight: 600; font-size: 0.85rem;">Save & Reconnect</button>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label style="font-size: 0.8rem; font-weight: 600; color: #8892b0;">Payment Base URL:</label>
+            <span style="font-size: 0.7rem; color: #64748b;">Read-only</span>
+          </div>
+          <input type="text" id="cfg-pay-url" value="https://payment-production-bcb1.up.railway.app" readonly disabled style="background: rgba(0,0,0,0.3); border: 1px solid #2a3449; border-radius: 6px; padding: 8px 12px; color: #94a3b8; font-family: monospace; font-size: 0.85rem; cursor: not-allowed;">
         </div>
-      </form>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label style="font-size: 0.8rem; font-weight: 600; color: #8892b0;">Polling Frequency (ms):</label>
+            <span style="font-size: 0.7rem; color: #64748b;">Fixed</span>
+          </div>
+          <input type="number" id="cfg-poll-ms" value="1500" readonly disabled style="background: rgba(0,0,0,0.3); border: 1px solid #2a3449; border-radius: 6px; padding: 8px 12px; color: #94a3b8; font-family: monospace; font-size: 0.85rem; cursor: not-allowed;">
+        </div>
+        <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
+          <button type="button" id="btn-close-config-footer" style="background: rgba(255,255,255,0.08); border: 1px solid #2a3449; border-radius: 6px; padding: 8px 16px; color: #ccd6f6; cursor: pointer; font-weight: 600; font-size: 0.85rem; width: 100%;">Close (Read-Only View)</button>
+        </div>
+      </div>
     </div>
   </div>
 
