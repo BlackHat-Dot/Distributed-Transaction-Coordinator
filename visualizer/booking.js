@@ -501,7 +501,7 @@ async function handleSeatTileClick(seatId) {
         title: "Seat Already Held",
         message: `Seat ${seat.row}${seat.seat_number} is currently held by another user. Please select an available seat.`,
         type: "warning",
-        icon: "🔒",
+        icon: "",
         duration: 4000,
       });
       return;
@@ -528,7 +528,7 @@ async function handleSeatTileClick(seatId) {
       title: "Release Current Hold to Switch",
       message: `You are currently holding ${heldLabel}. Please release your current hold before reserving Seat ${seat.row}${seat.seat_number}.`,
       type: "warning",
-      icon: "⚠️",
+      icon: "",
       duration: 4500,
     });
     return;
@@ -549,7 +549,7 @@ async function handleSeatTileClick(seatId) {
     title: "Holding Seat...",
     message: `Locking Seat ${seat.row}${seat.seat_number} in Redis & PostgreSQL CAS hold...`,
     type: "normal",
-    icon: "⏱️",
+    icon: "",
     duration: 1500,
   });
 
@@ -584,7 +584,7 @@ async function handleSeatTileClick(seatId) {
         title: "10-Minute Hold Acquired!",
         message: `Seat ${seat.row}${seat.seat_number} is reserved for you. Complete payment before the timer expires.`,
         type: "success",
-        icon: "🎟️",
+        icon: "",
         duration: 4000,
       });
     } else {
@@ -604,7 +604,7 @@ async function handleSeatTileClick(seatId) {
         title: "Hold Conflict",
         message: `${conflictMsg} Please pick another available seat.`,
         type: "danger",
-        icon: "⚠️",
+        icon: "",
         duration: 4000,
       });
     }
@@ -616,7 +616,7 @@ async function handleSeatTileClick(seatId) {
       title: "Network Error",
       message: err.message || "Failed to reserve seat.",
       type: "danger",
-      icon: "⚠️",
+      icon: "",
     });
   } finally {
     STATE.isActionInProgress = false;
@@ -676,7 +676,7 @@ async function releaseActiveHold() {
       title: "Hold Released",
       message: `Seat ${seat ? seat.row + seat.seat_number : ""} released back to the venue catalog.`,
       type: "normal",
-      icon: "🔓",
+      icon: "",
     });
   } catch (err) {
     console.warn("Release hold error", err);
@@ -763,7 +763,7 @@ function handleHoldAutoExpired() {
     title: "Hold Expired",
     message: `Your 10-minute hold on Seat ${seatLabel} has expired and was returned to the catalog.`,
     type: "warning",
-    icon: "⏰",
+    icon: "",
     duration: 6000,
   });
 
@@ -1117,7 +1117,7 @@ async function resetVenueSeats() {
         title: "Venue Restocked",
         message: "All 30 venue seats have been reset to AVAILABLE in PostgreSQL & Redis!",
         type: "success",
-        icon: "🎟️",
+        icon: "",
       });
 
       loadCatalog(false);
