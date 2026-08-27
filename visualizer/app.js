@@ -1862,23 +1862,23 @@ function startRecoveryCountdown() {
 
 const DEFAULT_CANVAS_NODES = {
   // Left Column
-  "db-redis-broker": { x: 230, y: 80,  width: 185, height: 44 },
-  client:            { x: 230, y: 280, width: 165, height: 105 },
+  client:            { x: -80,  y: 225, width: 165, height: 105 },
+  "db-redis-broker": { x: 86,   y: 89,  width: 185, height: 44 },
 
   // Center Column
-  beat:              { x: 375, y: 20,  width: 160, height: 58 },
-  worker:            { x: 375, y: 125, width: 190, height: 68 },
-  coord:             { x: 375, y: 275, width: 200, height: 120 },
-  "db-coord":        { x: 390, y: 435, width: 170, height: 44 },
+  beat:              { x: 400,  y: 14,  width: 160, height: 58 },
+  worker:            { x: 386,  y: 140, width: 190, height: 68 },
+  coord:             { x: 404,  y: 290, width: 200, height: 120 },
+  "db-coord":        { x: 382,  y: 485, width: 170, height: 44 },
 
   // Right-Center Column
-  "db-redis-cache":  { x: 550, y: 25,  width: 185, height: 44 },
-  inv:               { x: 580, y: 190, width: 195, height: 95 },
-  pay:               { x: 580, y: 350, width: 195, height: 95 },
+  "db-redis-cache":  { x: 725,  y: 58,  width: 185, height: 44 },
+  inv:               { x: 821,  y: 187, width: 195, height: 95 },
+  pay:               { x: 823,  y: 423, width: 195, height: 95 },
 
   // Far-Right Column
-  "db-inv":          { x: 760, y: 35,  width: 165, height: 44 },
-  "db-pay":          { x: 760, y: 415, width: 165, height: 44 },
+  "db-inv":          { x: 1125, y: 178, width: 165, height: 44 },
+  "db-pay":          { x: 1125, y: 414, width: 165, height: 44 },
 };
 
 const CanvasEngine = {
@@ -1922,7 +1922,7 @@ const CanvasEngine = {
 
     if (!this.container || !this.svg || !this.world) return;
 
-    const TOPOLOGY_SCHEMA_VER = "dtc_topo_v10";
+    const TOPOLOGY_SCHEMA_VER = "dtc_topo_v11";
     if (localStorage.getItem("dtc_topo_schema") !== TOPOLOGY_SCHEMA_VER) {
       localStorage.removeItem("dtc_topology_nodes");
       localStorage.removeItem("dtc_topology_viewport");
