@@ -209,48 +209,6 @@ function initEventListeners() {
     });
   }
 
-  // Seat Matrix Capturing Phase Interceptor: Drop rapid clicks before child listeners
-  if (DOM.seatMatrix) {
-    DOM.seatMatrix.addEventListener("click", (e) => {
-      const tile = e.target.closest(".seat-tile");
-      if (!tile) return;
-      const seatId = parseInt(tile.dataset.seatId, 10);
-      if (!seatId) return;
-
-      // Allow clicks to release the user's currently held seat
-      if (STATE.myHold && STATE.myHold.seatId === seatId && !STATE.isActionInProgress) {
-        return;
-      }
-
-      // If user holds a seat or a hold action is in-flight, intercept and kill event
-      if (STATE.isActionInProgress || STATE.myHold !== null || STATE.pendingHoldSeatId !== null) {
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        e.preventDefault();
-
-        tile.style.animation = "shake 0.4s ease-in-out";
-        setTimeout(() => (tile.style.animation = ""), 400);
-
-        if (DOM.holdTimerCard) {
-          DOM.holdTimerCard.style.animation = "pulse-glow 0.6s ease-in-out 2";
-          setTimeout(() => (DOM.holdTimerCard.style.animation = ""), 1200);
-        }
-
-        const heldId = (STATE.myHold && STATE.myHold.seatId) || STATE.pendingHoldSeatId;
-        const heldSeat = STATE.seatsMap.get(heldId);
-        const heldLabel = heldSeat ? `Seat ${heldSeat.row}${heldSeat.seat_number}` : "a seat";
-
-        showToast({
-          title: "Single Seat Limit Enforced",
-          message: `Maximum 1 seat booking is allowed per session. You currently hold ${heldLabel}. Please release your hold first to select a different seat.`,
-          type: "warning",
-          icon: "🔒",
-          duration: 3500,
-        });
-      }
-    }, true); // Use Capturing Phase
-  }
-
   // Config Modal Integration
   initConfigModal();
 }
@@ -432,74 +390,81 @@ async function handleSeatTileClick(seatId) {
   const seat = STATE.seatsMap.get(seatId);
   if (!seat) return;
 
-  // Guard 0: Fast double-click / Global action lock
-  if (STATE.isActionInProgress || STATE.inFlightSeatIds.size > 0) {
-    const tile = document.getElementById(`seat-tile-${seatId}`);
-    if (tile) {
-      tile.style.animation = "shake 0.3s ease-in-out";
-      setTimeout(() => (tile.style.animation = ""), 300);
-    }
+  // 1. Guard against rapid click during an active API call
+  if (STATE.isActionInProgress) {
     return;
   }
 
-  // Guard 1: If clicking own already-held seat -> release hold
+  // 2. If clicking own already-held seat -> release hold
   if (STATE.myHold && STATE.myHold.seatId === seatId) {
     await releaseActiveHold();
     return;
   }
 
-  // Guard 2: If seat is booked or held by another user
+  // 3. If clicking a BOOKED seat (Sold Out)
   if (seat.status === "BOOKED") {
+    const tile = document.getElementById(`seat-tile-${seatId}`);
+    if (tile) {
+      tile.style.animation = "shake 0.4s ease-in-out";
+      setTimeout(() => (tile.style.animation = ""), 400);
+    }
     showToast({
-      title: "Seat Sold Out",
-      message: `Seat ${seat.row}${seat.seat_number} has already been permanently booked.`,
+      title: "Seat Already Booked",
+      message: `You cannot reserve Seat ${seat.row}${seat.seat_number} because it is already booked.`,
       type: "danger",
       icon: "✕",
+      duration: 4000,
     });
     return;
   }
 
-  if (seat.status === "HELD" && (!seat.held_by_transaction_id || (STATE.myHold && seat.held_by_transaction_id !== STATE.myHold.txId))) {
-    showToast({
-      title: "Seat Held by Another Fan",
-      message: `Seat ${seat.row}${seat.seat_number} is currently locked in someone else's 10-minute hold.`,
-      type: "warning",
-      icon: "🔒",
-    });
-    return;
+  // 4. If clicking a seat HELD by another user
+  if (seat.status === "HELD") {
+    const isMyHold = STATE.myHold && STATE.myHold.seatId === seatId;
+    if (!isMyHold) {
+      const tile = document.getElementById(`seat-tile-${seatId}`);
+      if (tile) {
+        tile.style.animation = "shake 0.4s ease-in-out";
+        setTimeout(() => (tile.style.animation = ""), 400);
+      }
+      showToast({
+        title: "Seat Already Held",
+        message: `Seat ${seat.row}${seat.seat_number} is currently held by another user. Please select an available seat.`,
+        type: "warning",
+        icon: "🔒",
+        duration: 4000,
+      });
+      return;
+    }
   }
 
-  // Guard 3: Synchronous Single Seat Reservation Invariant
-  // If user ALREADY has a hold or a hold acquisition is pending, strictly reject other seat clicks
-  if (STATE.myHold !== null || STATE.pendingHoldSeatId !== null) {
-    const heldId = (STATE.myHold && STATE.myHold.seatId) || STATE.pendingHoldSeatId;
-    const heldSeat = STATE.seatsMap.get(heldId);
-    const heldLabel = heldSeat ? `Seat ${heldSeat.row}${heldSeat.seat_number}` : "a seat";
+  // 5. If user ALREADY has a hold on another seat (Clicking an Available / Non-Reserved seat)
+  if (STATE.myHold) {
+    const heldSeat = STATE.seatsMap.get(STATE.myHold.seatId);
+    const heldLabel = heldSeat ? `Seat ${heldSeat.row}${heldSeat.seat_number}` : "your current seat";
 
-    // Visual shake feedback on the rejected tile
     const tile = document.getElementById(`seat-tile-${seatId}`);
     if (tile) {
       tile.style.animation = "shake 0.4s ease-in-out";
       setTimeout(() => (tile.style.animation = ""), 400);
     }
 
-    // Pulse the active hold countdown card to guide the user
     if (DOM.holdTimerCard) {
       DOM.holdTimerCard.style.animation = "pulse-glow 0.6s ease-in-out 2";
       setTimeout(() => (DOM.holdTimerCard.style.animation = ""), 1200);
     }
 
     showToast({
-      title: "Single Seat Limit Enforced",
-      message: `Maximum 1 seat booking is allowed per session. You currently hold ${heldLabel}. Please release your hold first to select a different seat.`,
+      title: "Release Current Hold to Switch",
+      message: `You are currently holding ${heldLabel}. Please release your current hold before reserving Seat ${seat.row}${seat.seat_number}.`,
       type: "warning",
-      icon: "🔒",
+      icon: "⚠️",
       duration: 4500,
     });
     return;
   }
 
-  // === SYNCHRONOUS MUTEX ACQUISITION (0ms latency, impossible to race) ===
+  // 6. User has NO hold and clicked an AVAILABLE seat -> Proceed to Acquire Hold
   STATE.isActionInProgress = true;
   STATE.pendingHoldSeatId = seatId;
   STATE.inFlightSeatIds.add(seatId);
@@ -543,6 +508,7 @@ async function handleSeatTileClick(seatId) {
 
       startHoldTimer(heldUntil);
       updateCheckoutSummary();
+      applySeatTileDOMState(seatId, "SELECTED");
 
       showToast({
         title: "10-Minute Hold Acquired!",
@@ -569,7 +535,7 @@ async function handleSeatTileClick(seatId) {
         message: `${conflictMsg} Please pick another available seat.`,
         type: "danger",
         icon: "⚠️",
-        duration: 5000,
+        duration: 4000,
       });
     }
   } catch (err) {
@@ -1007,27 +973,21 @@ function reconcileSeatStates(newSeats) {
   newSeats.forEach(newSeat => {
     const seatId = newSeat.id;
 
-    // Rule 1: Do not clobber in-flight user action
+    // Do not clobber in-flight user action
     if (STATE.inFlightSeatIds.has(seatId)) return;
 
-    const oldSeat = STATE.seatsMap.get(seatId);
+    STATE.seatsMap.set(seatId, newSeat);
 
-    // Rule 2: Current user's active hold
-    if (STATE.myHold && STATE.myHold.seatId === seatId) {
-      if (newSeat.held_by_transaction_id && newSeat.held_by_transaction_id === STATE.myHold.txId) {
-        // Confirmed user hold
-        applySeatTileDOMState(seatId, "SELECTED");
-        STATE.seatsMap.set(seatId, newSeat);
-        return;
-      }
-    }
+    // Is this seat the current user's active hold?
+    const isUserHold = STATE.myHold && STATE.myHold.seatId === seatId &&
+                       newSeat.held_by_transaction_id === STATE.myHold.txId;
 
-    // Rule 3: Differential DOM patch for changes
-    if (!oldSeat || oldSeat.status !== newSeat.status) {
+    if (isUserHold) {
+      applySeatTileDOMState(seatId, "SELECTED");
+    } else {
+      // All other seats in the venue MUST strictly reflect their true server status
       applySeatTileDOMState(seatId, newSeat.status);
     }
-
-    STATE.seatsMap.set(seatId, newSeat);
   });
 }
 

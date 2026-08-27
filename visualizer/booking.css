@@ -567,20 +567,15 @@ body {
   text-decoration: line-through;
 }
 
-/* Single Seat Restriction: When user holds a seat, other available seats are completely unclickable */
+/* When user has an active hold, subtle visual hint that single seat limit is active */
 .has-active-hold .seat-tile[data-status="AVAILABLE"] {
-  cursor: not-allowed !important;
-  opacity: 0.35 !important;
-  filter: grayscale(0.4) !important;
-  pointer-events: none !important;
-  user-select: none !important;
-  transition: opacity 0.2s ease, filter 0.2s ease;
+  opacity: 0.8;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 .has-active-hold .seat-tile[data-status="AVAILABLE"]:hover {
-  transform: none !important;
-  border-color: var(--color-available-border) !important;
-  box-shadow: none !important;
+  opacity: 1;
 }
 
 @keyframes shake {
