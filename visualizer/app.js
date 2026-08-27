@@ -1862,23 +1862,23 @@ function startRecoveryCountdown() {
 
 const DEFAULT_CANVAS_NODES = {
   // Left Column
-  "db-redis-broker": { x: 180, y: 110, width: 185, height: 44 },
-  client:            { x: 180, y: 300, width: 165, height: 105 },
+  "db-redis-broker": { x: 230, y: 80,  width: 185, height: 44 },
+  client:            { x: 230, y: 280, width: 165, height: 105 },
 
   // Center Column
-  beat:              { x: 410, y: 40,  width: 220, height: 58 },
-  worker:            { x: 410, y: 160, width: 220, height: 68 },
-  coord:             { x: 410, y: 290, width: 220, height: 120 },
-  "db-coord":        { x: 435, y: 450, width: 170, height: 44 },
+  beat:              { x: 375, y: 20,  width: 160, height: 58 },
+  worker:            { x: 375, y: 125, width: 190, height: 68 },
+  coord:             { x: 375, y: 275, width: 200, height: 120 },
+  "db-coord":        { x: 390, y: 435, width: 170, height: 44 },
 
   // Right-Center Column
-  "db-redis-cache":  { x: 520, y: 50,  width: 195, height: 44 },
-  inv:               { x: 640, y: 200, width: 200, height: 95 },
-  pay:               { x: 640, y: 360, width: 200, height: 95 },
+  "db-redis-cache":  { x: 550, y: 25,  width: 185, height: 44 },
+  inv:               { x: 580, y: 190, width: 195, height: 95 },
+  pay:               { x: 580, y: 350, width: 195, height: 95 },
 
   // Far-Right Column
-  "db-inv":          { x: 820, y: 80,  width: 165, height: 44 },
-  "db-pay":          { x: 820, y: 430, width: 165, height: 44 },
+  "db-inv":          { x: 760, y: 35,  width: 165, height: 44 },
+  "db-pay":          { x: 760, y: 415, width: 165, height: 44 },
 };
 
 const CanvasEngine = {
@@ -1922,7 +1922,7 @@ const CanvasEngine = {
 
     if (!this.container || !this.svg || !this.world) return;
 
-    const TOPOLOGY_SCHEMA_VER = "dtc_topo_v9";
+    const TOPOLOGY_SCHEMA_VER = "dtc_topo_v10";
     if (localStorage.getItem("dtc_topo_schema") !== TOPOLOGY_SCHEMA_VER) {
       localStorage.removeItem("dtc_topology_nodes");
       localStorage.removeItem("dtc_topology_viewport");
@@ -2192,7 +2192,7 @@ const CanvasEngine = {
     if (!this.container) return;
     const rect = this.container.getBoundingClientRect();
     const cWidth = rect.width || 1000;
-    const cHeight = rect.height || 540;
+    const cHeight = rect.height || 480;
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     Object.values(this.nodes).forEach((n) => {
@@ -2204,11 +2204,11 @@ const CanvasEngine = {
 
     const bWidth = maxX - minX;
     const bHeight = maxY - minY;
-    const padding = 55;
+    const padding = 35;
 
     const scaleX = (cWidth - padding * 2) / bWidth;
     const scaleY = (cHeight - padding * 2) / bHeight;
-    const newZoom = Math.min(Math.max(Math.min(scaleX, scaleY), this.minZoom), 1.15);
+    const newZoom = Math.min(Math.max(Math.min(scaleX, scaleY), this.minZoom), 1.0);
 
     this.zoom = newZoom;
     this.panX = (cWidth - bWidth * newZoom) / 2 - minX * newZoom;
@@ -2224,7 +2224,7 @@ const CanvasEngine = {
 
     const rect = this.container.getBoundingClientRect();
     const cWidth = rect.width || 1000;
-    const cHeight = rect.height || 540;
+    const cHeight = rect.height || 480;
 
     this.zoom = 1.15;
     this.panX = cWidth / 2 - (node.x + node.width / 2) * this.zoom;
