@@ -976,12 +976,18 @@ button, input, select, textarea {
 .node-box-coord  { stroke: #6366f1; stroke-width: 2; }
 .node-box-inv    { stroke: #059669; }
 .node-box-pay    { stroke: #d97706; }
+.node-box-beat   { stroke: #ec4899; stroke-width: 1.8; }
 .node-box-worker { stroke: #a855f7; stroke-width: 1.8; }
 .node-box-db     { stroke: #3b82f6; stroke-width: 1.4; }
+.node-box-db-redis { stroke: #ef4444 !important; }
+
+.node-header-beat   { fill: rgba(236, 72, 153, 0.15); }
+[data-theme="light"] .node-header-beat { fill: rgba(236, 72, 153, 0.08); }
 
 .node-header-worker { fill: rgba(168, 85, 247, 0.15); }
 [data-theme="light"] .node-header-worker { fill: rgba(168, 85, 247, 0.08); }
 
+.topo-edge-beat   { stroke-dasharray: 4, 4; animation: topo-dash 15s linear infinite; }
 .topo-edge-worker { stroke-dasharray: 4, 4; animation: topo-dash 20s linear infinite; }
 .topo-edge-db     { stroke-width: 1.8; opacity: 0.85; }
 
