@@ -309,28 +309,91 @@ const DOM = {
 };
 
 
+const activeAppToasts = new Map();
+
 function showToast({ icon = "⚡", title, message, type = "normal", duration = 4500 }) {
   if (!DOM.toastContainer) return;
+
+  const toastKey = `${type}::${title}`;
+
+  if (activeAppToasts.has(toastKey)) {
+    const existing = activeAppToasts.get(toastKey);
+    if (existing && existing.element && existing.element.parentNode) {
+      existing.count += 1;
+
+      if (existing.descEl) {
+        existing.descEl.textContent = message;
+      }
+
+      if (!existing.countBadge) {
+        const badge = document.createElement("span");
+        badge.className = "toast-count-badge";
+        badge.textContent = `x${existing.count}`;
+        existing.titleEl.appendChild(badge);
+        existing.countBadge = badge;
+      } else {
+        existing.countBadge.textContent = `x${existing.count}`;
+        existing.countBadge.style.animation = "none";
+        void existing.countBadge.offsetWidth;
+        existing.countBadge.style.animation = "toast-badge-pop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)";
+      }
+
+      existing.element.style.animation = "none";
+      void existing.element.offsetWidth;
+      existing.element.style.animation = "toast-bump 0.2s cubic-bezier(0.16, 1, 0.3, 1)";
+
+      clearTimeout(existing.timeoutId);
+      existing.timeoutId = setTimeout(() => {
+        existing.element.style.opacity = "0";
+        existing.element.style.transform = "translateX(50px)";
+        existing.element.style.transition = "all 0.3s ease";
+        setTimeout(() => {
+          if (existing.element.parentNode === DOM.toastContainer) {
+            DOM.toastContainer.removeChild(existing.element);
+          }
+          activeAppToasts.delete(toastKey);
+        }, 300);
+      }, duration);
+
+      return;
+    }
+  }
 
   const toast = document.createElement("div");
   toast.className = `toast toast-${type}`;
   toast.innerHTML = `
     <div class="toast-icon">${icon}</div>
     <div class="toast-body">
-      <div class="toast-title">${title}</div>
+      <div class="toast-title"><span class="toast-title-text">${title}</span></div>
       <div class="toast-desc">${message}</div>
     </div>
   `;
 
   DOM.toastContainer.appendChild(toast);
 
-  setTimeout(() => {
+  const titleEl = toast.querySelector(".toast-title");
+  const descEl = toast.querySelector(".toast-desc");
+
+  const entry = {
+    element: toast,
+    count: 1,
+    countBadge: null,
+    titleEl: titleEl,
+    descEl: descEl,
+    timeoutId: null
+  };
+
+  activeAppToasts.set(toastKey, entry);
+
+  entry.timeoutId = setTimeout(() => {
     toast.style.opacity = "0";
     toast.style.transform = "translateX(50px)";
+    toast.style.transition = "all 0.3s ease";
     setTimeout(() => {
       if (toast.parentNode === DOM.toastContainer) {
         DOM.toastContainer.removeChild(toast);
       }
+      activeAppToasts.delete(toastKey);
     }, 300);
   }, duration);
 }

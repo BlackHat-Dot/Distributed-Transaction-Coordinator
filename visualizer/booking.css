@@ -1341,9 +1341,62 @@ body {
 .toast.toast-warning { border-color: var(--color-held); }
 .toast.toast-danger { border-color: var(--color-booked); }
 
-.toast-icon { font-size: 20px; }
-.toast-content strong { font-size: 13px; display: block; }
+.toast-icon { font-size: 20px; flex-shrink: 0; }
+.toast-content strong {
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
 .toast-content p { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+.toast-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  font-family: var(--font-mono, monospace);
+  padding: 1px 7px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #ffffff;
+  line-height: 1.2;
+  letter-spacing: 0.3px;
+  animation: toast-badge-pop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.toast-warning .toast-count-badge {
+  background: rgba(245, 158, 11, 0.25);
+  border-color: rgba(245, 158, 11, 0.55);
+  color: #fbbf24;
+}
+
+.toast-danger .toast-count-badge {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.55);
+  color: #f87171;
+}
+
+.toast-success .toast-count-badge {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: rgba(16, 185, 129, 0.55);
+  color: #34d399;
+}
+
+@keyframes toast-badge-pop {
+  0% { transform: scale(0.6); opacity: 0.5; }
+  60% { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes toast-bump {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
 
 /* Helpers */
 .hidden { display: none !important; }

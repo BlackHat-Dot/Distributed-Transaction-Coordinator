@@ -137,26 +137,96 @@ async function fetchJson(url, options = {}, timeoutMs = 4000) {
 }
 
 /* ==========================================================================
-   TOAST SYSTEM
+   TOAST SYSTEM (DEDUPLICATED / AGGREGATED WITH ×N COUNTER)
    ========================================================================== */
+
+const activeToasts = new Map();
 
 function showToast({ title, message, type = "normal", icon = "ℹ️", duration = 4000 }) {
   if (!DOM.toastContainer) return;
+
+  // Use title + type composite key to aggregate identical prompt categories
+  const toastKey = `${type}::${title}`;
+
+  if (activeToasts.has(toastKey)) {
+    const existing = activeToasts.get(toastKey);
+    if (existing && existing.element && existing.element.parentNode) {
+      existing.count += 1;
+
+      // Update message text to the latest seat/context details
+      if (existing.descEl) {
+        existing.descEl.textContent = message;
+      }
+
+      // Update or create multiplier badge (e.g. x2, x3, x4...)
+      if (!existing.countBadge) {
+        const badge = document.createElement("span");
+        badge.className = "toast-count-badge";
+        badge.textContent = `x${existing.count}`;
+        existing.titleEl.appendChild(badge);
+        existing.countBadge = badge;
+      } else {
+        existing.countBadge.textContent = `x${existing.count}`;
+        existing.countBadge.style.animation = "none";
+        void existing.countBadge.offsetWidth;
+        existing.countBadge.style.animation = "toast-badge-pop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)";
+      }
+
+      // Re-trigger card pulse bump
+      existing.element.style.animation = "none";
+      void existing.element.offsetWidth;
+      existing.element.style.animation = "toast-bump 0.2s cubic-bezier(0.16, 1, 0.3, 1)";
+
+      // Reset and extend dismissal timer
+      clearTimeout(existing.timeoutId);
+      existing.timeoutId = setTimeout(() => {
+        existing.element.style.opacity = "0";
+        existing.element.style.transform = "translateY(10px)";
+        existing.element.style.transition = "all 0.3s ease";
+        setTimeout(() => {
+          if (existing.element.parentNode) existing.element.remove();
+          activeToasts.delete(toastKey);
+        }, 300);
+      }, duration);
+
+      return;
+    }
+  }
+
+  // Create brand new toast
   const toast = document.createElement("div");
   toast.className = `toast toast-${type}`;
   toast.innerHTML = `
     <div class="toast-icon">${icon}</div>
     <div class="toast-content">
-      <strong>${title}</strong>
-      <p>${message}</p>
+      <strong class="toast-title-text">${title}</strong>
+      <p class="toast-desc-text">${message}</p>
     </div>
   `;
   DOM.toastContainer.appendChild(toast);
-  setTimeout(() => {
+
+  const strongEl = toast.querySelector(".toast-title-text");
+  const descEl = toast.querySelector(".toast-desc-text");
+
+  const entry = {
+    element: toast,
+    count: 1,
+    countBadge: null,
+    titleEl: strongEl,
+    descEl: descEl,
+    timeoutId: null
+  };
+
+  activeToasts.set(toastKey, entry);
+
+  entry.timeoutId = setTimeout(() => {
     toast.style.opacity = "0";
     toast.style.transform = "translateY(10px)";
     toast.style.transition = "all 0.3s ease";
-    setTimeout(() => toast.remove(), 300);
+    setTimeout(() => {
+      if (toast.parentNode) toast.remove();
+      activeToasts.delete(toastKey);
+    }, 300);
   }, duration);
 }
 
