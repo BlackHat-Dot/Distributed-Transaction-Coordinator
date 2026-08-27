@@ -343,6 +343,8 @@ function renderFullSeatMatrix() {
 
     DOM.seatMatrix.appendChild(tierSection);
   });
+
+  updateMatrixHoldState();
 }
 
 function createSeatTile(seat) {
@@ -412,9 +414,32 @@ async function handleSeatTileClick(seatId) {
     return;
   }
 
-  // If user already holds a different seat, release the old one first
-  if (STATE.myHold) {
-    await releaseActiveHold();
+  // Guard 4: Single Seat Reservation Limit - User already holds another seat!
+  if (STATE.myHold && STATE.myHold.seatId !== seatId) {
+    const heldSeat = STATE.seatsMap.get(STATE.myHold.seatId);
+    const heldLabel = heldSeat ? `Seat ${heldSeat.row}${heldSeat.seat_number}` : "a seat";
+
+    // Visual shake feedback on the rejected tile
+    const tile = document.getElementById(`seat-tile-${seatId}`);
+    if (tile) {
+      tile.style.animation = "shake 0.4s ease-in-out";
+      setTimeout(() => (tile.style.animation = ""), 400);
+    }
+
+    // Pulse the active hold countdown card to guide the user
+    if (DOM.holdTimerCard) {
+      DOM.holdTimerCard.style.animation = "pulse-glow 0.6s ease-in-out 2";
+      setTimeout(() => (DOM.holdTimerCard.style.animation = ""), 1200);
+    }
+
+    showToast({
+      title: "Single Seat Limit Enforced",
+      message: `Maximum 1 seat booking is allowed per session. You currently hold ${heldLabel}. Please release your hold first to select a different seat.`,
+      type: "warning",
+      icon: "🔒",
+      duration: 5000,
+    });
+    return;
   }
 
   // OPTIMISTIC SEAT ACQUISITION
@@ -423,6 +448,7 @@ async function handleSeatTileClick(seatId) {
 
   // Apply instant optimistic visual feedback (0ms perceived latency)
   applySeatTileDOMState(seatId, "SELECTED");
+  updateMatrixHoldState();
 
   showToast({
     title: "Holding Seat...",
@@ -457,6 +483,7 @@ async function handleSeatTileClick(seatId) {
 
     startHoldTimer(heldUntil);
     updateCheckoutSummary();
+    updateMatrixHoldState();
 
     showToast({
       title: "10-Minute Hold Acquired!",
@@ -469,6 +496,7 @@ async function handleSeatTileClick(seatId) {
     // 409 Conflict: Another buyer grabbed the seat first!
     const conflictMsg = (res.data && res.data.error) || "Seat was just claimed by another user!";
     applySeatTileDOMState(seatId, "HELD");
+    updateMatrixHoldState();
     
     // Shake animation on rejected tile
     const tile = document.getElementById(`seat-tile-${seatId}`);
@@ -489,6 +517,16 @@ async function handleSeatTileClick(seatId) {
   updateInventoryStats();
 }
 
+function updateMatrixHoldState() {
+  const matrix = DOM.seatMatrix || document.getElementById("seat-matrix");
+  if (!matrix) return;
+  if (STATE.myHold) {
+    matrix.classList.add("has-active-hold");
+  } else {
+    matrix.classList.remove("has-active-hold");
+  }
+}
+
 /* ==========================================================================
    RELEASE HOLD (DESELECTION & BEACON)
    ========================================================================== */
@@ -506,6 +544,7 @@ async function releaseActiveHold() {
   applySeatTileDOMState(seatId, "AVAILABLE");
   hideHoldTimer();
   updateCheckoutSummary();
+  updateMatrixHoldState();
 
   const res = await fetchJson(`${CONFIG.inventoryUrl}/seats/release/`, {
     method: "POST",
@@ -600,6 +639,7 @@ function handleHoldAutoExpired() {
   STATE.myHold = null;
   hideHoldTimer();
   updateCheckoutSummary();
+  updateMatrixHoldState();
 
   showToast({
     title: "Hold Expired",
@@ -948,6 +988,7 @@ async function resetVenueSeats() {
       STATE.myHold = null;
       hideHoldTimer();
       updateCheckoutSummary();
+      updateMatrixHoldState();
 
       showToast({
         title: "Venue Restocked",
