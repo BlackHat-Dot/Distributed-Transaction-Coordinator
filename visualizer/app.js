@@ -575,8 +575,8 @@ function animatePacketAlongPath({
       "coord-pay": "path-coord-pay",
       "inv-coord": "path-inv-coord",
       "pay-coord": "path-pay-coord",
-      "beat-worker": "path-beat-worker",
-      "worker-dbredis": "path-worker-dbredis",
+      "beat-dbredis": "path-beat-dbredis",
+      "dbredis-worker": "path-dbredis-worker",
       "worker-coord": "path-worker-coord",
       "coord-dbcoord": "path-coord-dbcoord",
       "inv-dbinv": "path-inv-dbinv",
@@ -1549,19 +1549,19 @@ async function triggerRecoverySweepAnimation() {
   DOM.topoCoordLease.textContent = "SWEEPING";
   DOM.recRedisLock.innerHTML = `<span class="badge badge-purple">SWEEPING LEASE</span>`;
 
-  // Stage 1: Celery Beat -> Recovery Worker
-  animatePacketAlongPath({ route: "beat-worker", type: "purple", durationMs: 380, destinationNodeId: "node-box-worker" });
-  await sleep(320);
+  // Stage 1: Celery Beat -> Redis Message Broker (Push Scheduled Task)
+  animatePacketAlongPath({ route: "beat-dbredis", type: "purple", durationMs: 380, destinationNodeId: "node-box-db-redis" });
+  await sleep(340);
 
-  // Stage 2: Recovery Worker -> Redis DB (Acquire Mutex Lease Lock)
-  animatePacketAlongPath({ route: "worker-dbredis", type: "purple", durationMs: 320, destinationNodeId: "node-box-db-redis" });
-  await sleep(280);
+  // Stage 2: Redis Message Broker -> Recovery Worker (Pop Task & Claim Lease)
+  animatePacketAlongPath({ route: "dbredis-worker", type: "purple", durationMs: 340, destinationNodeId: "node-box-worker" });
+  await sleep(300);
 
-  // Stage 3: Recovery Worker -> Coordinator Service (Sweep Stale Transactions)
+  // Stage 3: Recovery Worker -> Coordinator Service (Sweep Sagas)
   animatePacketAlongPath({ route: "worker-coord", type: "purple", durationMs: 380, destinationNodeId: "node-box-coord" });
   await sleep(320);
 
-  // Stage 4: Coordinator -> Inventory & Payment Services (Probe downstream ground truth)
+  // Stage 4: Coordinator -> Inventory & Payment Services (Probe Ground Truth)
   animatePacketAlongPath({ route: "coord-inv", type: "purple", durationMs: 420, destinationNodeId: "node-box-inv" });
   animatePacketAlongPath({ route: "coord-pay", type: "purple", durationMs: 420, destinationNodeId: "node-box-pay" });
 }
@@ -1855,16 +1855,16 @@ function startRecoveryCountdown() {
 }
 
 const DEFAULT_CANVAS_NODES = {
-  client:     { x: 30,  y: 150, width: 130, height: 115 },
-  beat:       { x: 230, y: 15,  width: 220, height: 60 },
-  "db-redis": { x: 30,  y: 25,  width: 165, height: 44 },
-  worker:     { x: 230, y: 95,  width: 220, height: 68 },
-  coord:      { x: 230, y: 185, width: 220, height: 120 },
-  "db-coord": { x: 255, y: 325, width: 170, height: 44 },
-  inv:        { x: 530, y: 35,  width: 210, height: 95 },
-  "db-inv":   { x: 770, y: 60,  width: 165, height: 44 },
-  pay:        { x: 530, y: 230, width: 210, height: 95 },
-  "db-pay":   { x: 770, y: 255, width: 165, height: 44 },
+  client:     { x: 30,  y: 250, width: 165, height: 105 },
+  beat:       { x: 230, y: 15,  width: 220, height: 58 },
+  "db-redis": { x: 245, y: 95,  width: 190, height: 44 },
+  worker:     { x: 230, y: 160, width: 220, height: 68 },
+  coord:      { x: 230, y: 250, width: 220, height: 120 },
+  "db-coord": { x: 255, y: 390, width: 170, height: 44 },
+  inv:        { x: 530, y: 120, width: 210, height: 95 },
+  "db-inv":   { x: 770, y: 145, width: 165, height: 44 },
+  pay:        { x: 530, y: 280, width: 210, height: 95 },
+  "db-pay":   { x: 770, y: 305, width: 165, height: 44 },
 };
 
 const CanvasEngine = {
@@ -1908,7 +1908,7 @@ const CanvasEngine = {
 
     if (!this.container || !this.svg || !this.world) return;
 
-    const TOPOLOGY_SCHEMA_VER = "dtc_topo_v6";
+    const TOPOLOGY_SCHEMA_VER = "dtc_topo_v7";
     if (localStorage.getItem("dtc_topo_schema") !== TOPOLOGY_SCHEMA_VER) {
       localStorage.removeItem("dtc_topology_nodes");
       localStorage.removeItem("dtc_topology_viewport");
@@ -2036,8 +2036,8 @@ const CanvasEngine = {
     const pathCoordPay = document.getElementById("path-coord-pay");
     const pathInvCoord = document.getElementById("path-inv-coord");
     const pathPayCoord = document.getElementById("path-pay-coord");
-    const pathBeatWorker = document.getElementById("path-beat-worker");
-    const pathWorkerDbRedis = document.getElementById("path-worker-dbredis");
+    const pathBeatDbRedis = document.getElementById("path-beat-dbredis");
+    const pathDbRedisWorker = document.getElementById("path-dbredis-worker");
     const pathWorkerCoord = document.getElementById("path-worker-coord");
     const pathCoordDbCoord = document.getElementById("path-coord-dbcoord");
     const pathInvDbInv = document.getElementById("path-inv-dbinv");
@@ -2048,8 +2048,8 @@ const CanvasEngine = {
     const dCoordPay = this.getDynamicPathD("coord", "pay");
     const dInvCoord = this.getDynamicPathD("inv", "coord");
     const dPayCoord = this.getDynamicPathD("pay", "coord");
-    const dBeatWorker = this.getDynamicPathD("beat", "worker");
-    const dWorkerDbRedis = this.getDynamicPathD("worker", "db-redis");
+    const dBeatDbRedis = this.getDynamicPathD("beat", "db-redis");
+    const dDbRedisWorker = this.getDynamicPathD("db-redis", "worker");
     const dWorkerCoord = this.getDynamicPathD("worker", "coord");
     const dCoordDbCoord = this.getDynamicPathD("coord", "db-coord");
     const dInvDbInv = this.getDynamicPathD("inv", "db-inv");
@@ -2060,8 +2060,8 @@ const CanvasEngine = {
     if (pathCoordPay) pathCoordPay.setAttribute("d", dCoordPay);
     if (pathInvCoord) pathInvCoord.setAttribute("d", dInvCoord);
     if (pathPayCoord) pathPayCoord.setAttribute("d", dPayCoord);
-    if (pathBeatWorker) pathBeatWorker.setAttribute("d", dBeatWorker);
-    if (pathWorkerDbRedis) pathWorkerDbRedis.setAttribute("d", dWorkerDbRedis);
+    if (pathBeatDbRedis) pathBeatDbRedis.setAttribute("d", dBeatDbRedis);
+    if (pathDbRedisWorker) pathDbRedisWorker.setAttribute("d", dDbRedisWorker);
     if (pathWorkerCoord) pathWorkerCoord.setAttribute("d", dWorkerCoord);
     if (pathCoordDbCoord) pathCoordDbCoord.setAttribute("d", dCoordDbCoord);
     if (pathInvDbInv) pathInvDbInv.setAttribute("d", dInvDbInv);
