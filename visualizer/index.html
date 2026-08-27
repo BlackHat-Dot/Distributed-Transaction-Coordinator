@@ -571,37 +571,37 @@
       </div>
       <div class="modal-body arch-grid">
         <div class="arch-card">
-          <div class="arch-icon">⚖️</div>
+          <div class="arch-icon">✦</div>
           <h4>1. Saga Pattern vs. 2PC</h4>
           <p>Two-Phase Commit (2PC) blocks distributed databases while holding locks across network boundaries. The Saga pattern uses local ACID transactions followed by automated <strong>Compensating Actions</strong> if downstream services decline.</p>
         </div>
 
         <div class="arch-card">
-          <div class="arch-icon">🔒</div>
+          <div class="arch-icon">✦</div>
           <h4>2. Relational Idempotency</h4>
           <p>Rather than relying on volatile Redis TTL keys that expire and risk double-charges on delayed retries, all services enforce PostgreSQL <code>UNIQUE(transaction_id)</code> constraints caught via <code>IntegrityError</code>.</p>
         </div>
 
         <div class="arch-card">
-          <div class="arch-icon">🛡️</div>
+          <div class="arch-icon">✦</div>
           <h4>3. Row-Level Concurrency (CAS)</h4>
           <p>The Coordinator protects all status mutations under <code>SELECT FOR UPDATE</code> with Compare-And-Set (CAS) filters. Racing workers or client retries are serialized cleanly without sequence collisions.</p>
         </div>
 
         <div class="arch-card">
-          <div class="arch-icon">📜</div>
+          <div class="arch-icon">✦</div>
           <h4>4. Append-Only SagaEvent Log</h4>
           <p>A single mutable status column destroys history. Every transition appends an immutable <code>SagaEvent(seq, from, to, actor, payload)</code> record, providing ground-truth forensic audibility.</p>
         </div>
 
         <div class="arch-card">
-          <div class="arch-icon">⏱️</div>
+          <div class="arch-icon">✦</div>
           <h4>5. Deterministic Crash Recovery</h4>
           <p>A Celery Beat background worker sweeps orphaned non-terminal transactions older than 5 minutes, querying ground-truth downstream endpoints (<code>/payments/check/</code>, <code>/reserve/check/</code>) to roll forward or compensate.</p>
         </div>
 
         <div class="arch-card">
-          <div class="arch-icon">📦</div>
+          <div class="arch-icon">✦</div>
           <h4>6. Microservice Isolation</h4>
           <p>Three independent Django services, three separate PostgreSQL databases. Zero shared database state. Completely isolated domain boundaries.</p>
         </div>
