@@ -1061,7 +1061,7 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
 
   if (isAsync) {
     showToast({
-      icon: "⚡",
+      icon: "⦿",
       title: `Async Saga Dispatched (202 Accepted · ${latencyMs}ms)`,
       message: `[Mode: ASYNCHRONOUS] Task enqueued to Celery background worker! Client unblocked in ${latencyMs}ms. Celery worker is executing Reserve → Charge → Confirm.`,
       type: "success",
@@ -1504,7 +1504,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   }
   else if (execMode === "async" && res.status === 202) {
     // ⚡ ASYNC: Celery worker picked it up — animate background steps
-    showToast({ icon: "⚡", title: `Async Pipeline: 202 Accepted (${latencyMs}ms)`, message: `Client released in ${latencyMs}ms! Celery worker now running steps in background. Live polling updates below...`, type: "success", duration: 6500 });
+    showToast({ icon: "⦿", title: `Async Pipeline: 202 Accepted (${latencyMs}ms)`, message: `Client released in ${latencyMs}ms! Celery worker now running steps in background. Live polling updates below...`, type: "success", duration: 6500 });
     animatePacketAlongPath({ route: "coord-inv", type: "purple", durationMs: 400, destinationNodeId: "node-box-inv" });
     setTimeout(() => animatePacketAlongPath({ route: "inv-coord", type: "purple", durationMs: 350, destinationNodeId: "node-box-coord" }), 450);
     setTimeout(() => animatePacketAlongPath({ route: "coord-pay", type: "purple", durationMs: 400, destinationNodeId: "node-box-pay" }), 850);
@@ -1513,7 +1513,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   else {
     // 🔁 SYNC SUCCESS
     await animatePacketAlongPath({ route: "pay-coord", type: "success", durationMs: 300, destinationNodeId: "node-box-coord" });
-    DOM.topoCoordState.textContent = "🔁 SYNC · Confirming Seat in Inventory...";
+    DOM.topoCoordState.textContent = "⦿ SYNC · Confirming Seat in Inventory...";
     await animatePacketAlongPath({ route: "coord-inv", type: "success", durationMs: 300, destinationNodeId: "node-box-inv" });
     await animatePacketAlongPath({ route: "inv-coord", type: "success", durationMs: 250, destinationNodeId: "node-box-coord" });
     showToast({ icon: "🔁", title: `Sync Pipeline: 200 OK (${latencyMs}ms)`, message: `Coordinator → Inventory Reserve → Payment Charge → Inventory Confirm — completed in ${latencyMs}ms. COMPLETED.`, type: "success", duration: 6500 });
@@ -1589,9 +1589,9 @@ if (btnExecInfo) {
   btnExecInfo.addEventListener("click", (e) => {
     e.stopPropagation();
     showToast({
-      icon: "⚡",
+      icon: "⦿",
       title: "Sync vs. Async Pipeline (Simple Guide)",
-      message: "⚡ Async (Background): Gives you an instant receipt (202 Accepted) in 10ms, then Celery workers finish booking the seat in the background (like BookMyShow).\n\n🔁 Sync (Wait): Keeps your browser connection waiting until all services (Seat + Bank + Confirmation) are 100% finished before responding (200 OK).",
+      message: "Async (Background): Gives you an instant receipt (202 Accepted) in 10ms, then Celery workers finish booking the seat in the background (like BookMyShow).\n\n🔁 Sync (Wait): Keeps your browser connection waiting until all services (Seat + Bank + Confirmation) are 100% finished before responding (200 OK).",
       type: "normal",
       duration: 8500,
     });
