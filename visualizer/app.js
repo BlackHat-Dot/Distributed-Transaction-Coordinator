@@ -90,7 +90,7 @@ const SCENARIO_DESCRIPTIONS = {
     outcome: "Status: COMPLETED (HTTP 200 OK)"
   },
   fail: {
-    icon: "🔄",
+    icon: "⦿",
     title: "Payment Decline & Auto-Compensate",
     badge: "Backward Compensating Rollback",
     badgeClass: "badge-amber",
@@ -115,7 +115,7 @@ const SCENARIO_DESCRIPTIONS = {
     outcome: "Status: COMPENSATED (HTTP 400 Bad Request / 422)"
   },
   race: {
-    icon: "🔥",
+    icon: "⦿",
     title: "5x Concurrent Race Attack",
     badge: "PostgreSQL Relational Concurrency Defense",
     badgeClass: "badge-rose",
@@ -140,7 +140,7 @@ POST http://127.0.0.1:8002/transactions/
     outcome: "Exactly 1 saga commits COMPLETED. 4 duplicate requests safely defended."
   },
   crash: {
-    icon: "💥",
+    icon: "⦿",
     title: "Process Crash Simulation",
     badge: "Celery Beat & Dual-Path Reconciler",
     badgeClass: "badge-purple",
@@ -167,7 +167,7 @@ POST http://127.0.0.1:8002/transactions/
     outcome: "Status: Recovers from orphaned PAYMENT_PROCESSING → COMPENSATED"
   },
   custom: {
-    icon: "⚙️",
+    icon: "⦿",
     title: "Custom Payload Dispatcher",
     badge: "Interactive Edge-Case Tester",
     badgeClass: "badge-blue",
@@ -1069,9 +1069,9 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     });
   } else {
     showToast({
-      icon: "🔁",
-      title: `🔁 Sync Saga Completed (200 OK · ${latencyMs}ms)`,
-      message: `⏱️ [Mode: SYNCHRONOUS] Blocking execution finished in ${latencyMs}ms. Seat #${nextSeatId} Reserved → Payment Charged ($500.00) → Confirmed.`,
+      icon: "⦿",
+      title: `Sync Saga Completed (200 OK · ${latencyMs}ms)`,
+      message: `[Mode: SYNCHRONOUS] Blocking execution finished in ${latencyMs}ms. Seat #${nextSeatId} Reserved → Payment Charged ($500.00) → Confirmed.`,
       type: "success",
       duration: 6500,
     });
