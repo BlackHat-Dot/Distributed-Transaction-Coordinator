@@ -26,6 +26,12 @@ const STATE = {
   // In-flight action set: Set of seat IDs currently undergoing reserve/release API requests
   inFlightSeatIds: new Set(),
 
+  // Global hold mutex: True whenever a reserve or release network request is in-flight
+  isActionInProgress: false,
+
+  // Synchronously tracked pending hold seat ID (set BEFORE any network call)
+  pendingHoldSeatId: null,
+
   // Active user hold: { seatId, txId, heldUntil, timerInterval }
   myHold: null,
 
@@ -384,16 +390,23 @@ async function handleSeatTileClick(seatId) {
   const seat = STATE.seatsMap.get(seatId);
   if (!seat) return;
 
-  // Guard 1: In-flight network request currently processing on this seat
-  if (STATE.inFlightSeatIds.has(seatId)) return;
+  // Guard 0: Fast double-click / Global action lock
+  if (STATE.isActionInProgress || STATE.inFlightSeatIds.size > 0) {
+    const tile = document.getElementById(`seat-tile-${seatId}`);
+    if (tile) {
+      tile.style.animation = "shake 0.3s ease-in-out";
+      setTimeout(() => (tile.style.animation = ""), 300);
+    }
+    return;
+  }
 
-  // Guard 2: If clicking own already-held seat -> release hold
+  // Guard 1: If clicking own already-held seat -> release hold
   if (STATE.myHold && STATE.myHold.seatId === seatId) {
     await releaseActiveHold();
     return;
   }
 
-  // Guard 3: If seat is booked or held by another user
+  // Guard 2: If seat is booked or held by another user
   if (seat.status === "BOOKED") {
     showToast({
       title: "Seat Sold Out",
@@ -414,9 +427,11 @@ async function handleSeatTileClick(seatId) {
     return;
   }
 
-  // Guard 4: Single Seat Reservation Limit - User already holds another seat!
-  if (STATE.myHold && STATE.myHold.seatId !== seatId) {
-    const heldSeat = STATE.seatsMap.get(STATE.myHold.seatId);
+  // Guard 3: Synchronous Single Seat Reservation Invariant
+  // If user ALREADY has a hold or a hold acquisition is pending, strictly reject other seat clicks
+  if (STATE.myHold !== null || STATE.pendingHoldSeatId !== null) {
+    const heldId = (STATE.myHold && STATE.myHold.seatId) || STATE.pendingHoldSeatId;
+    const heldSeat = STATE.seatsMap.get(heldId);
     const heldLabel = heldSeat ? `Seat ${heldSeat.row}${heldSeat.seat_number}` : "a seat";
 
     // Visual shake feedback on the rejected tile
@@ -437,18 +452,21 @@ async function handleSeatTileClick(seatId) {
       message: `Maximum 1 seat booking is allowed per session. You currently hold ${heldLabel}. Please release your hold first to select a different seat.`,
       type: "warning",
       icon: "🔒",
-      duration: 5000,
+      duration: 4500,
     });
     return;
   }
 
-  // OPTIMISTIC SEAT ACQUISITION
-  const newHoldTxId = crypto.randomUUID();
+  // === SYNCHRONOUS MUTEX ACQUISITION (0ms latency, impossible to race) ===
+  STATE.isActionInProgress = true;
+  STATE.pendingHoldSeatId = seatId;
   STATE.inFlightSeatIds.add(seatId);
 
-  // Apply instant optimistic visual feedback (0ms perceived latency)
+  // Apply instant optimistic visual feedback
   applySeatTileDOMState(seatId, "SELECTED");
   updateMatrixHoldState();
+
+  const newHoldTxId = crypto.randomUUID();
 
   showToast({
     title: "Holding Seat...",
@@ -458,69 +476,83 @@ async function handleSeatTileClick(seatId) {
     duration: 1500,
   });
 
-  // Call real backend endpoint: POST /seats/reserve/
-  const res = await fetchJson(`${CONFIG.inventoryUrl}/seats/reserve/`, {
-    method: "POST",
-    body: JSON.stringify({ seat_id: seatId, transaction_id: newHoldTxId }),
-  });
-
-  STATE.inFlightSeatIds.delete(seatId);
-
-  if (res.ok) {
-    // Hold granted by PostgreSQL row lock!
-    const heldUntil = res.data.held_until || new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    STATE.myHold = {
-      seatId: seatId,
-      txId: newHoldTxId,
-      heldUntil: heldUntil,
-      timerInterval: null,
-    };
-
-    // Update internal map
-    seat.status = "HELD";
-    seat.held_by_transaction_id = newHoldTxId;
-    seat.held_until = heldUntil;
-
-    startHoldTimer(heldUntil);
-    updateCheckoutSummary();
-    updateMatrixHoldState();
-
-    showToast({
-      title: "10-Minute Hold Acquired!",
-      message: `Seat ${seat.row}${seat.seat_number} is reserved for you. Complete payment before the timer expires.`,
-      type: "success",
-      icon: "🎟️",
-      duration: 4000,
+  try {
+    // Call real backend endpoint: POST /seats/reserve/
+    const res = await fetchJson(`${CONFIG.inventoryUrl}/seats/reserve/`, {
+      method: "POST",
+      body: JSON.stringify({ seat_id: seatId, transaction_id: newHoldTxId }),
     });
-  } else {
-    // 409 Conflict: Another buyer grabbed the seat first!
-    const conflictMsg = (res.data && res.data.error) || "Seat was just claimed by another user!";
-    applySeatTileDOMState(seatId, "HELD");
-    updateMatrixHoldState();
-    
-    // Shake animation on rejected tile
-    const tile = document.getElementById(`seat-tile-${seatId}`);
-    if (tile) {
-      tile.style.animation = "shake 0.4s ease-in-out";
-      setTimeout(() => (tile.style.animation = ""), 400);
-    }
 
+    if (res.ok) {
+      // Hold granted by PostgreSQL row lock!
+      const heldUntil = res.data.held_until || new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      STATE.myHold = {
+        seatId: seatId,
+        txId: newHoldTxId,
+        heldUntil: heldUntil,
+        timerInterval: null,
+      };
+      STATE.pendingHoldSeatId = null;
+
+      // Update internal map
+      seat.status = "HELD";
+      seat.held_by_transaction_id = newHoldTxId;
+      seat.held_until = heldUntil;
+
+      startHoldTimer(heldUntil);
+      updateCheckoutSummary();
+
+      showToast({
+        title: "10-Minute Hold Acquired!",
+        message: `Seat ${seat.row}${seat.seat_number} is reserved for you. Complete payment before the timer expires.`,
+        type: "success",
+        icon: "🎟️",
+        duration: 4000,
+      });
+    } else {
+      // 409 Conflict: Another buyer grabbed the seat first!
+      const conflictMsg = (res.data && res.data.error) || "Seat was just claimed by another user!";
+      STATE.pendingHoldSeatId = null;
+      STATE.myHold = null;
+      applySeatTileDOMState(seatId, "HELD");
+      
+      const tile = document.getElementById(`seat-tile-${seatId}`);
+      if (tile) {
+        tile.style.animation = "shake 0.4s ease-in-out";
+        setTimeout(() => (tile.style.animation = ""), 400);
+      }
+
+      showToast({
+        title: "Hold Conflict",
+        message: `${conflictMsg} Please pick another available seat.`,
+        type: "danger",
+        icon: "⚠️",
+        duration: 5000,
+      });
+    }
+  } catch (err) {
+    STATE.pendingHoldSeatId = null;
+    STATE.myHold = null;
+    applySeatTileDOMState(seatId, "AVAILABLE");
     showToast({
-      title: "Hold Conflict",
-      message: `${conflictMsg} Please pick another available seat.`,
+      title: "Network Error",
+      message: err.message || "Failed to reserve seat.",
       type: "danger",
       icon: "⚠️",
-      duration: 5000,
     });
+  } finally {
+    STATE.isActionInProgress = false;
+    STATE.inFlightSeatIds.delete(seatId);
+    updateMatrixHoldState();
+    updateInventoryStats();
   }
-
-  updateInventoryStats();
 }
 
 function updateMatrixHoldState() {
   const matrix = DOM.seatMatrix || document.getElementById("seat-matrix");
   if (!matrix) return;
-  if (STATE.myHold) {
+  const hasHold = Boolean(STATE.myHold || STATE.pendingHoldSeatId || STATE.isActionInProgress);
+  if (hasHold) {
     matrix.classList.add("has-active-hold");
   } else {
     matrix.classList.remove("has-active-hold");
@@ -533,12 +565,15 @@ function updateMatrixHoldState() {
 
 async function releaseActiveHold() {
   if (!STATE.myHold) return;
+  if (STATE.isActionInProgress) return;
 
   const { seatId, txId, timerInterval } = STATE.myHold;
   if (timerInterval) clearInterval(timerInterval);
 
+  STATE.isActionInProgress = true;
   STATE.inFlightSeatIds.add(seatId);
   STATE.myHold = null;
+  STATE.pendingHoldSeatId = null;
 
   // Optimistically mark as AVAILABLE
   applySeatTileDOMState(seatId, "AVAILABLE");
@@ -546,28 +581,33 @@ async function releaseActiveHold() {
   updateCheckoutSummary();
   updateMatrixHoldState();
 
-  const res = await fetchJson(`${CONFIG.inventoryUrl}/seats/release/`, {
-    method: "POST",
-    body: JSON.stringify({ transaction_id: txId }),
-  });
+  try {
+    await fetchJson(`${CONFIG.inventoryUrl}/seats/release/`, {
+      method: "POST",
+      body: JSON.stringify({ transaction_id: txId }),
+    });
 
-  STATE.inFlightSeatIds.delete(seatId);
+    const seat = STATE.seatsMap.get(seatId);
+    if (seat) {
+      seat.status = "AVAILABLE";
+      seat.held_until = null;
+      seat.held_by_transaction_id = null;
+    }
 
-  const seat = STATE.seatsMap.get(seatId);
-  if (seat) {
-    seat.status = "AVAILABLE";
-    seat.held_until = null;
-    seat.held_by_transaction_id = null;
+    showToast({
+      title: "Hold Released",
+      message: `Seat ${seat ? seat.row + seat.seat_number : ""} released back to the venue catalog.`,
+      type: "normal",
+      icon: "🔓",
+    });
+  } catch (err) {
+    console.warn("Release hold error", err);
+  } finally {
+    STATE.isActionInProgress = false;
+    STATE.inFlightSeatIds.delete(seatId);
+    updateMatrixHoldState();
+    updateInventoryStats();
   }
-
-  showToast({
-    title: "Hold Released",
-    message: `Seat ${seat ? seat.row + seat.seat_number : ""} released back to the venue catalog.`,
-    type: "normal",
-    icon: "🔓",
-  });
-
-  updateInventoryStats();
 }
 
 /**
@@ -952,6 +992,17 @@ function reconcileSeatStates(newSeats) {
 function applySeatTileDOMState(seatId, status) {
   const tile = document.getElementById(`seat-tile-${seatId}`);
   if (!tile) return;
+
+  // Strict Single-Seat Integrity Guard:
+  // Only the active hold (STATE.myHold) or synchronous pending hold (STATE.pendingHoldSeatId) can ever be "SELECTED".
+  if (status === "SELECTED") {
+    const isMyHold = STATE.myHold && STATE.myHold.seatId === seatId;
+    const isPending = STATE.pendingHoldSeatId === seatId;
+    if (!isMyHold && !isPending) {
+      const seat = STATE.seatsMap.get(seatId);
+      status = (seat && seat.status) || "AVAILABLE";
+    }
+  }
 
   if (tile.dataset.status !== status) {
     tile.dataset.status = status;
