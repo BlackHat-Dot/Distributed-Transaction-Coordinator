@@ -1034,7 +1034,7 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     await animatePacketAlongPath({ route: "pay-coord", type: "success", durationMs: 350, destinationNodeId: "node-box-coord" });
 
     showToast({
-      icon: "⚡",
+      icon: "⦿",
       title: "Happy Path Saga (Simulated Mode)",
       message: "Reserving next available seat → Charging payment ($500.00) → Marked COMPLETED",
       type: "success",
