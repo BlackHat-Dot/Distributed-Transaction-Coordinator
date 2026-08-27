@@ -1970,10 +1970,34 @@ const CanvasEngine = {
     window.addEventListener("mousemove", (e) => this.onMouseMove(e));
     window.addEventListener("mouseup", (e) => this.onMouseUp(e));
 
-    if (this.btnZoomIn) this.btnZoomIn.addEventListener("click", () => this.zoomBy(1.2));
-    if (this.btnZoomOut) this.btnZoomOut.addEventListener("click", () => this.zoomBy(1 / 1.2));
+    if (this.btnZoomIn) this.btnZoomIn.addEventListener("click", () => this.zoomByDelta(0.02));
+    if (this.btnZoomOut) this.btnZoomOut.addEventListener("click", () => this.zoomByDelta(-0.02));
     if (this.btnFitView) this.btnFitView.addEventListener("click", () => this.fitView());
-    if (this.btnResetLayout) this.btnResetLayout.addEventListener("click", () => this.resetLayout());
+    if (this.btnResetLayout) {
+      this.btnResetLayout.addEventListener("click", () => {
+        this.resetLayout();
+        showToast({
+          icon: "🔄",
+          title: "Topology Layout Reset",
+          message: "Node positions and zoom restored to default configuration.",
+          type: "normal",
+        });
+      });
+    }
+
+    window.addEventListener("keydown", (e) => {
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+      if (e.key === "+" || e.key === "=") {
+        e.preventDefault();
+        this.btnZoomIn?.click();
+      } else if (e.key === "-" || e.key === "_") {
+        e.preventDefault();
+        this.btnZoomOut?.click();
+      } else if (e.key === "0") {
+        e.preventDefault();
+        this.fitView();
+      }
+    });
 
     document.querySelectorAll(".topo-node-group").forEach((group) => {
       group.addEventListener("mousedown", (e) => this.onNodeMouseDown(e, group));
@@ -2048,28 +2072,28 @@ const CanvasEngine = {
   onWheel(e) {
     e.preventDefault();
     const rect = this.container.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+    const cursorX = e.clientX - rect.left;
+    const cursorY = e.clientY - rect.top;
 
-    const zoomFactor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-    const newZoom = Math.min(Math.max(this.zoom * zoomFactor, this.minZoom), this.maxZoom);
+    const delta = e.deltaY < 0 ? 0.02 : -0.02;
+    const newZoom = Math.min(Math.max(Math.round((this.zoom + delta) * 100) / 100, this.minZoom), this.maxZoom);
     if (newZoom === this.zoom) return;
 
-    this.panX = mouseX - (mouseX - this.panX) * (newZoom / this.zoom);
-    this.panY = mouseY - (mouseY - this.panY) * (newZoom / this.zoom);
+    this.panX = cursorX - (cursorX - this.panX) * (newZoom / this.zoom);
+    this.panY = cursorY - (cursorY - this.panY) * (newZoom / this.zoom);
     this.zoom = newZoom;
 
     this.applyTransform();
     this.saveViewport();
   },
 
-  zoomBy(factor) {
+  zoomByDelta(delta) {
     if (!this.container) return;
     const rect = this.container.getBoundingClientRect();
     const centerX = rect.width / 2;
     const centerY = rect.height / 2;
 
-    const newZoom = Math.min(Math.max(this.zoom * factor, this.minZoom), this.maxZoom);
+    const newZoom = Math.min(Math.max(Math.round((this.zoom + delta) * 100) / 100, this.minZoom), this.maxZoom);
     if (newZoom === this.zoom) return;
 
     this.panX = centerX - (centerX - this.panX) * (newZoom / this.zoom);
