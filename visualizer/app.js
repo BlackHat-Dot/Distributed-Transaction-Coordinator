@@ -67,7 +67,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const SCENARIO_DESCRIPTIONS = {
   happy: {
-    icon: "⚡",
+    icon: "⦿",
     title: "Happy Path Saga",
     badge: "3-Phase Forward Orchestration",
     badgeClass: "badge-success",
