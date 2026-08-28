@@ -172,21 +172,34 @@ def send_otp(request):
         f"If you did not request this verification code, please ignore this message.\n\n"
         f"— Distributed Transaction Coordinator Security"
     )
-    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "dtc-auth@gmail.com")
+    host_user = getattr(settings, "EMAIL_HOST_USER", "").strip()
+    host_pass = getattr(settings, "EMAIL_HOST_PASSWORD", "").strip()
+    from_email = host_user or getattr(settings, "DEFAULT_FROM_EMAIL", "dtc-auth@gmail.com")
 
     def _async_send_email():
         try:
-            send_mail(
-                subject=subject,
-                message=message,
-                from_email=from_email,
-                recipient_list=[email],
-                fail_silently=False,
-            )
+            if host_user and host_pass:
+                send_mail(
+                    subject=subject,
+                    message=message,
+                    from_email=from_email,
+                    recipient_list=[email],
+                    fail_silently=False,
+                    auth_user=host_user,
+                    auth_password=host_pass,
+                )
+            else:
+                send_mail(
+                    subject=subject,
+                    message=message,
+                    from_email=from_email,
+                    recipient_list=[email],
+                    fail_silently=False,
+                )
             print(f"[Email Dispatch Success] Verification code email successfully delivered to {email} via SMTP.")
         except smtplib.SMTPAuthenticationError as e:
             print(f"[Email Dispatch Error] Gmail SMTP Authentication Rejected (BadCredentials): {e}. "
-                  f"Please verify that EMAIL_HOST_USER ({settings.EMAIL_HOST_USER}) matches the exact Google account where the App Password was generated.")
+                  f"Please verify that EMAIL_HOST_USER ({host_user}) matches the exact Google account where the App Password was generated.")
         except Exception as e:
             print(f"[Email Dispatch Error] {type(e).__name__}: {e}")
 
