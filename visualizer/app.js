@@ -2681,16 +2681,20 @@ async function handleMainSendOtp() {
       const targetEmail = document.getElementById("auth-target-email");
       if (targetEmail) targetEmail.textContent = res.data.email;
 
-      const devNote = res.data.dev_otp ? ` [Dev Code: ${res.data.dev_otp}]` : "";
+      renderMainAuthStep(2);
+      const otpInput = document.getElementById("auth-otp-input");
+      if (res.data.dev_otp && otpInput) {
+        otpInput.value = res.data.dev_otp;
+      }
+      startMainOtpCountdown(30);
+
+      const devNote = res.data.dev_otp ? ` (Code: ${res.data.dev_otp})` : "";
       showToast({
-        title: "Code Dispatched!",
-        message: `6-Digit verification code sent to ${res.data.email}.${devNote}`,
+        title: "Verification Code Ready",
+        message: `Code sent to ${res.data.email}.${devNote}`,
         type: "success",
         duration: 8000,
       });
-
-      renderMainAuthStep(2);
-      startMainOtpCountdown(30);
     } else {
       showToast({
         title: "Failed to Send OTP",

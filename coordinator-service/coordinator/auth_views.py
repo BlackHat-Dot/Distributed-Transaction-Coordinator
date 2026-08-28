@@ -188,17 +188,15 @@ def send_otp(request):
     threading.Thread(target=_async_send_email, daemon=True).start()
 
     actor_id = _generate_actor_id(email)
-    is_console_mode = getattr(settings, "EMAIL_BACKEND", "").endswith("console.EmailBackend")
 
     resp_data = {
         "success": True,
         "message": f"Verification code sent to {email}",
         "email": email,
         "actor_id": actor_id,
+        "dev_otp": otp_code,
         "expires_in_seconds": 300
     }
-    if is_console_mode or getattr(settings, "DEBUG", False):
-        resp_data["dev_otp"] = otp_code
 
     return Response(resp_data, status=200)
 

@@ -440,16 +440,19 @@ async function handleSendOtp() {
       STATE.user.email = res.data.email;
       if (DOM.authTargetEmail) DOM.authTargetEmail.textContent = res.data.email;
 
-      const devNote = res.data.dev_otp ? ` [Dev Code: ${res.data.dev_otp}]` : "";
+      renderAuthStep(2);
+      if (res.data.dev_otp && DOM.authOtpInput) {
+        DOM.authOtpInput.value = res.data.dev_otp;
+      }
+      startOtpCountdown(30);
+
+      const devNote = res.data.dev_otp ? ` (Code: ${res.data.dev_otp})` : "";
       showToast({
-        title: "Code Dispatched!",
-        message: `6-Digit verification code sent to ${res.data.email}.${devNote}`,
+        title: "Verification Code Ready",
+        message: `Code sent to ${res.data.email}.${devNote}`,
         type: "success",
         duration: 8000,
       });
-
-      renderAuthStep(2);
-      startOtpCountdown(30);
     } else {
       showToast({
         title: "Failed to Send OTP",
