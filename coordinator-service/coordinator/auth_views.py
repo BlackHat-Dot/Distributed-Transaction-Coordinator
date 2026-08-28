@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 import secrets
+import smtplib
 import threading
 import time
 import redis
@@ -182,8 +183,12 @@ def send_otp(request):
                 recipient_list=[email],
                 fail_silently=False,
             )
+            print(f"[Email Dispatch Success] Verification code email successfully delivered to {email} via SMTP.")
+        except smtplib.SMTPAuthenticationError as e:
+            print(f"[Email Dispatch Error] Gmail SMTP Authentication Rejected (BadCredentials): {e}. "
+                  f"Please verify that EMAIL_HOST_USER ({settings.EMAIL_HOST_USER}) matches the exact Google account where the App Password was generated.")
         except Exception as e:
-            print(f"[Email Dispatch Error] {e}")
+            print(f"[Email Dispatch Error] {type(e).__name__}: {e}")
 
     threading.Thread(target=_async_send_email, daemon=True).start()
 
