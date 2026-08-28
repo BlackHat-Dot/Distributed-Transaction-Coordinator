@@ -9,3 +9,4 @@ python-dotenv>=1.0.0
 gunicorn>=21.2.0
 whitenoise>=6.6.0
 supervisor>=4.2.0
+resend
