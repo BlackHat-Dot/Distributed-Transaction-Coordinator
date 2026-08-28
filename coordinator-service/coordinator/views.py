@@ -63,12 +63,17 @@ def _create_transaction_idempotent(transaction_id, seat_id, amount, product_id=N
         )
 
 
-def _reserve_inventory(transaction_id, seat_id, correlation_id=None):
+from coordinator.auth_views import get_actor_from_request
+
+
+def _reserve_inventory(transaction_id, seat_id, correlation_id=None, actor_id=None):
     headers = {"X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id)}
+    if actor_id:
+        headers["X-Actor-ID"] = str(actor_id)
     try:
         response = requests.post(
             INVENTORY_RESERVE_URL,
-            json={"seat_id": seat_id, "transaction_id": str(transaction_id)},
+            json={"seat_id": seat_id, "transaction_id": str(transaction_id), "actor_id": actor_id},
             headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
@@ -351,11 +356,14 @@ def _run_saga_pipeline(
     fail_compensation=False,
     correlation_id=None,
     actor=SagaEvent.ACTOR_REQUEST,
+    actor_id=None,
 ):
     correlation_id = correlation_id or str(transaction_id)
     seat_id = seat_id or 1
 
-    response, reserve_error = _reserve_inventory(transaction_id, seat_id, correlation_id=correlation_id)
+    response, reserve_error = _reserve_inventory(
+        transaction_id, seat_id, correlation_id=correlation_id, actor_id=actor_id
+    )
     if reserve_error:
         return reserve_error
 
@@ -427,6 +435,9 @@ def _handle_create_transaction(request):
     fail_compensation = request.data.get("fail_compensation", False)
     correlation_id = getattr(request, "correlation_id", None) or str(transaction_id)
 
+    actor_info = get_actor_from_request(request)
+    actor_id = actor_info.get("actor_id") if actor_info else (request.data.get("actor_id") or None)
+
     created, dup_response = _create_transaction_idempotent(
         transaction_id=transaction_id,
         seat_id=seat_id,
@@ -451,6 +462,7 @@ def _handle_create_transaction(request):
             amount=amount,
             fail_compensation=fail_compensation,
             correlation_id=correlation_id,
+            actor_id=actor_id,
         )
         return Response(
             {
@@ -474,6 +486,7 @@ def _handle_create_transaction(request):
         fail_compensation=fail_compensation,
         correlation_id=correlation_id,
         actor=SagaEvent.ACTOR_REQUEST,
+        actor_id=actor_id,
     )
 
 

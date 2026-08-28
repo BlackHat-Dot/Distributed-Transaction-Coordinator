@@ -1,3 +1,4 @@
+import os
 import uuid
 from datetime import timedelta
 from django.conf import settings
@@ -12,6 +13,45 @@ import redis
 
 from .models import Event, Seat, Reservation
 from .serializers import EventSerializer, SeatSerializer, ReservationSerializer
+
+
+MAX_ACTOR_HOLDS = int(os.getenv("MAX_ACTOR_HOLDS", "10"))
+
+# Atomic Redis Lua script for cumulative per-actor hold cap enforcement
+# KEYS[1]: dtc:actor_holds:<actor_id> (Sorted Set: member = seat_id, score = expiry_timestamp)
+# ARGV[1]: current_timestamp (float unix epoch)
+# ARGV[2]: seat_id (str)
+# ARGV[3]: expiry_timestamp (float unix epoch)
+# ARGV[4]: max_cap (int)
+RESERVE_ACTOR_HOLD_LUA = """
+-- 1. Evict expired holds for this actor
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[1])
+
+-- 2. Check if seat already held by this actor (idempotent hold refresh)
+local is_already_held = redis.call('ZSCORE', KEYS[1], ARGV[2])
+if is_already_held then
+    redis.call('ZADD', KEYS[1], ARGV[3], ARGV[2])
+    redis.call('EXPIRE', KEYS[1], 1800)
+    return {1, redis.call('ZCARD', KEYS[1])}
+end
+
+-- 3. Check active count against cap
+local current_count = redis.call('ZCARD', KEYS[1])
+if current_count >= tonumber(ARGV[4]) then
+    return {0, current_count} -- REJECTED: cap exceeded
+end
+
+-- 4. Atomically record new hold
+redis.call('ZADD', KEYS[1], ARGV[3], ARGV[2])
+redis.call('EXPIRE', KEYS[1], 1800)
+
+return {1, current_count + 1} -- APPROVED
+"""
+
+RELEASE_ACTOR_HOLD_LUA = """
+redis.call('ZREM', KEYS[1], ARGV[1])
+return redis.call('ZCARD', KEYS[1])
+"""
 
 
 def get_redis_client():
@@ -113,9 +153,41 @@ def reserve_seat(request):
     if error_response:
         return error_response
 
+    actor_id = request.data.get("actor_id") or request.headers.get("X-Actor-ID") or None
+
     client = get_redis_client()
     redis_key = f"seat:{seat_id}"
     acquired_fast_path = False
+
+    # Cumulative Soft-Hold Cap Enforcement (Atomic Redis Lua Script)
+    if client and actor_id:
+        now_ts = timezone.now().timestamp()
+        exp_ts = now_ts + 600
+        try:
+            cap_res = client.eval(
+                RESERVE_ACTOR_HOLD_LUA,
+                1,
+                f"dtc:actor_holds:{actor_id}",
+                now_ts,
+                str(seat_id),
+                exp_ts,
+                MAX_ACTOR_HOLDS,
+            )
+            # cap_res is [allowed_flag, current_count]
+            if cap_res and cap_res[0] == 0:
+                return Response(
+                    {
+                        "error": f"Cumulative hold cap exceeded: You have reached the maximum limit of {MAX_ACTOR_HOLDS} active soft-holds.",
+                        "code": "HOLD_CAP_EXCEEDED",
+                        "actor_id": actor_id,
+                        "current_holds": cap_res[1],
+                        "max_allowed": MAX_ACTOR_HOLDS,
+                        "transaction_id": str(transaction_id),
+                    },
+                    status=409,
+                )
+        except Exception:
+            pass
 
     if client:
         try:
@@ -169,11 +241,16 @@ def reserve_seat(request):
             seat.status = Seat.Status.HELD
             seat.held_until = now + timedelta(minutes=10)
             seat.held_by_transaction_id = transaction_id
+            seat.held_by_actor_id = actor_id
             seat.save()
 
             reservation, _ = Reservation.objects.update_or_create(
                 transaction_id=transaction_id,
-                defaults={"seat": seat, "status": Reservation.Status.RESERVED},
+                defaults={
+                    "seat": seat,
+                    "status": Reservation.Status.RESERVED,
+                    "held_by_actor_id": actor_id,
+                },
             )
 
             if client and not acquired_fast_path:
@@ -244,8 +321,16 @@ def confirm_seat(request):
                 status=409,
             )
 
+        # Release from actor's Redis hold set
+        if seat.held_by_actor_id and client:
+            try:
+                client.eval(RELEASE_ACTOR_HOLD_LUA, 1, f"dtc:actor_holds:{seat.held_by_actor_id}", str(seat.id))
+            except Exception:
+                pass
+
         seat.status = Seat.Status.BOOKED
         seat.held_until = None
+        seat.held_by_actor_id = None
         seat.save()
 
         reservation.status = Reservation.Status.BOOKED
@@ -308,9 +393,17 @@ def release_seat(request):
             try:
                 seat = Seat.objects.select_for_update().get(id=reservation.seat_id)
                 if str(seat.held_by_transaction_id) == str(tid):
+                    # Evict from actor's active Redis hold set
+                    if seat.held_by_actor_id and client:
+                        try:
+                            client.eval(RELEASE_ACTOR_HOLD_LUA, 1, f"dtc:actor_holds:{seat.held_by_actor_id}", str(seat.id))
+                        except Exception:
+                            pass
+
                     seat.status = Seat.Status.AVAILABLE
                     seat.held_until = None
                     seat.held_by_transaction_id = None
+                    seat.held_by_actor_id = None
                     seat.save()
 
                     if client:
@@ -385,9 +478,18 @@ def sweep_expired_holds(request):
                 continue
 
             tid = seat.held_by_transaction_id
+            actor_id = seat.held_by_actor_id
+
+            if actor_id and client:
+                try:
+                    client.eval(RELEASE_ACTOR_HOLD_LUA, 1, f"dtc:actor_holds:{actor_id}", str(seat.id))
+                except Exception:
+                    pass
+
             seat.status = Seat.Status.AVAILABLE
             seat.held_until = None
             seat.held_by_transaction_id = None
+            seat.held_by_actor_id = None
             seat.save()
 
             if tid:

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="booking.css?v=3.1.0">
+  <link rel="stylesheet" href="booking.css?v=4.0.0">
 </head>
 <body class="theme-dark">
 
@@ -38,6 +38,12 @@
 
     <!-- Service Health & Controls -->
     <div class="header-actions">
+      <!-- Fan Identity Button -->
+      <button id="btn-open-auth" class="btn btn-secondary btn-sm" title="Fan Identity & Authentication" style="display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(56, 189, 248, 0.4); background: rgba(56, 189, 248, 0.1); color: #38bdf8; font-weight: 600;">
+        <span id="user-avatar-icon">👤</span>
+        <span id="user-email-label">Fan Login (Email OTP)</span>
+      </button>
+
       <div class="service-pill" id="health-indicator" title="Inventory Service Status">
         <span class="status-indicator online"></span>
         <span id="health-text">Inventory: Online</span>
@@ -353,6 +359,99 @@
     </div>
   </div>
 
+  <!-- Fan Identity & Anti-Hoarding Authentication Modal (Email-OTP) -->
+  <div id="modal-auth" class="modal-backdrop hidden" style="position: fixed; inset: 0; background: rgba(0,0,0,0.78); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 9999;">
+    <div class="auth-card" style="background: var(--bg-card, #121826); border: 1px solid var(--border-color, #2a3449); border-radius: 14px; width: 100%; max-width: 440px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
+      <div class="auth-card-header" style="margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); display: flex; align-items: center; justify-content: center; font-size: 1.2rem;">🛡️</div>
+            <div>
+              <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: #fff;">Fan Identity Gate</h3>
+              <p style="margin: 2px 0 0; font-size: 0.74rem; color: #94a3b8;">Email verification prevents multi-seat hoarding</p>
+            </div>
+          </div>
+          <button type="button" id="btn-close-auth" style="background: none; border: none; color: #8892b0; font-size: 1.4rem; cursor: pointer; line-height: 1;">&times;</button>
+        </div>
+
+        <div class="auth-stepper" style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 18px;">
+          <div class="step-item active" id="stepper-step-1" style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 600; color: #38bdf8;">
+            <span class="step-num" style="width: 22px; height: 22px; border-radius: 50%; background: #38bdf8; color: #0f172a; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 800;">1</span>
+            <span class="step-text">Email</span>
+          </div>
+          <div class="step-line" id="stepper-line-1" style="flex: 1; height: 2px; background: #2a3449; max-width: 40px;"></div>
+          <div class="step-item" id="stepper-step-2" style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 600; color: #64748b;">
+            <span class="step-num" style="width: 22px; height: 22px; border-radius: 50%; background: #1e293b; color: #94a3b8; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 800;">2</span>
+            <span class="step-text">OTP Verify</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 1: Email Input -->
+      <div id="auth-step-1" class="auth-step-panel">
+        <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px;">
+          <label for="auth-email-input" style="font-size: 0.8rem; font-weight: 600; color: #cbd5e1;">Email Address</label>
+          <div style="display: flex; align-items: center; background: rgba(0,0,0,0.3); border: 1px solid #2a3449; border-radius: 8px; padding: 0 12px;">
+            <span style="font-size: 1rem; margin-right: 8px;">✉️</span>
+            <input type="email" id="auth-email-input" placeholder="fan@example.com" autofocus autocomplete="email" style="flex: 1; background: transparent; border: none; outline: none; padding: 10px 0; color: #fff; font-size: 0.9rem;" />
+          </div>
+          <span style="font-size: 0.72rem; color: #64748b;">We will send a 6-digit verification code to your email.</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px;">
+          <button id="btn-send-otp" class="btn btn-primary btn-block" style="width: 100%; padding: 10px; font-weight: 700;">
+            <span id="send-otp-btn-text">Send Verification Code (OTP) ➔</span>
+          </button>
+        </div>
+
+        <div style="background: rgba(56, 189, 248, 0.06); border: 1px dashed rgba(56, 189, 248, 0.25); border-radius: 8px; padding: 10px 12px; font-size: 0.75rem; color: #94a3b8; line-height: 1.4;">
+          🔒 <strong>Anti-Hoarding Policy:</strong> Maximum 10 concurrent soft-holds allowed per verified email identity.
+        </div>
+      </div>
+
+      <!-- Step 2: OTP Verification -->
+      <div id="auth-step-2" class="auth-step-panel hidden">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+          <p style="margin: 0; font-size: 0.8rem; color: #cbd5e1;">Code sent to <strong id="auth-target-email" style="color: #38bdf8;">fan@example.com</strong></p>
+          <button id="btn-change-email" style="background: none; border: none; color: #38bdf8; font-size: 0.75rem; cursor: pointer; text-decoration: underline;">Change</button>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px;">
+          <label for="auth-otp-input" style="font-size: 0.8rem; font-weight: 600; color: #cbd5e1;">6-Digit Verification Code</label>
+          <div style="background: rgba(0,0,0,0.3); border: 1px solid #2a3449; border-radius: 8px; padding: 0 12px;">
+            <input type="text" id="auth-otp-input" placeholder="1 2 3 4 5 6" maxlength="6" inputmode="numeric" autocomplete="one-time-code" style="width: 100%; background: transparent; border: none; outline: none; padding: 12px 0; color: #38bdf8; font-size: 1.3rem; font-family: monospace; font-weight: 700; letter-spacing: 6px; text-align: center;" />
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; font-size: 0.73rem;">
+            <span id="otp-timer-text" style="color: #64748b;">Resend in <strong id="otp-countdown" style="color: #38bdf8;">30s</strong></span>
+            <button id="btn-resend-otp" class="hidden" style="background: none; border: none; color: #38bdf8; cursor: pointer; text-decoration: underline;">Resend OTP</button>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <button id="btn-verify-otp" class="btn btn-primary btn-block" style="width: 100%; padding: 10px; font-weight: 700;">
+            <span id="verify-otp-btn-text">Verify & Sign In ➔</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 3: Verified Profile Card -->
+      <div id="auth-step-3" class="auth-step-panel hidden">
+        <div style="background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 10px; padding: 18px; text-align: center; margin-bottom: 16px;">
+          <div style="width: 42px; height: 42px; border-radius: 50%; background: rgba(34, 197, 94, 0.2); color: #22c55e; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: 800; margin: 0 auto 10px;">✓</div>
+          <h4 style="margin: 0 0 4px; font-size: 1.05rem; font-weight: 700; color: #fff;">Identity Verified</h4>
+          <p id="profile-email-display" style="margin: 0 0 4px; font-size: 0.88rem; font-weight: 600; color: #38bdf8;">fan@example.com</p>
+          <p style="margin: 0; font-size: 0.75rem; color: #94a3b8;">Actor ID: <code id="profile-actor-id" style="color: #cbd5e1;">usr_...</code></p>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <button type="button" id="btn-close-auth-done" class="btn btn-primary btn-block" style="width: 100%; padding: 10px; font-weight: 700;">Continue to Booking Arena ➔</button>
+          <button type="button" id="btn-logout" class="btn btn-outline btn-block" style="width: 100%; padding: 8px; color: #ef4444; border-color: rgba(239,68,68,0.3); font-size: 0.8rem;">Sign Out (Detach Identity)</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <!-- Target Environment Configuration Modal (Locked) -->
   <div id="modal-config" class="modal-backdrop hidden" style="position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 9999;">
     <div class="modal-card" style="background: var(--bg-card, #121826); border: 1px solid var(--border-color, #2a3449); border-radius: 12px; width: 100%; max-width: 460px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
@@ -402,6 +501,6 @@
     </div>
   </div>
 
-  <script src="booking.js?v=3.1.0"></script>
+  <script src="booking.js?v=4.0.0"></script>
 </body>
 </html>

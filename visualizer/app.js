@@ -462,6 +462,15 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
     defaultHeaders["Content-Type"] = "application/json";
   }
 
+  const token = localStorage.getItem("dtc_auth_token");
+  const actorId = localStorage.getItem("dtc_actor_id");
+  if (token) {
+    defaultHeaders["Authorization"] = `Bearer ${token}`;
+  }
+  if (actorId) {
+    defaultHeaders["X-Actor-ID"] = actorId;
+  }
+
   try {
     const response = await fetch(url, {
       ...options,
@@ -2482,10 +2491,278 @@ function initTechStackModal() {
   }
 }
 
+/* ==========================================================================
+   FAN IDENTITY & EMAIL OTP AUTHENTICATION
+   ========================================================================== */
+
+let appOtpCountdownTimer = null;
+
+function updateMainAuthWidgetUI() {
+  const token = localStorage.getItem("dtc_auth_token");
+  const email = localStorage.getItem("dtc_user_email");
+  const actorId = localStorage.getItem("dtc_actor_id");
+
+  const btnOpen = document.getElementById("btn-open-auth-main");
+  const emailLabel = document.getElementById("main-user-email-label");
+  const avatarIcon = document.getElementById("main-user-avatar-icon");
+
+  if (token && email) {
+    if (emailLabel) emailLabel.textContent = email;
+    if (avatarIcon) avatarIcon.textContent = "🟢";
+    if (btnOpen) {
+      btnOpen.style.borderColor = "rgba(34, 197, 94, 0.4)";
+      btnOpen.style.background = "rgba(34, 197, 94, 0.1)";
+      btnOpen.style.color = "#22c55e";
+    }
+  } else {
+    if (emailLabel) emailLabel.textContent = "Fan Login (Email OTP)";
+    if (avatarIcon) avatarIcon.textContent = "👤";
+    if (btnOpen) {
+      btnOpen.style.borderColor = "rgba(56, 189, 248, 0.4)";
+      btnOpen.style.background = "rgba(56, 189, 248, 0.1)";
+      btnOpen.style.color = "#38bdf8";
+    }
+  }
+}
+
+function showMainAuthModal(step = 1) {
+  const modal = document.getElementById("modal-auth");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  const token = localStorage.getItem("dtc_auth_token");
+  if (token) {
+    renderMainAuthStep(3);
+  } else {
+    renderMainAuthStep(step);
+  }
+}
+
+function closeMainAuthModal() {
+  const modal = document.getElementById("modal-auth");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  if (appOtpCountdownTimer) clearInterval(appOtpCountdownTimer);
+}
+
+function renderMainAuthStep(step) {
+  const s1 = document.getElementById("stepper-step-1");
+  const s2 = document.getElementById("stepper-step-2");
+  const l1 = document.getElementById("stepper-line-1");
+
+  if (s1) s1.className = step === 1 ? "step-item active" : step > 1 ? "step-item completed" : "step-item";
+  if (s2) s2.className = step === 2 ? "step-item active" : step > 2 ? "step-item completed" : "step-item";
+  if (l1) l1.className = step >= 2 ? "step-line active" : "step-line";
+
+  const p1 = document.getElementById("auth-step-1");
+  const p2 = document.getElementById("auth-step-2");
+  const p3 = document.getElementById("auth-step-3");
+
+  [p1, p2, p3].forEach(p => {
+    if (p) p.classList.add("hidden");
+  });
+
+  if (step === 1 && p1) {
+    p1.classList.remove("hidden");
+    const input = document.getElementById("auth-email-input");
+    if (input) setTimeout(() => input.focus(), 100);
+  } else if (step === 2 && p2) {
+    p2.classList.remove("hidden");
+    const input = document.getElementById("auth-otp-input");
+    if (input) {
+      input.value = "";
+      setTimeout(() => input.focus(), 100);
+    }
+  } else if (step === 3 && p3) {
+    p3.classList.remove("hidden");
+    const emailDisplay = document.getElementById("profile-email-display");
+    const actorDisplay = document.getElementById("profile-actor-id");
+    const email = localStorage.getItem("dtc_user_email");
+    const actorId = localStorage.getItem("dtc_actor_id");
+    if (emailDisplay) emailDisplay.textContent = email;
+    if (actorDisplay) actorDisplay.textContent = actorId || `usr_${email}`;
+  }
+}
+
+function startMainOtpCountdown(seconds = 30) {
+  let remaining = seconds;
+  const timerText = document.getElementById("otp-timer-text");
+  const btnResend = document.getElementById("btn-resend-otp");
+  const countdown = document.getElementById("otp-countdown");
+
+  if (timerText) timerText.classList.remove("hidden");
+  if (btnResend) btnResend.classList.add("hidden");
+  if (countdown) countdown.textContent = `${remaining}s`;
+
+  if (appOtpCountdownTimer) clearInterval(appOtpCountdownTimer);
+  appOtpCountdownTimer = setInterval(() => {
+    remaining -= 1;
+    if (countdown) countdown.textContent = `${remaining}s`;
+    if (remaining <= 0) {
+      clearInterval(appOtpCountdownTimer);
+      if (timerText) timerText.classList.add("hidden");
+      if (btnResend) btnResend.classList.remove("hidden");
+    }
+  }, 1000);
+}
+
+function setupMainAuthEventListeners() {
+  const btnOpen = document.getElementById("btn-open-auth-main");
+  const btnClose = document.getElementById("btn-close-auth");
+  const btnCloseDone = document.getElementById("btn-close-auth-done");
+  const modal = document.getElementById("modal-auth");
+
+  if (btnOpen) btnOpen.addEventListener("click", () => showMainAuthModal(1));
+  if (btnClose) btnClose.addEventListener("click", closeMainAuthModal);
+  if (btnCloseDone) btnCloseDone.addEventListener("click", closeMainAuthModal);
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeMainAuthModal();
+    });
+  }
+
+  // Step 1
+  const btnSend = document.getElementById("btn-send-otp");
+  const emailInput = document.getElementById("auth-email-input");
+  if (btnSend) btnSend.addEventListener("click", handleMainSendOtp);
+  if (emailInput) {
+    emailInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") handleMainSendOtp();
+    });
+  }
+
+  // Step 2
+  const btnVerify = document.getElementById("btn-verify-otp");
+  const otpInput = document.getElementById("auth-otp-input");
+  const btnChange = document.getElementById("btn-change-email");
+  const btnResend = document.getElementById("btn-resend-otp");
+  if (btnVerify) btnVerify.addEventListener("click", handleMainVerifyOtp);
+  if (otpInput) {
+    otpInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") handleMainVerifyOtp();
+    });
+  }
+  if (btnChange) btnChange.addEventListener("click", () => renderMainAuthStep(1));
+  if (btnResend) btnResend.addEventListener("click", handleMainSendOtp);
+
+  // Logout
+  const btnLogout = document.getElementById("btn-logout");
+  if (btnLogout) {
+    btnLogout.addEventListener("click", () => {
+      localStorage.removeItem("dtc_auth_token");
+      localStorage.removeItem("dtc_user_email");
+      localStorage.removeItem("dtc_actor_id");
+      updateMainAuthWidgetUI();
+      closeMainAuthModal();
+      showToast({ title: "Signed Out", message: "Identity detached.", type: "normal" });
+    });
+  }
+}
+
+async function handleMainSendOtp() {
+  const emailInput = document.getElementById("auth-email-input");
+  const email = (emailInput?.value || "").trim();
+  if (!email || !email.includes("@")) {
+    showToast({ title: "Invalid Email", message: "Please enter a valid email address.", type: "normal" });
+    return;
+  }
+
+  const btnSend = document.getElementById("btn-send-otp");
+  const sendText = document.getElementById("send-otp-btn-text");
+  if (btnSend) btnSend.disabled = true;
+  if (sendText) sendText.textContent = "Sending Verification Code...";
+
+  try {
+    const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/auth/send-otp/`, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+
+    if (res.ok && res.data && res.data.success) {
+      const targetEmail = document.getElementById("auth-target-email");
+      if (targetEmail) targetEmail.textContent = res.data.email;
+
+      showToast({
+        title: "Code Dispatched!",
+        message: `6-Digit verification code sent to ${res.data.email}. Check inbox or console.`,
+        type: "success",
+      });
+
+      renderMainAuthStep(2);
+      startMainOtpCountdown(30);
+    } else {
+      showToast({
+        title: "Failed to Send OTP",
+        message: (res.data && res.data.error) || "Could not dispatch verification email.",
+        type: "normal",
+      });
+    }
+  } catch (err) {
+    showToast({ title: "Network Error", message: err.message, type: "normal" });
+  } finally {
+    if (btnSend) btnSend.disabled = false;
+    if (sendText) sendText.textContent = "Send Verification Code (OTP) ➔";
+  }
+}
+
+async function handleMainVerifyOtp() {
+  const emailInput = document.getElementById("auth-email-input");
+  const email = (emailInput?.value || localStorage.getItem("dtc_user_email") || "").trim();
+  const otpInput = document.getElementById("auth-otp-input");
+  const otp = (otpInput?.value || "").trim();
+
+  if (!otp || otp.length < 6) {
+    showToast({ title: "Invalid Code", message: "Please enter the 6-digit verification code.", type: "normal" });
+    return;
+  }
+
+  const btnVerify = document.getElementById("btn-verify-otp");
+  const verifyText = document.getElementById("verify-otp-btn-text");
+  if (btnVerify) btnVerify.disabled = true;
+  if (verifyText) verifyText.textContent = "Verifying Code...";
+
+  try {
+    const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/auth/verify-otp/`, {
+      method: "POST",
+      body: JSON.stringify({ email, otp }),
+    });
+
+    if (res.ok && res.data && res.data.success) {
+      const { token, actor_id } = res.data;
+      localStorage.setItem("dtc_auth_token", token);
+      localStorage.setItem("dtc_user_email", email);
+      localStorage.setItem("dtc_actor_id", actor_id);
+
+      updateMainAuthWidgetUI();
+
+      showToast({
+        title: "Signed In",
+        message: `Welcome ${email}! (Actor: ${actor_id})`,
+        type: "success",
+      });
+
+      renderMainAuthStep(3);
+    } else {
+      showToast({
+        title: "Verification Failed",
+        message: (res.data && res.data.error) || "Invalid or expired verification code.",
+        type: "normal",
+      });
+    }
+  } catch (err) {
+    showToast({ title: "Network Error", message: err.message, type: "normal" });
+  } finally {
+    if (btnVerify) btnVerify.disabled = false;
+    if (verifyText) verifyText.textContent = "Verify & Sign In ➔";
+  }
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   const savedTheme = localStorage.getItem("dtc_theme") || "dark";
   window.setDashboardTheme(savedTheme);
   window.setBackendMode(false);
+
+  setupMainAuthEventListeners();
+  updateMainAuthWidgetUI();
 
   DOM.statRacesDefended.textContent = STATE.stats.racesDefended;
   DOM.statLocksEnforced.textContent = STATE.stats.locksEnforced;

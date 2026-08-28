@@ -53,9 +53,9 @@ def recover_stuck_transactions():
 
 
 @shared_task(name="coordinator.tasks.execute_saga_task")
-def execute_saga_task(transaction_id, seat_id=None, amount=500, fail_compensation=False, correlation_id=None):
+def execute_saga_task(transaction_id, seat_id=None, amount=500, fail_compensation=False, correlation_id=None, actor_id=None):
     from coordinator.views import _run_saga_pipeline
-    logger.info("Executing async saga task for transaction_id=%s [correlation_id=%s]", transaction_id, correlation_id)
+    logger.info("Executing async saga task for transaction_id=%s [correlation_id=%s, actor_id=%s]", transaction_id, correlation_id, actor_id)
     try:
         parsed_tid = uuid.UUID(str(transaction_id))
     except ValueError:
@@ -69,6 +69,7 @@ def execute_saga_task(transaction_id, seat_id=None, amount=500, fail_compensatio
         fail_compensation=fail_compensation,
         correlation_id=correlation_id,
         actor="request",
+        actor_id=actor_id,
     )
     logger.info("Async saga task completed for transaction_id=%s with status=%s", transaction_id, getattr(response, 'status_code', 'unknown'))
     return "completed"

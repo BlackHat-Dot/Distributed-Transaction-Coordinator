@@ -14,6 +14,7 @@ class SeatSerializer(serializers.ModelSerializer):
             "status",
             "held_until",
             "held_by_transaction_id",
+            "held_by_actor_id",
         ]
 
 
@@ -28,4 +29,4 @@ class EventSerializer(serializers.ModelSerializer):
 class ReservationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Reservation
-        fields = ["id", "seat", "transaction_id", "status", "created_at", "updated_at"]
+        fields = ["id", "seat", "transaction_id", "status", "held_by_actor_id", "created_at", "updated_at"]

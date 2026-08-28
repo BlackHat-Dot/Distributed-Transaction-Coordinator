@@ -23,6 +23,13 @@ const STATE = {
   eventData: null,
   seatsMap: new Map(), // seatId -> { id, row, seat_number, price, status, held_until, held_by_transaction_id }
 
+  // Authenticated Fan Identity
+  user: {
+    email: localStorage.getItem("dtc_user_email") || null,
+    token: localStorage.getItem("dtc_auth_token") || null,
+    actorId: localStorage.getItem("dtc_actor_id") || null,
+  },
+
   // In-flight action set: Set of seat IDs currently undergoing reserve/release API requests
   inFlightSeatIds: new Set(),
 
@@ -47,6 +54,34 @@ const DOM = {
   healthIndicator: document.getElementById("health-indicator"),
   healthText: document.getElementById("health-text"),
   btnRestock: document.getElementById("btn-restock"),
+
+  // User Auth Elements
+  btnOpenAuth: document.getElementById("btn-open-auth"),
+  userAvatarIcon: document.getElementById("user-avatar-icon"),
+  userEmailLabel: document.getElementById("user-email-label"),
+  modalAuth: document.getElementById("modal-auth"),
+  btnCloseAuth: document.getElementById("btn-close-auth"),
+  stepperStep1: document.getElementById("stepper-step-1"),
+  stepperStep2: document.getElementById("stepper-step-2"),
+  stepperLine1: document.getElementById("stepper-line-1"),
+  authStep1: document.getElementById("auth-step-1"),
+  authStep2: document.getElementById("auth-step-2"),
+  authStep3: document.getElementById("auth-step-3"),
+  authEmailInput: document.getElementById("auth-email-input"),
+  btnSendOtp: document.getElementById("btn-send-otp"),
+  sendOtpBtnText: document.getElementById("send-otp-btn-text"),
+  authTargetEmail: document.getElementById("auth-target-email"),
+  btnChangeEmail: document.getElementById("btn-change-email"),
+  authOtpInput: document.getElementById("auth-otp-input"),
+  otpTimerText: document.getElementById("otp-timer-text"),
+  otpCountdown: document.getElementById("otp-countdown"),
+  btnResendOtp: document.getElementById("btn-resend-otp"),
+  btnVerifyOtp: document.getElementById("btn-verify-otp"),
+  verifyOtpBtnText: document.getElementById("verify-otp-btn-text"),
+  profileEmailDisplay: document.getElementById("profile-email-display"),
+  profileActorId: document.getElementById("profile-actor-id"),
+  btnCloseAuthDone: document.getElementById("btn-close-auth-done"),
+  btnLogout: document.getElementById("btn-logout"),
 
   eventTitle: document.getElementById("event-title"),
   eventMeta: document.getElementById("event-meta"),
@@ -119,6 +154,14 @@ async function fetchJson(url, options = {}, timeoutMs = 4000) {
     ...(isBodyMethod ? { "Content-Type": "application/json" } : {}),
     ...(options.headers || {}),
   };
+
+  // Inject JWT & Actor ID footprints if authenticated
+  if (STATE.user && STATE.user.token) {
+    headers["Authorization"] = `Bearer ${STATE.user.token}`;
+  }
+  if (STATE.user && STATE.user.actorId) {
+    headers["X-Actor-ID"] = STATE.user.actorId;
+  }
 
   try {
     const res = await fetch(url, { ...options, signal: controller.signal, headers });
@@ -231,10 +274,269 @@ function showToast({ title, message, type = "normal", icon = "ℹ️", duration 
 }
 
 /* ==========================================================================
+   FAN IDENTITY & EMAIL OTP AUTHENTICATION
+   ========================================================================== */
+
+let otpCountdownTimer = null;
+
+function updateAuthWidgetUI() {
+  const token = localStorage.getItem("dtc_auth_token");
+  const email = localStorage.getItem("dtc_user_email");
+  const actorId = localStorage.getItem("dtc_actor_id");
+
+  STATE.user = { token, email, actorId };
+
+  if (token && email) {
+    if (DOM.userEmailLabel) DOM.userEmailLabel.textContent = email;
+    if (DOM.userAvatarIcon) DOM.userAvatarIcon.textContent = "🟢";
+    if (DOM.btnOpenAuth) {
+      DOM.btnOpenAuth.style.borderColor = "rgba(34, 197, 94, 0.4)";
+      DOM.btnOpenAuth.style.background = "rgba(34, 197, 94, 0.1)";
+      DOM.btnOpenAuth.style.color = "#22c55e";
+    }
+  } else {
+    if (DOM.userEmailLabel) DOM.userEmailLabel.textContent = "Fan Login (Email OTP)";
+    if (DOM.userAvatarIcon) DOM.userAvatarIcon.textContent = "👤";
+    if (DOM.btnOpenAuth) {
+      DOM.btnOpenAuth.style.borderColor = "rgba(56, 189, 248, 0.4)";
+      DOM.btnOpenAuth.style.background = "rgba(56, 189, 248, 0.1)";
+      DOM.btnOpenAuth.style.color = "#38bdf8";
+    }
+  }
+}
+
+function showAuthModal(step = 1) {
+  if (!DOM.modalAuth) return;
+  DOM.modalAuth.classList.remove("hidden");
+  if (STATE.user && STATE.user.token) {
+    renderAuthStep(3);
+  } else {
+    renderAuthStep(step);
+  }
+}
+
+function closeAuthModal() {
+  if (!DOM.modalAuth) return;
+  DOM.modalAuth.classList.add("hidden");
+  if (otpCountdownTimer) clearInterval(otpCountdownTimer);
+}
+
+function renderAuthStep(step) {
+  const s1 = DOM.stepperStep1;
+  const s2 = DOM.stepperStep2;
+  const l1 = DOM.stepperLine1;
+
+  if (s1) s1.className = step === 1 ? "step-item active" : step > 1 ? "step-item completed" : "step-item";
+  if (s2) s2.className = step === 2 ? "step-item active" : step > 2 ? "step-item completed" : "step-item";
+  if (l1) l1.className = step >= 2 ? "step-line active" : "step-line";
+
+  [DOM.authStep1, DOM.authStep2, DOM.authStep3].forEach(p => {
+    if (p) p.classList.add("hidden");
+  });
+
+  if (step === 1 && DOM.authStep1) {
+    DOM.authStep1.classList.remove("hidden");
+    if (DOM.authEmailInput) setTimeout(() => DOM.authEmailInput.focus(), 100);
+  } else if (step === 2 && DOM.authStep2) {
+    DOM.authStep2.classList.remove("hidden");
+    if (DOM.authOtpInput) {
+      DOM.authOtpInput.value = "";
+      setTimeout(() => DOM.authOtpInput.focus(), 100);
+    }
+  } else if (step === 3 && DOM.authStep3) {
+    DOM.authStep3.classList.remove("hidden");
+    if (DOM.profileEmailDisplay && STATE.user) {
+      DOM.profileEmailDisplay.textContent = STATE.user.email;
+    }
+    if (DOM.profileActorId && STATE.user) {
+      DOM.profileActorId.textContent = STATE.user.actorId || `usr_${STATE.user.email}`;
+    }
+  }
+}
+
+function startOtpCountdown(seconds = 30) {
+  let remaining = seconds;
+  if (DOM.otpTimerText) DOM.otpTimerText.classList.remove("hidden");
+  if (DOM.btnResendOtp) DOM.btnResendOtp.classList.add("hidden");
+  if (DOM.otpCountdown) DOM.otpCountdown.textContent = `${remaining}s`;
+
+  if (otpCountdownTimer) clearInterval(otpCountdownTimer);
+  otpCountdownTimer = setInterval(() => {
+    remaining -= 1;
+    if (DOM.otpCountdown) DOM.otpCountdown.textContent = `${remaining}s`;
+    if (remaining <= 0) {
+      clearInterval(otpCountdownTimer);
+      if (DOM.otpTimerText) DOM.otpTimerText.classList.add("hidden");
+      if (DOM.btnResendOtp) DOM.btnResendOtp.classList.remove("hidden");
+    }
+  }, 1000);
+}
+
+function setupAuthEventListeners() {
+  if (DOM.btnOpenAuth) {
+    DOM.btnOpenAuth.addEventListener("click", () => showAuthModal(1));
+  }
+  if (DOM.btnCloseAuth) {
+    DOM.btnCloseAuth.addEventListener("click", closeAuthModal);
+  }
+  if (DOM.btnCloseAuthDone) {
+    DOM.btnCloseAuthDone.addEventListener("click", closeAuthModal);
+  }
+  if (DOM.modalAuth) {
+    DOM.modalAuth.addEventListener("click", (e) => {
+      if (e.target === DOM.modalAuth) closeAuthModal();
+    });
+  }
+
+  // Step 1: Send OTP
+  if (DOM.btnSendOtp) {
+    DOM.btnSendOtp.addEventListener("click", handleSendOtp);
+  }
+  if (DOM.authEmailInput) {
+    DOM.authEmailInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") handleSendOtp();
+    });
+  }
+
+  // Step 2: Verify OTP
+  if (DOM.btnVerifyOtp) {
+    DOM.btnVerifyOtp.addEventListener("click", handleVerifyOtp);
+  }
+  if (DOM.authOtpInput) {
+    DOM.authOtpInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") handleVerifyOtp();
+    });
+  }
+  if (DOM.btnChangeEmail) {
+    DOM.btnChangeEmail.addEventListener("click", () => renderAuthStep(1));
+  }
+  if (DOM.btnResendOtp) {
+    DOM.btnResendOtp.addEventListener("click", handleSendOtp);
+  }
+
+  // Step 3: Logout
+  if (DOM.btnLogout) {
+    DOM.btnLogout.addEventListener("click", handleLogout);
+  }
+}
+
+async function handleSendOtp() {
+  const email = (DOM.authEmailInput?.value || "").trim();
+  if (!email || !email.includes("@")) {
+    showToast({ title: "Invalid Email", message: "Please enter a valid email address.", type: "warning" });
+    return;
+  }
+
+  if (DOM.btnSendOtp) DOM.btnSendOtp.disabled = true;
+  if (DOM.sendOtpBtnText) DOM.sendOtpBtnText.textContent = "Sending Verification Code...";
+
+  try {
+    const res = await fetchJson(`${CONFIG.coordinatorUrl}/auth/send-otp/`, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+
+    if (res.ok && res.data.success) {
+      STATE.user.email = res.data.email;
+      if (DOM.authTargetEmail) DOM.authTargetEmail.textContent = res.data.email;
+
+      showToast({
+        title: "Code Dispatched!",
+        message: `6-Digit verification code sent to ${res.data.email}. Check your inbox or terminal.`,
+        type: "success",
+        duration: 6000,
+      });
+
+      renderAuthStep(2);
+      startOtpCountdown(30);
+    } else {
+      showToast({
+        title: "Failed to Send OTP",
+        message: (res.data && res.data.error) || "Could not dispatch verification email.",
+        type: "danger",
+      });
+    }
+  } catch (err) {
+    showToast({ title: "Network Error", message: err.message, type: "danger" });
+  } finally {
+    if (DOM.btnSendOtp) DOM.btnSendOtp.disabled = false;
+    if (DOM.sendOtpBtnText) DOM.sendOtpBtnText.textContent = "Send Verification Code (OTP) ➔";
+  }
+}
+
+async function handleVerifyOtp() {
+  const email = (DOM.authEmailInput?.value || STATE.user.email || "").trim();
+  const otp = (DOM.authOtpInput?.value || "").trim();
+
+  if (!otp || otp.length < 6) {
+    showToast({ title: "Invalid Code", message: "Please enter the 6-digit code sent to your email.", type: "warning" });
+    return;
+  }
+
+  if (DOM.btnVerifyOtp) DOM.btnVerifyOtp.disabled = true;
+  if (DOM.verifyOtpBtnText) DOM.verifyOtpBtnText.textContent = "Verifying Code...";
+
+  try {
+    const res = await fetchJson(`${CONFIG.coordinatorUrl}/auth/verify-otp/`, {
+      method: "POST",
+      body: JSON.stringify({ email, otp }),
+    });
+
+    if (res.ok && res.data.success) {
+      const { token, actor_id } = res.data;
+      localStorage.setItem("dtc_auth_token", token);
+      localStorage.setItem("dtc_user_email", email);
+      localStorage.setItem("dtc_actor_id", actor_id);
+
+      STATE.user = { token, email, actorId: actor_id };
+      updateAuthWidgetUI();
+
+      showToast({
+        title: "Signed In Successfully",
+        message: `Welcome! Footprint attached (${actor_id}). Hold cap: Max 10 seats.`,
+        type: "success",
+        duration: 5000,
+      });
+
+      renderAuthStep(3);
+    } else {
+      showToast({
+        title: "Verification Failed",
+        message: (res.data && res.data.error) || "Invalid or expired verification code.",
+        type: "danger",
+      });
+    }
+  } catch (err) {
+    showToast({ title: "Network Error", message: err.message, type: "danger" });
+  } finally {
+    if (DOM.btnVerifyOtp) DOM.btnVerifyOtp.disabled = false;
+    if (DOM.verifyOtpBtnText) DOM.verifyOtpBtnText.textContent = "Verify & Sign In ➔";
+  }
+}
+
+function handleLogout() {
+  localStorage.removeItem("dtc_auth_token");
+  localStorage.removeItem("dtc_user_email");
+  localStorage.removeItem("dtc_actor_id");
+
+  STATE.user = { token: null, email: null, actorId: null };
+  updateAuthWidgetUI();
+  closeAuthModal();
+
+  showToast({
+    title: "Signed Out",
+    message: "Identity detached. Live seat reservations will require signing in again.",
+    type: "info",
+  });
+}
+
+/* ==========================================================================
    INITIALIZATION & BOOTSTRAP
    ========================================================================== */
 
 document.addEventListener("DOMContentLoaded", () => {
+  setupAuthEventListeners();
+  updateAuthWidgetUI();
   initEventListeners();
   loadCatalog(true);
   startDifferentialPolling();
@@ -460,6 +762,18 @@ async function handleSeatTileClick(seatId) {
   const seat = STATE.seatsMap.get(seatId);
   if (!seat) return;
 
+  // 0. Enforce Authentication Requirement for Live Holds
+  if (!STATE.user || !STATE.user.token) {
+    showAuthModal(1);
+    showToast({
+      title: "Sign In Required",
+      message: "Please sign in with your email OTP to place real-time seat holds, or switch to Mission Control Demo Mode.",
+      type: "warning",
+      duration: 6000,
+    });
+    return;
+  }
+
   // 1. Guard against rapid click during an active API call
   if (STATE.isActionInProgress) {
     return;
@@ -554,10 +868,14 @@ async function handleSeatTileClick(seatId) {
   });
 
   try {
-    // Call real backend endpoint: POST /seats/reserve/
+    // Call real backend endpoint: POST /seats/reserve/ with actor_id
     const res = await fetchJson(`${CONFIG.inventoryUrl}/seats/reserve/`, {
       method: "POST",
-      body: JSON.stringify({ seat_id: seatId, transaction_id: newHoldTxId }),
+      body: JSON.stringify({
+        seat_id: seatId,
+        transaction_id: newHoldTxId,
+        actor_id: STATE.user ? STATE.user.actorId : undefined,
+      }),
     });
 
     if (res.ok) {
@@ -588,11 +906,11 @@ async function handleSeatTileClick(seatId) {
         duration: 4000,
       });
     } else {
-      // 409 Conflict: Another buyer grabbed the seat first!
+      // 409 Conflict: Another buyer grabbed seat OR hold cap exceeded!
       const conflictMsg = (res.data && res.data.error) || "Seat was just claimed by another user!";
       STATE.pendingHoldSeatId = null;
       STATE.myHold = null;
-      applySeatTileDOMState(seatId, "HELD");
+      applySeatTileDOMState(seatId, "AVAILABLE");
       
       const tile = document.getElementById(`seat-tile-${seatId}`);
       if (tile) {
@@ -600,13 +918,23 @@ async function handleSeatTileClick(seatId) {
         setTimeout(() => (tile.style.animation = ""), 400);
       }
 
-      showToast({
-        title: "Hold Conflict",
-        message: `${conflictMsg} Please pick another available seat.`,
-        type: "danger",
-        icon: "",
-        duration: 4000,
-      });
+      if (res.data && res.data.code === "HOLD_CAP_EXCEEDED") {
+        showToast({
+          title: "Hold Cap Exceeded",
+          message: res.data.error || "You have reached your maximum active hold limit of 10 seats.",
+          type: "danger",
+          icon: "🛡️",
+          duration: 6000,
+        });
+      } else {
+        showToast({
+          title: "Hold Conflict",
+          message: `${conflictMsg} Please pick another available seat.`,
+          type: "danger",
+          icon: "",
+          duration: 4000,
+        });
+      }
     }
   } catch (err) {
     STATE.pendingHoldSeatId = null;

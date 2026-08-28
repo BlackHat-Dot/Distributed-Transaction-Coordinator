@@ -37,6 +37,13 @@ class Seat(models.Model):
         blank=True,
         help_text="Transaction ID currently holding or booking the seat.",
     )
+    held_by_actor_id = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Actor ID / Email footprint holding the seat.",
+    )
 
     class Meta:
         unique_together = [("event", "row", "seat_number")]
@@ -62,6 +69,13 @@ class Reservation(models.Model):
         related_name="reservations",
     )
     transaction_id = models.UUIDField(unique=True)
+    held_by_actor_id = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Actor ID / Email footprint holding the reservation.",
+    )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
