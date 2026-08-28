@@ -133,10 +133,12 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 
-def _dispatch_otp_email(to_email, otp_code):
-    host_user = (getattr(settings, "EMAIL_HOST_USER", None) or os.getenv("EMAIL_HOST_USER", "vijayzidane321@gmail.com")).strip()
-    host_pass = (getattr(settings, "EMAIL_HOST_PASSWORD", None) or os.getenv("EMAIL_HOST_PASSWORD", "ieqywwywyfsqmgui")).strip().replace(" ", "")
+import resend
 
+resend.api_key = os.getenv("RESEND_API_KEY")
+
+
+def _dispatch_otp_email(to_email, otp_code):
     subject = f"Your DTC Arena Verification Code: {otp_code}"
     text_content = f"""Hello,
 
@@ -159,39 +161,16 @@ If you did not request this verification code, please ignore this message.
       <p style="color: #64748b; font-size: 12px; margin: 0;">This code will expire in 5 minutes. Never share this code with anyone.</p>
     </div>"""
 
-    if host_user and host_pass:
-        try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = f"DTC Security <{host_user}>"
-            msg["To"] = to_email
-            msg.attach(MIMEText(text_content, "plain"))
-            msg.attach(MIMEText(html_content, "html"))
-
-            server = smtplib.SMTP("smtp.gmail.com", 587, timeout=10)
-            server.starttls()
-            server.login(host_user, host_pass)
-            server.sendmail(host_user, [to_email], msg.as_string())
-            server.quit()
-            print(f"[Email Dispatch Success] Verification code {otp_code} delivered to {to_email} via Gmail SMTP.")
-            return
-        except Exception as e:
-            print(f"[Email Dispatch Warning] Direct SMTP failed: {e}. Trying Django backend...")
-
-    # Fallback to Django send_mail
     try:
-        from_email = host_user or getattr(settings, "DEFAULT_FROM_EMAIL", "dtc-auth@gmail.com")
-        send_mail(
-            subject=subject,
-            message=text_content,
-            html_message=html_content,
-            from_email=from_email,
-            recipient_list=[to_email],
-            fail_silently=False,
-            auth_user=host_user or None,
-            auth_password=host_pass or None,
-        )
-        print(f"[Email Dispatch Success] Verification code {otp_code} delivered to {to_email} via Django mail backend.")
+        params: resend.Emails.SendParams = {
+            "from": "DTC Security <onboarding@resend.dev>",  # swap once your domain is verified
+            "to": [to_email],
+            "subject": subject,
+            "html": html_content,
+            "text": text_content,
+        }
+        result = resend.Emails.send(params)
+        print(f"[Email Dispatch Success] Verification code {otp_code} delivered to {to_email} via Resend. id={result.get('id')}")
     except Exception as e:
         print(f"[Email Dispatch Error] {type(e).__name__}: {e}")
 
