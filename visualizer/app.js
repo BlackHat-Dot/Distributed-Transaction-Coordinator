@@ -2328,58 +2328,76 @@ const CanvasEngine = {
 
 const TECH_STACK_CONFIG = [
   {
-    name: "Django",
-    category: "Framework / ORM",
-    desc: "Core backend framework providing MVC architecture and relational ORM across all microservices.",
+    name: "Docker & Docker Compose",
+    category: "Containerization & Orchestration",
+    desc: "Multi-container orchestration bundling 3 independent Django services, dedicated PostgreSQL databases, and Redis with health checks.",
+    icon: "container"
+  },
+  {
+    name: "Django (v5.0+)",
+    category: "Backend Framework / ORM",
+    desc: "Core MVC framework providing relational models, ACID transaction management, and microservice domain logic.",
     icon: "server"
   },
   {
     name: "Django REST Framework",
-    category: "API Toolkit",
-    desc: "Serialization, viewsets, and RESTful HTTP interface layer.",
+    category: "REST API Toolkit",
+    desc: "HTTP serialization, request validation, and RESTful RPC interfaces across microservices.",
     icon: "network"
   },
   {
-    name: "PostgreSQL (Psycopg2)",
-    category: "Relational Database",
-    desc: "ACID database adapter supporting SELECT FOR UPDATE row-locks and UNIQUE idempotency keys.",
+    name: "PostgreSQL 16 (Psycopg2)",
+    category: "Relational ACID Database",
+    desc: "Three isolated database instances with SELECT FOR UPDATE row-level locking and UNIQUE idempotency constraints.",
     icon: "database"
   },
   {
-    name: "Celery",
-    category: "Task Queue",
-    desc: "Asynchronous task execution engine and background saga orchestrator.",
+    name: "Celery & Celery Beat",
+    category: "Task Queue & Scheduler",
+    desc: "Asynchronous background worker engine and 90-second periodic crash recovery reconciler.",
     icon: "clock"
   },
   {
-    name: "Redis",
+    name: "Redis 7",
     category: "In-Memory Broker & Mutex",
     desc: "Task message broker and distributed Redis lock provider for crash recovery leases.",
     icon: "database"
   },
   {
     name: "Gunicorn",
-    category: "WSGI Server",
-    desc: "Production gthread WSGI application server handling concurrent HTTP traffic.",
+    category: "WSGI Production Server",
+    desc: "High-concurrency gthread WSGI application server handling simultaneous HTTP saga traffic.",
     icon: "server"
   },
   {
     name: "Supervisor",
     category: "Process Supervisor",
-    desc: "Process management system coordinating Gunicorn, Celery Worker, and Celery Beat in containers.",
+    desc: "Process management system coordinating Gunicorn, Celery Worker, and Celery Beat inside containers.",
     icon: "server"
   },
   {
-    name: "WhiteNoise",
-    category: "Static Server",
-    desc: "Embedded production static asset serving middleware.",
-    icon: "package"
+    name: "HTML5 Canvas & Vanilla JS",
+    category: "Interactive Telemetry Engine",
+    desc: "Zero-dependency 2D canvas with pan/zoom, interactive node dragging, and live saga visualizer.",
+    icon: "code"
+  },
+  {
+    name: "Railway & Vercel",
+    category: "Cloud Infrastructure & CDN",
+    desc: "Containerized microservice cloud hosting (Railway) and edge visualizer deployment (Vercel).",
+    icon: "cloud"
   },
   {
     name: "Requests",
-    category: "HTTP Client",
+    category: "HTTP RPC Client",
     desc: "Synchronous RPC client for inter-service HTTP communication.",
     icon: "network"
+  },
+  {
+    name: "WhiteNoise",
+    category: "Static Asset Middleware",
+    desc: "Embedded production static asset serving with gzip compression and cache headers.",
+    icon: "package"
   },
   {
     name: "django-cors-headers",
@@ -2389,14 +2407,21 @@ const TECH_STACK_CONFIG = [
   },
   {
     name: "python-dotenv",
-    category: "Config Management",
-    desc: "12-factor environment variable loading from .env manifests.",
+    category: "12-Factor Configuration",
+    desc: "Environment variable loading from .env manifests and container environments.",
     icon: "package"
   }
 ];
 
 function getTechStackIconSvg(iconType) {
   switch (iconType) {
+    case "container":
+    case "docker":
+      return `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7l8-4 8 4M4 7v10l8 4 8-4V7M4 7l8 4 8-4M12 11v10"/><rect x="7" y="10" width="3" height="3"/><rect x="14" y="10" width="3" height="3"/></svg>`;
+    case "cloud":
+      return `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>`;
+    case "code":
+      return `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`;
     case "server":
       return `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`;
     case "database":

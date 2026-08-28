@@ -5,3 +5,4 @@ __pycache__/
 celerybeat-schedule-wal
 celerybeat-schedule-shm
 celerybeat-schedule
+.vercel
