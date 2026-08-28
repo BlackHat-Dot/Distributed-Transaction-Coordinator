@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 import secrets
+import threading
 import time
 import redis
 from django.conf import settings
@@ -158,7 +159,7 @@ def send_otp(request):
         from django.core.cache import cache
         cache.set(cache_key, otp_code, timeout=300)
 
-    # Dispatch email via Django send_mail
+    # Dispatch email asynchronously in background thread so HTTP response never hangs
     subject = "Your DTC Arena Verification Code"
     message = (
         f"Hello,\n\n"
@@ -170,28 +171,34 @@ def send_otp(request):
     )
     from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "dtc-auth@gmail.com")
 
-    try:
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=from_email,
-            recipient_list=[email],
-            fail_silently=False,
-        )
-    except Exception as e:
-        print(f"[Email Dispatch Notice] {e}")
-        # Note: In console backend, Django prints to terminal; in SMTP it delivers
-        pass
+    def _async_send_email():
+        try:
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=from_email,
+                recipient_list=[email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            print(f"[Email Dispatch Error] {e}")
+
+    threading.Thread(target=_async_send_email, daemon=True).start()
 
     actor_id = _generate_actor_id(email)
+    is_console_mode = getattr(settings, "EMAIL_BACKEND", "").endswith("console.EmailBackend")
 
-    return Response({
+    resp_data = {
         "success": True,
         "message": f"Verification code sent to {email}",
         "email": email,
         "actor_id": actor_id,
         "expires_in_seconds": 300
-    }, status=200)
+    }
+    if is_console_mode or getattr(settings, "DEBUG", False):
+        resp_data["dev_otp"] = otp_code
+
+    return Response(resp_data, status=200)
 
 
 @api_view(["POST"])

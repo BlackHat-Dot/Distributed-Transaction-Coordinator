@@ -440,11 +440,12 @@ async function handleSendOtp() {
       STATE.user.email = res.data.email;
       if (DOM.authTargetEmail) DOM.authTargetEmail.textContent = res.data.email;
 
+      const devNote = res.data.dev_otp ? ` [Dev Code: ${res.data.dev_otp}]` : "";
       showToast({
         title: "Code Dispatched!",
-        message: `6-Digit verification code sent to ${res.data.email}. Check your inbox or terminal.`,
+        message: `6-Digit verification code sent to ${res.data.email}.${devNote}`,
         type: "success",
-        duration: 6000,
+        duration: 8000,
       });
 
       renderAuthStep(2);

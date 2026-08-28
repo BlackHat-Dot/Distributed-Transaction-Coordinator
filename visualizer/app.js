@@ -2681,10 +2681,12 @@ async function handleMainSendOtp() {
       const targetEmail = document.getElementById("auth-target-email");
       if (targetEmail) targetEmail.textContent = res.data.email;
 
+      const devNote = res.data.dev_otp ? ` [Dev Code: ${res.data.dev_otp}]` : "";
       showToast({
         title: "Code Dispatched!",
-        message: `6-Digit verification code sent to ${res.data.email}. Check inbox or console.`,
+        message: `6-Digit verification code sent to ${res.data.email}.${devNote}`,
         type: "success",
+        duration: 8000,
       });
 
       renderMainAuthStep(2);
