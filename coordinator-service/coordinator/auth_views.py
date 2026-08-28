@@ -16,12 +16,11 @@ from rest_framework.response import Response
 
 
 def _get_redis_client():
-    redis_url = getattr(settings, "REDIS_URL", None) or os.getenv(
-        "REDIS_URL",
-        os.getenv("REDIS_PRIVATE_URL", os.getenv("REDIS_PUBLIC_URL", "redis://localhost:6379/0"))
-    )
+    broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://localhost:6379/0")
     try:
-        return redis.from_url(redis_url, decode_responses=True, socket_connect_timeout=2)
+        return redis.Redis.from_url(
+            broker_url, decode_responses=True, socket_connect_timeout=0.2, socket_timeout=0.2
+        )
     except Exception:
         return None
 
@@ -152,12 +151,15 @@ def send_otp(request):
     if client:
         try:
             client.setex(cache_key, 300, otp_code)
-        except Exception as e:
-            return Response({"error": f"Redis cache error: {str(e)}"}, status=500)
-    else:
-        # In-memory fallback if Redis is temporarily unreachable
+        except Exception:
+            pass
+
+    # Redundant memory backup in case Redis is rebooting
+    try:
         from django.core.cache import cache
         cache.set(cache_key, otp_code, timeout=300)
+    except Exception:
+        pass
 
     # Dispatch email asynchronously in background thread so HTTP response never hangs
     subject = "Your DTC Arena Verification Code"
@@ -223,22 +225,28 @@ def verify_otp(request):
             stored_otp = client.get(cache_key)
         except Exception:
             pass
-    else:
-        from django.core.cache import cache
-        stored_otp = cache.get(cache_key)
 
-    if not stored_otp or str(stored_otp) != submitted_otp:
+    if not stored_otp:
+        try:
+            from django.core.cache import cache
+            stored_otp = cache.get(cache_key)
+        except Exception:
+            pass
+
+    if not stored_otp or str(stored_otp).strip() != submitted_otp:
         return Response({"error": "Invalid or expired verification code. Please request a new one."}, status=400)
 
-    # Delete Redis key on success (single-use)
+    # Delete key on success (single-use)
     if client:
         try:
             client.delete(cache_key)
         except Exception:
             pass
-    else:
+    try:
         from django.core.cache import cache
         cache.delete(cache_key)
+    except Exception:
+        pass
 
     actor_id = _generate_actor_id(email)
     jwt_token = _create_jwt(actor_id=actor_id, email=email, expires_in=1800)
