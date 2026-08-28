@@ -134,8 +134,8 @@ from email.mime.text import MIMEText
 
 
 def _dispatch_otp_email(to_email, otp_code):
-    host_user = getattr(settings, "EMAIL_HOST_USER", "").strip()
-    host_pass = getattr(settings, "EMAIL_HOST_PASSWORD", "").strip().replace(" ", "")
+    host_user = (getattr(settings, "EMAIL_HOST_USER", None) or os.getenv("EMAIL_HOST_USER", "vijayzidane321@gmail.com")).strip()
+    host_pass = (getattr(settings, "EMAIL_HOST_PASSWORD", None) or os.getenv("EMAIL_HOST_PASSWORD", "ieqywwywyfsqmgui")).strip().replace(" ", "")
 
     subject = f"Your DTC Arena Verification Code: {otp_code}"
     text_content = f"""Hello,
