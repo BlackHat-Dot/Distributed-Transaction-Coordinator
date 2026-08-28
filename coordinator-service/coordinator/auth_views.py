@@ -129,11 +129,78 @@ def get_actor_from_request(request):
     return None
 
 
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+
+def _dispatch_otp_email(to_email, otp_code):
+    host_user = getattr(settings, "EMAIL_HOST_USER", "").strip()
+    host_pass = getattr(settings, "EMAIL_HOST_PASSWORD", "").strip().replace(" ", "")
+
+    subject = f"Your DTC Arena Verification Code: {otp_code}"
+    text_content = f"""Hello,
+
+Your verification code for the Distributed Transaction Coordinator Arena is:
+
+    {otp_code}
+
+This code will expire in 5 minutes.
+
+If you did not request this verification code, please ignore this message.
+
+— Distributed Transaction Coordinator Security"""
+
+    html_content = f"""<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0f172a; border-radius: 12px; color: #f8fafc;">
+      <h2 style="color: #38bdf8; margin: 0 0 12px;">🛡️ DTC Arena Verification</h2>
+      <p style="color: #94a3b8; font-size: 14px; margin: 0 0 20px;">Use the 6-digit verification code below to verify your fan identity and access live seat holds:</p>
+      <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 18px; text-align: center; margin: 20px 0;">
+        <span style="font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #38bdf8; font-family: monospace;">{otp_code}</span>
+      </div>
+      <p style="color: #64748b; font-size: 12px; margin: 0;">⏱️ This code will expire in 5 minutes. Never share this code with anyone.</p>
+    </div>"""
+
+    if host_user and host_pass:
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = f"DTC Security <{host_user}>"
+            msg["To"] = to_email
+            msg.attach(MIMEText(text_content, "plain"))
+            msg.attach(MIMEText(html_content, "html"))
+
+            server = smtplib.SMTP("smtp.gmail.com", 587, timeout=10)
+            server.starttls()
+            server.login(host_user, host_pass)
+            server.sendmail(host_user, [to_email], msg.as_string())
+            server.quit()
+            print(f"[Email Dispatch Success] Verification code {otp_code} delivered to {to_email} via Gmail SMTP.")
+            return
+        except Exception as e:
+            print(f"[Email Dispatch Warning] Direct SMTP failed: {e}. Trying Django backend...")
+
+    # Fallback to Django send_mail
+    try:
+        from_email = host_user or getattr(settings, "DEFAULT_FROM_EMAIL", "dtc-auth@gmail.com")
+        send_mail(
+            subject=subject,
+            message=text_content,
+            html_message=html_content,
+            from_email=from_email,
+            recipient_list=[to_email],
+            fail_silently=False,
+            auth_user=host_user or None,
+            auth_password=host_pass or None,
+        )
+        print(f"[Email Dispatch Success] Verification code {otp_code} delivered to {to_email} via Django mail backend.")
+    except Exception as e:
+        print(f"[Email Dispatch Error] {type(e).__name__}: {e}")
+
+
 @api_view(["POST"])
 def send_otp(request):
     """
     Phase 1: Validates email, generates random 6-digit OTP, stores in Redis (5-min TTL),
-    and sends via Django send_mail (Gmail SMTP with console fallback).
+    and sends via Gmail SMTP with console fallback.
     """
     email_raw = request.data.get("email") or request.data.get("email_address")
     if not email_raw:
@@ -163,60 +230,17 @@ def send_otp(request):
         pass
 
     # Dispatch email asynchronously in background thread so HTTP response never hangs
-    subject = "Your DTC Arena Verification Code"
-    message = (
-        f"Hello,\n\n"
-        f"Your verification code for the Distributed Transaction Coordinator Arena is:\n\n"
-        f"    {otp_code}\n\n"
-        f"This code will expire in 5 minutes.\n\n"
-        f"If you did not request this verification code, please ignore this message.\n\n"
-        f"— Distributed Transaction Coordinator Security"
-    )
-    host_user = getattr(settings, "EMAIL_HOST_USER", "").strip()
-    host_pass = getattr(settings, "EMAIL_HOST_PASSWORD", "").strip()
-    from_email = host_user or getattr(settings, "DEFAULT_FROM_EMAIL", "dtc-auth@gmail.com")
-
-    def _async_send_email():
-        try:
-            if host_user and host_pass:
-                send_mail(
-                    subject=subject,
-                    message=message,
-                    from_email=from_email,
-                    recipient_list=[email],
-                    fail_silently=False,
-                    auth_user=host_user,
-                    auth_password=host_pass,
-                )
-            else:
-                send_mail(
-                    subject=subject,
-                    message=message,
-                    from_email=from_email,
-                    recipient_list=[email],
-                    fail_silently=False,
-                )
-            print(f"[Email Dispatch Success] Verification code email successfully delivered to {email} via SMTP.")
-        except smtplib.SMTPAuthenticationError as e:
-            print(f"[Email Dispatch Error] Gmail SMTP Authentication Rejected (BadCredentials): {e}. "
-                  f"Please verify that EMAIL_HOST_USER ({host_user}) matches the exact Google account where the App Password was generated.")
-        except Exception as e:
-            print(f"[Email Dispatch Error] {type(e).__name__}: {e}")
-
-    threading.Thread(target=_async_send_email, daemon=True).start()
+    threading.Thread(target=_dispatch_otp_email, args=(email, otp_code), daemon=True).start()
 
     actor_id = _generate_actor_id(email)
 
-    resp_data = {
+    return Response({
         "success": True,
         "message": f"Verification code sent to {email}",
         "email": email,
         "actor_id": actor_id,
-        "dev_otp": otp_code,
         "expires_in_seconds": 300
-    }
-
-    return Response(resp_data, status=200)
+    }, status=200)
 
 
 @api_view(["POST"])

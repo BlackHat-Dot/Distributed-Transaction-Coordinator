@@ -2683,15 +2683,14 @@ async function handleMainSendOtp() {
 
       renderMainAuthStep(2);
       const otpInput = document.getElementById("auth-otp-input");
-      if (res.data.dev_otp && otpInput) {
-        otpInput.value = res.data.dev_otp;
+      if (otpInput) {
+        otpInput.value = "";
       }
       startMainOtpCountdown(30);
 
-      const devNote = res.data.dev_otp ? ` (Code: ${res.data.dev_otp})` : "";
       showToast({
-        title: "Verification Code Ready",
-        message: `Code sent to ${res.data.email}.${devNote}`,
+        title: "Verification Code Sent!",
+        message: `6-Digit verification code sent to ${res.data.email}. Please check your inbox.`,
         type: "success",
         duration: 8000,
       });

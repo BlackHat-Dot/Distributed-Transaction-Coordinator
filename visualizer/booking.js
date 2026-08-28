@@ -441,15 +441,14 @@ async function handleSendOtp() {
       if (DOM.authTargetEmail) DOM.authTargetEmail.textContent = res.data.email;
 
       renderAuthStep(2);
-      if (res.data.dev_otp && DOM.authOtpInput) {
-        DOM.authOtpInput.value = res.data.dev_otp;
+      if (DOM.authOtpInput) {
+        DOM.authOtpInput.value = "";
       }
       startOtpCountdown(30);
 
-      const devNote = res.data.dev_otp ? ` (Code: ${res.data.dev_otp})` : "";
       showToast({
-        title: "Verification Code Ready",
-        message: `Code sent to ${res.data.email}.${devNote}`,
+        title: "Verification Code Sent!",
+        message: `6-Digit verification code sent to ${res.data.email}. Please check your inbox.`,
         type: "success",
         duration: 8000,
       });
