@@ -163,7 +163,7 @@ If you did not request this verification code, please ignore this message.
 
     try:
         params: resend.Emails.SendParams = {
-            "from": "DTC Security <onboarding@resend.dev>",  # swap once your domain is verified
+            "from": "DTC Security <otp@relaydtc.online>",
             "to": [to_email],
             "subject": subject,
             "html": html_content,
