@@ -151,12 +151,12 @@ If you did not request this verification code, please ignore this message.
 — Distributed Transaction Coordinator Security"""
 
     html_content = f"""<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0f172a; border-radius: 12px; color: #f8fafc;">
-      <h2 style="color: #38bdf8; margin: 0 0 12px;">🛡️ DTC Arena Verification</h2>
+      <h2 style="color: #38bdf8; margin: 0 0 12px;">DTC Arena Verification</h2>
       <p style="color: #94a3b8; font-size: 14px; margin: 0 0 20px;">Use the 6-digit verification code below to verify your fan identity and access live seat holds:</p>
       <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 18px; text-align: center; margin: 20px 0;">
         <span style="font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #38bdf8; font-family: monospace;">{otp_code}</span>
       </div>
-      <p style="color: #64748b; font-size: 12px; margin: 0;">⏱️ This code will expire in 5 minutes. Never share this code with anyone.</p>
+      <p style="color: #64748b; font-size: 12px; margin: 0;">This code will expire in 5 minutes. Never share this code with anyone.</p>
     </div>"""
 
     if host_user and host_pass:
