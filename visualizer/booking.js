@@ -814,12 +814,27 @@ async function handleSeatTileClick(seatId) {
         tile.style.animation = "shake 0.4s ease-in-out";
         setTimeout(() => (tile.style.animation = ""), 400);
       }
+      
+      let timeMsg = "Please select an available seat.";
+      if (seat.held_until) {
+        const expiryDate = new Date(seat.held_until);
+        const remainingMs = Math.max(0, expiryDate - Date.now());
+        if (remainingMs > 0) {
+          const mins = Math.floor(remainingMs / 60000);
+          const secs = Math.floor((remainingMs % 60000) / 1000);
+          const timeString = expiryDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          timeMsg = `This reservation expires in ${mins}m ${secs}s (at ${timeString}).`;
+        } else {
+          timeMsg = `This reservation is expiring soon.`;
+        }
+      }
+
       showToast({
         title: "Seat Already Held",
-        message: `Seat ${seat.row}${seat.seat_number} is currently held by another user. Please select an available seat.`,
+        message: `Seat ${seat.row}${seat.seat_number} is currently held by another user. ${timeMsg}`,
         type: "warning",
-        icon: "",
-        duration: 4000,
+        icon: "🔒",
+        duration: 5000,
       });
       return;
     }
