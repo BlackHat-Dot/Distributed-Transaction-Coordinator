@@ -1222,7 +1222,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
 
   if (isAsync) {
     showToast({
-      icon: "🔄",
+      icon: "⦿",
       title: `Async Compensation Dispatched (202 Accepted · ${latencyMs}ms)`,
       message: `[Mode: ASYNCHRONOUS] Payment declined on $9,999. Celery worker is auto-releasing seat #${nextSeatId} hold in background. Marked COMPENSATED.`,
       type: "normal",
@@ -1321,7 +1321,7 @@ DOM.btnDemoRace.addEventListener("click", async () => {
   localStorage.setItem("dtc_stat_races", STATE.stats.racesDefended);
 
   showToast({
-    icon: "🔥",
+    icon: "⦿",
     title: "Race Condition Defended",
     message: `5 concurrent requests with UUID ${sharedTxId.substring(0,8)}... → Exactly 1 committed, 4 blocked by PostgreSQL UNIQUE(transaction_id) & row locks!`,
     type: "race",
@@ -1443,7 +1443,7 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
   }
 
   showToast({
-    icon: "💥",
+    icon: "⦿",
     title: "Process Crash Simulated",
     message: `Coordinator process crashed mid-flight! Transaction ${txId.substring(0,8)}... is orphaned in database. Awaiting natural 90s Celery Beat sweep (or click 'Trigger Immediate Sweep' below)!`,
     type: "race",
@@ -1580,7 +1580,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   else if (isCrash || txData.detail === "Intentional crash") {
     await animatePacketAlongPath({ route: "coord-pay", type: "danger", durationMs: 400, breakMidway: true });
     triggerCrashedNode("coord");
-    showToast({ icon: "💥", title: "Process Crash Simulated", message: `Coordinator crashed mid-flight! Transaction orphaned. Awaiting Celery Beat sweep.`, type: "race", duration: 8000 });
+    showToast({ icon: "⦿", title: "Process Crash Simulated", message: `Coordinator crashed mid-flight! Transaction orphaned. Awaiting Celery Beat sweep.`, type: "race", duration: 8000 });
     setTimeout(() => { triggerRecoveredNode("coord"); DOM.topoCoordState.textContent = "IDLE"; }, 2500);
   }
   else if (status === "COMPENSATED" || status === "COMPENSATION_FAILED") {
