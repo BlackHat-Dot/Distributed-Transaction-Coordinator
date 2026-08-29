@@ -879,9 +879,11 @@
       <div class="auth-card-header" style="margin-bottom: 20px;">
         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
           <div style="display: flex; gap: 10px; align-items: center;">
-            <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); display: flex; align-items: center; justify-content: center; font-size: 1.2rem;">🛡️</div>
+            <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.3); display: flex; align-items: center; justify-content: center;">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="#22c55e"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+            </div>
             <div>
-              <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: #fff;">Fan Identity Gate</h3>
+              <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: #fff;">User Identity Gate</h3>
               <p style="margin: 2px 0 0; font-size: 0.74rem; color: #94a3b8;">Email verification prevents multi-seat hoarding</p>
             </div>
           </div>
@@ -925,9 +927,12 @@
 
       <!-- Step 2: OTP Verification -->
       <div id="auth-step-2" class="auth-step-panel hidden">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-          <p style="margin: 0; font-size: 0.8rem; color: #cbd5e1;">Code sent to <strong id="auth-target-email" style="color: #38bdf8;">fan@example.com</strong></p>
-          <button id="btn-change-email" style="background: none; border: none; color: #38bdf8; font-size: 0.75rem; cursor: pointer; text-decoration: underline;">Change</button>
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px;">
+          <div>
+            <p style="margin: 0; font-size: 0.8rem; color: #cbd5e1;">Code sent to <strong id="auth-target-email" style="color: #38bdf8;">fan@example.com</strong></p>
+            <p style="margin: 4px 0 0 0; font-size: 0.75rem; color: #94a3b8;"><em>(Please also check your spam/junk box)</em></p>
+          </div>
+          <button id="btn-change-email" style="background: none; border: none; color: #38bdf8; font-size: 0.75rem; cursor: pointer; text-decoration: underline; margin-top: 2px;">Change</button>
         </div>
 
         <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px;">
