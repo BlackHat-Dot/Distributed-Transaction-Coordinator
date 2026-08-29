@@ -446,11 +446,18 @@ async function handleSendOtp() {
       }
       startOtpCountdown(30);
 
+      const chancesText = res.data.chances_remaining !== undefined ? `\n(You have ${res.data.chances_remaining} attempts remaining)` : "";
       showToast({
         title: "Verification Code Sent!",
-        message: `6-Digit verification code sent to ${res.data.email}. Please check your inbox.`,
+        message: `6-Digit verification code sent to ${res.data.email}. Please check your inbox.${chancesText}`,
         type: "success",
         duration: 8000,
+      });
+    } else if (res.status === 429) {
+      showToast({
+        title: "Account Blocked",
+        message: (res.data && res.data.error) || "Too many OTP requests. Please try again later.",
+        type: "danger",
       });
     } else {
       showToast({

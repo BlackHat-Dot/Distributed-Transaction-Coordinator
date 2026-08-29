@@ -193,10 +193,30 @@ def send_otp(request):
 
     client = _get_redis_client()
     session_key = f"dtc:session:{email}"
+    block_key = f"dtc:otp_blocked:{email}"
+    attempts_key = f"dtc:otp_attempts:{email}"
+    chances_remaining = 3
+
     if client:
         try:
             if client.exists(session_key):
                 return Response({"error": "Account already in use on another device."}, status=403)
+                
+            if client.exists(block_key):
+                ttl = client.ttl(block_key)
+                mins = max(1, ttl // 60) if ttl > 0 else 30
+                return Response({"error": f"Account blocked. Too many OTP requests. Please try again in {mins} minutes."}, status=429)
+
+            attempts = client.incr(attempts_key)
+            if attempts == 1:
+                client.expire(attempts_key, 1800)
+            
+            if attempts > 3:
+                client.setex(block_key, 1800, "blocked")
+                client.delete(attempts_key)
+                return Response({"error": "Account blocked. Too many OTP requests. Please try again in 30 minutes."}, status=429)
+                
+            chances_remaining = max(0, 3 - attempts)
         except Exception:
             pass
 
@@ -227,7 +247,8 @@ def send_otp(request):
         "message": f"Verification code sent to {email}",
         "email": email,
         "actor_id": actor_id,
-        "expires_in_seconds": 300
+        "expires_in_seconds": 300,
+        "chances_remaining": chances_remaining
     }, status=200)
 
 
