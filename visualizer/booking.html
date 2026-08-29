@@ -415,9 +415,12 @@
 
       <!-- Step 2: OTP Verification -->
       <div id="auth-step-2" class="auth-step-panel hidden">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-          <p style="margin: 0; font-size: 0.8rem; color: #cbd5e1;">Code sent to <strong id="auth-target-email" style="color: #38bdf8;">fan@example.com</strong></p>
-          <button id="btn-change-email" style="background: none; border: none; color: #38bdf8; font-size: 0.75rem; cursor: pointer; text-decoration: underline;">Change</button>
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px;">
+          <div>
+            <p style="margin: 0; font-size: 0.8rem; color: #cbd5e1;">Code sent to <strong id="auth-target-email" style="color: #38bdf8;">fan@example.com</strong></p>
+            <p style="margin: 4px 0 0 0; font-size: 0.75rem; color: #94a3b8;"><em>(Please also check your spam/junk box)</em></p>
+          </div>
+          <button id="btn-change-email" style="background: none; border: none; color: #38bdf8; font-size: 0.75rem; cursor: pointer; text-decoration: underline; margin-top: 2px;">Change</button>
         </div>
 
         <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px;">

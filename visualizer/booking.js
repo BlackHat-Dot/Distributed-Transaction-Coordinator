@@ -295,8 +295,8 @@ function updateAuthWidgetUI() {
       DOM.btnOpenAuth.style.color = "#22c55e";
     }
   } else {
-    if (DOM.userEmailLabel) DOM.userEmailLabel.textContent = "Fan Login (Email OTP)";
-    if (DOM.userAvatarIcon) DOM.userAvatarIcon.textContent = "👤";
+    if (DOM.userEmailLabel) DOM.userEmailLabel.textContent = "Email Login";
+    if (DOM.userAvatarIcon) DOM.userAvatarIcon.textContent = "✦︎";
     if (DOM.btnOpenAuth) {
       DOM.btnOpenAuth.style.borderColor = "rgba(56, 189, 248, 0.4)";
       DOM.btnOpenAuth.style.background = "rgba(56, 189, 248, 0.1)";

@@ -2515,8 +2515,8 @@ function updateMainAuthWidgetUI() {
       btnOpen.style.color = "#22c55e";
     }
   } else {
-    if (emailLabel) emailLabel.textContent = "Fan Login (Email OTP)";
-    if (avatarIcon) avatarIcon.textContent = "👤";
+    if (emailLabel) emailLabel.textContent = "Email Login";
+    if (avatarIcon) avatarIcon.textContent = "✦︎";
     if (btnOpen) {
       btnOpen.style.borderColor = "rgba(56, 189, 248, 0.4)";
       btnOpen.style.background = "rgba(56, 189, 248, 0.1)";
