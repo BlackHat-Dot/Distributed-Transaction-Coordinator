@@ -8,7 +8,7 @@ from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from .models import Event, Seat, Reservation
+from inventory.models import Event, Seat, Reservation
 
 
 RESERVE_URL = "/seats/reserve/"

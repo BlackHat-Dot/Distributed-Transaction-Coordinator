@@ -6,8 +6,8 @@ from django.test import TestCase, TransactionTestCase
 from django.db import connection
 from rest_framework.test import APIClient
 
-from .models import Payment
-from .views import NOT_CHARGED
+from payments.models import Payment
+from payments.views import NOT_CHARGED
 
 
 class ChargePaymentValidationTests(TestCase):

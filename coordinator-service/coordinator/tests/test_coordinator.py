@@ -6,7 +6,7 @@ from django.db import connection
 from django.test import TestCase, TransactionTestCase
 from rest_framework.test import APIClient
 
-from .models import Transaction
+from coordinator.models import Transaction
 
 URL = "/transactions/"
 
