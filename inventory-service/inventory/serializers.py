@@ -2,6 +2,8 @@ from rest_framework import serializers
 from .models import Event, Seat, Reservation
 
 
+from django.utils import timezone
+
 class SeatSerializer(serializers.ModelSerializer):
     class Meta:
         model = Seat
@@ -16,6 +18,16 @@ class SeatSerializer(serializers.ModelSerializer):
             "held_by_transaction_id",
             "held_by_actor_id",
         ]
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        # Lazy Read-Time Shedding: Treat expired holds as AVAILABLE on read
+        if rep.get("status") == "HELD" and instance.held_until and instance.held_until < timezone.now():
+            rep["status"] = "AVAILABLE"
+            rep["held_until"] = None
+            rep["held_by_transaction_id"] = None
+            rep["held_by_actor_id"] = None
+        return rep
 
 
 class EventSerializer(serializers.ModelSerializer):
