@@ -14,6 +14,8 @@ from coordinator.auth_views import (
     send_otp,
     verify_otp,
     get_me,
+    heartbeat,
+    logout,
 )
 
 
@@ -23,6 +25,8 @@ urlpatterns = [
     path('auth/send-otp/', send_otp),
     path('auth/verify-otp/', verify_otp),
     path('auth/me/', get_me),
+    path('auth/heartbeat/', heartbeat),
+    path('auth/logout/', logout),
     path("transactions/", transactions_endpoint),
     path("transactions/<uuid:transaction_id>/retry-compensation/",
          retry_compensation),

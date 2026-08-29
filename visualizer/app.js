@@ -2648,6 +2648,13 @@ function setupMainAuthEventListeners() {
   const btnLogout = document.getElementById("btn-logout");
   if (btnLogout) {
     btnLogout.addEventListener("click", () => {
+      const token = localStorage.getItem("dtc_auth_token");
+      if (token) {
+        fetch(`${CONFIG.coordinatorUrl}/auth/logout/`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${token}` }
+        }).catch(() => {});
+      }
       localStorage.removeItem("dtc_auth_token");
       localStorage.removeItem("dtc_user_email");
       localStorage.removeItem("dtc_actor_id");
@@ -2656,6 +2663,33 @@ function setupMainAuthEventListeners() {
       showToast({ title: "Signed Out", message: "Identity detached.", type: "normal" });
     });
   }
+
+  // Session Heartbeat
+  setInterval(() => {
+    const token = localStorage.getItem("dtc_auth_token");
+    if (token) {
+      fetch(`${CONFIG.coordinatorUrl}/auth/heartbeat/`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      }).then(res => {
+        if (res.status === 401 || res.status === 403) {
+          if (btnLogout) btnLogout.click(); // Auto-logout if session expired
+        }
+      }).catch(() => {});
+    }
+  }, 15000);
+
+  // Tab Close Session Cleanup
+  window.addEventListener("beforeunload", () => {
+    const token = localStorage.getItem("dtc_auth_token");
+    if (token) {
+      fetch(`${CONFIG.coordinatorUrl}/auth/logout/`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` },
+        keepalive: true
+      }).catch(() => {});
+    }
+  });
 }
 
 async function handleMainSendOtp() {

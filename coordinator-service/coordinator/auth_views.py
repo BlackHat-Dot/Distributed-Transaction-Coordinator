@@ -191,6 +191,15 @@ def send_otp(request):
     except ValidationError:
         return Response({"error": "Invalid email address format"}, status=400)
 
+    client = _get_redis_client()
+    session_key = f"dtc:session:{email}"
+    if client:
+        try:
+            if client.exists(session_key):
+                return Response({"error": "Account already in use on another device."}, status=403)
+        except Exception:
+            pass
+
     otp_code = f"{secrets.randbelow(900000) + 100000}"
     cache_key = f"dtc:otp:{email}"
 
@@ -270,6 +279,13 @@ def verify_otp(request):
     actor_id = _generate_actor_id(email)
     jwt_token = _create_jwt(actor_id=actor_id, email=email, expires_in=1800)
 
+    # Register active session
+    if client:
+        try:
+            client.setex(f"dtc:session:{email}", 30, "active")
+        except Exception:
+            pass
+
     return Response({
         "success": True,
         "message": "Authenticated successfully!",
@@ -293,3 +309,42 @@ def get_me(request):
         "authenticated": True,
         "actor": actor_info
     }, status=200)
+
+
+@api_view(["POST"])
+def heartbeat(request):
+    """
+    Extends the TTL of the user's active session in Redis.
+    """
+    actor_info = get_actor_from_request(request)
+    if not actor_info or not actor_info.get("is_authenticated"):
+        return Response({"error": "Unauthorized"}, status=401)
+    
+    email = actor_info.get("email")
+    if email:
+        client = _get_redis_client()
+        if client:
+            try:
+                client.setex(f"dtc:session:{email}", 30, "active")
+            except Exception:
+                pass
+                
+    return Response({"status": "alive"}, status=200)
+
+
+@api_view(["POST"])
+def logout(request):
+    """
+    Deletes the user's active session in Redis.
+    """
+    actor_info = get_actor_from_request(request)
+    if actor_info and actor_info.get("email"):
+        email = actor_info.get("email")
+        client = _get_redis_client()
+        if client:
+            try:
+                client.delete(f"dtc:session:{email}")
+            except Exception:
+                pass
+                
+    return Response({"status": "logged_out"}, status=200)
