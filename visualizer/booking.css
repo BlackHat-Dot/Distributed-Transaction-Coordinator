@@ -542,7 +542,7 @@ body {
 .seat-tile[data-status="HELD"] {
   background: var(--color-held-bg);
   border-color: var(--color-held-border);
-  cursor: not-allowed;
+  cursor: pointer;
   opacity: 0.75;
 }
 
