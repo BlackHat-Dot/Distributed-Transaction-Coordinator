@@ -53,6 +53,19 @@ CORS_EXPOSE_HEADERS = [
     "x-correlation-id",
     "content-type",
 ]
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+    "x-correlation-id",
+    "x-actor-id",
+]
 
 CSRF_TRUSTED_ORIGINS = [
     origin.strip() for origin in os.getenv(
