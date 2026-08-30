@@ -447,9 +447,16 @@ async function handleSendOtp() {
       startOtpCountdown(res.data.cooldown_remaining || 30);
 
       const chancesText = res.data.chances_remaining !== undefined ? `\n(You have ${res.data.chances_remaining} attempts remaining)` : "";
+      
+      const isCooldown = res.data.cooldown_remaining !== undefined;
+      const title = isCooldown ? "Code Already Sent!" : "Verification Code Sent!";
+      const messageBody = isCooldown 
+        ? `An active verification code was already sent to ${res.data.email}. Please check your inbox.`
+        : `6-Digit verification code sent to ${res.data.email}. Please check your inbox.`;
+
       showToast({
-        title: "Verification Code Sent!",
-        message: `6-Digit verification code sent to ${res.data.email}. Please check your inbox.${chancesText}`,
+        title: title,
+        message: messageBody + chancesText,
         type: "success",
         duration: 8000,
       });
