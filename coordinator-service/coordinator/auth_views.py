@@ -229,7 +229,7 @@ def send_otp(request):
                 client.delete(session_attempts_key)
                 return Response({"error": "Session resend request limit reached. You can resend the OTP after 10 minutes."}, status=429)
                 
-            chances_remaining = max(0, 3 - session_attempts)
+            chances_remaining = max(0, min(3 - session_attempts, 10 - daily_attempts))
         except Exception:
             pass
 
