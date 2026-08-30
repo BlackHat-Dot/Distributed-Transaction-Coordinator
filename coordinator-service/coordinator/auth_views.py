@@ -204,6 +204,18 @@ def send_otp(request):
             if client.exists(session_key):
                 return Response({"error": "Account already in use on another device."}, status=403)
                 
+            cooldown_key = f"dtc:otp_cooldown:{email}"
+            if client.exists(cooldown_key):
+                ttl = client.ttl(cooldown_key)
+                if ttl > 0:
+                    return Response({
+                        "success": True,
+                        "message": "Verification code was recently sent.",
+                        "email": email,
+                        "actor_id": _generate_actor_id(email),
+                        "cooldown_remaining": ttl,
+                    }, status=200)
+                
             if client.exists(daily_block_key):
                 return Response({"error": "Too many login requests. Wait 12 hours before you login."}, status=429)
                 
@@ -252,6 +264,12 @@ def send_otp(request):
 
     # Dispatch email asynchronously in background thread so HTTP response never hangs
     threading.Thread(target=_dispatch_otp_email, args=(email, otp_code), daemon=True).start()
+
+    if client:
+        try:
+            client.setex(f"dtc:otp_cooldown:{email}", 30, "1")
+        except Exception:
+            pass
 
     actor_id = _generate_actor_id(email)
 

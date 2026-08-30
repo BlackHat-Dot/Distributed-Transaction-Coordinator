@@ -444,7 +444,7 @@ async function handleSendOtp() {
       if (DOM.authOtpInput) {
         DOM.authOtpInput.value = "";
       }
-      startOtpCountdown(30);
+      startOtpCountdown(res.data.cooldown_remaining || 30);
 
       const chancesText = res.data.chances_remaining !== undefined ? `\n(You have ${res.data.chances_remaining} attempts remaining)` : "";
       showToast({
