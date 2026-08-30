@@ -185,7 +185,7 @@ async function fetchJson(url, options = {}, timeoutMs = 4000) {
 
 const activeToasts = new Map();
 
-function showToast({ title, message, type = "normal", icon = "ℹ️", duration = 4000 }) {
+function showToast({ title, message, type = "normal", icon = "ℹ", duration = 4000 }) {
   if (!DOM.toastContainer) return;
 
   // Use title + type composite key to aggregate identical prompt categories

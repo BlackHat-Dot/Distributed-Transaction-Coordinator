@@ -311,7 +311,7 @@ const DOM = {
 
 const activeAppToasts = new Map();
 
-function showToast({ icon = "⚡", title, message, type = "normal", duration = 4500 }) {
+function showToast({ icon = "", title, message, type = "normal", duration = 4500 }) {
   if (!DOM.toastContainer) return;
 
   const toastKey = `${type}::${title}`;
@@ -1541,9 +1541,9 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   DOM.customDrawer.classList.add("hidden");
 
   if (execMode === "async") {
-    DOM.topoCoordState.textContent = "⚡ ASYNC DISPATCH (NON-BLOCKING)";
+    DOM.topoCoordState.textContent = "ASYNC DISPATCH (NON-BLOCKING)";
   } else {
-    DOM.topoCoordState.textContent = "🔁 SYNC · Holding HTTP · Calling Inventory...";
+    DOM.topoCoordState.textContent = "SYNC · Holding HTTP · Calling Inventory...";
   }
 
   // Animate: Client → Coordinator
