@@ -193,8 +193,10 @@ def send_otp(request):
 
     client = _get_redis_client()
     session_key = f"dtc:session:{email}"
-    block_key = f"dtc:otp_blocked:{email}"
-    attempts_key = f"dtc:otp_attempts:{email}"
+    daily_block_key = f"dtc:otp_daily_blocked:{email}"
+    session_block_key = f"dtc:otp_session_blocked:{email}"
+    daily_attempts_key = f"dtc:otp_daily_attempts:{email}"
+    session_attempts_key = f"dtc:otp_session_attempts:{email}"
     chances_remaining = 3
 
     if client:
@@ -202,21 +204,32 @@ def send_otp(request):
             if client.exists(session_key):
                 return Response({"error": "Account already in use on another device."}, status=403)
                 
-            if client.exists(block_key):
-                ttl = client.ttl(block_key)
-                mins = max(1, ttl // 60) if ttl > 0 else 30
-                return Response({"error": f"Account blocked. Too many OTP requests. Please try again in {mins} minutes."}, status=429)
-
-            attempts = client.incr(attempts_key)
-            if attempts == 1:
-                client.expire(attempts_key, 1800)
-            
-            if attempts > 3:
-                client.setex(block_key, 1800, "blocked")
-                client.delete(attempts_key)
-                return Response({"error": "Account blocked. Too many OTP requests. Please try again in 30 minutes."}, status=429)
+            if client.exists(daily_block_key):
+                return Response({"error": "Too many login requests. Wait 12 hours before you login."}, status=429)
                 
-            chances_remaining = max(0, 3 - attempts)
+            if client.exists(session_block_key):
+                return Response({"error": "Session resend request limit reached. You can resend the OTP after 10 minutes."}, status=429)
+
+            daily_attempts = client.incr(daily_attempts_key)
+            if daily_attempts == 1:
+                client.expire(daily_attempts_key, 86400)
+            
+            session_attempts = client.incr(session_attempts_key)
+            if session_attempts == 1:
+                client.expire(session_attempts_key, 86400)
+            
+            if daily_attempts > 10:
+                client.setex(daily_block_key, 43200, "blocked")
+                client.delete(daily_attempts_key)
+                client.delete(session_attempts_key)
+                return Response({"error": "Too many login requests. Wait 12 hours before you login."}, status=429)
+                
+            if session_attempts > 3:
+                client.setex(session_block_key, 600, "blocked")
+                client.delete(session_attempts_key)
+                return Response({"error": "Session resend request limit reached. You can resend the OTP after 10 minutes."}, status=429)
+                
+            chances_remaining = max(0, 3 - session_attempts)
         except Exception:
             pass
 
