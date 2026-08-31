@@ -29,8 +29,6 @@ class Transaction(models.Model):
     transaction_id = models.UUIDField(unique=True)
     user_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
     user_email = models.CharField(max_length=255, null=True, blank=True, db_index=True)
-    held_by_user_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
-    held_by_user_email = models.CharField(max_length=255, null=True, blank=True, db_index=True)
 
     status = models.CharField(
         max_length=40,

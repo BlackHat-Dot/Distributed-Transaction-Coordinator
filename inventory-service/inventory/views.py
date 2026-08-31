@@ -131,10 +131,8 @@ def _validate_reserve_input(data):
 
 
 def _seat_response(seat, reservation, transaction_id, status_code=200):
-    user_id = (reservation.user_id if reservation else None) or getattr(seat, "user_id", None) or getattr(seat, "held_by_user_id", None)
-    user_email = (reservation.user_email if reservation else None) or getattr(seat, "user_email", None) or getattr(seat, "held_by_user_email", None)
-    held_by_user_id = (getattr(reservation, "held_by_user_id", None) if reservation else None) or getattr(seat, "held_by_user_id", None) or user_id
-    held_by_user_email = (getattr(reservation, "held_by_user_email", None) if reservation else None) or getattr(seat, "held_by_user_email", None) or user_email
+    user_id = (reservation.user_id if reservation else None) or getattr(seat, "user_id", None)
+    user_email = (reservation.user_email if reservation else None) or getattr(seat, "user_email", None)
     return Response(
         {
             "message": "Seat reserved",
@@ -146,10 +144,10 @@ def _seat_response(seat, reservation, transaction_id, status_code=200):
             "seat_number": seat.seat_number,
             "price": str(seat.price),
             "held_until": seat.held_until,
-            "held_by_user_id": held_by_user_id,
-            "held_by_user_email": held_by_user_email,
             "user_id": user_id,
             "user_email": user_email,
+            "held_by_user_id": user_id,
+            "held_by_user_email": user_email,
             "actor_id": user_id,
         },
         status=status_code,
@@ -177,8 +175,6 @@ def reserve_seat(request):
         or request.headers.get("X-User-Email")
         or "anonymous@dtc.io"
     )
-    held_by_user_id = request.data.get("held_by_user_id") or user_id
-    held_by_user_email = request.data.get("held_by_user_email") or user_email
 
     client = get_redis_client()
     redis_key = f"seat:{seat_id}"
@@ -206,8 +202,8 @@ def reserve_seat(request):
                         "code": "HOLD_CAP_EXCEEDED",
                         "user_id": user_id,
                         "user_email": user_email,
-                        "held_by_user_id": held_by_user_id,
-                        "held_by_user_email": held_by_user_email,
+                        "held_by_user_id": user_id,
+                        "held_by_user_email": user_email,
                         "actor_id": user_id,
                         "current_holds": cap_res[1],
                         "max_allowed": MAX_ACTOR_HOLDS,
@@ -270,8 +266,6 @@ def reserve_seat(request):
             seat.status = Seat.Status.HELD
             seat.held_until = now + timedelta(minutes=10)
             seat.held_by_transaction_id = transaction_id
-            seat.held_by_user_id = held_by_user_id
-            seat.held_by_user_email = held_by_user_email
             seat.user_id = user_id
             seat.user_email = user_email
             seat.save()
@@ -281,8 +275,6 @@ def reserve_seat(request):
                 defaults={
                     "seat": seat,
                     "status": Reservation.Status.RESERVED,
-                    "held_by_user_id": held_by_user_id,
-                    "held_by_user_email": held_by_user_email,
                     "user_id": user_id,
                     "user_email": user_email,
                 },
@@ -357,7 +349,7 @@ def confirm_seat(request):
             )
 
         # Release from user's Redis hold set
-        user_key_id = seat.held_by_user_id or seat.user_id or getattr(seat, "held_by_actor_id", None)
+        user_key_id = seat.user_id
         if user_key_id and client:
             try:
                 client.eval(RELEASE_ACTOR_HOLD_LUA, 1, f"dtc:user_holds:{user_key_id}", str(seat.id))
@@ -365,22 +357,18 @@ def confirm_seat(request):
             except Exception:
                 pass
 
-        user_id = reservation.user_id or getattr(seat, "user_id", None) or getattr(seat, "held_by_user_id", None)
-        user_email = reservation.user_email or getattr(seat, "user_email", None) or getattr(seat, "held_by_user_email", None)
-        held_by_user_id = getattr(reservation, "held_by_user_id", None) or getattr(seat, "held_by_user_id", None) or user_id
-        held_by_user_email = getattr(reservation, "held_by_user_email", None) or getattr(seat, "held_by_user_email", None) or user_email
+        user_id = reservation.user_id or getattr(seat, "user_id", None)
+        user_email = reservation.user_email or getattr(seat, "user_email", None)
 
         seat.status = Seat.Status.BOOKED
         seat.held_until = None
-        seat.held_by_user_id = held_by_user_id
-        seat.held_by_user_email = held_by_user_email
         seat.user_id = user_id
         seat.user_email = user_email
         seat.save()
 
         reservation.status = Reservation.Status.BOOKED
-        reservation.held_by_user_id = held_by_user_id
-        reservation.held_by_user_email = held_by_user_email
+        reservation.user_id = user_id
+        reservation.user_email = user_email
         reservation.save()
 
         if client:
@@ -395,10 +383,10 @@ def confirm_seat(request):
                 "seat_id": seat.id,
                 "status": "BOOKED",
                 "transaction_id": str(tid),
-                "held_by_user_id": held_by_user_id,
-                "held_by_user_email": held_by_user_email,
                 "user_id": user_id,
                 "user_email": user_email,
+                "held_by_user_id": user_id,
+                "held_by_user_email": user_email,
                 "actor_id": user_id,
             },
             status=200,
@@ -437,10 +425,10 @@ def release_seat(request):
                 {
                     "message": "Reservation already released",
                     "transaction_id": str(tid),
-                    "held_by_user_id": getattr(reservation, "held_by_user_id", None) or reservation.user_id,
-                    "held_by_user_email": getattr(reservation, "held_by_user_email", None) or reservation.user_email,
                     "user_id": reservation.user_id,
                     "user_email": reservation.user_email,
+                    "held_by_user_id": reservation.user_id,
+                    "held_by_user_email": reservation.user_email,
                     "actor_id": reservation.user_id,
                 },
                 status=200,
@@ -451,7 +439,7 @@ def release_seat(request):
                 seat = Seat.objects.select_for_update().get(id=reservation.seat_id)
                 if str(seat.held_by_transaction_id) == str(tid):
                     # Evict from user's active Redis hold set
-                    user_key_id = seat.held_by_user_id or seat.user_id or getattr(seat, "held_by_actor_id", None)
+                    user_key_id = seat.user_id
                     if user_key_id and client:
                         try:
                             client.eval(RELEASE_ACTOR_HOLD_LUA, 1, f"dtc:user_holds:{user_key_id}", str(seat.id))
@@ -462,8 +450,6 @@ def release_seat(request):
                     seat.status = Seat.Status.AVAILABLE
                     seat.held_until = None
                     seat.held_by_transaction_id = None
-                    seat.held_by_user_id = None
-                    seat.held_by_user_email = None
                     seat.user_id = None
                     seat.user_email = None
                     seat.save()
@@ -484,10 +470,10 @@ def release_seat(request):
                 "message": "Seat released",
                 "transaction_id": str(tid),
                 "status": Reservation.Status.RELEASED,
-                "held_by_user_id": getattr(reservation, "held_by_user_id", None) or reservation.user_id,
-                "held_by_user_email": getattr(reservation, "held_by_user_email", None) or reservation.user_email,
                 "user_id": reservation.user_id,
                 "user_email": reservation.user_email,
+                "held_by_user_id": reservation.user_id,
+                "held_by_user_email": reservation.user_email,
                 "actor_id": reservation.user_id,
             },
             status=200,
@@ -518,10 +504,10 @@ def reservation_check(request):
             "transaction_id": str(tid),
             "status": reservation.status,
             "seat_id": reservation.seat_id,
-            "held_by_user_id": getattr(reservation, "held_by_user_id", None) or reservation.user_id,
-            "held_by_user_email": getattr(reservation, "held_by_user_email", None) or reservation.user_email,
             "user_id": reservation.user_id,
             "user_email": reservation.user_email,
+            "held_by_user_id": reservation.user_id,
+            "held_by_user_email": reservation.user_email,
             "actor_id": reservation.user_id,
         }
     )
@@ -550,7 +536,7 @@ def sweep_expired_holds(request):
                 continue
 
             tid = seat.held_by_transaction_id
-            user_key_id = seat.held_by_user_id or seat.user_id or getattr(seat, "held_by_actor_id", None)
+            user_key_id = seat.user_id
 
             if user_key_id and client:
                 try:
@@ -562,8 +548,6 @@ def sweep_expired_holds(request):
             seat.status = Seat.Status.AVAILABLE
             seat.held_until = None
             seat.held_by_transaction_id = None
-            seat.held_by_user_id = None
-            seat.held_by_user_email = None
             seat.user_id = None
             seat.user_email = None
             seat.save()
@@ -614,6 +598,8 @@ def reset_seats(request):
                 status=Seat.Status.AVAILABLE,
                 held_until=None,
                 held_by_transaction_id=None,
+                user_id=None,
+                user_email=None,
             )
         Reservation.objects.all().delete()
 

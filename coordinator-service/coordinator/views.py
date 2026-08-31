@@ -48,16 +48,12 @@ def _create_transaction_idempotent(
 ):
     uid = user_id or held_by_user_id or "usr_demo_user"
     uemail = user_email or held_by_user_email or "demo@dtc.io"
-    h_uid = held_by_user_id or uid
-    h_uemail = held_by_user_email or uemail
     try:
         with transaction.atomic():
             Transaction.objects.create(
                 transaction_id=transaction_id,
                 user_id=uid,
                 user_email=uemail,
-                held_by_user_id=h_uid,
-                held_by_user_email=h_uemail,
                 status=Transaction.Status.STARTED,
                 seat_id=seat_id,
                 product_id=product_id or seat_id,
@@ -70,10 +66,10 @@ def _create_transaction_idempotent(
         return False, Response(
             {
                 "transaction_id": str(existing.transaction_id),
-                "user_id": existing.user_id or existing.held_by_user_id,
-                "user_email": existing.user_email or existing.held_by_user_email,
-                "held_by_user_id": existing.held_by_user_id or existing.user_id,
-                "held_by_user_email": existing.held_by_user_email or existing.user_email,
+                "user_id": existing.user_id,
+                "user_email": existing.user_email,
+                "held_by_user_id": existing.user_id,
+                "held_by_user_email": existing.user_email,
                 "status": existing.status,
             },
             status=200,
@@ -86,8 +82,6 @@ from coordinator.auth_views import get_actor_from_request
 def _reserve_inventory(transaction_id, seat_id, correlation_id=None, actor_id=None, user_id=None, user_email=None, held_by_user_id=None, held_by_user_email=None):
     uid = user_id or held_by_user_id or actor_id or "usr_demo_user"
     uemail = user_email or held_by_user_email or "demo@dtc.io"
-    h_uid = held_by_user_id or uid
-    h_uemail = held_by_user_email or uemail
     headers = {"X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id)}
     if uid:
         headers["X-User-ID"] = str(uid)
@@ -102,8 +96,8 @@ def _reserve_inventory(transaction_id, seat_id, correlation_id=None, actor_id=No
                 "transaction_id": str(transaction_id),
                 "user_id": uid,
                 "user_email": uemail,
-                "held_by_user_id": h_uid,
-                "held_by_user_email": h_uemail,
+                "held_by_user_id": uid,
+                "held_by_user_email": uemail,
                 "actor_id": uid,
             },
             headers=headers,
@@ -300,8 +294,6 @@ def _charge_payment(
 ):
     uid = user_id or held_by_user_id or "usr_demo_user"
     uemail = user_email or held_by_user_email or "demo@dtc.io"
-    h_uid = held_by_user_id or uid
-    h_uemail = held_by_user_email or uemail
 
     headers = {"X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id)}
     if uid:
@@ -318,8 +310,8 @@ def _charge_payment(
                 "amount": amount,
                 "user_id": uid,
                 "user_email": uemail,
-                "held_by_user_id": h_uid,
-                "held_by_user_email": h_uemail,
+                "held_by_user_id": uid,
+                "held_by_user_email": uemail,
             },
             headers=headers,
             timeout=REQUEST_TIMEOUT,
@@ -403,8 +395,6 @@ def _run_saga_pipeline(
     seat_id = seat_id or 1
     uid = user_id or held_by_user_id or actor_id or "usr_demo_user"
     uemail = user_email or held_by_user_email or "demo@dtc.io"
-    h_uid = held_by_user_id or uid
-    h_uemail = held_by_user_email or uemail
 
     response, reserve_error = _reserve_inventory(
         transaction_id,
@@ -413,8 +403,8 @@ def _run_saga_pipeline(
         actor_id=uid,
         user_id=uid,
         user_email=uemail,
-        held_by_user_id=h_uid,
-        held_by_user_email=h_uemail,
+        held_by_user_id=uid,
+        held_by_user_email=uemail,
     )
     if reserve_error:
         return reserve_error
@@ -474,8 +464,8 @@ def _run_saga_pipeline(
         seat_id=seat_id,
         user_id=uid,
         user_email=uemail,
-        held_by_user_id=h_uid,
-        held_by_user_email=h_uemail,
+        held_by_user_id=uid,
+        held_by_user_email=uemail,
     )
 
 
@@ -515,8 +505,6 @@ def _handle_create_transaction(request):
             or "demo@dtc.io"
         )
     )
-    held_by_user_id = request.data.get("held_by_user_id") or user_id
-    held_by_user_email = request.data.get("held_by_user_email") or user_email
 
     created, dup_response = _create_transaction_idempotent(
         transaction_id=transaction_id,
@@ -526,8 +514,8 @@ def _handle_create_transaction(request):
         quantity=quantity,
         user_id=user_id,
         user_email=user_email,
-        held_by_user_id=held_by_user_id,
-        held_by_user_email=held_by_user_email,
+        held_by_user_id=user_id,
+        held_by_user_email=user_email,
     )
     if not created:
         return dup_response
@@ -549,16 +537,16 @@ def _handle_create_transaction(request):
             actor_id=user_id,
             user_id=user_id,
             user_email=user_email,
-            held_by_user_id=held_by_user_id,
-            held_by_user_email=held_by_user_email,
+            held_by_user_id=user_id,
+            held_by_user_email=user_email,
         )
         return Response(
             {
                 "transaction_id": str(transaction_id),
                 "user_id": user_id,
                 "user_email": user_email,
-                "held_by_user_id": held_by_user_id,
-                "held_by_user_email": held_by_user_email,
+                "held_by_user_id": user_id,
+                "held_by_user_email": user_email,
                 "status": "PENDING",
                 "poll_url": f"/transactions/{transaction_id}/",
                 "message": "Saga dispatched to Celery worker",
@@ -581,8 +569,8 @@ def _handle_create_transaction(request):
         actor_id=user_id,
         user_id=user_id,
         user_email=user_email,
-        held_by_user_id=held_by_user_id,
-        held_by_user_email=held_by_user_email,
+        held_by_user_id=user_id,
+        held_by_user_email=user_email,
     )
 
 
@@ -601,15 +589,13 @@ def _serialize_transaction(txn):
         Transaction.Status.INVENTORY_TIMEOUT,
         Transaction.Status.INVENTORY_CONNECTION_ERROR,
     }
-    user_id = txn.user_id or txn.held_by_user_id
-    user_email = txn.user_email or txn.held_by_user_email
     return {
         "transaction_id": str(txn.transaction_id),
-        "user_id": user_id,
-        "user_email": user_email,
-        "held_by_user_id": txn.held_by_user_id or user_id,
-        "held_by_user_email": txn.held_by_user_email or user_email,
-        "actor_id": user_id,
+        "user_id": txn.user_id,
+        "user_email": txn.user_email,
+        "held_by_user_id": txn.user_id,
+        "held_by_user_email": txn.user_email,
+        "actor_id": txn.user_id,
         "status": txn.status,
         "is_terminal": txn.status in terminal_statuses,
         "seat_id": txn.seat_id,

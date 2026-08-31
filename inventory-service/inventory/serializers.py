@@ -16,8 +16,6 @@ class SeatSerializer(serializers.ModelSerializer):
             "status",
             "held_until",
             "held_by_transaction_id",
-            "held_by_user_id",
-            "held_by_user_email",
             "user_id",
             "user_email",
         ]
@@ -29,12 +27,12 @@ class SeatSerializer(serializers.ModelSerializer):
             rep["status"] = "AVAILABLE"
             rep["held_until"] = None
             rep["held_by_transaction_id"] = None
-            rep["held_by_user_id"] = None
-            rep["held_by_user_email"] = None
             rep["user_id"] = None
             rep["user_email"] = None
-        # Backwards compatibility alias
-        rep["held_by_actor_id"] = rep.get("held_by_user_id") or rep.get("user_id")
+        # Backwards compatibility aliases
+        rep["held_by_user_id"] = rep.get("user_id")
+        rep["held_by_user_email"] = rep.get("user_email")
+        rep["held_by_actor_id"] = rep.get("user_id")
         return rep
 
 
@@ -54,8 +52,6 @@ class ReservationSerializer(serializers.ModelSerializer):
             "seat",
             "transaction_id",
             "status",
-            "held_by_user_id",
-            "held_by_user_email",
             "user_id",
             "user_email",
             "created_at",
@@ -64,5 +60,7 @@ class ReservationSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
-        rep["held_by_actor_id"] = rep.get("held_by_user_id") or rep.get("user_id")
+        rep["held_by_user_id"] = rep.get("user_id")
+        rep["held_by_user_email"] = rep.get("user_email")
+        rep["held_by_actor_id"] = rep.get("user_id")
         return rep
