@@ -464,18 +464,20 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
     defaultHeaders["Content-Type"] = "application/json";
   }
 
-  const token = localStorage.getItem("dtc_auth_token");
-  const userId = localStorage.getItem("dtc_user_id") || localStorage.getItem("dtc_actor_id");
-  const userEmail = localStorage.getItem("dtc_user_email");
-  if (token) {
-    defaultHeaders["Authorization"] = `Bearer ${token}`;
-  }
-  if (userId) {
-    defaultHeaders["X-User-ID"] = userId;
-    defaultHeaders["X-Actor-ID"] = userId;
-  }
-  if (userEmail) {
-    defaultHeaders["X-User-Email"] = userEmail;
+  if (!options.skipAuth) {
+    const token = localStorage.getItem("dtc_auth_token");
+    const userId = localStorage.getItem("dtc_user_id") || localStorage.getItem("dtc_actor_id");
+    const userEmail = localStorage.getItem("dtc_user_email");
+    if (token) {
+      defaultHeaders["Authorization"] = `Bearer ${token}`;
+    }
+    if (userId) {
+      defaultHeaders["X-User-ID"] = userId;
+      defaultHeaders["X-Actor-ID"] = userId;
+    }
+    if (userEmail) {
+      defaultHeaders["X-User-Email"] = userEmail;
+    }
   }
 
   try {
@@ -538,9 +540,9 @@ async function checkServiceHealth() {
 
   try {
     const [coordRes, invRes, payRes] = await Promise.all([
-      fetchWithTimeout(`${CONFIG.coordinatorUrl}/health/`, {}, 2500),
-      fetchWithTimeout(`${CONFIG.inventoryUrl}/health/`, {}, 2500),
-      fetchWithTimeout(`${CONFIG.paymentUrl}/health/`, {}, 2500),
+      fetchWithTimeout(`${CONFIG.coordinatorUrl}/health/`, { skipAuth: true }, 2500),
+      fetchWithTimeout(`${CONFIG.inventoryUrl}/health/`, { skipAuth: true }, 2500),
+      fetchWithTimeout(`${CONFIG.paymentUrl}/health/`, { skipAuth: true }, 2500),
     ]);
 
     updateHealthUI("coord", coordRes.ok || coordRes.status === 200, coordRes.latency);

@@ -47,6 +47,9 @@ CORS_EXPOSE_HEADERS = [
     "x-page-limit",
     "x-page-offset",
     "x-correlation-id",
+    "x-actor-id",
+    "x-user-id",
+    "x-user-email",
     "content-type",
 ]
 CORS_ALLOW_HEADERS = [
@@ -61,6 +64,8 @@ CORS_ALLOW_HEADERS = [
     "x-requested-with",
     "x-correlation-id",
     "x-actor-id",
+    "x-user-id",
+    "x-user-email",
 ]
 
 CSRF_TRUSTED_ORIGINS = [

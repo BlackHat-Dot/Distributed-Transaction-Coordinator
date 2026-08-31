@@ -157,16 +157,18 @@ async function fetchJson(url, options = {}, timeoutMs = 4000) {
   };
 
   // Inject JWT & User ID / Email footprints if authenticated
-  if (STATE.user && STATE.user.token) {
-    headers["Authorization"] = `Bearer ${STATE.user.token}`;
-  }
-  if (STATE.user && (STATE.user.userId || STATE.user.actorId)) {
-    const uid = STATE.user.userId || STATE.user.actorId;
-    headers["X-User-ID"] = uid;
-    headers["X-Actor-ID"] = uid;
-  }
-  if (STATE.user && STATE.user.email) {
-    headers["X-User-Email"] = STATE.user.email;
+  if (!options.skipAuth) {
+    if (STATE.user && STATE.user.token) {
+      headers["Authorization"] = `Bearer ${STATE.user.token}`;
+    }
+    if (STATE.user && (STATE.user.userId || STATE.user.actorId)) {
+      const uid = STATE.user.userId || STATE.user.actorId;
+      headers["X-User-ID"] = uid;
+      headers["X-Actor-ID"] = uid;
+    }
+    if (STATE.user && STATE.user.email) {
+      headers["X-User-Email"] = STATE.user.email;
+    }
   }
 
   try {
