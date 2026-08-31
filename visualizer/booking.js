@@ -27,7 +27,8 @@ const STATE = {
   user: {
     email: localStorage.getItem("dtc_user_email") || null,
     token: localStorage.getItem("dtc_auth_token") || null,
-    actorId: localStorage.getItem("dtc_actor_id") || null,
+    userId: localStorage.getItem("dtc_user_id") || localStorage.getItem("dtc_actor_id") || null,
+    actorId: localStorage.getItem("dtc_user_id") || localStorage.getItem("dtc_actor_id") || null,
   },
 
   // In-flight action set: Set of seat IDs currently undergoing reserve/release API requests
@@ -155,12 +156,17 @@ async function fetchJson(url, options = {}, timeoutMs = 4000) {
     ...(options.headers || {}),
   };
 
-  // Inject JWT & Actor ID footprints if authenticated
+  // Inject JWT & User ID / Email footprints if authenticated
   if (STATE.user && STATE.user.token) {
     headers["Authorization"] = `Bearer ${STATE.user.token}`;
   }
-  if (STATE.user && STATE.user.actorId) {
-    headers["X-Actor-ID"] = STATE.user.actorId;
+  if (STATE.user && (STATE.user.userId || STATE.user.actorId)) {
+    const uid = STATE.user.userId || STATE.user.actorId;
+    headers["X-User-ID"] = uid;
+    headers["X-Actor-ID"] = uid;
+  }
+  if (STATE.user && STATE.user.email) {
+    headers["X-User-Email"] = STATE.user.email;
   }
 
   try {
@@ -282,9 +288,9 @@ let otpCountdownTimer = null;
 function updateAuthWidgetUI() {
   const token = localStorage.getItem("dtc_auth_token");
   const email = localStorage.getItem("dtc_user_email");
-  const actorId = localStorage.getItem("dtc_actor_id");
+  const userId = localStorage.getItem("dtc_user_id") || localStorage.getItem("dtc_actor_id");
 
-  STATE.user = { token, email, actorId };
+  STATE.user = { token, email, userId, actorId: userId };
 
   if (token && email) {
     if (DOM.userEmailLabel) DOM.userEmailLabel.textContent = email;
@@ -349,7 +355,7 @@ function renderAuthStep(step) {
       DOM.profileEmailDisplay.textContent = STATE.user.email;
     }
     if (DOM.profileActorId && STATE.user) {
-      DOM.profileActorId.textContent = STATE.user.actorId || `usr_${STATE.user.email}`;
+      DOM.profileActorId.textContent = STATE.user.userId || STATE.user.actorId || `usr_${STATE.user.email}`;
     }
   }
 }
@@ -373,15 +379,9 @@ function startOtpCountdown(seconds = 30) {
 }
 
 function setupAuthEventListeners() {
-  if (DOM.btnOpenAuth) {
-    DOM.btnOpenAuth.addEventListener("click", () => showAuthModal(1));
-  }
-  if (DOM.btnCloseAuth) {
-    DOM.btnCloseAuth.addEventListener("click", closeAuthModal);
-  }
-  if (DOM.btnCloseAuthDone) {
-    DOM.btnCloseAuthDone.addEventListener("click", closeAuthModal);
-  }
+  if (DOM.btnOpenAuth) DOM.btnOpenAuth.addEventListener("click", () => showAuthModal(1));
+  if (DOM.btnCloseAuth) DOM.btnCloseAuth.addEventListener("click", closeAuthModal);
+  if (DOM.btnCloseAuthDone) DOM.btnCloseAuthDone.addEventListener("click", closeAuthModal);
   if (DOM.modalAuth) {
     DOM.modalAuth.addEventListener("click", (e) => {
       if (e.target === DOM.modalAuth) closeAuthModal();
@@ -389,9 +389,7 @@ function setupAuthEventListeners() {
   }
 
   // Step 1: Send OTP
-  if (DOM.btnSendOtp) {
-    DOM.btnSendOtp.addEventListener("click", handleSendOtp);
-  }
+  if (DOM.btnSendOtp) DOM.btnSendOtp.addEventListener("click", handleSendOtp);
   if (DOM.authEmailInput) {
     DOM.authEmailInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") handleSendOtp();
@@ -399,25 +397,17 @@ function setupAuthEventListeners() {
   }
 
   // Step 2: Verify OTP
-  if (DOM.btnVerifyOtp) {
-    DOM.btnVerifyOtp.addEventListener("click", handleVerifyOtp);
-  }
+  if (DOM.btnVerifyOtp) DOM.btnVerifyOtp.addEventListener("click", handleVerifyOtp);
   if (DOM.authOtpInput) {
     DOM.authOtpInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") handleVerifyOtp();
     });
   }
-  if (DOM.btnChangeEmail) {
-    DOM.btnChangeEmail.addEventListener("click", () => renderAuthStep(1));
-  }
-  if (DOM.btnResendOtp) {
-    DOM.btnResendOtp.addEventListener("click", handleSendOtp);
-  }
+  if (DOM.btnChangeEmail) DOM.btnChangeEmail.addEventListener("click", () => renderAuthStep(1));
+  if (DOM.btnResendOtp) DOM.btnResendOtp.addEventListener("click", handleSendOtp);
 
-  // Step 3: Logout
-  if (DOM.btnLogout) {
-    DOM.btnLogout.addEventListener("click", handleLogout);
-  }
+  // Logout
+  if (DOM.btnLogout) DOM.btnLogout.addEventListener("click", handleLogout);
 }
 
 async function handleSendOtp() {
@@ -437,9 +427,7 @@ async function handleSendOtp() {
     });
 
     if (res.ok && res.data.success) {
-      STATE.user.email = res.data.email;
       if (DOM.authTargetEmail) DOM.authTargetEmail.textContent = res.data.email;
-
       renderAuthStep(2);
       if (DOM.authOtpInput) {
         DOM.authOtpInput.value = "";
@@ -500,17 +488,20 @@ async function handleVerifyOtp() {
     });
 
     if (res.ok && res.data.success) {
-      const { token, actor_id } = res.data;
+      const { token, user_id, user_email, actor_id, email: resEmail } = res.data;
+      const finalUserId = user_id || actor_id;
+      const finalEmail = user_email || resEmail || email;
       localStorage.setItem("dtc_auth_token", token);
-      localStorage.setItem("dtc_user_email", email);
-      localStorage.setItem("dtc_actor_id", actor_id);
+      localStorage.setItem("dtc_user_email", finalEmail);
+      localStorage.setItem("dtc_user_id", finalUserId);
+      localStorage.setItem("dtc_actor_id", finalUserId);
 
-      STATE.user = { token, email, actorId: actor_id };
+      STATE.user = { token, email: finalEmail, userId: finalUserId, actorId: finalUserId };
       updateAuthWidgetUI();
 
       showToast({
         title: "Signed In Successfully",
-        message: `Welcome! Footprint attached (${actor_id}). Hold cap: Max 10 seats.`,
+        message: `Welcome! User ID: ${finalUserId}. Hold cap: Max 10 seats.`,
         type: "success",
         duration: 5000,
       });
@@ -541,9 +532,10 @@ function handleLogout() {
   }
   localStorage.removeItem("dtc_auth_token");
   localStorage.removeItem("dtc_user_email");
+  localStorage.removeItem("dtc_user_id");
   localStorage.removeItem("dtc_actor_id");
 
-  STATE.user = { token: null, email: null, actorId: null };
+  STATE.user = { token: null, email: null, userId: null, actorId: null };
   updateAuthWidgetUI();
   closeAuthModal();
 
@@ -934,13 +926,16 @@ async function handleSeatTileClick(seatId) {
   });
 
   try {
-    // Call real backend endpoint: POST /seats/reserve/ with actor_id
+    // Call real backend endpoint: POST /seats/reserve/ with user_id & user_email
+    const uid = STATE.user ? (STATE.user.userId || STATE.user.actorId) : undefined;
     const res = await fetchJson(`${CONFIG.inventoryUrl}/seats/reserve/`, {
       method: "POST",
       body: JSON.stringify({
         seat_id: seatId,
         transaction_id: newHoldTxId,
-        actor_id: STATE.user ? STATE.user.actorId : undefined,
+        user_id: uid,
+        user_email: STATE.user ? STATE.user.email : undefined,
+        actor_id: uid,
       }),
     });
 

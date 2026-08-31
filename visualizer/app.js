@@ -269,6 +269,8 @@ const DOM = {
 
   forensicMetaCard: document.getElementById("forensic-meta-card"),
   fmetaId: document.getElementById("fmeta-id"),
+  fmetaUserId: document.getElementById("fmeta-user-id"),
+  fmetaUserEmail: document.getElementById("fmeta-user-email"),
   fmetaStatusBadge: document.getElementById("fmeta-status-badge"),
   fmetaProd: document.getElementById("fmeta-prod"),
   fmetaAmt: document.getElementById("fmeta-amt"),
@@ -463,12 +465,17 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
   }
 
   const token = localStorage.getItem("dtc_auth_token");
-  const actorId = localStorage.getItem("dtc_actor_id");
+  const userId = localStorage.getItem("dtc_user_id") || localStorage.getItem("dtc_actor_id");
+  const userEmail = localStorage.getItem("dtc_user_email");
   if (token) {
     defaultHeaders["Authorization"] = `Bearer ${token}`;
   }
-  if (actorId) {
-    defaultHeaders["X-Actor-ID"] = actorId;
+  if (userId) {
+    defaultHeaders["X-User-ID"] = userId;
+    defaultHeaders["X-Actor-ID"] = userId;
+  }
+  if (userEmail) {
+    defaultHeaders["X-User-Email"] = userEmail;
   }
 
   try {
@@ -1009,6 +1016,8 @@ async function inspectTransaction(txId, autoScroll = false) {
   if (txData) {
     DOM.forensicMetaCard.classList.remove("hidden");
     DOM.fmetaId.textContent = txData.transaction_id;
+    if (DOM.fmetaUserId) DOM.fmetaUserId.textContent = txData.user_id || txData.actor_id || "N/A";
+    if (DOM.fmetaUserEmail) DOM.fmetaUserEmail.textContent = txData.user_email || "N/A";
     DOM.fmetaStatusBadge.textContent = txData.status;
     DOM.fmetaStatusBadge.className = `badge ${getStatusBadgeClass(txData.status)}`;
     DOM.fmetaProd.textContent = `Prod #${txData.product_id || 1} (Qty: ${txData.quantity !== undefined ? txData.quantity : 1})`;
@@ -2615,9 +2624,9 @@ function renderMainAuthStep(step) {
     const emailDisplay = document.getElementById("profile-email-display");
     const actorDisplay = document.getElementById("profile-actor-id");
     const email = localStorage.getItem("dtc_user_email");
-    const actorId = localStorage.getItem("dtc_actor_id");
+    const userId = localStorage.getItem("dtc_user_id") || localStorage.getItem("dtc_actor_id");
     if (emailDisplay) emailDisplay.textContent = email;
-    if (actorDisplay) actorDisplay.textContent = actorId || `usr_${email}`;
+    if (actorDisplay) actorDisplay.textContent = userId || `usr_${email}`;
   }
 }
 
@@ -2695,6 +2704,7 @@ function setupMainAuthEventListeners() {
       }
       localStorage.removeItem("dtc_auth_token");
       localStorage.removeItem("dtc_user_email");
+      localStorage.removeItem("dtc_user_id");
       localStorage.removeItem("dtc_actor_id");
       updateMainAuthWidgetUI();
       closeMainAuthModal();
@@ -2818,16 +2828,19 @@ async function handleMainVerifyOtp() {
     });
 
     if (res.ok && res.data && res.data.success) {
-      const { token, actor_id } = res.data;
+      const { token, user_id, user_email, actor_id, email: resEmail } = res.data;
+      const finalUserId = user_id || actor_id;
+      const finalEmail = user_email || resEmail || email;
       localStorage.setItem("dtc_auth_token", token);
-      localStorage.setItem("dtc_user_email", email);
-      localStorage.setItem("dtc_actor_id", actor_id);
+      localStorage.setItem("dtc_user_email", finalEmail);
+      localStorage.setItem("dtc_user_id", finalUserId);
+      localStorage.setItem("dtc_actor_id", finalUserId);
 
       updateMainAuthWidgetUI();
 
       showToast({
         title: "Signed In",
-        message: `Welcome ${email}! (Actor: ${actor_id})`,
+        message: `Welcome ${finalEmail}! (User ID: ${finalUserId})`,
         type: "success",
       });
 

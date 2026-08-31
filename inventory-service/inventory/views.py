@@ -131,6 +131,8 @@ def _validate_reserve_input(data):
 
 
 def _seat_response(seat, reservation, transaction_id, status_code=200):
+    user_id = reservation.user_id if reservation else getattr(seat, "user_id", None)
+    user_email = reservation.user_email if reservation else getattr(seat, "user_email", None)
     return Response(
         {
             "message": "Seat reserved",
@@ -142,6 +144,9 @@ def _seat_response(seat, reservation, transaction_id, status_code=200):
             "seat_number": seat.seat_number,
             "price": str(seat.price),
             "held_until": seat.held_until,
+            "user_id": user_id,
+            "user_email": user_email,
+            "actor_id": user_id,
         },
         status=status_code,
     )
@@ -153,21 +158,22 @@ def reserve_seat(request):
     if error_response:
         return error_response
 
-    actor_id = request.data.get("actor_id") or request.headers.get("X-Actor-ID") or None
+    user_id = request.data.get("user_id") or request.data.get("actor_id") or request.headers.get("X-User-ID") or request.headers.get("X-Actor-ID") or None
+    user_email = request.data.get("user_email") or request.data.get("email") or request.headers.get("X-User-Email") or None
 
     client = get_redis_client()
     redis_key = f"seat:{seat_id}"
     acquired_fast_path = False
 
     # Cumulative Soft-Hold Cap Enforcement (Atomic Redis Lua Script)
-    if client and actor_id:
+    if client and user_id:
         now_ts = timezone.now().timestamp()
         exp_ts = now_ts + 600
         try:
             cap_res = client.eval(
                 RESERVE_ACTOR_HOLD_LUA,
                 1,
-                f"dtc:actor_holds:{actor_id}",
+                f"dtc:user_holds:{user_id}",
                 now_ts,
                 str(seat_id),
                 exp_ts,
@@ -179,7 +185,9 @@ def reserve_seat(request):
                     {
                         "error": f"Cumulative hold cap exceeded: You have reached the maximum limit of {MAX_ACTOR_HOLDS} active soft-holds.",
                         "code": "HOLD_CAP_EXCEEDED",
-                        "actor_id": actor_id,
+                        "user_id": user_id,
+                        "user_email": user_email,
+                        "actor_id": user_id,
                         "current_holds": cap_res[1],
                         "max_allowed": MAX_ACTOR_HOLDS,
                         "transaction_id": str(transaction_id),
@@ -241,7 +249,8 @@ def reserve_seat(request):
             seat.status = Seat.Status.HELD
             seat.held_until = now + timedelta(minutes=10)
             seat.held_by_transaction_id = transaction_id
-            seat.held_by_actor_id = actor_id
+            seat.user_id = user_id
+            seat.user_email = user_email
             seat.save()
 
             reservation, _ = Reservation.objects.update_or_create(
@@ -249,7 +258,8 @@ def reserve_seat(request):
                 defaults={
                     "seat": seat,
                     "status": Reservation.Status.RESERVED,
-                    "held_by_actor_id": actor_id,
+                    "user_id": user_id,
+                    "user_email": user_email,
                 },
             )
 
@@ -321,16 +331,19 @@ def confirm_seat(request):
                 status=409,
             )
 
-        # Release from actor's Redis hold set
-        if seat.held_by_actor_id and client:
+        # Release from user's Redis hold set
+        user_key_id = seat.user_id or getattr(seat, "held_by_actor_id", None)
+        if user_key_id and client:
             try:
-                client.eval(RELEASE_ACTOR_HOLD_LUA, 1, f"dtc:actor_holds:{seat.held_by_actor_id}", str(seat.id))
+                client.eval(RELEASE_ACTOR_HOLD_LUA, 1, f"dtc:user_holds:{user_key_id}", str(seat.id))
+                client.eval(RELEASE_ACTOR_HOLD_LUA, 1, f"dtc:actor_holds:{user_key_id}", str(seat.id))
             except Exception:
                 pass
 
         seat.status = Seat.Status.BOOKED
         seat.held_until = None
-        seat.held_by_actor_id = None
+        seat.user_id = None
+        seat.user_email = None
         seat.save()
 
         reservation.status = Reservation.Status.BOOKED
@@ -348,6 +361,8 @@ def confirm_seat(request):
                 "seat_id": seat.id,
                 "status": "BOOKED",
                 "transaction_id": str(tid),
+                "user_id": reservation.user_id,
+                "user_email": reservation.user_email,
             },
             status=200,
         )
@@ -385,6 +400,8 @@ def release_seat(request):
                 {
                     "message": "Reservation already released",
                     "transaction_id": str(tid),
+                    "user_id": reservation.user_id,
+                    "user_email": reservation.user_email,
                 },
                 status=200,
             )
@@ -393,17 +410,20 @@ def release_seat(request):
             try:
                 seat = Seat.objects.select_for_update().get(id=reservation.seat_id)
                 if str(seat.held_by_transaction_id) == str(tid):
-                    # Evict from actor's active Redis hold set
-                    if seat.held_by_actor_id and client:
+                    # Evict from user's active Redis hold set
+                    user_key_id = seat.user_id or getattr(seat, "held_by_actor_id", None)
+                    if user_key_id and client:
                         try:
-                            client.eval(RELEASE_ACTOR_HOLD_LUA, 1, f"dtc:actor_holds:{seat.held_by_actor_id}", str(seat.id))
+                            client.eval(RELEASE_ACTOR_HOLD_LUA, 1, f"dtc:user_holds:{user_key_id}", str(seat.id))
+                            client.eval(RELEASE_ACTOR_HOLD_LUA, 1, f"dtc:actor_holds:{user_key_id}", str(seat.id))
                         except Exception:
                             pass
 
                     seat.status = Seat.Status.AVAILABLE
                     seat.held_until = None
                     seat.held_by_transaction_id = None
-                    seat.held_by_actor_id = None
+                    seat.user_id = None
+                    seat.user_email = None
                     seat.save()
 
                     if client:
@@ -422,6 +442,8 @@ def release_seat(request):
                 "message": "Seat released",
                 "transaction_id": str(tid),
                 "status": Reservation.Status.RELEASED,
+                "user_id": reservation.user_id,
+                "user_email": reservation.user_email,
             },
             status=200,
         )
@@ -451,6 +473,8 @@ def reservation_check(request):
             "transaction_id": str(tid),
             "status": reservation.status,
             "seat_id": reservation.seat_id,
+            "user_id": reservation.user_id,
+            "user_email": reservation.user_email,
         }
     )
 
@@ -478,18 +502,20 @@ def sweep_expired_holds(request):
                 continue
 
             tid = seat.held_by_transaction_id
-            actor_id = seat.held_by_actor_id
+            user_key_id = seat.user_id or getattr(seat, "held_by_actor_id", None)
 
-            if actor_id and client:
+            if user_key_id and client:
                 try:
-                    client.eval(RELEASE_ACTOR_HOLD_LUA, 1, f"dtc:actor_holds:{actor_id}", str(seat.id))
+                    client.eval(RELEASE_ACTOR_HOLD_LUA, 1, f"dtc:user_holds:{user_key_id}", str(seat.id))
+                    client.eval(RELEASE_ACTOR_HOLD_LUA, 1, f"dtc:actor_holds:{user_key_id}", str(seat.id))
                 except Exception:
                     pass
 
             seat.status = Seat.Status.AVAILABLE
             seat.held_until = None
             seat.held_by_transaction_id = None
-            seat.held_by_actor_id = None
+            seat.user_id = None
+            seat.user_email = None
             seat.save()
 
             if tid:

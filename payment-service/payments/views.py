@@ -56,6 +56,8 @@ def _payment_response(payment, status=None):
     return Response(
         {
             "transaction_id": str(payment.transaction_id),
+            "user_id": payment.user_id,
+            "user_email": payment.user_email,
             "amount": str(payment.amount),
             "status": payment.status,
         },
@@ -73,11 +75,16 @@ def charge_payment(request):
     if error_response:
         return error_response
 
+    user_id = request.data.get("user_id") or request.data.get("actor_id") or request.headers.get("X-User-ID") or request.headers.get("X-Actor-ID") or None
+    user_email = request.data.get("user_email") or request.data.get("email") or request.headers.get("X-User-Email") or None
+
     if amount == TESTING_FAILURE_AMOUNT:
         return Response(
             {
                 "error": "Payment declined",
                 "transaction_id": str(transaction_uuid),
+                "user_id": user_id,
+                "user_email": user_email,
                 "status": NOT_CHARGED,
                 "_testing": "Intentional failure for compensation testing",
             },
@@ -92,6 +99,8 @@ def charge_payment(request):
         with transaction.atomic():
             payment = Payment.objects.create(
                 transaction_id=transaction_uuid,
+                user_id=user_id,
+                user_email=user_email,
                 amount=amount,
                 status=Payment.Status.CHARGED,
             )
@@ -110,6 +119,11 @@ def payment_check(request):
 
     payment = Payment.objects.filter(transaction_id=transaction_uuid).first()
     if payment is not None:
-        return Response({"transaction_id": str(payment.transaction_id), "status": payment.status})
+        return Response({
+            "transaction_id": str(payment.transaction_id),
+            "user_id": payment.user_id,
+            "user_email": payment.user_email,
+            "status": payment.status
+        })
 
     return Response({"transaction_id": str(transaction_uuid), "status": NOT_CHARGED})

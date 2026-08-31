@@ -8,6 +8,8 @@ class Payment(models.Model):
         NOT_CHARGED = "NOT_CHARGED"
 
     transaction_id = models.UUIDField(unique=True)
+    user_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
+    user_email = models.CharField(max_length=255, null=True, blank=True, db_index=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(
         max_length=20,

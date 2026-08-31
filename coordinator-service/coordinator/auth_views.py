@@ -38,11 +38,14 @@ def _generate_actor_id(email):
     return f"usr_{sha}"
 
 
-def _create_jwt(actor_id, email, expires_in=1800):
+def _create_jwt(user_id, email, expires_in=1800, actor_id=None):
     header = {"alg": "HS256", "typ": "JWT"}
     now = int(time.time())
+    uid = user_id or actor_id
     payload = {
-        "actor_id": actor_id,
+        "user_id": uid,
+        "user_email": email,
+        "actor_id": uid,
         "email": email,
         "iat": now,
         "exp": now + expires_in
@@ -99,7 +102,7 @@ def verify_jwt(token):
 
 def get_actor_from_request(request):
     """
-    Extracts authenticated actor identity from Authorization header or request payload.
+    Extracts authenticated user/actor identity from Authorization header or request payload.
     """
     auth_header = request.headers.get("Authorization", "")
     token = None
@@ -111,18 +114,34 @@ def get_actor_from_request(request):
     if token:
         payload, err = verify_jwt(token)
         if payload:
+            uid = payload.get("user_id") or payload.get("actor_id")
+            uemail = payload.get("user_email") or payload.get("email")
             return {
-                "actor_id": payload.get("actor_id"),
-                "email": payload.get("email"),
+                "user_id": uid,
+                "user_email": uemail,
+                "actor_id": uid,
+                "email": uemail,
                 "is_authenticated": True
             }
 
-    # Fallback to direct X-Actor-ID header or payload actor_id
-    actor_id = request.headers.get("X-Actor-ID") or request.data.get("actor_id")
-    if actor_id:
+    # Fallback to direct X-User-ID / X-Actor-ID header or payload
+    user_id = (
+        request.headers.get("X-User-ID")
+        or request.headers.get("X-Actor-ID")
+        or request.data.get("user_id")
+        or request.data.get("actor_id")
+    )
+    user_email = (
+        request.headers.get("X-User-Email")
+        or request.data.get("user_email")
+        or request.data.get("email")
+    )
+    if user_id:
         return {
-            "actor_id": str(actor_id),
-            "email": request.data.get("email") or str(actor_id),
+            "user_id": str(user_id),
+            "user_email": user_email or str(user_id),
+            "actor_id": str(user_id),
+            "email": user_email or str(user_id),
             "is_authenticated": False
         }
 
@@ -271,13 +290,15 @@ def send_otp(request):
         except Exception:
             pass
 
-    actor_id = _generate_actor_id(email)
+    user_id = _generate_actor_id(email)
 
     return Response({
         "success": True,
         "message": f"Verification code sent to {email}",
         "email": email,
-        "actor_id": actor_id,
+        "user_email": email,
+        "user_id": user_id,
+        "actor_id": user_id,
         "expires_in_seconds": 300,
         "chances_remaining": chances_remaining
     }, status=200)
@@ -287,7 +308,7 @@ def send_otp(request):
 def verify_otp(request):
     """
     Phase 2: Compares submitted OTP against Redis value, deletes Redis key on match (single-use),
-    and issues a 30-minute JWT token with actor_id.
+    and issues a 30-minute JWT token with user_id.
     """
     email_raw = request.data.get("email") or request.data.get("email_address")
     submitted_otp = str(request.data.get("otp", "")).strip()
@@ -328,8 +349,8 @@ def verify_otp(request):
     except Exception:
         pass
 
-    actor_id = _generate_actor_id(email)
-    jwt_token = _create_jwt(actor_id=actor_id, email=email, expires_in=1800)
+    user_id = _generate_actor_id(email)
+    jwt_token = _create_jwt(user_id=user_id, email=email, expires_in=1800)
 
     # Register active session
     if client:
@@ -342,7 +363,9 @@ def verify_otp(request):
         "success": True,
         "message": "Authenticated successfully!",
         "token": jwt_token,
-        "actor_id": actor_id,
+        "user_id": user_id,
+        "user_email": email,
+        "actor_id": user_id,
         "email": email,
         "expires_in": 1800
     }, status=200)
