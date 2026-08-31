@@ -145,7 +145,62 @@ const TIERS = {
    NETWORK & API UTILITIES
    ========================================================================== */
 
-async function fetchJson(url, options = {}, timeoutMs = 4000) {
+const HOLD_STORAGE_KEY = "dtc_active_seat_hold";
+
+function saveHoldToStorage(hold) {
+  if (!hold) {
+    clearHoldFromStorage();
+    return;
+  }
+  try {
+    const data = {
+      seatId: hold.seatId,
+      txId: hold.txId,
+      heldUntil: hold.heldUntil,
+      userId: (STATE.user && (STATE.user.userId || STATE.user.actorId)) || null,
+      userEmail: (STATE.user && STATE.user.email) || null,
+    };
+    localStorage.setItem(HOLD_STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {}
+}
+
+function clearHoldFromStorage() {
+  try {
+    localStorage.removeItem(HOLD_STORAGE_KEY);
+  } catch (e) {}
+}
+
+function restoreHoldFromStorage() {
+  try {
+    const raw = localStorage.getItem(HOLD_STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!data || !data.seatId || !data.heldUntil) {
+      clearHoldFromStorage();
+      return;
+    }
+    const expiryTime = new Date(data.heldUntil).getTime();
+    if (Date.now() >= expiryTime) {
+      clearHoldFromStorage();
+      return;
+    }
+
+    STATE.myHold = {
+      seatId: data.seatId,
+      txId: data.txId,
+      heldUntil: data.heldUntil,
+      timerInterval: null,
+    };
+
+    startHoldTimer(data.heldUntil);
+    updateCheckoutSummary();
+    updateMatrixHoldState();
+  } catch (e) {
+    clearHoldFromStorage();
+  }
+}
+
+async function fetchJson(url, options = {}, timeoutMs = 8000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -582,6 +637,7 @@ window.addEventListener("beforeunload", () => {
 document.addEventListener("DOMContentLoaded", () => {
   setupAuthEventListeners();
   updateAuthWidgetUI();
+  restoreHoldFromStorage();
   initEventListeners();
   loadCatalog(true);
   startDifferentialPolling();
@@ -664,60 +720,78 @@ function initConfigModal() {
    ========================================================================== */
 
 async function loadCatalog(isInitial = false) {
-  const [eventsRes, seatsRes] = await Promise.all([
-    fetchJson(`${CONFIG.inventoryUrl}/events/`),
-    fetchJson(`${CONFIG.inventoryUrl}/seats/`),
-  ]);
+  try {
+    const [eventsRes, seatsRes] = await Promise.all([
+      fetchJson(`${CONFIG.inventoryUrl}/events/`),
+      fetchJson(`${CONFIG.inventoryUrl}/seats/`),
+    ]);
 
-  if (!seatsRes.ok || !Array.isArray(seatsRes.data)) {
-    if (DOM.healthText) DOM.healthText.textContent = "Inventory: Offline";
-    if (DOM.healthIndicator) DOM.healthIndicator.querySelector(".status-indicator").style.background = "#ef4444";
-    return;
-  }
-
-  if (DOM.healthText) DOM.healthText.textContent = "Inventory: Online";
-  if (DOM.healthIndicator) DOM.healthIndicator.querySelector(".status-indicator").style.background = "var(--color-available)";
-
-  // Update Event Metadata
-  if (eventsRes.ok && Array.isArray(eventsRes.data) && eventsRes.data.length > 0) {
-    const ev = eventsRes.data[0];
-    STATE.eventData = ev;
-    if (DOM.eventTitle) DOM.eventTitle.textContent = ev.name;
-    if (DOM.eventMeta) {
-      DOM.eventMeta.innerHTML = `
-        <span>📍 ${ev.venue || "Grand Arena Stadium"}</span>
-        <span class="meta-sep">•</span>
-        <span>📅 Tomorrow, 8:00 PM</span>
-        <span class="meta-sep">•</span>
-        <span>⏱️ 10-Min Ephemeral Holds</span>
-      `;
+    if (!seatsRes.ok || !Array.isArray(seatsRes.data)) {
+      if (DOM.healthText) DOM.healthText.textContent = "Inventory: Offline";
+      if (DOM.healthIndicator) {
+        const ind = DOM.healthIndicator.querySelector(".status-indicator");
+        if (ind) ind.style.background = "#ef4444";
+      }
+      if (isInitial) {
+        setTimeout(() => loadCatalog(true), 1500);
+      }
+      return;
     }
-  }
 
-  // If no seats exist in database yet, automatically trigger seed restock
-  if (seatsRes.data.length === 0) {
-    const seedRes = await fetchJson(`${CONFIG.inventoryUrl}/seats/reset/`, { method: "POST" });
-    if (seedRes.ok) {
-      const refreshedSeats = await fetchJson(`${CONFIG.inventoryUrl}/seats/`);
-      if (refreshedSeats.ok && Array.isArray(refreshedSeats.data)) {
-        seatsRes.data = refreshedSeats.data;
+    if (DOM.healthText) DOM.healthText.textContent = "Inventory: Online";
+    if (DOM.healthIndicator) {
+      const ind = DOM.healthIndicator.querySelector(".status-indicator");
+      if (ind) ind.style.background = "var(--color-available)";
+    }
+
+    // Update Event Metadata
+    if (eventsRes && eventsRes.ok && Array.isArray(eventsRes.data) && eventsRes.data.length > 0) {
+      const ev = eventsRes.data[0];
+      STATE.eventData = ev;
+      if (DOM.eventTitle) DOM.eventTitle.textContent = ev.name;
+      if (DOM.eventMeta) {
+        DOM.eventMeta.innerHTML = `
+          <span>📍 ${ev.venue || "Grand Arena Stadium"}</span>
+          <span class="meta-sep">•</span>
+          <span>📅 Tomorrow, 8:00 PM</span>
+          <span class="meta-sep">•</span>
+          <span>⏱️ 10-Min Ephemeral Holds</span>
+          <span class="meta-sep">•</span>
+          <span style="color: #38bdf8; font-weight: 600;">🔒 Max 1 Seat / Fan</span>
+        `;
       }
     }
+
+    // If no seats exist in database yet, automatically trigger seed restock
+    if (seatsRes.data.length === 0) {
+      const seedRes = await fetchJson(`${CONFIG.inventoryUrl}/seats/reset/`, { method: "POST" });
+      if (seedRes.ok) {
+        const refreshedSeats = await fetchJson(`${CONFIG.inventoryUrl}/seats/`);
+        if (refreshedSeats.ok && Array.isArray(refreshedSeats.data)) {
+          seatsRes.data = refreshedSeats.data;
+        }
+      }
+    }
+
+    // Populate Seats Map
+    seatsRes.data.forEach(seat => {
+      STATE.seatsMap.set(seat.id, seat);
+    });
+
+    if (isInitial || !DOM.seatMatrix || DOM.seatMatrix.children.length === 0) {
+      renderFullSeatMatrix();
+      if (DOM.seatSkeleton) DOM.seatSkeleton.classList.add("hidden");
+    } else {
+      reconcileSeatStates(seatsRes.data);
+    }
+
+    updateInventoryStats();
+  } catch (err) {
+    console.error("loadCatalog error:", err);
+    if (isInitial) {
+      setTimeout(() => loadCatalog(true), 2000);
+    }
   }
-
-  // Populate Seats Map
-  seatsRes.data.forEach(seat => {
-    STATE.seatsMap.set(seat.id, seat);
-  });
-
-  if (isInitial || !DOM.seatMatrix || DOM.seatMatrix.children.length === 0) {
-    renderFullSeatMatrix();
-    if (DOM.seatSkeleton) DOM.seatSkeleton.classList.add("hidden");
-  } else {
-    reconcileSeatStates(seatsRes.data);
-  }
-
-  updateInventoryStats();
 }
 
 /* ==========================================================================
@@ -950,6 +1024,7 @@ async function handleSeatTileClick(seatId) {
         heldUntil: heldUntil,
         timerInterval: null,
       };
+      saveHoldToStorage(STATE.myHold);
       STATE.pendingHoldSeatId = null;
 
       // Update internal map
@@ -960,6 +1035,8 @@ async function handleSeatTileClick(seatId) {
       startHoldTimer(heldUntil);
       updateCheckoutSummary();
       applySeatTileDOMState(seatId, "SELECTED");
+      updateMatrixHoldState();
+      updateInventoryStats();
 
       showToast({
         title: "10-Minute Hold Acquired!",
@@ -973,6 +1050,7 @@ async function handleSeatTileClick(seatId) {
       const conflictMsg = (res.data && res.data.error) || "Seat was just claimed by another user!";
       STATE.pendingHoldSeatId = null;
       STATE.myHold = null;
+      clearHoldFromStorage();
       applySeatTileDOMState(seatId, "AVAILABLE");
       
       const tile = document.getElementById(`seat-tile-${seatId}`);
@@ -1002,6 +1080,7 @@ async function handleSeatTileClick(seatId) {
   } catch (err) {
     STATE.pendingHoldSeatId = null;
     STATE.myHold = null;
+    clearHoldFromStorage();
     applySeatTileDOMState(seatId, "AVAILABLE");
     showToast({
       title: "Network Error",
@@ -1043,6 +1122,7 @@ async function releaseActiveHold() {
   STATE.inFlightSeatIds.add(seatId);
   STATE.myHold = null;
   STATE.pendingHoldSeatId = null;
+  clearHoldFromStorage();
 
   // Optimistically mark as AVAILABLE
   applySeatTileDOMState(seatId, "AVAILABLE");
@@ -1080,22 +1160,18 @@ async function releaseActiveHold() {
 }
 
 /**
- * Best-effort hold release via navigator.sendBeacon on tab close or page navigation.
+ * Tab and visibility change handler — keeps hold active across tab switches.
  */
 function setupBeaconUnloadHandler() {
-  const sendReleaseBeacon = () => {
-    if (STATE.myHold && STATE.myHold.txId) {
-      const payload = JSON.stringify({ transaction_id: STATE.myHold.txId });
-      const blob = new Blob([payload], { type: "application/json" });
-      navigator.sendBeacon(`${CONFIG.inventoryUrl}/seats/release/`, blob);
-    }
-  };
-
-  window.addEventListener("beforeunload", sendReleaseBeacon);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") {
-      // Best-effort beacon on mobile tab backgrounding if hold is active
-      sendReleaseBeacon();
+    if (document.visibilityState === "visible") {
+      if (STATE.myHold && STATE.myHold.heldUntil) {
+        // If expired while away in another tab, clean up gracefully
+        if (Date.now() >= new Date(STATE.myHold.heldUntil).getTime()) {
+          handleHoldAutoExpired();
+        }
+      }
+      loadCatalog(false);
     }
   });
 }
@@ -1108,7 +1184,7 @@ function startHoldTimer(heldUntilIso) {
   if (!DOM.holdTimerCard) return;
   DOM.holdTimerCard.classList.remove("hidden");
 
-  if (STATE.myHold.timerInterval) clearInterval(STATE.myHold.timerInterval);
+  if (STATE.myHold && STATE.myHold.timerInterval) clearInterval(STATE.myHold.timerInterval);
 
   const targetTime = new Date(heldUntilIso).getTime();
   const totalHoldMs = 10 * 60 * 1000; // 10 minutes
@@ -1127,13 +1203,15 @@ function startHoldTimer(heldUntilIso) {
     if (DOM.timerProgressFill) DOM.timerProgressFill.style.width = `${progressPct}%`;
 
     if (remainingMs <= 0) {
-      clearInterval(STATE.myHold.timerInterval);
+      if (STATE.myHold && STATE.myHold.timerInterval) clearInterval(STATE.myHold.timerInterval);
       handleHoldAutoExpired();
     }
   };
 
   updateTick();
-  STATE.myHold.timerInterval = setInterval(updateTick, 1000);
+  if (STATE.myHold) {
+    STATE.myHold.timerInterval = setInterval(updateTick, 1000);
+  }
 }
 
 function hideHoldTimer() {
@@ -1145,7 +1223,9 @@ function handleHoldAutoExpired() {
   const seat = STATE.seatsMap.get(STATE.myHold.seatId);
   const seatLabel = seat ? `${seat.row}${seat.seat_number}` : "";
 
+  if (STATE.myHold.timerInterval) clearInterval(STATE.myHold.timerInterval);
   STATE.myHold = null;
+  clearHoldFromStorage();
   hideHoldTimer();
   updateCheckoutSummary();
   updateMatrixHoldState();
@@ -1348,6 +1428,7 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
     // Clean up local hold state
     if (STATE.myHold && STATE.myHold.timerInterval) clearInterval(STATE.myHold.timerInterval);
     STATE.myHold = null;
+    clearHoldFromStorage();
     hideHoldTimer();
     updateCheckoutSummary();
     loadCatalog(false);
@@ -1374,6 +1455,7 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
     // Clean up local hold state
     if (STATE.myHold && STATE.myHold.timerInterval) clearInterval(STATE.myHold.timerInterval);
     STATE.myHold = null;
+    clearHoldFromStorage();
     hideHoldTimer();
     updateCheckoutSummary();
     loadCatalog(false);
@@ -1399,6 +1481,7 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
 
     if (STATE.myHold && STATE.myHold.timerInterval) clearInterval(STATE.myHold.timerInterval);
     STATE.myHold = null;
+    clearHoldFromStorage();
     hideHoldTimer();
     updateCheckoutSummary();
     loadCatalog(false);
@@ -1427,7 +1510,7 @@ function startDifferentialPolling() {
  * 1. For any seat ID present in `STATE.inFlightSeatIds`, SKIP updating from poll to prevent
  *    overwriting an in-flight user interaction before its Promise settles.
  * 2. For the current user's active hold (`STATE.myHold`), preserve "SELECTED" status in the DOM
- *    as long as server confirms `held_by_transaction_id === myHold.txId`.
+ *    as long as server confirms hold.
  * 3. For all other seats, patch only modified DOM attributes (`dataset.status`, icon, class) with
  *    smooth CSS transitions.
  */
@@ -1449,7 +1532,10 @@ function reconcileSeatStates(newSeats) {
 
     // Is this seat the current user's active hold?
     const isUserHold = STATE.myHold && STATE.myHold.seatId === seatId &&
-                       newSeat.held_by_transaction_id === STATE.myHold.txId;
+                       (newSeat.held_by_transaction_id === STATE.myHold.txId ||
+                        newSeat.status === "HELD" ||
+                        (STATE.user && newSeat.held_by_user_id === (STATE.user.userId || STATE.user.actorId)) ||
+                        (STATE.user && newSeat.user_id === (STATE.user.userId || STATE.user.actorId)));
 
     if (isUserHold) {
       applySeatTileDOMState(seatId, "SELECTED");
@@ -1465,11 +1551,11 @@ function applySeatTileDOMState(seatId, status) {
   if (!tile) return;
 
   // Strict Single-Seat Integrity Guard:
-  // Only the active hold (STATE.myHold) or synchronous pending hold (STATE.pendingHoldSeatId) can ever be "SELECTED".
-  if (status === "SELECTED") {
-    const isMyHold = STATE.myHold && STATE.myHold.seatId === seatId;
+  if (STATE.myHold && STATE.myHold.seatId === seatId) {
+    status = "SELECTED";
+  } else if (status === "SELECTED") {
     const isPending = STATE.pendingHoldSeatId === seatId;
-    if (!isMyHold && !isPending) {
+    if (!isPending) {
       const seat = STATE.seatsMap.get(seatId);
       status = (seat && seat.status) || "AVAILABLE";
     }
@@ -1508,6 +1594,7 @@ async function resetVenueSeats() {
     if (res.ok) {
       if (STATE.myHold && STATE.myHold.timerInterval) clearInterval(STATE.myHold.timerInterval);
       STATE.myHold = null;
+      clearHoldFromStorage();
       hideHoldTimer();
       updateCheckoutSummary();
       updateMatrixHoldState();
