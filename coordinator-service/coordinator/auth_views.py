@@ -158,10 +158,10 @@ resend.api_key = os.getenv("RESEND_API_KEY")
 
 
 def _dispatch_otp_email(to_email, otp_code):
-    subject = f"Your DTC Arena Verification Code: {otp_code}"
+    subject = f"Your DTC Verification Code: {otp_code}"
     text_content = f"""Hello,
 
-Your verification code for the Distributed Transaction Coordinator Arena is:
+Your verification code for the Distributed Transaction Coordinator is:
 
     {otp_code}
 
@@ -169,15 +169,17 @@ This code will expire in 5 minutes.
 
 If you did not request this verification code, please ignore this message.
 
-— Distributed Transaction Coordinator Security"""
+— DTC Security"""
 
-    html_content = f"""<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0f172a; border-radius: 12px; color: #f8fafc;">
-      <h2 style="color: #38bdf8; margin: 0 0 12px;">DTC Arena Verification</h2>
-      <p style="color: #94a3b8; font-size: 14px; margin: 0 0 20px;">Use the 6-digit verification code below to verify your fan identity and access live seat holds:</p>
-      <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 18px; text-align: center; margin: 20px 0;">
-        <span style="font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #38bdf8; font-family: monospace;">{otp_code}</span>
+    html_content = f"""<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f5; padding: 40px 20px;">
+      <div style="max-width: 460px; margin: 0 auto; background-color: #ffffff; padding: 32px; border-radius: 8px; border: 1px solid #e4e4e7; text-align: center;">
+        <h2 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #18181b;">DTC Verification</h2>
+        <p style="color: #52525b; font-size: 15px; margin: 0 0 24px; line-height: 1.6;">Use the 6-digit verification code below to verify your user identity and access live seat holds.</p>
+        <div style="background-color: #f4f4f5; border-radius: 6px; padding: 16px; display: inline-block; margin-bottom: 24px;">
+          <span style="font-size: 36px; font-weight: 700; color: #18181b; letter-spacing: 2px; user-select: all;">{otp_code}</span>
+        </div>
+        <p style="color: #71717a; font-size: 13px; margin: 0; line-height: 1.5;">This code will expire in 5 minutes.<br>If you didn't request this, you can safely ignore this email.</p>
       </div>
-      <p style="color: #64748b; font-size: 12px; margin: 0;">This code will expire in 5 minutes. Never share this code with anyone.</p>
     </div>"""
 
     try:
