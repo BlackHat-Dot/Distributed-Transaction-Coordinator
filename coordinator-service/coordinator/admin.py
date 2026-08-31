@@ -22,12 +22,7 @@ class TransactionAdmin(admin.ModelAdmin):
             "fields": ("transaction_id", "status", "amount", "created_at", "updated_at")
         }),
         ("Seat Booking Details", {
-            "fields": ("seat_id",),
+            "fields": ("seat_id", "quantity"),
             "description": "Discrete physical seat identifier in Inventory Service (PostgreSQL Primary Key)."
-        }),
-        ("Legacy DTC Fields (Deprecated)", {
-            "classes": ("collapse",),
-            "fields": ("product_id", "quantity"),
-            "description": "Retained for backward compatibility with older generic e-commerce payloads."
         }),
     )

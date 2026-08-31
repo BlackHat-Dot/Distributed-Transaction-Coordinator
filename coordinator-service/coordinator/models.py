@@ -36,8 +36,7 @@ class Transaction(models.Model):
     )
 
     seat_id = models.IntegerField(null=True)
-    product_id = models.IntegerField(null=True)
-    quantity = models.IntegerField(null=True)
+    quantity = models.IntegerField(null=True, default=1)
 
     amount = models.DecimalField(
         max_digits=10,

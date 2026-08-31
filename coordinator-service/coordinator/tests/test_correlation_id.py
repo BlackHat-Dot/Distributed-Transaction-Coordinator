@@ -83,7 +83,7 @@ class CorrelationIdOutboundPropagationTests(TransactionTestCase):
         txn = Transaction.objects.create(
             transaction_id=tid,
             status=Transaction.Status.PAYMENT_PROCESSING,
-            product_id=1,
+            seat_id=1,
             quantity=1,
             amount=500,
         )

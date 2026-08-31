@@ -74,13 +74,13 @@ const SCENARIO_DESCRIPTIONS = {
     desc: "Executes a standard forward distributed transaction where all participating microservices succeed. The Coordinator sequentially drives stock reservation and payment capture without spanning database transactions.",
     payload: `POST http://127.0.0.1:8002/transactions/
 {
-  "product_id": 1,
+  "seat_id": 1,
   "quantity": 1,
   "amount": 500
 }`,
     steps: [
       "Client dispatches POST /transactions/ to Coordinator.",
-      "Coordinator inserts Transaction(status=STARTED) and dispatches POST /products/reserve/ to Inventory (:8000).",
+      "Coordinator inserts Transaction(status=STARTED) and dispatches POST /seats/reserve/ to Inventory (:8000).",
       "Inventory acquires row lock via SELECT FOR UPDATE, decrements stock, inserts Reservation(status=RESERVED), and returns 200 OK.",
       "Coordinator transitions to PAYMENT_PROCESSING and dispatches POST /payments/charge/ to Payment (:8001).",
       "Payment inserts Payment(status=CHARGED) and returns 200 OK.",
@@ -97,7 +97,7 @@ const SCENARIO_DESCRIPTIONS = {
     desc: "Demonstrates automated compensating recovery when downstream payment declines. Because distributed transactions cannot use global database rollbacks, the Coordinator executes an inverse compensating action to restore reserved stock.",
     payload: `POST http://127.0.0.1:8002/transactions/
 {
-  "product_id": 1,
+  "seat_id": 1,
   "quantity": 1,
   "amount": 9999
 }
@@ -107,8 +107,8 @@ const SCENARIO_DESCRIPTIONS = {
       "Coordinator reserves inventory stock successfully (STARTED → INVENTORY_RESERVED).",
       "Coordinator attempts payment charge (POST /payments/charge/).",
       "Payment service declines charge with HTTP 422 ('Payment declined / Testing failure amount').",
-      "Coordinator catches decline, transitions to COMPENSATING, and dispatches POST /products/release/ to Inventory.",
-      "Inventory locks reservation under SELECT FOR UPDATE, restores stock (stock += 1), marks Reservation RELEASED.",
+      "Coordinator catches decline, transitions to COMPENSATING, and dispatches POST /seats/release/ to Inventory.",
+      "Inventory locks reservation under SELECT FOR UPDATE, restores seat availability, marks Reservation RELEASED.",
       "Coordinator transitions to COMPENSATED and returns HTTP 400 with rollback details."
     ],
     defenses: "Saga Backward Recovery pattern. Inventory release endpoint is strictly idempotent via row-level reservation checks (only 'RESERVED' rows can be released).",
@@ -124,7 +124,7 @@ const SCENARIO_DESCRIPTIONS = {
 POST http://127.0.0.1:8002/transactions/
 {
   "transaction_id": "8f3b2c14-59e2-4a71-9df0-e2b34a91c002",
-  "product_id": 1,
+  "seat_id": 1,
   "quantity": 1,
   "amount": 500
 }`,
@@ -148,7 +148,7 @@ POST http://127.0.0.1:8002/transactions/
     payload: `POST http://127.0.0.1:8002/transactions/
 {
   "transaction_id": "<UUID>",
-  "product_id": 1,
+  "seat_id": 1,
   "quantity": 1,
   "amount": 500,
   "coordinator": true
@@ -175,7 +175,7 @@ POST http://127.0.0.1:8002/transactions/
     payload: `POST http://127.0.0.1:8002/transactions/
 {
   "transaction_id": "<Optional Custom UUID>",
-  "product_id": <Custom Number>,
+  "seat_id": <Custom Number>,
   "quantity": <Custom Number: 0, 1, 9999>,
   "amount": <Custom Number>,
   "fail_compensation": <true|false>,
@@ -1022,7 +1022,7 @@ async function inspectTransaction(txId, autoScroll = false) {
     if (DOM.fmetaUserEmail) DOM.fmetaUserEmail.textContent = txData.user_email || "N/A";
     DOM.fmetaStatusBadge.textContent = txData.status;
     DOM.fmetaStatusBadge.className = `badge ${getStatusBadgeClass(txData.status)}`;
-    DOM.fmetaProd.textContent = `Prod #${txData.product_id || 1} (Qty: ${txData.quantity !== undefined ? txData.quantity : 1})`;
+    DOM.fmetaProd.textContent = `Seat #${txData.seat_id || 1} (Qty: 1)`;
     DOM.fmetaAmt.textContent = `$${txData.amount || 500}`;
 
     const isFailureState = txData.status.includes("FAILED") || txData.status.includes("TIMEOUT") || txData.status === "COMPENSATED";
@@ -1431,7 +1431,6 @@ DOM.btnDemoRace.addEventListener("click", async () => {
       body: JSON.stringify({
         transaction_id: sharedTxId,
         seat_id: targetSeatId,
-        product_id: targetSeatId,
         quantity: 1,
         amount: 500,
         ...getActiveUserPayload(),
@@ -1494,7 +1493,6 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
       body: JSON.stringify({
         transaction_id: txId,
         seat_id: targetSeatId,
-        product_id: targetSeatId,
         quantity: 1,
         amount: 500,
         coordinator: true,
@@ -1594,7 +1592,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
 
   const payload = {
     seat_id: seatId,
-    product_id: seatId,
     quantity: 1,
     amount: amount,
     ...getActiveUserPayload(),
@@ -1843,7 +1840,7 @@ function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null, 
   const newTx = {
     transaction_id: txId,
     status: finalStatus,
-    product_id: 1,
+    seat_id: 1,
     quantity: finalStatus === "INVENTORY_RESERVE_FAILED" ? 0 : 1,
     amount: finalStatus === "COMPENSATED" ? 9999 : 500,
     failure_reason: failureReason,

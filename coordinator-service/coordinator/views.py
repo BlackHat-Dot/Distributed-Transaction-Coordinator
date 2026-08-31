@@ -44,7 +44,7 @@ def _parse_transaction_id(raw_tid):
 
 
 def _create_transaction_idempotent(
-    transaction_id, seat_id=None, amount=500, product_id=None, quantity=1, user_id=None, user_email=None, held_by_user_id=None, held_by_user_email=None
+    transaction_id, seat_id=None, amount=500, quantity=1, user_id=None, user_email=None, held_by_user_id=None, held_by_user_email=None
 ):
     uid = user_id or held_by_user_id or "usr_demo_user"
     uemail = user_email or held_by_user_email or "demo@dtc.io"
@@ -56,7 +56,6 @@ def _create_transaction_idempotent(
                 user_email=uemail,
                 status=Transaction.Status.STARTED,
                 seat_id=seat_id,
-                product_id=product_id or seat_id,
                 quantity=quantity,
                 amount=amount,
             )
@@ -510,7 +509,6 @@ def _handle_create_transaction(request):
         transaction_id=transaction_id,
         seat_id=seat_id,
         amount=amount,
-        product_id=seat_id,
         quantity=quantity,
         user_id=user_id,
         user_email=user_email,
@@ -599,7 +597,6 @@ def _serialize_transaction(txn):
         "status": txn.status,
         "is_terminal": txn.status in terminal_statuses,
         "seat_id": txn.seat_id,
-        "product_id": txn.product_id,
         "quantity": txn.quantity,
         "amount": str(txn.amount),
         "created_at": txn.created_at,
@@ -724,7 +721,6 @@ def _serialize_transaction(txn):
         "status": txn.status,
         "is_terminal": txn.status in terminal_statuses,
         "seat_id": txn.seat_id,
-        "product_id": txn.product_id,
         "quantity": txn.quantity,
         "amount": str(txn.amount),
         "created_at": txn.created_at,

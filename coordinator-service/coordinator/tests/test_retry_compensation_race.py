@@ -1,4 +1,4 @@
-﻿import threading
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -39,7 +39,7 @@ class RetryCompensationRaceNewCodeTests(TransactionTestCase):
         txn = Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=Transaction.Status.COMPENSATION_FAILED,
-            product_id=1, quantity=1, amount=100,
+            seat_id=1, quantity=1, amount=100,
         )
         url = RETRY_URL.format(txn.transaction_id)
 
@@ -116,7 +116,7 @@ class RetryCompensationRaceOldCodeTests(TransactionTestCase):
         txn = Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=Transaction.Status.COMPENSATION_FAILED,
-            product_id=1, quantity=1, amount=100,
+            seat_id=1, quantity=1, amount=100,
         )
         tid = txn.transaction_id
         snapshot = txn.status

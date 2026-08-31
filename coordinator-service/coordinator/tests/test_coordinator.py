@@ -160,7 +160,7 @@ class TerminalStateTests(TestCase):
         return Transaction.objects.create(
             transaction_id=tid,
             status=status,
-            product_id=1,
+            seat_id=1,
             quantity=1,
             amount=500,
         )
@@ -224,7 +224,7 @@ class InProgressDuplicateTests(TestCase):
         return Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=status,
-            product_id=1,
+            seat_id=1,
             quantity=1,
             amount=500,
         )
