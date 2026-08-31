@@ -1103,7 +1103,32 @@ function getStatusBadgeClass(status) {
 }
 
 
+function isUserAuthenticated() {
+  return Boolean(localStorage.getItem("dtc_auth_token"));
+}
+
+function checkLiveAuthGate(actionName = "execute live distributed scenarios") {
+  if (STATE.isSimulatedMode) {
+    return true; // Demo / Simulation mode allows testing without login
+  }
+  if (!isUserAuthenticated()) {
+    showMainAuthModal(1);
+    showToast({
+      icon: "🛡️",
+      title: "Sign In Required for LIVE Mode",
+      message: `Please sign in with Email OTP to ${actionName}, or toggle to DEMO mode at the top navigation bar.`,
+      type: "warning",
+      duration: 6000,
+    });
+    return false;
+  }
+  return true;
+}
+
+
 DOM.btnDemoHappy.addEventListener("click", async () => {
+  if (!checkLiveAuthGate("execute the Live Happy Path scenario")) return;
+
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "ORCHESTRATING";
@@ -1173,6 +1198,8 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
 });
 
 DOM.btnDemoFail.addEventListener("click", async () => {
+  if (!checkLiveAuthGate("execute the Live Payment Decline scenario")) return;
+
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "COMPENSATING";
@@ -1270,6 +1297,7 @@ async function getNextAvailableSeatId() {
 
 if (DOM.btnResetSeats) {
   DOM.btnResetSeats.addEventListener("click", async () => {
+    if (!checkLiveAuthGate("reset live venue seats")) return;
     try {
       const res = await fetchWithTimeout(`${CONFIG.inventoryUrl}/seats/reset/`, { method: "POST" });
       if (res.ok) {
@@ -1301,6 +1329,8 @@ if (DOM.btnResetSeats) {
 }
 
 DOM.btnDemoRace.addEventListener("click", async () => {
+  if (!checkLiveAuthGate("execute the Live Race Condition scenario")) return;
+
   const sharedTxId = crypto.randomUUID();
   STATE.stats.dispatchedCount += 5;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
@@ -1384,6 +1414,8 @@ DOM.btnDemoRace.addEventListener("click", async () => {
 });
 
 DOM.btnDemoCrash.addEventListener("click", async () => {
+  if (!checkLiveAuthGate("simulate a Live Coordinator Process Crash")) return;
+
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.topoCoordState.textContent = "CRASH SIMULATION";
@@ -1518,6 +1550,8 @@ DOM.btnToggleCustom.addEventListener("click", () => {
 
 DOM.formCustomTx.addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (!checkLiveAuthGate("dispatch custom live distributed transactions")) return;
+
   const seatId = parseInt(document.getElementById("cust-seat-id").value, 10) || 31;
   const amount = parseFloat(document.getElementById("cust-amount").value) || 500;
   const execMode = document.getElementById("cust-exec-mode")?.value || "async";
@@ -1645,6 +1679,8 @@ async function triggerRecoverySweepAnimation() {
 }
 
 DOM.btnTriggerSweep.addEventListener("click", async () => {
+  if (!checkLiveAuthGate("trigger manual background recovery sweep")) return;
+
   STATE.stats.sagasSwept += 1;
   DOM.recSagasSwept.textContent = STATE.stats.sagasSwept;
   localStorage.setItem("dtc_stat_swept", STATE.stats.sagasSwept);
@@ -1717,6 +1753,8 @@ if (btnExecInfo) {
 
 DOM.btnRetryActiveTx.addEventListener("click", async () => {
   if (!STATE.activeTxId) return;
+  if (!checkLiveAuthGate("retry transaction compensation")) return;
+
   await animatePacketAlongPath({ route: "coord-inv", type: "warning", durationMs: 450, destinationNodeId: "node-box-inv" });
   await animatePacketAlongPath({ route: "inv-coord", type: "warning", durationMs: 350, destinationNodeId: "node-box-coord" });
 
