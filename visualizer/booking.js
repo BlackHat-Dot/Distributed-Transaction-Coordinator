@@ -1206,6 +1206,9 @@ async function initiateSagaCheckout() {
   // Open Saga Orchestration Stepper Modal
   openSagaModal(seat, selectedAmount);
 
+  const uid = STATE.user ? (STATE.user.userId || STATE.user.actorId) : undefined;
+  const uemail = STATE.user ? STATE.user.email : undefined;
+
   // POST to Coordinator — synchronous execution on Railway (returns 200 directly)
   const res = await fetchJson(`${CONFIG.coordinatorUrl}/transactions/`, {
     method: "POST",
@@ -1213,6 +1216,11 @@ async function initiateSagaCheckout() {
       transaction_id: txId,
       seat_id: seat.id,
       amount: parseInt(selectedAmount, 10),
+      user_id: uid,
+      user_email: uemail,
+      held_by_user_id: uid,
+      held_by_user_email: uemail,
+      actor_id: uid,
     }),
   });
 

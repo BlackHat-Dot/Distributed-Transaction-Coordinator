@@ -1134,13 +1134,24 @@ function checkLiveAuthGate(actionName = "execute live distributed scenarios") {
   return true;
 }
 
+function getActiveUserPayload() {
+  const uid = localStorage.getItem("dtc_user_id") || localStorage.getItem("dtc_actor_id") || "usr_demo_user";
+  const uemail = localStorage.getItem("dtc_user_email") || "demo@dtc.io";
+  return {
+    user_id: uid,
+    user_email: uemail,
+    held_by_user_id: uid,
+    held_by_user_email: uemail,
+    actor_id: uid,
+  };
+}
 
 DOM.btnDemoHappy.addEventListener("click", async () => {
-  if (!checkLiveAuthGate("execute the Live Happy Path scenario")) return;
+  if (!checkLiveAuthGate("dispatch the Happy Path Live Saga")) return;
 
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
-  DOM.topoCoordState.textContent = "ORCHESTRATING";
+  DOM.topoCoordState.textContent = "ORCHESTRATING (HAPPY PATH)";
 
   await animatePacketAlongPath({
     route: "client-coord",
@@ -1171,7 +1182,12 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
   const t0 = performance.now();
   const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
     method: "POST",
-    body: JSON.stringify({ seat_id: nextSeatId, quantity: 1, amount: 500 }),
+    body: JSON.stringify({
+      seat_id: nextSeatId,
+      quantity: 1,
+      amount: 500,
+      ...getActiveUserPayload(),
+    }),
   });
   const latencyMs = Math.round(performance.now() - t0);
   const isAsync = (res.status === 202);
@@ -1244,7 +1260,12 @@ DOM.btnDemoFail.addEventListener("click", async () => {
   const t0 = performance.now();
   const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
     method: "POST",
-    body: JSON.stringify({ seat_id: nextSeatId, quantity: 1, amount: 9999 }),
+    body: JSON.stringify({
+      seat_id: nextSeatId,
+      quantity: 1,
+      amount: 9999,
+      ...getActiveUserPayload(),
+    }),
   });
   const latencyMs = Math.round(performance.now() - t0);
   const isAsync = (res.status === 202);
@@ -1411,6 +1432,7 @@ DOM.btnDemoRace.addEventListener("click", async () => {
         product_id: targetSeatId,
         quantity: 1,
         amount: 500,
+        ...getActiveUserPayload(),
       }),
     })
   );
@@ -1474,6 +1496,7 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
         quantity: 1,
         amount: 500,
         coordinator: true,
+        ...getActiveUserPayload(),
       }),
     });
     if (res.data && res.data.transaction_id) {
@@ -1572,6 +1595,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
     product_id: seatId,
     quantity: 1,
     amount: amount,
+    ...getActiveUserPayload(),
   };
 
   const customId = document.getElementById("cust-tx-id").value.trim();

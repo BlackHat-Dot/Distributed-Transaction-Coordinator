@@ -53,10 +53,13 @@ def recover_stuck_transactions():
 
 
 @shared_task(name="coordinator.tasks.execute_saga_task")
-def execute_saga_task(transaction_id, seat_id=None, amount=500, fail_compensation=False, correlation_id=None, actor_id=None, user_id=None, user_email=None):
+def execute_saga_task(transaction_id, seat_id=None, amount=500, fail_compensation=False, correlation_id=None, actor_id=None, user_id=None, user_email=None, held_by_user_id=None, held_by_user_email=None):
     from coordinator.views import _run_saga_pipeline
-    uid = user_id or actor_id
-    logger.info("Executing async saga task for transaction_id=%s [correlation_id=%s, user_id=%s, user_email=%s]", transaction_id, correlation_id, uid, user_email)
+    uid = user_id or held_by_user_id or actor_id or "usr_demo_user"
+    uemail = user_email or held_by_user_email or "demo@dtc.io"
+    h_uid = held_by_user_id or uid
+    h_uemail = held_by_user_email or uemail
+    logger.info("Executing async saga task for transaction_id=%s [correlation_id=%s, user_id=%s, user_email=%s]", transaction_id, correlation_id, uid, uemail)
     try:
         parsed_tid = uuid.UUID(str(transaction_id))
     except ValueError:
@@ -72,7 +75,9 @@ def execute_saga_task(transaction_id, seat_id=None, amount=500, fail_compensatio
         actor="request",
         actor_id=uid,
         user_id=uid,
-        user_email=user_email,
+        user_email=uemail,
+        held_by_user_id=h_uid,
+        held_by_user_email=h_uemail,
     )
     logger.info("Async saga task completed for transaction_id=%s with status=%s", transaction_id, getattr(response, 'status_code', 'unknown'))
     return "completed"

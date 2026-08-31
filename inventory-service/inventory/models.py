@@ -37,6 +37,20 @@ class Seat(models.Model):
         blank=True,
         help_text="Transaction ID currently holding or booking the seat.",
     )
+    held_by_user_id = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="User ID holding or booking the seat.",
+    )
+    held_by_user_email = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="User email holding or booking the seat.",
+    )
     user_id = models.CharField(
         max_length=64,
         null=True,
@@ -76,6 +90,20 @@ class Reservation(models.Model):
         related_name="reservations",
     )
     transaction_id = models.UUIDField(unique=True)
+    held_by_user_id = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="User ID holding the reservation.",
+    )
+    held_by_user_email = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="User email holding the reservation.",
+    )
     user_id = models.CharField(
         max_length=64,
         null=True,
