@@ -989,7 +989,7 @@ async function handleSeatTileClick(seatId) {
           title: "Hold Cap Exceeded",
           message: res.data.error || "You have reached your maximum active hold limit of 10 seats.",
           type: "danger",
-          icon: "🛡️",
+          icon: "",
           duration: 6000,
         });
       } else {

@@ -1114,7 +1114,7 @@ function checkLiveAuthGate(actionName = "execute live distributed scenarios") {
   if (!isUserAuthenticated()) {
     showMainAuthModal(1);
     showToast({
-      icon: "🛡️",
+      icon: "",
       title: "Sign In Required for LIVE Mode",
       message: `Please sign in with Email OTP to ${actionName}, or toggle to DEMO mode at the top navigation bar.`,
       type: "warning",
