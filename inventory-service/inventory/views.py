@@ -26,39 +26,6 @@ def get_redis_client():
     except Exception:
         return None
 
-def _record_abandonment(user_email):
-    if not user_email: return
-    client = get_redis_client()
-    if not client: return
-    key = f"dtc:penalty:{user_email}"
-    
-    count = client.hincrby(key, "count", 1)
-    if count == 3:
-        client.hset(key, "blocked_until", int(time.time()) + 30)
-        client.expire(key, 86400)
-    elif count >= 4:
-        client.hset(key, "blocked_until", int(time.time()) + 1200)
-        client.expire(key, 1200) # Reset after 20 mins!
-    else:
-        client.expire(key, 86400)
-
-def _check_penalty(user_email):
-    if not user_email: return None
-    client = get_redis_client()
-    if not client: return None
-    key = f"dtc:penalty:{user_email}"
-    
-    count = int(client.hget(key, "count") or 0)
-    blocked_until = int(client.hget(key, "blocked_until") or 0)
-    
-    if blocked_until > time.time():
-        rem = int(blocked_until - time.time())
-        return {"blocked": True, "reason": f"You are temporarily blocked for {rem} more seconds due to repeated hold abandonments. Please try again later."}
-    
-    if count == 2:
-        return {"warning": "Warning: You have abandoned multiple holds. One more abandonment will result in a 30-second block."}
-        
-    return None
 
 @api_view(["GET"])
 def health_check(request):
@@ -77,20 +44,14 @@ def seat_list(request):
     # Active Sweeper: Find involuntary hold expirations
     expired_seats = list(Seat.objects.filter(status=Seat.Status.HELD, held_until__lt=now))
     if expired_seats:
-        emails_to_penalize = set()
         with transaction.atomic():
             for seat in expired_seats:
-                if seat.user_email:
-                    emails_to_penalize.add(seat.user_email)
                 seat.status = Seat.Status.AVAILABLE
                 seat.held_until = None
                 seat.held_by_transaction_id = None
                 seat.user_id = None
                 seat.user_email = None
                 seat.save(update_fields=['status', 'held_until', 'held_by_transaction_id', 'user_id', 'user_email'])
-        
-        for email in emails_to_penalize:
-            _record_abandonment(email)
 
     if Seat.objects.count() == 0:
         event = Event.objects.first()
@@ -158,10 +119,6 @@ def reserve_seat(request):
         or request.headers.get("X-User-Email") or "anonymous@dtc.io"
     )
 
-    penalty = _check_penalty(user_email)
-    if penalty and penalty.get("blocked"):
-        return Response({"error": penalty["reason"]}, status=403)
-
     try:
         with transaction.atomic():
             seats = list(Seat.objects.select_for_update().filter(id__in=seat_ids).order_by('id'))
@@ -204,9 +161,6 @@ def reserve_seat(request):
                 "seat_ids": seat_ids,
                 "held_until": held_until_dt,
             }
-            if penalty and penalty.get("warning"):
-                resp_data["warning"] = penalty["warning"]
-                
             return Response(resp_data, status=200)
 
     except Exception as e:
@@ -233,12 +187,6 @@ def confirm_seat(request):
                     res.seat.held_until = None
                     res.seat.save()
             
-            user_email = reservations[0].user_email
-            if user_email:
-                client = get_redis_client()
-                if client:
-                    client.delete(f"dtc:penalty:{user_email}")
-
             return Response({"message": "Seats confirmed", "transaction_id": str(transaction_id)}, status=200)
     except Exception as e:
         return Response({"error": "Database error", "detail": str(e)}, status=500)
@@ -255,7 +203,6 @@ def release_seat(request):
             if not reservations:
                 return Response({"message": "No active reservation to release", "transaction_id": str(transaction_id)}, status=200)
 
-            emails_to_penalize = set()
             for res in reservations:
                 if res.status in (Reservation.Status.RESERVED, Reservation.Status.BOOKED):
                     res.status = Reservation.Status.RELEASED
@@ -267,12 +214,6 @@ def release_seat(request):
                         res.seat.user_id = None
                         res.seat.user_email = None
                         res.seat.save()
-                    
-                    if res.user_email:
-                        emails_to_penalize.add(res.user_email)
-
-            for email in emails_to_penalize:
-                _record_abandonment(email)
 
             return Response({"message": "Seats released", "transaction_id": str(transaction_id)}, status=200)
     except Exception as e:
