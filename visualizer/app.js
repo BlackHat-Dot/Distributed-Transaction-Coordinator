@@ -217,8 +217,6 @@ const DOM = {
   btnCloseStack: document.getElementById("btn-close-stack"),
   btnCloseStackFooter: document.getElementById("btn-close-stack-footer"),
   stackItemsContainer: document.getElementById("stack-items-container"),
-  btnConfig: document.getElementById("btn-config"),
-
   statRacesDefended: document.getElementById("stat-race-defended"),
   statLocksEnforced: document.getElementById("stat-locks-enforced"),
   statSagasTotal: document.getElementById("stat-sagas-total"),
@@ -300,14 +298,6 @@ const DOM = {
 
   modalArch: document.getElementById("modal-architecture"),
   btnCloseArch: document.getElementById("btn-close-arch"),
-  modalConfig: document.getElementById("modal-config"),
-  btnCloseConfig: document.getElementById("btn-close-config"),
-  formConfig: document.getElementById("form-config"),
-  cfgCoordUrl: document.getElementById("cfg-coord-url"),
-  cfgInvUrl: document.getElementById("cfg-inv-url"),
-  cfgPayUrl: document.getElementById("cfg-pay-url"),
-  cfgPollMs: document.getElementById("cfg-poll-ms"),
-  btnResetCfg: document.getElementById("btn-reset-cfg"),
 };
 
 
@@ -1922,24 +1912,6 @@ if (DOM.toggleTheme) {
 
 DOM.btnHowItWorks.addEventListener("click", () => DOM.modalArch.classList.remove("hidden"));
 DOM.btnCloseArch.addEventListener("click", () => DOM.modalArch.classList.add("hidden"));
-DOM.btnConfig.addEventListener("click", () => {
-  if (DOM.cfgCoordUrl) DOM.cfgCoordUrl.value = CONFIG.coordinatorUrl;
-  if (DOM.cfgInvUrl) DOM.cfgInvUrl.value = CONFIG.inventoryUrl;
-  if (DOM.cfgPayUrl) DOM.cfgPayUrl.value = CONFIG.paymentUrl;
-  if (DOM.cfgPollMs) DOM.cfgPollMs.value = CONFIG.pollIntervalMs;
-  DOM.modalConfig.classList.remove("hidden");
-});
-DOM.btnCloseConfig?.addEventListener("click", () => DOM.modalConfig.classList.add("hidden"));
-const btnCloseConfigFooter = document.getElementById("btn-close-config-footer");
-if (btnCloseConfigFooter) {
-  btnCloseConfigFooter.addEventListener("click", () => DOM.modalConfig.classList.add("hidden"));
-}
-if (DOM.modalConfig) {
-  DOM.modalConfig.addEventListener("click", (e) => {
-    if (e.target === DOM.modalConfig) DOM.modalConfig.classList.add("hidden");
-  });
-}
-
 
 function startRecoveryCountdown() {
   setInterval(async () => {
