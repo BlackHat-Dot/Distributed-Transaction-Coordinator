@@ -663,6 +663,22 @@ function initEventListeners() {
     quantityEl.addEventListener("change", () => {
       if (STATE.myHold) {
         updateCheckoutSummary();
+      } else if (STATE.draftSeatIds && STATE.draftSeatIds.length > 0) {
+        // They changed quantity while having an unreserved draft.
+        // Wipe the draft so they can start fresh and we don't get stuck in a broken state.
+        const drafted = [...STATE.draftSeatIds];
+        STATE.draftSeatIds = [];
+        STATE.draftSeatLabels = [];
+        drafted.forEach(id => {
+           const seat = STATE.seatsMap.get(id);
+           applySeatTileDOMState(id, seat ? seat.status : "AVAILABLE");
+        });
+        showToast({
+          title: "Selection Reset",
+          message: "You changed the seat quantity. Your pending selection has been cleared. Please pick your seats again.",
+          type: "info",
+          duration: 3000
+        });
       }
     });
   }
@@ -904,6 +920,8 @@ function createSeatTile(seat) {
     effectiveStatus = "SELECTED";
   } else if (STATE.myHold && STATE.myHold.seatId === seat.id) {
     effectiveStatus = "SELECTED";
+  } else if (STATE.draftSeatIds && STATE.draftSeatIds.includes(seat.id)) {
+    effectiveStatus = "SELECTED";
   }
 
   tile.dataset.status = effectiveStatus;
@@ -1022,33 +1040,44 @@ async function handleSeatTileClick(seatId) {
 
   const quantityEl = document.getElementById("seat-quantity");
   const requestedQuantity = quantityEl ? parseInt(quantityEl.value, 10) : 1;
-  let remainingQuantity = requestedQuantity;
+  
+  if (!STATE.draftSeatIds) STATE.draftSeatIds = [];
+  if (!STATE.draftSeatLabels) STATE.draftSeatLabels = [];
 
-  // 5. If user ALREADY has a hold on another seat (Clicking an Available / Non-Reserved seat)
+  // If user ALREADY has a hold on another seat
   if (STATE.myHold) {
-    if (STATE.myHold.seatIds && STATE.myHold.seatIds.length < requestedQuantity) {
-      remainingQuantity = requestedQuantity - STATE.myHold.seatIds.length;
-    } else {
-      const tile = document.getElementById(`seat-tile-${seatId}`);
-      if (tile) {
-        tile.style.animation = "shake 0.4s ease-in-out";
-        setTimeout(() => (tile.style.animation = ""), 400);
-      }
-  
-      if (DOM.holdTimerCard) {
-        DOM.holdTimerCard.style.animation = "pulse-glow 0.6s ease-in-out 2";
-        setTimeout(() => (DOM.holdTimerCard.style.animation = ""), 1200);
-      }
-  
-      showToast({
-        title: "Max Seats Reached",
-        message: `You are already holding ${requestedQuantity} seat(s). Please proceed to checkout or release your current hold to switch.`,
-        type: "warning",
-        icon: "",
-        duration: 4500,
-      });
-      return;
+    const tile = document.getElementById(`seat-tile-${seatId}`);
+    if (tile) {
+      tile.style.animation = "shake 0.4s ease-in-out";
+      setTimeout(() => (tile.style.animation = ""), 400);
     }
+    if (DOM.holdTimerCard) {
+      DOM.holdTimerCard.style.animation = "pulse-glow 0.6s ease-in-out 2";
+      setTimeout(() => (DOM.holdTimerCard.style.animation = ""), 1200);
+    }
+    showToast({
+      title: "Release Current Hold to Switch",
+      message: `You are currently holding seats. Please release your current hold before making a new reservation.`,
+      type: "warning",
+      icon: "",
+      duration: 4500,
+    });
+    return;
+  }
+
+  // If clicking a DRAFTED seat -> remove from draft
+  if (STATE.draftSeatIds.includes(seatId)) {
+    const idx = STATE.draftSeatIds.indexOf(seatId);
+    STATE.draftSeatIds.splice(idx, 1);
+    STATE.draftSeatLabels.splice(idx, 1);
+    applySeatTileDOMState(seatId, seat.status);
+    return;
+  }
+
+  let remainingQuantity = requestedQuantity - STATE.draftSeatIds.length;
+  if (remainingQuantity <= 0) {
+     showToast({ title: "Max Seats Reached", message: "You have already selected the requested number of seats.", type: "warning"});
+     return;
   }
 
   // --- CONTIGUOUS SEAT SELECTION ---
@@ -1058,7 +1087,7 @@ async function handleSeatTileClick(seatId) {
     
   const startIndex = rowSeats.findIndex(s => s.id === seatId);
 
-  const isAvailable = (s) => s.status === "AVAILABLE" || (s.status === "HELD" && s.held_until && new Date(s.held_until) < new Date());
+  const isAvailable = (s) => (s.status === "AVAILABLE" || (s.status === "HELD" && s.held_until && new Date(s.held_until) < new Date())) && !STATE.draftSeatIds.includes(s.id);
 
   let leftIdx = startIndex;
   while (leftIdx > 0 && isAvailable(rowSeats[leftIdx - 1])) {
@@ -1094,39 +1123,42 @@ async function handleSeatTileClick(seatId) {
     }
   }
   
-  if (selectedSeatIds.length < remainingQuantity) {
-    const missing = requestedQuantity - (STATE.myHold ? STATE.myHold.seatIds.length : 0) - selectedSeatIds.length;
-    if (missing > 0) {
-      showToast({
-        title: "Fewer Seats Available",
-        message: `Only ${selectedSeatIds.length} contiguous seats available starting from ${seat.row}${seat.seat_number}. Reserving ${selectedSeatIds.length} seats. Please click ${missing} more seat(s) to complete your ${requestedQuantity} seat selection.`,
-        type: "warning",
-        duration: 5000,
-      });
-    }
-  }
-  
   if (selectedSeatIds.length === 0) return;
+
+  STATE.draftSeatIds.push(...selectedSeatIds);
+  STATE.draftSeatLabels.push(...selectedSeatLabels);
+  selectedSeatIds.forEach(id => applySeatTileDOMState(id, "SELECTED"));
+
+  if (STATE.draftSeatIds.length < requestedQuantity) {
+    const missing = requestedQuantity - STATE.draftSeatIds.length;
+    showToast({
+      title: "Selection Pending",
+      message: `You have selected ${STATE.draftSeatIds.length} seat(s). Please click ${missing} more seat(s) to finish your selection. No seats are reserved yet.`,
+      type: "info",
+      duration: 5000,
+    });
+    return;
+  }
 
   // 6. Proceed to Acquire Hold
   STATE.isActionInProgress = true;
-  STATE.pendingHoldSeatIds = selectedSeatIds;
-  selectedSeatIds.forEach(id => STATE.inFlightSeatIds.add(id));
+  
+  const holdTxId = crypto.randomUUID();
+  const allSeatIds = [...STATE.draftSeatIds];
+  const allSeatLabels = [...STATE.draftSeatLabels];
 
-  // Apply instant optimistic visual feedback
-  selectedSeatIds.forEach(id => applySeatTileDOMState(id, "SELECTED"));
+  // Clear draft
+  STATE.draftSeatIds = [];
+  STATE.draftSeatLabels = [];
+
+  STATE.pendingHoldSeatIds = allSeatIds;
+  allSeatIds.forEach(id => STATE.inFlightSeatIds.add(id));
+
   updateMatrixHoldState();
 
-  const isIncremental = !!STATE.myHold;
-  const holdTxId = isIncremental ? STATE.myHold.txId : crypto.randomUUID();
-  const allSeatIds = isIncremental ? [...STATE.myHold.seatIds, ...selectedSeatIds] : selectedSeatIds;
-  const allSeatLabels = isIncremental 
-    ? STATE.myHold.seatNumbers + " - " + selectedSeatLabels.join(" - ")
-    : selectedSeatLabels.join(" - ");
-
   showToast({
-    title: isIncremental ? "Adding Seats..." : "Holding Seats...",
-    message: `Locking ${selectedSeatLabels.join(", ")} in Redis & PostgreSQL CAS hold...`,
+    title: "Holding Seats...",
+    message: `Locking ${allSeatLabels.join(", ")} in Redis & PostgreSQL CAS hold...`,
     type: "normal",
     icon: "",
     duration: 1500,
@@ -1162,13 +1194,13 @@ async function handleSeatTileClick(seatId) {
         seatNumbers: allSeatLabels,
         txId: holdTxId,
         heldUntil: heldUntil,
-        timerInterval: isIncremental ? STATE.myHold.timerInterval : null,
+        timerInterval: null,
       };
       saveHoldToStorage(STATE.myHold);
       STATE.pendingHoldSeatIds = null;
 
       // Update internal map
-      selectedSeatIds.forEach(id => {
+      allSeatIds.forEach(id => {
         const s = STATE.seatsMap.get(id);
         if (s) {
             s.status = "HELD";
@@ -1194,13 +1226,11 @@ async function handleSeatTileClick(seatId) {
       // 409 Conflict: Another buyer grabbed seat OR hold cap exceeded/penalty blocked!
       const conflictMsg = (res.data && res.data.error) || "Seats were just claimed by another user!";
       STATE.pendingHoldSeatIds = null;
-      if (!isIncremental) {
-        STATE.myHold = null;
-        clearHoldFromStorage();
-      }
-      selectedSeatIds.forEach(id => applySeatTileDOMState(id, "AVAILABLE"));
+      STATE.myHold = null;
+      clearHoldFromStorage();
       
-      selectedSeatIds.forEach(id => {
+      allSeatIds.forEach(id => {
+        applySeatTileDOMState(id, "AVAILABLE");
         const tile = document.getElementById(`seat-tile-${id}`);
         if (tile) {
           tile.style.animation = "shake 0.4s ease-in-out";
@@ -1235,11 +1265,9 @@ async function handleSeatTileClick(seatId) {
     }
   } catch (err) {
     STATE.pendingHoldSeatIds = null;
-    if (!isIncremental) {
-      STATE.myHold = null;
-      clearHoldFromStorage();
-    }
-    selectedSeatIds.forEach(id => applySeatTileDOMState(id, "AVAILABLE"));
+    STATE.myHold = null;
+    clearHoldFromStorage();
+    allSeatIds.forEach(id => applySeatTileDOMState(id, "AVAILABLE"));
     showToast({
       title: "Network Error",
       message: err.message || "Failed to reserve seats.",
@@ -1248,7 +1276,7 @@ async function handleSeatTileClick(seatId) {
     });
   } finally {
     STATE.isActionInProgress = false;
-    selectedSeatIds.forEach(id => STATE.inFlightSeatIds.delete(id));
+    allSeatIds.forEach(id => STATE.inFlightSeatIds.delete(id));
     updateMatrixHoldState();
     updateInventoryStats();
   }
@@ -1731,14 +1759,15 @@ function reconcileSeatStates(newSeats) {
 
     STATE.seatsMap.set(seatId, newSeat);
 
-    // Is this seat the current user's active hold?
     const isUserHold = STATE.myHold && (STATE.myHold.seatIds || [STATE.myHold.seatId]).includes(seatId) &&
                        (newSeat.held_by_transaction_id === STATE.myHold.txId ||
                         newSeat.status === "HELD" ||
                         (STATE.user && newSeat.held_by_user_id === (STATE.user.userId || STATE.user.actorId)) ||
                         (STATE.user && newSeat.user_id === (STATE.user.userId || STATE.user.actorId)));
 
-    if (isUserHold) {
+    const isDrafted = STATE.draftSeatIds && STATE.draftSeatIds.includes(seatId);
+
+    if (isUserHold || isDrafted) {
       applySeatTileDOMState(seatId, "SELECTED");
     } else {
       // All other seats in the venue MUST strictly reflect their true server status
