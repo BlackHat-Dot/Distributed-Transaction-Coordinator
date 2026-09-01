@@ -75,7 +75,7 @@ class Reservation(models.Model):
         blank=True,
         related_name="reservations",
     )
-    transaction_id = models.UUIDField(unique=True)
+    transaction_id = models.UUIDField(db_index=True)
     user_id = models.CharField(
         max_length=64,
         null=True,
