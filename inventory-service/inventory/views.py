@@ -219,11 +219,17 @@ def release_seat(request):
     except Exception as e:
         return Response({"error": "Database error", "detail": str(e)}, status=500)
 
-@api_view(["POST"])
+@api_view(["GET"])
 def check_reservation(request):
-    _, transaction_id, error_response = _validate_reserve_input(request.data)
-    if error_response:
-        return error_response
+    raw_tid = request.query_params.get("transaction_id")
+    if not raw_tid:
+        return Response({"error": "transaction_id is required"}, status=400)
+        
+    try:
+        import uuid
+        transaction_id = uuid.UUID(raw_tid)
+    except ValueError:
+        return Response({"error": "transaction_id must be a valid UUID"}, status=400)
 
     reservations = list(Reservation.objects.filter(transaction_id=transaction_id))
     if not reservations:
