@@ -899,7 +899,7 @@ async function handleSeatTileClick(seatId) {
   }
 
   // 2. If clicking own already-held seat -> release hold
-  if (STATE.myHold && STATE.myHold.seatId === seatId) {
+  if (STATE.myHold && STATE.myHold.seatIds && STATE.myHold.seatIds.includes(seatId)) {
     await releaseActiveHold();
     return;
   }
@@ -923,7 +923,7 @@ async function handleSeatTileClick(seatId) {
 
   // 4. If clicking a seat HELD by another user
   if (seat.status === "HELD") {
-    const isMyHold = STATE.myHold && STATE.myHold.seatId === seatId;
+    const isMyHold = STATE.myHold && STATE.myHold.seatIds && STATE.myHold.seatIds.includes(seatId);
     if (!isMyHold) {
       const tile = document.getElementById(`seat-tile-${seatId}`);
       if (tile) {
@@ -958,9 +958,6 @@ async function handleSeatTileClick(seatId) {
 
   // 5. If user ALREADY has a hold on another seat (Clicking an Available / Non-Reserved seat)
   if (STATE.myHold) {
-    const heldSeat = STATE.seatsMap.get(STATE.myHold.seatId);
-    const heldLabel = heldSeat ? `Seat ${heldSeat.row}${heldSeat.seat_number}` : "your current seat";
-
     const tile = document.getElementById(`seat-tile-${seatId}`);
     if (tile) {
       tile.style.animation = "shake 0.4s ease-in-out";
@@ -974,7 +971,7 @@ async function handleSeatTileClick(seatId) {
 
     showToast({
       title: "Release Current Hold to Switch",
-      message: `You are currently holding ${heldLabel}. Please release your current hold before reserving Seat ${seat.row}${seat.seat_number}.`,
+      message: `You are currently holding seats. Please release your current hold before making a new reservation.`,
       type: "warning",
       icon: "",
       duration: 4500,
@@ -982,20 +979,56 @@ async function handleSeatTileClick(seatId) {
     return;
   }
 
-  // 6. User has NO hold and clicked an AVAILABLE seat -> Proceed to Acquire Hold
+  // --- CONTIGUOUS SEAT SELECTION ---
+  const quantityEl = document.getElementById("seat-quantity");
+  const requestedQuantity = quantityEl ? parseInt(quantityEl.value, 10) : 1;
+  
+  // Find contiguous seats in the same row
+  const rowSeats = Array.from(STATE.seatsMap.values())
+    .filter(s => s.row === seat.row)
+    .sort((a, b) => parseInt(a.seat_number, 10) - parseInt(b.seat_number, 10));
+    
+  const startIndex = rowSeats.findIndex(s => s.id === seatId);
+  const selectedSeatIds = [];
+  const selectedSeatLabels = [];
+  let availableCount = 0;
+  
+  for (let i = startIndex; i < rowSeats.length && selectedSeatIds.length < requestedQuantity; i++) {
+    const s = rowSeats[i];
+    if (s.status === "AVAILABLE" || (s.status === "HELD" && s.held_until && new Date(s.held_until) < new Date())) {
+      selectedSeatIds.push(s.id);
+      selectedSeatLabels.push(`${s.row}${s.seat_number}`);
+      availableCount++;
+    } else {
+      break; // Stop at first unavailable seat
+    }
+  }
+  
+  if (availableCount < requestedQuantity) {
+    showToast({
+      title: "Fewer Seats Available",
+      message: `Only ${availableCount} contiguous seats available starting from ${seat.row}${seat.seat_number}. Reserving ${availableCount} seats.`,
+      type: "warning",
+      duration: 5000,
+    });
+  }
+  
+  if (selectedSeatIds.length === 0) return;
+
+  // 6. Proceed to Acquire Hold
   STATE.isActionInProgress = true;
-  STATE.pendingHoldSeatId = seatId;
-  STATE.inFlightSeatIds.add(seatId);
+  STATE.pendingHoldSeatIds = selectedSeatIds;
+  selectedSeatIds.forEach(id => STATE.inFlightSeatIds.add(id));
 
   // Apply instant optimistic visual feedback
-  applySeatTileDOMState(seatId, "SELECTED");
+  selectedSeatIds.forEach(id => applySeatTileDOMState(id, "SELECTED"));
   updateMatrixHoldState();
 
   const newHoldTxId = crypto.randomUUID();
 
   showToast({
-    title: "Holding Seat...",
-    message: `Locking Seat ${seat.row}${seat.seat_number} in Redis & PostgreSQL CAS hold...`,
+    title: "Holding Seats...",
+    message: `Locking ${selectedSeatLabels.join(", ")} in Redis & PostgreSQL CAS hold...`,
     type: "normal",
     icon: "",
     duration: 1500,
@@ -1007,7 +1040,7 @@ async function handleSeatTileClick(seatId) {
     const res = await fetchJson(`${CONFIG.inventoryUrl}/seats/reserve/`, {
       method: "POST",
       body: JSON.stringify({
-        seat_id: seatId,
+        seat_ids: selectedSeatIds,
         transaction_id: newHoldTxId,
         user_id: uid,
         user_email: STATE.user ? STATE.user.email : undefined,
@@ -1016,53 +1049,78 @@ async function handleSeatTileClick(seatId) {
     });
 
     if (res.ok) {
+      if (res.data.warning) {
+          showToast({
+              title: "Warning",
+              message: res.data.warning,
+              type: "warning",
+              duration: 8000,
+          });
+      }
+      
       // Hold granted by PostgreSQL row lock!
       const heldUntil = res.data.held_until || new Date(Date.now() + 10 * 60 * 1000).toISOString();
       STATE.myHold = {
-        seatId: seatId,
+        seatId: selectedSeatIds[0], // legacy support if needed
+        seatIds: selectedSeatIds,
+        seatNumbers: selectedSeatLabels.join(" - "),
         txId: newHoldTxId,
         heldUntil: heldUntil,
         timerInterval: null,
       };
       saveHoldToStorage(STATE.myHold);
-      STATE.pendingHoldSeatId = null;
+      STATE.pendingHoldSeatIds = null;
 
       // Update internal map
-      seat.status = "HELD";
-      seat.held_by_transaction_id = newHoldTxId;
-      seat.held_until = heldUntil;
+      selectedSeatIds.forEach(id => {
+        const s = STATE.seatsMap.get(id);
+        if (s) {
+            s.status = "HELD";
+            s.held_by_transaction_id = newHoldTxId;
+            s.held_until = heldUntil;
+        }
+      });
 
       startHoldTimer(heldUntil);
       updateCheckoutSummary();
-      applySeatTileDOMState(seatId, "SELECTED");
+      selectedSeatIds.forEach(id => applySeatTileDOMState(id, "SELECTED"));
       updateMatrixHoldState();
       updateInventoryStats();
 
       showToast({
         title: "10-Minute Hold Acquired!",
-        message: `Seat ${seat.row}${seat.seat_number} is reserved for you. Complete payment before the timer expires.`,
+        message: `${selectedSeatIds.length} seat(s) reserved for you. Complete payment before the timer expires.`,
         type: "success",
         icon: "",
         duration: 4000,
       });
     } else {
-      // 409 Conflict: Another buyer grabbed seat OR hold cap exceeded!
-      const conflictMsg = (res.data && res.data.error) || "Seat was just claimed by another user!";
-      STATE.pendingHoldSeatId = null;
+      // 409 Conflict: Another buyer grabbed seat OR hold cap exceeded/penalty blocked!
+      const conflictMsg = (res.data && res.data.error) || "Seats were just claimed by another user!";
+      STATE.pendingHoldSeatIds = null;
       STATE.myHold = null;
       clearHoldFromStorage();
-      applySeatTileDOMState(seatId, "AVAILABLE");
+      selectedSeatIds.forEach(id => applySeatTileDOMState(id, "AVAILABLE"));
       
-      const tile = document.getElementById(`seat-tile-${seatId}`);
-      if (tile) {
-        tile.style.animation = "shake 0.4s ease-in-out";
-        setTimeout(() => (tile.style.animation = ""), 400);
-      }
+      selectedSeatIds.forEach(id => {
+        const tile = document.getElementById(`seat-tile-${id}`);
+        if (tile) {
+          tile.style.animation = "shake 0.4s ease-in-out";
+          setTimeout(() => (tile.style.animation = ""), 400);
+        }
+      });
 
-      if (res.data && res.data.code === "HOLD_CAP_EXCEEDED") {
+      if (res.status === 403) {
+          showToast({
+              title: "Account Blocked",
+              message: conflictMsg,
+              type: "danger",
+              duration: 8000,
+          });
+      } else if (res.data && res.data.code === "HOLD_CAP_EXCEEDED") {
         showToast({
           title: "Hold Cap Exceeded",
-          message: res.data.error || "You have reached your maximum active hold limit of 10 seats.",
+          message: conflictMsg,
           type: "danger",
           icon: "",
           duration: 6000,
@@ -1070,7 +1128,7 @@ async function handleSeatTileClick(seatId) {
       } else {
         showToast({
           title: "Hold Conflict",
-          message: `${conflictMsg} Please pick another available seat.`,
+          message: `${conflictMsg} Please pick available seats.`,
           type: "danger",
           icon: "",
           duration: 4000,
@@ -1078,19 +1136,19 @@ async function handleSeatTileClick(seatId) {
       }
     }
   } catch (err) {
-    STATE.pendingHoldSeatId = null;
+    STATE.pendingHoldSeatIds = null;
     STATE.myHold = null;
     clearHoldFromStorage();
-    applySeatTileDOMState(seatId, "AVAILABLE");
+    selectedSeatIds.forEach(id => applySeatTileDOMState(id, "AVAILABLE"));
     showToast({
       title: "Network Error",
-      message: err.message || "Failed to reserve seat.",
+      message: err.message || "Failed to reserve seats.",
       type: "danger",
       icon: "",
     });
   } finally {
     STATE.isActionInProgress = false;
-    STATE.inFlightSeatIds.delete(seatId);
+    selectedSeatIds.forEach(id => STATE.inFlightSeatIds.delete(id));
     updateMatrixHoldState();
     updateInventoryStats();
   }
@@ -1099,7 +1157,7 @@ async function handleSeatTileClick(seatId) {
 function updateMatrixHoldState() {
   const matrix = DOM.seatMatrix || document.getElementById("seat-matrix");
   if (!matrix) return;
-  const hasHold = Boolean(STATE.myHold || STATE.pendingHoldSeatId || STATE.isActionInProgress);
+  const hasHold = Boolean(STATE.myHold || STATE.pendingHoldSeatIds || STATE.isActionInProgress);
   if (hasHold) {
     matrix.classList.add("has-active-hold");
   } else {
@@ -1115,17 +1173,18 @@ async function releaseActiveHold() {
   if (!STATE.myHold) return;
   if (STATE.isActionInProgress) return;
 
-  const { seatId, txId, timerInterval } = STATE.myHold;
+  const { seatIds, txId, timerInterval } = STATE.myHold;
+  const targetIds = seatIds || [STATE.myHold.seatId];
   if (timerInterval) clearInterval(timerInterval);
 
   STATE.isActionInProgress = true;
-  STATE.inFlightSeatIds.add(seatId);
+  targetIds.forEach(id => STATE.inFlightSeatIds.add(id));
   STATE.myHold = null;
-  STATE.pendingHoldSeatId = null;
+  STATE.pendingHoldSeatIds = null;
   clearHoldFromStorage();
 
   // Optimistically mark as AVAILABLE
-  applySeatTileDOMState(seatId, "AVAILABLE");
+  targetIds.forEach(id => applySeatTileDOMState(id, "AVAILABLE"));
   hideHoldTimer();
   updateCheckoutSummary();
   updateMatrixHoldState();
@@ -1133,19 +1192,21 @@ async function releaseActiveHold() {
   try {
     await fetchJson(`${CONFIG.inventoryUrl}/seats/release/`, {
       method: "POST",
-      body: JSON.stringify({ transaction_id: txId }),
+      body: JSON.stringify({ transaction_id: txId, seat_ids: targetIds }),
     });
 
-    const seat = STATE.seatsMap.get(seatId);
-    if (seat) {
-      seat.status = "AVAILABLE";
-      seat.held_until = null;
-      seat.held_by_transaction_id = null;
-    }
+    targetIds.forEach(id => {
+      const seat = STATE.seatsMap.get(id);
+      if (seat) {
+        seat.status = "AVAILABLE";
+        seat.held_until = null;
+        seat.held_by_transaction_id = null;
+      }
+    });
 
     showToast({
       title: "Hold Released",
-      message: `Seat ${seat ? seat.row + seat.seat_number : ""} released back to the venue catalog.`,
+      message: `${targetIds.length} seat(s) released back to the venue catalog.`,
       type: "normal",
       icon: "",
     });
@@ -1153,7 +1214,7 @@ async function releaseActiveHold() {
     console.warn("Release hold error", err);
   } finally {
     STATE.isActionInProgress = false;
-    STATE.inFlightSeatIds.delete(seatId);
+    targetIds.forEach(id => STATE.inFlightSeatIds.delete(id));
     updateMatrixHoldState();
     updateInventoryStats();
   }
@@ -1220,8 +1281,9 @@ function hideHoldTimer() {
 
 function handleHoldAutoExpired() {
   if (!STATE.myHold) return;
-  const seat = STATE.seatsMap.get(STATE.myHold.seatId);
-  const seatLabel = seat ? `${seat.row}${seat.seat_number}` : "";
+  const seatIds = STATE.myHold.seatIds || [STATE.myHold.seatId];
+  const firstSeat = STATE.seatsMap.get(seatIds[0]);
+  const seatLabel = STATE.myHold.seatNumbers || (firstSeat ? `${firstSeat.row}${firstSeat.seat_number}` : "");
 
   if (STATE.myHold.timerInterval) clearInterval(STATE.myHold.timerInterval);
   STATE.myHold = null;
@@ -1232,7 +1294,7 @@ function handleHoldAutoExpired() {
 
   showToast({
     title: "Hold Expired",
-    message: `Your 10-minute hold on Seat ${seatLabel} has expired and was returned to the catalog.`,
+    message: `Your 10-minute hold on Seats ${seatLabel} has expired and was returned to the catalog. You may be penalized.`,
     type: "warning",
     icon: "",
     duration: 6000,
@@ -1253,20 +1315,28 @@ function updateCheckoutSummary() {
     return;
   }
 
-  const seat = STATE.seatsMap.get(STATE.myHold.seatId);
-  if (!seat) return;
+  const seatIds = STATE.myHold.seatIds || [STATE.myHold.seatId];
+  const firstSeat = STATE.seatsMap.get(seatIds[0]);
+  if (!firstSeat) return;
 
-  const tierMeta = TIERS[seat.row] || { name: "General Seat", price: "500.00", basePrice: 500 };
+  const tierMeta = TIERS[firstSeat.row] || { name: "General Seat", price: "500.00", basePrice: 500 };
+  const totalBasePrice = tierMeta.basePrice * seatIds.length;
 
   if (DOM.summaryEmpty) DOM.summaryEmpty.classList.add("hidden");
   if (DOM.summaryActive) DOM.summaryActive.classList.remove("hidden");
 
-  if (DOM.summaryTier) DOM.summaryTier.textContent = tierMeta.name;
-  if (DOM.summarySeatLabel) DOM.summarySeatLabel.textContent = `Row ${seat.row} - Seat ${seat.seat_number}`;
-  if (DOM.summarySeatTier) DOM.summarySeatTier.textContent = tierMeta.name;
+  if (DOM.summaryTier) DOM.summaryTier.textContent = `${tierMeta.name} (${seatIds.length})`;
+  if (DOM.summarySeatLabel) DOM.summarySeatLabel.textContent = `Row ${firstSeat.row} - Seats ${STATE.myHold.seatNumbers || firstSeat.seat_number}`;
+  if (DOM.summarySeatTier) DOM.summarySeatTier.textContent = `${seatIds.length}x ${tierMeta.name}`;
   if (DOM.summaryTxId) DOM.summaryTxId.textContent = `${STATE.myHold.txId.substring(0, 8)}...`;
-  if (DOM.summaryBasePrice) DOM.summaryBasePrice.textContent = `$${tierMeta.price}`;
-  if (DOM.summaryTotalPrice) DOM.summaryTotalPrice.textContent = `$${tierMeta.price}`;
+  if (DOM.summaryBasePrice) DOM.summaryBasePrice.textContent = `$${totalBasePrice.toFixed(2)}`;
+  if (DOM.summaryTotalPrice) DOM.summaryTotalPrice.textContent = `$${totalBasePrice.toFixed(2)}`;
+  
+  // Set the pay sim values based on correct total price
+  const radioSuccess = document.getElementById("pay-sim-success");
+  const radioFail = document.getElementById("pay-sim-fail");
+  if (radioSuccess) radioSuccess.value = totalBasePrice;
+  if (radioFail) radioFail.value = 1; // insufficient funds sim
 }
 
 /* ==========================================================================
@@ -1276,8 +1346,9 @@ function updateCheckoutSummary() {
 async function initiateSagaCheckout() {
   if (!STATE.myHold) return;
 
-  const seat = STATE.seatsMap.get(STATE.myHold.seatId);
-  if (!seat) return;
+  const seatIds = STATE.myHold.seatIds || [STATE.myHold.seatId];
+  const firstSeat = STATE.seatsMap.get(seatIds[0]);
+  if (!firstSeat) return;
 
   const txId = STATE.myHold.txId;
   const selectedAmount = document.querySelector('input[name="pay_sim"]:checked').value;
@@ -1286,7 +1357,7 @@ async function initiateSagaCheckout() {
   if (DOM.btnProceedPay) DOM.btnProceedPay.disabled = true;
 
   // Open Saga Orchestration Stepper Modal
-  openSagaModal(seat, selectedAmount);
+  openSagaModal(firstSeat, selectedAmount);
 
   const uid = STATE.user ? (STATE.user.userId || STATE.user.actorId) : undefined;
   const uemail = STATE.user ? STATE.user.email : undefined;
@@ -1296,7 +1367,8 @@ async function initiateSagaCheckout() {
     method: "POST",
     body: JSON.stringify({
       transaction_id: txId,
-      seat_id: seat.id,
+      seat_ids: seatIds,
+      seat_numbers: STATE.myHold.seatNumbers || firstSeat.seat_number,
       amount: parseInt(selectedAmount, 10),
       user_id: uid,
       user_email: uemail,
@@ -1326,7 +1398,7 @@ async function initiateSagaCheckout() {
   }
 }
 
-function openSagaModal(seat, amount) {
+function openSagaModal(firstSeat, amount) {
   if (!DOM.sagaModal) return;
   DOM.sagaModal.classList.remove("hidden");
 
