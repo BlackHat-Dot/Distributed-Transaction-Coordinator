@@ -660,7 +660,21 @@ function initEventListeners() {
   // Seat Quantity Change
   const quantityEl = document.getElementById("seat-quantity");
   if (quantityEl) {
-    quantityEl.addEventListener("change", () => {
+    quantityEl.addEventListener("change", (e) => {
+      let requested = parseInt(e.target.value, 10);
+      const totalAvailable = Array.from(STATE.seatsMap.values()).filter(s => s.status === "AVAILABLE" || (s.status === "HELD" && s.held_until && new Date(s.held_until) < new Date())).length;
+      
+      if (requested > totalAvailable && totalAvailable > 0) {
+        showToast({
+          title: "Limited Availability",
+          message: `Only ${totalAvailable} seat(s) are available to book right now. Quantity automatically adjusted.`,
+          type: "warning",
+          duration: 4500
+        });
+        e.target.value = totalAvailable;
+        requested = totalAvailable;
+      }
+
       if (STATE.myHold) {
         updateCheckoutSummary();
       } else if (STATE.draftSeatIds && STATE.draftSeatIds.length > 0) {
@@ -1129,15 +1143,27 @@ async function handleSeatTileClick(seatId) {
   STATE.draftSeatLabels.push(...selectedSeatLabels);
   selectedSeatIds.forEach(id => applySeatTileDOMState(id, "SELECTED"));
 
+  const totalAvailableNow = Array.from(STATE.seatsMap.values()).filter(s => s.status === "AVAILABLE" || (s.status === "HELD" && s.held_until && new Date(s.held_until) < new Date())).length;
+
   if (STATE.draftSeatIds.length < requestedQuantity) {
-    const missing = requestedQuantity - STATE.draftSeatIds.length;
-    showToast({
-      title: "Selection Pending",
-      message: `You have selected ${STATE.draftSeatIds.length} seat(s). Please click ${missing} more seat(s) to finish your selection. No seats are reserved yet.`,
-      type: "info",
-      duration: 5000,
-    });
-    return;
+    if (STATE.draftSeatIds.length >= totalAvailableNow) {
+       if (quantityEl) quantityEl.value = STATE.draftSeatIds.length;
+       showToast({
+         title: "Max Available Reached",
+         message: `Only ${STATE.draftSeatIds.length} seat(s) are available right now. Proceeding to book them.`,
+         type: "info",
+         duration: 5000,
+       });
+    } else {
+       const missing = requestedQuantity - STATE.draftSeatIds.length;
+       showToast({
+         title: "Selection Pending",
+         message: `You have selected ${STATE.draftSeatIds.length} seat(s). Please click ${missing} more seat(s) to finish your selection. No seats are reserved yet.`,
+         type: "info",
+         duration: 5000,
+       });
+       return;
+    }
   }
 
   // 6. Proceed to Acquire Hold
