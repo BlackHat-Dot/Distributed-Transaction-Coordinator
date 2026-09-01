@@ -1783,6 +1783,8 @@ function applySeatTileDOMState(seatId, status) {
   // Strict Single-Seat Integrity Guard:
   if (STATE.myHold && (STATE.myHold.seatIds || [STATE.myHold.seatId]).includes(seatId)) {
     status = "SELECTED";
+  } else if (STATE.draftSeatIds && STATE.draftSeatIds.includes(seatId)) {
+    status = "SELECTED";
   } else if (status === "SELECTED") {
     const isPending = STATE.pendingHoldSeatIds ? STATE.pendingHoldSeatIds.includes(seatId) : (STATE.pendingHoldSeatId === seatId);
     if (!isPending) {
