@@ -6,8 +6,7 @@ from inventory.views import (
     reserve_seat,
     confirm_seat,
     release_seat,
-    reservation_check,
-    sweep_expired_holds,
+    check_reservation,
     reset_seats,
     health_check,
 )
@@ -19,9 +18,8 @@ urlpatterns = [
     path('seats/reserve/', reserve_seat),
     path('seats/confirm/', confirm_seat),
     path('seats/release/', release_seat),
-    path('seats/check/', reservation_check),
-    path('seats/sweep-expired/', sweep_expired_holds),
+    path('seats/check/', check_reservation),
     path('seats/reset/', reset_seats),
-    path('reserve/check/', reservation_check),
+    path('reserve/check/', check_reservation),
     path('health/', health_check),
 ]
