@@ -187,6 +187,8 @@ function restoreHoldFromStorage() {
 
     STATE.myHold = {
       seatId: data.seatId,
+      seatIds: data.seatIds || [data.seatId],
+      seatNumbers: data.seatNumbers || "",
       txId: data.txId,
       heldUntil: data.heldUntil,
       timerInterval: null,
@@ -784,9 +786,45 @@ async function loadCatalog(isInitial = false) {
     }
 
     // Populate Seats Map
+    let orphanedTxId = null;
+    let orphanedHeldUntil = null;
+    const orphanedSeatIds = [];
+    const orphanedSeatLabels = [];
+
     seatsRes.data.forEach(seat => {
       STATE.seatsMap.set(seat.id, seat);
+      
+      if (!STATE.myHold && STATE.user && (STATE.user.email || STATE.user.actorId)) {
+        if (seat.status === "HELD") {
+          const isOwner = (seat.user_email && STATE.user.email && seat.user_email === STATE.user.email) || 
+                          (seat.user_id && STATE.user.actorId && seat.user_id === STATE.user.actorId) ||
+                          (seat.held_by_user_email && STATE.user.email && seat.held_by_user_email === STATE.user.email);
+          if (isOwner) {
+            if (!orphanedTxId) orphanedTxId = seat.held_by_transaction_id;
+            if (!orphanedHeldUntil) orphanedHeldUntil = seat.held_until;
+            
+            if (seat.held_by_transaction_id === orphanedTxId) {
+              orphanedSeatIds.push(seat.id);
+              orphanedSeatLabels.push(`${seat.row}${seat.seat_number}`);
+            }
+          }
+        }
+      }
     });
+
+    if (!STATE.myHold && orphanedSeatIds.length > 0) {
+      STATE.myHold = {
+        seatId: orphanedSeatIds[0],
+        seatIds: orphanedSeatIds,
+        seatNumbers: orphanedSeatLabels.join(" - "),
+        txId: orphanedTxId,
+        heldUntil: orphanedHeldUntil,
+        timerInterval: null
+      };
+      saveHoldToStorage(STATE.myHold);
+      startHoldTimer(orphanedHeldUntil);
+      updateCheckoutSummary();
+    }
 
     if (isInitial || !DOM.seatMatrix || DOM.seatMatrix.children.length === 0) {
       renderFullSeatMatrix();
@@ -933,9 +971,23 @@ async function handleSeatTileClick(seatId) {
     return;
   }
 
-  // 4. If clicking a seat HELD by another user
+  // 4. If clicking a seat HELD by another user or an orphaned hold
   if (seat.status === "HELD") {
     const isMyHold = STATE.myHold && STATE.myHold.seatIds && STATE.myHold.seatIds.includes(seatId);
+    
+    // Check if it belongs to current user but wasn't reconstructed yet
+    const isOwner = STATE.user && (
+      (seat.user_email && STATE.user.email && seat.user_email === STATE.user.email) || 
+      (seat.user_id && STATE.user.actorId && seat.user_id === STATE.user.actorId) ||
+      (seat.held_by_user_email && STATE.user.email && seat.held_by_user_email === STATE.user.email)
+    );
+
+    if (isOwner && !isMyHold) {
+      // Force a catalog load which will reconstruct the hold properly, then return
+      loadCatalog(false);
+      return;
+    }
+
     if (!isMyHold) {
       const tile = document.getElementById(`seat-tile-${seatId}`);
       if (tile) {
