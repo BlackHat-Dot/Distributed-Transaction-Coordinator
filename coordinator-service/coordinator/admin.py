@@ -11,9 +11,9 @@ class SagaEventInline(admin.TabularInline):
 
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
-    list_display = ("transaction_id", "status", "seat_id", "amount", "created_at")
-    list_filter = ("status", "created_at")
-    search_fields = ("transaction_id", "seat_id")
+    list_display = ("transaction_id", "status", "seat_numbers", "quantity", "amount", "updated_at")
+    list_filter = ("status",)
+    search_fields = ("transaction_id", "seat_numbers")
     readonly_fields = ("created_at", "updated_at")
     inlines = [SagaEventInline]
 

@@ -44,7 +44,7 @@ def _parse_transaction_id(raw_tid):
 
 
 def _create_transaction_idempotent(
-    transaction_id, seat_id=None, amount=500, quantity=1, user_id=None, user_email=None, held_by_user_id=None, held_by_user_email=None
+    transaction_id, seat_ids=None, seat_numbers=None, amount=500, quantity=1, user_id=None, user_email=None, held_by_user_id=None, held_by_user_email=None
 ):
     uid = user_id or held_by_user_id or "usr_demo_user"
     uemail = user_email or held_by_user_email or "demo@dtc.io"
@@ -55,7 +55,8 @@ def _create_transaction_idempotent(
                 user_id=uid,
                 user_email=uemail,
                 status=Transaction.Status.STARTED,
-                seat_id=seat_id,
+                seat_ids=seat_ids,
+                seat_numbers=seat_numbers,
                 quantity=quantity,
                 amount=amount,
             )
@@ -78,7 +79,7 @@ def _create_transaction_idempotent(
 from coordinator.auth_views import get_actor_from_request
 
 
-def _reserve_inventory(transaction_id, seat_id, correlation_id=None, actor_id=None, user_id=None, user_email=None, held_by_user_id=None, held_by_user_email=None):
+def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, actor_id=None, user_id=None, user_email=None, held_by_user_id=None, held_by_user_email=None):
     uid = user_id or held_by_user_id or actor_id or "usr_demo_user"
     uemail = user_email or held_by_user_email or "demo@dtc.io"
     headers = {"X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id)}
@@ -91,7 +92,7 @@ def _reserve_inventory(transaction_id, seat_id, correlation_id=None, actor_id=No
         response = requests.post(
             INVENTORY_RESERVE_URL,
             json={
-                "seat_id": seat_id,
+                "seat_ids": seat_ids,
                 "transaction_id": str(transaction_id),
                 "user_id": uid,
                 "user_email": uemail,
@@ -119,12 +120,12 @@ def _reserve_inventory(transaction_id, seat_id, correlation_id=None, actor_id=No
         return None, Response({"transaction_id": str(transaction_id), "status": status}, status=504)
 
 
-def _confirm_inventory(transaction_id, seat_id=None, correlation_id=None):
+def _confirm_inventory(transaction_id, seat_ids=None, correlation_id=None):
     headers = {"X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id)}
     try:
         response = requests.post(
             INVENTORY_CONFIRM_URL,
-            json={"seat_id": seat_id, "transaction_id": str(transaction_id)},
+            json={"seat_ids": seat_ids, "transaction_id": str(transaction_id)},
             headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
@@ -221,9 +222,9 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
     )
 
 
-def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, payment_status_code=200, correlation_id=None, seat_id=None):
+def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, payment_status_code=200, correlation_id=None, seat_ids=None):
     if payment_data.get("status") == "CHARGED":
-        confirm_resp, confirm_err = _confirm_inventory(transaction_id, seat_id=seat_id, correlation_id=correlation_id)
+        confirm_resp, confirm_err = _confirm_inventory(transaction_id, seat_ids=seat_ids, correlation_id=correlation_id)
 
         if confirm_resp is not None and confirm_resp.status_code == 200:
             confirm_json = None
@@ -285,7 +286,7 @@ def _charge_payment(
     amount,
     fail_compensation,
     correlation_id=None,
-    seat_id=None,
+    seat_ids=None,
     user_id=None,
     user_email=None,
     held_by_user_id=None,
@@ -358,7 +359,7 @@ def _charge_payment(
             check_data or {},
             payment_status_code=payment_check.status_code,
             correlation_id=correlation_id,
-            seat_id=seat_id,
+            seat_ids=seat_ids,
         )
 
     resp_data = None
@@ -373,13 +374,13 @@ def _charge_payment(
         resp_data or {},
         payment_status_code=payment_response.status_code,
         correlation_id=correlation_id,
-        seat_id=seat_id,
+        seat_ids=seat_ids,
     )
 
 
 def _run_saga_pipeline(
     transaction_id,
-    seat_id=None,
+    seat_ids=None,
     amount=500,
     fail_compensation=False,
     correlation_id=None,
@@ -391,13 +392,13 @@ def _run_saga_pipeline(
     held_by_user_email=None,
 ):
     correlation_id = correlation_id or str(transaction_id)
-    seat_id = seat_id or 1
+    seat_ids = seat_ids or [1]
     uid = user_id or held_by_user_id or actor_id or "usr_demo_user"
     uemail = user_email or held_by_user_email or "demo@dtc.io"
 
     response, reserve_error = _reserve_inventory(
         transaction_id,
-        seat_id,
+        seat_ids,
         correlation_id=correlation_id,
         actor_id=uid,
         user_id=uid,
@@ -460,7 +461,7 @@ def _run_saga_pipeline(
         amount,
         fail_compensation,
         correlation_id=correlation_id,
-        seat_id=seat_id,
+        seat_ids=seat_ids,
         user_id=uid,
         user_email=uemail,
         held_by_user_id=uid,
@@ -473,8 +474,14 @@ def _handle_create_transaction(request):
     if error_response:
         return error_response
 
-    seat_id = request.data.get("seat_id") or request.data.get("product_id", 1)
-    quantity = request.data.get("quantity", 1)
+    seat_ids = request.data.get("seat_ids")
+    if not seat_ids and request.data.get("seat_id"):
+        seat_ids = [request.data.get("seat_id")]
+    if not seat_ids and request.data.get("product_id"):
+        seat_ids = [request.data.get("product_id")]
+        
+    seat_numbers = request.data.get("seat_numbers", "")
+    quantity = request.data.get("quantity", len(seat_ids) if seat_ids else 1)
     amount = request.data.get("amount", 500)
 
     fail_compensation = request.data.get("fail_compensation", False)
@@ -507,7 +514,8 @@ def _handle_create_transaction(request):
 
     created, dup_response = _create_transaction_idempotent(
         transaction_id=transaction_id,
-        seat_id=seat_id,
+        seat_ids=seat_ids,
+        seat_numbers=seat_numbers,
         amount=amount,
         quantity=quantity,
         user_id=user_id,
@@ -528,7 +536,7 @@ def _handle_create_transaction(request):
         from .tasks import execute_saga_task
         execute_saga_task.delay(
             str(transaction_id),
-            seat_id=seat_id,
+            seat_ids=seat_ids,
             amount=amount,
             fail_compensation=fail_compensation,
             correlation_id=correlation_id,
@@ -559,7 +567,7 @@ def _handle_create_transaction(request):
     # Fallback: run synchronously if Celery is not available
     return _run_saga_pipeline(
         transaction_id=transaction_id,
-        seat_id=seat_id,
+        seat_ids=seat_ids,
         amount=amount,
         fail_compensation=fail_compensation,
         correlation_id=correlation_id,
@@ -596,7 +604,8 @@ def _serialize_transaction(txn):
         "actor_id": txn.user_id,
         "status": txn.status,
         "is_terminal": txn.status in terminal_statuses,
-        "seat_id": txn.seat_id,
+        "seat_ids": txn.seat_ids,
+        "seat_numbers": txn.seat_numbers,
         "quantity": txn.quantity,
         "amount": str(txn.amount),
         "created_at": txn.created_at,

@@ -35,7 +35,8 @@ class Transaction(models.Model):
         choices=Status.choices,
     )
 
-    seat_id = models.IntegerField(null=True)
+    seat_ids = models.JSONField(null=True, blank=True)
+    seat_numbers = models.CharField(max_length=255, null=True, blank=True)
     quantity = models.IntegerField(null=True, default=1)
 
     amount = models.DecimalField(
