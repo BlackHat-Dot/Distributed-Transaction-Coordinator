@@ -655,6 +655,16 @@ function initEventListeners() {
     DOM.btnCancelHold.addEventListener("click", releaseActiveHold);
   }
 
+  // Seat Quantity Change
+  const quantityEl = document.getElementById("seat-quantity");
+  if (quantityEl) {
+    quantityEl.addEventListener("change", () => {
+      if (STATE.myHold) {
+        updateCheckoutSummary();
+      }
+    });
+  }
+
   // Proceed to Payment CTA
   if (DOM.btnProceedPay) {
     DOM.btnProceedPay.addEventListener("click", initiateSagaCheckout);
@@ -958,61 +968,90 @@ async function handleSeatTileClick(seatId) {
     }
   }
 
+  const quantityEl = document.getElementById("seat-quantity");
+  const requestedQuantity = quantityEl ? parseInt(quantityEl.value, 10) : 1;
+  let remainingQuantity = requestedQuantity;
+
   // 5. If user ALREADY has a hold on another seat (Clicking an Available / Non-Reserved seat)
   if (STATE.myHold) {
-    const tile = document.getElementById(`seat-tile-${seatId}`);
-    if (tile) {
-      tile.style.animation = "shake 0.4s ease-in-out";
-      setTimeout(() => (tile.style.animation = ""), 400);
+    if (STATE.myHold.seatIds && STATE.myHold.seatIds.length < requestedQuantity) {
+      remainingQuantity = requestedQuantity - STATE.myHold.seatIds.length;
+    } else {
+      const tile = document.getElementById(`seat-tile-${seatId}`);
+      if (tile) {
+        tile.style.animation = "shake 0.4s ease-in-out";
+        setTimeout(() => (tile.style.animation = ""), 400);
+      }
+  
+      if (DOM.holdTimerCard) {
+        DOM.holdTimerCard.style.animation = "pulse-glow 0.6s ease-in-out 2";
+        setTimeout(() => (DOM.holdTimerCard.style.animation = ""), 1200);
+      }
+  
+      showToast({
+        title: "Max Seats Reached",
+        message: `You are already holding ${requestedQuantity} seat(s). Please proceed to checkout or release your current hold to switch.`,
+        type: "warning",
+        icon: "",
+        duration: 4500,
+      });
+      return;
     }
-
-    if (DOM.holdTimerCard) {
-      DOM.holdTimerCard.style.animation = "pulse-glow 0.6s ease-in-out 2";
-      setTimeout(() => (DOM.holdTimerCard.style.animation = ""), 1200);
-    }
-
-    showToast({
-      title: "Release Current Hold to Switch",
-      message: `You are currently holding seats. Please release your current hold before making a new reservation.`,
-      type: "warning",
-      icon: "",
-      duration: 4500,
-    });
-    return;
   }
 
   // --- CONTIGUOUS SEAT SELECTION ---
-  const quantityEl = document.getElementById("seat-quantity");
-  const requestedQuantity = quantityEl ? parseInt(quantityEl.value, 10) : 1;
-  
-  // Find contiguous seats in the same row
   const rowSeats = Array.from(STATE.seatsMap.values())
     .filter(s => s.row === seat.row)
     .sort((a, b) => parseInt(a.seat_number, 10) - parseInt(b.seat_number, 10));
     
   const startIndex = rowSeats.findIndex(s => s.id === seatId);
+
+  const isAvailable = (s) => s.status === "AVAILABLE" || (s.status === "HELD" && s.held_until && new Date(s.held_until) < new Date());
+
+  let leftIdx = startIndex;
+  while (leftIdx > 0 && isAvailable(rowSeats[leftIdx - 1])) {
+    leftIdx--;
+  }
+
+  let rightIdx = startIndex;
+  while (rightIdx < rowSeats.length - 1 && isAvailable(rowSeats[rightIdx + 1])) {
+    rightIdx++;
+  }
+
   const selectedSeatIds = [];
   const selectedSeatLabels = [];
-  let availableCount = 0;
-  
-  for (let i = startIndex; i < rowSeats.length && selectedSeatIds.length < requestedQuantity; i++) {
-    const s = rowSeats[i];
-    if (s.status === "AVAILABLE" || (s.status === "HELD" && s.held_until && new Date(s.held_until) < new Date())) {
-      selectedSeatIds.push(s.id);
-      selectedSeatLabels.push(`${s.row}${s.seat_number}`);
-      availableCount++;
-    } else {
-      break; // Stop at first unavailable seat
+
+  const rightAvailable = rightIdx - startIndex + 1;
+  const leftAvailable = startIndex - leftIdx; 
+
+  if (rightAvailable >= remainingQuantity) {
+    for (let i = startIndex; i < startIndex + remainingQuantity; i++) {
+      selectedSeatIds.push(rowSeats[i].id);
+      selectedSeatLabels.push(`${rowSeats[i].row}${rowSeats[i].seat_number}`);
+    }
+  } else if (rightAvailable + leftAvailable >= remainingQuantity) {
+    const takeLeft = remainingQuantity - rightAvailable;
+    for (let i = startIndex - takeLeft; i <= rightIdx; i++) {
+      selectedSeatIds.push(rowSeats[i].id);
+      selectedSeatLabels.push(`${rowSeats[i].row}${rowSeats[i].seat_number}`);
+    }
+  } else {
+    for (let i = leftIdx; i <= rightIdx; i++) {
+      selectedSeatIds.push(rowSeats[i].id);
+      selectedSeatLabels.push(`${rowSeats[i].row}${rowSeats[i].seat_number}`);
     }
   }
   
-  if (availableCount < requestedQuantity) {
-    showToast({
-      title: "Fewer Seats Available",
-      message: `Only ${availableCount} contiguous seats available starting from ${seat.row}${seat.seat_number}. Reserving ${availableCount} seats.`,
-      type: "warning",
-      duration: 5000,
-    });
+  if (selectedSeatIds.length < remainingQuantity) {
+    const missing = requestedQuantity - (STATE.myHold ? STATE.myHold.seatIds.length : 0) - selectedSeatIds.length;
+    if (missing > 0) {
+      showToast({
+        title: "Fewer Seats Available",
+        message: `Only ${selectedSeatIds.length} contiguous seats available starting from ${seat.row}${seat.seat_number}. Reserving ${selectedSeatIds.length} seats. Please click ${missing} more seat(s) to complete your ${requestedQuantity} seat selection.`,
+        type: "warning",
+        duration: 5000,
+      });
+    }
   }
   
   if (selectedSeatIds.length === 0) return;
@@ -1026,10 +1065,15 @@ async function handleSeatTileClick(seatId) {
   selectedSeatIds.forEach(id => applySeatTileDOMState(id, "SELECTED"));
   updateMatrixHoldState();
 
-  const newHoldTxId = crypto.randomUUID();
+  const isIncremental = !!STATE.myHold;
+  const holdTxId = isIncremental ? STATE.myHold.txId : crypto.randomUUID();
+  const allSeatIds = isIncremental ? [...STATE.myHold.seatIds, ...selectedSeatIds] : selectedSeatIds;
+  const allSeatLabels = isIncremental 
+    ? STATE.myHold.seatNumbers + " - " + selectedSeatLabels.join(" - ")
+    : selectedSeatLabels.join(" - ");
 
   showToast({
-    title: "Holding Seats...",
+    title: isIncremental ? "Adding Seats..." : "Holding Seats...",
     message: `Locking ${selectedSeatLabels.join(", ")} in Redis & PostgreSQL CAS hold...`,
     type: "normal",
     icon: "",
@@ -1037,13 +1081,12 @@ async function handleSeatTileClick(seatId) {
   });
 
   try {
-    // Call real backend endpoint: POST /seats/reserve/ with user_id & user_email
     const uid = STATE.user ? (STATE.user.userId || STATE.user.actorId) : undefined;
     const res = await fetchJson(`${CONFIG.inventoryUrl}/seats/reserve/`, {
       method: "POST",
       body: JSON.stringify({
-        seat_ids: selectedSeatIds,
-        transaction_id: newHoldTxId,
+        seat_ids: allSeatIds,
+        transaction_id: holdTxId,
         user_id: uid,
         user_email: STATE.user ? STATE.user.email : undefined,
         actor_id: uid,
@@ -1060,15 +1103,14 @@ async function handleSeatTileClick(seatId) {
           });
       }
       
-      // Hold granted by PostgreSQL row lock!
       const heldUntil = res.data.held_until || new Date(Date.now() + 10 * 60 * 1000).toISOString();
       STATE.myHold = {
-        seatId: selectedSeatIds[0], // legacy support if needed
-        seatIds: selectedSeatIds,
-        seatNumbers: selectedSeatLabels.join(" - "),
-        txId: newHoldTxId,
+        seatId: allSeatIds[0], 
+        seatIds: allSeatIds,
+        seatNumbers: allSeatLabels,
+        txId: holdTxId,
         heldUntil: heldUntil,
-        timerInterval: null,
+        timerInterval: isIncremental ? STATE.myHold.timerInterval : null,
       };
       saveHoldToStorage(STATE.myHold);
       STATE.pendingHoldSeatIds = null;
@@ -1078,7 +1120,7 @@ async function handleSeatTileClick(seatId) {
         const s = STATE.seatsMap.get(id);
         if (s) {
             s.status = "HELD";
-            s.held_by_transaction_id = newHoldTxId;
+            s.held_by_transaction_id = holdTxId;
             s.held_until = heldUntil;
         }
       });
@@ -1100,8 +1142,10 @@ async function handleSeatTileClick(seatId) {
       // 409 Conflict: Another buyer grabbed seat OR hold cap exceeded/penalty blocked!
       const conflictMsg = (res.data && res.data.error) || "Seats were just claimed by another user!";
       STATE.pendingHoldSeatIds = null;
-      STATE.myHold = null;
-      clearHoldFromStorage();
+      if (!isIncremental) {
+        STATE.myHold = null;
+        clearHoldFromStorage();
+      }
       selectedSeatIds.forEach(id => applySeatTileDOMState(id, "AVAILABLE"));
       
       selectedSeatIds.forEach(id => {
@@ -1139,8 +1183,10 @@ async function handleSeatTileClick(seatId) {
     }
   } catch (err) {
     STATE.pendingHoldSeatIds = null;
-    STATE.myHold = null;
-    clearHoldFromStorage();
+    if (!isIncremental) {
+      STATE.myHold = null;
+      clearHoldFromStorage();
+    }
     selectedSeatIds.forEach(id => applySeatTileDOMState(id, "AVAILABLE"));
     showToast({
       title: "Network Error",
@@ -1339,6 +1385,20 @@ function updateCheckoutSummary() {
   const radioFail = document.getElementById("pay-sim-fail");
   if (radioSuccess) radioSuccess.value = totalBasePrice;
   if (radioFail) radioFail.value = 1; // insufficient funds sim
+
+  const quantityEl = document.getElementById("seat-quantity");
+  const requestedQuantity = quantityEl ? parseInt(quantityEl.value, 10) : 1;
+  if (DOM.btnProceedPay) {
+    if (seatIds.length < requestedQuantity) {
+      DOM.btnProceedPay.textContent = `Select ${requestedQuantity - seatIds.length} more seat(s)`;
+      DOM.btnProceedPay.disabled = true;
+      DOM.btnProceedPay.classList.add("opacity-50", "cursor-not-allowed");
+    } else {
+      DOM.btnProceedPay.textContent = "Proceed to Payment →";
+      DOM.btnProceedPay.disabled = false;
+      DOM.btnProceedPay.classList.remove("opacity-50", "cursor-not-allowed");
+    }
+  }
 }
 
 /* ==========================================================================
@@ -1354,6 +1414,19 @@ async function initiateSagaCheckout() {
 
   const txId = STATE.myHold.txId;
   const selectedAmount = document.querySelector('input[name="pay_sim"]:checked').value;
+
+  // Validate quantity
+  const quantityEl = document.getElementById("seat-quantity");
+  const requestedQuantity = quantityEl ? parseInt(quantityEl.value, 10) : 1;
+  if (seatIds.length < requestedQuantity) {
+    showToast({
+      title: "Incomplete Selection",
+      message: `You requested ${requestedQuantity} seats but have only selected ${seatIds.length}. Please click ${requestedQuantity - seatIds.length} more seat(s) to complete your reservation.`,
+      type: "warning",
+      duration: 5000,
+    });
+    return;
+  }
 
   // Prevent double click
   if (DOM.btnProceedPay) DOM.btnProceedPay.disabled = true;
@@ -1371,6 +1444,7 @@ async function initiateSagaCheckout() {
       transaction_id: txId,
       seat_ids: seatIds,
       seat_numbers: STATE.myHold.seatNumbers || firstSeat.seat_number,
+      quantity: seatIds.length,
       amount: parseInt(selectedAmount, 10),
       user_id: uid,
       user_email: uemail,
