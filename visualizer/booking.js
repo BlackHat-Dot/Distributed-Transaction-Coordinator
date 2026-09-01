@@ -1206,6 +1206,8 @@ async function handleSeatTileClick(seatId) {
             s.status = "HELD";
             s.held_by_transaction_id = holdTxId;
             s.held_until = heldUntil;
+            s.user_email = STATE.user ? STATE.user.email : undefined;
+            s.user_id = STATE.user ? (STATE.user.userId || STATE.user.actorId) : undefined;
         }
       });
 
