@@ -756,8 +756,8 @@ async function loadCatalog(isInitial = false) {
           <span>📅 Tomorrow, 8:00 PM</span>
           <span class="meta-sep">•</span>
           <span>⏱️ 10-Min Ephemeral Holds</span>
-          <span class="meta-sep">•</span>
-          <span style="color: #38bdf8; font-weight: 600;">Max 1 Seat</span>
+          <span class="meta-sep"></span>
+          <span style="color: #38bdf8; font-weight: 600;"></span>
         `;
       }
     }
@@ -852,7 +852,9 @@ function createSeatTile(seat) {
 
   // Determine initial status
   let effectiveStatus = seat.status;
-  if (STATE.myHold && STATE.myHold.seatId === seat.id) {
+  if (STATE.myHold && STATE.myHold.seatIds && STATE.myHold.seatIds.includes(seat.id)) {
+    effectiveStatus = "SELECTED";
+  } else if (STATE.myHold && STATE.myHold.seatId === seat.id) {
     effectiveStatus = "SELECTED";
   }
 
@@ -1603,7 +1605,7 @@ function reconcileSeatStates(newSeats) {
     STATE.seatsMap.set(seatId, newSeat);
 
     // Is this seat the current user's active hold?
-    const isUserHold = STATE.myHold && STATE.myHold.seatId === seatId &&
+    const isUserHold = STATE.myHold && (STATE.myHold.seatIds || [STATE.myHold.seatId]).includes(seatId) &&
                        (newSeat.held_by_transaction_id === STATE.myHold.txId ||
                         newSeat.status === "HELD" ||
                         (STATE.user && newSeat.held_by_user_id === (STATE.user.userId || STATE.user.actorId)) ||
@@ -1623,10 +1625,10 @@ function applySeatTileDOMState(seatId, status) {
   if (!tile) return;
 
   // Strict Single-Seat Integrity Guard:
-  if (STATE.myHold && STATE.myHold.seatId === seatId) {
+  if (STATE.myHold && (STATE.myHold.seatIds || [STATE.myHold.seatId]).includes(seatId)) {
     status = "SELECTED";
   } else if (status === "SELECTED") {
-    const isPending = STATE.pendingHoldSeatId === seatId;
+    const isPending = STATE.pendingHoldSeatIds ? STATE.pendingHoldSeatIds.includes(seatId) : (STATE.pendingHoldSeatId === seatId);
     if (!isPending) {
       const seat = STATE.seatsMap.get(seatId);
       status = (seat && seat.status) || "AVAILABLE";
