@@ -134,7 +134,7 @@ def _confirm_inventory(transaction_id, seat_ids=None, correlation_id=None):
         return None, e
 
 
-def _compensate(transaction_id, fail_compensation, payment_data, payment_status_code=None, correlation_id=None):
+def _compensate(transaction_id, fail_compensation, payment_data, payment_status_code=None, correlation_id=None, seat_ids=None):
     release_transaction_id = "fail-release" if fail_compensation else str(transaction_id)
     headers = {"X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id)}
 
@@ -154,7 +154,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
     try:
         release_response = requests.post(
             INVENTORY_RELEASE_URL,
-            json={"transaction_id": release_transaction_id},
+            json={"transaction_id": release_transaction_id, "seat_ids": seat_ids},
             headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
@@ -270,6 +270,7 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
             decline_payload,
             payment_status_code=confirm_resp.status_code if confirm_resp else 504,
             correlation_id=correlation_id,
+            seat_ids=seat_ids,
         )
 
     return _compensate(
@@ -278,6 +279,7 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
         payment_data,
         payment_status_code=payment_status_code,
         correlation_id=correlation_id,
+        seat_ids=seat_ids,
     )
 
 
@@ -729,7 +731,8 @@ def _serialize_transaction(txn):
         "actor_id": txn.user_id,
         "status": txn.status,
         "is_terminal": txn.status in terminal_statuses,
-        "seat_id": txn.seat_id,
+        "seat_ids": txn.seat_ids,
+        "seat_numbers": txn.seat_numbers,
         "quantity": txn.quantity,
         "amount": str(txn.amount),
         "created_at": txn.created_at,

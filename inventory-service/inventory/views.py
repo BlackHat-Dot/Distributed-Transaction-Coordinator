@@ -257,10 +257,10 @@ def release_seat(request):
 
             emails_to_penalize = set()
             for res in reservations:
-                if res.status == Reservation.Status.RESERVED:
+                if res.status in (Reservation.Status.RESERVED, Reservation.Status.BOOKED):
                     res.status = Reservation.Status.RELEASED
                     res.save()
-                    if res.seat and res.seat.held_by_transaction_id == transaction_id:
+                    if res.seat and (res.seat.held_by_transaction_id == transaction_id or res.seat.status == Seat.Status.BOOKED):
                         res.seat.status = Seat.Status.AVAILABLE
                         res.seat.held_until = None
                         res.seat.held_by_transaction_id = None

@@ -1491,9 +1491,10 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
     if (DOM.eticketCard) {
       DOM.eticketCard.classList.remove("hidden");
       if (STATE.myHold) {
-        const seat = STATE.seatsMap.get(STATE.myHold.seatId);
+        const seatIds = STATE.myHold.seatIds || [STATE.myHold.seatId];
+        const seat = STATE.seatsMap.get(seatIds[0]);
         if (seat && DOM.ticketSeatNumber) {
-          DOM.ticketSeatNumber.textContent = `Row ${seat.row} - Seat ${seat.seat_number}`;
+          DOM.ticketSeatNumber.textContent = `Row ${seat.row} - Seats ${STATE.myHold.seatNumbers || seat.seat_number}`;
         }
       }
       if (DOM.ticketTxId) DOM.ticketTxId.textContent = txId;
