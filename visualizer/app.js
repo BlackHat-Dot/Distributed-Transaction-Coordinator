@@ -1265,7 +1265,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     await animatePacketAlongPath({ route: "inv-coord", type: "warning", durationMs: 350, destinationNodeId: "node-box-coord" });
 
     showToast({
-      icon: "🔄",
+      icon: "✦︎",
       title: "Compensating Saga Executed (Simulated)",
       message: "Payment declined (HTTP 422: Testing failure amount $9,999) → Seat hold auto-released to Inventory → Marked COMPENSATED",
       type: "normal",
@@ -1307,7 +1307,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
     });
   } else {
     showToast({
-      icon: "🔄",
+      icon: "✦︎",
       title: `Sync Compensation Completed (${res.status} · ${latencyMs}ms)`,
       message: `[Mode: SYNCHRONOUS] Payment declined on $9,999. Coordinator immediately executed POST /seats/release/ rollback. Marked COMPENSATED.`,
       type: "normal",
@@ -1594,7 +1594,7 @@ async function populateCustomSeatDropdown() {
 DOM.btnToggleCustom.addEventListener("click", () => {
   if (STATE.isSimulatedMode) {
     showToast({
-      icon: "🔒",
+      icon: "✦︎",
       title: "Live Mode Required",
       message: "Custom Payload parameters are only available in LIVE mode. Please switch to LIVE mode at the top navigation bar.",
       type: "warning",
@@ -1612,7 +1612,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (STATE.isSimulatedMode) {
     showToast({
-      icon: "🔒",
+      icon: "✦︎",
       title: "Live Mode Required",
       message: "Custom Payload parameters are only available in LIVE mode.",
       type: "warning",
@@ -1687,7 +1687,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
     DOM.topoCoordState.textContent = "COMPENSATING";
     await animatePacketAlongPath({ route: "coord-inv", type: "warning", durationMs: 350, destinationNodeId: "node-box-inv" });
     await animatePacketAlongPath({ route: "inv-coord", type: "warning", durationMs: 300, destinationNodeId: "node-box-coord" });
-    showToast({ icon: "🔄", title: "Payment Declined & Compensated", message: `[${res.status} in ${latencyMs}ms] $${amount} declined → seat released → COMPENSATED`, type: "normal", duration: 6000 });
+    showToast({ icon: "✦︎", title: "Payment Declined & Compensated", message: `[${res.status} in ${latencyMs}ms] $${amount} declined → seat released → COMPENSATED`, type: "normal", duration: 6000 });
   }
   else if (execMode === "async" && res.status === 202) {
     // ⚡ ASYNC: Celery worker picked it up — animate background steps
@@ -1817,7 +1817,7 @@ const btnSweepInfo = document.getElementById("btn-sweep-info");
 if (btnSweepInfo) {
   btnSweepInfo.addEventListener("click", () => {
     showToast({
-      icon: "ℹ️",
+      icon: "✦︎",
       title: "Immediate Sweep Mode (threshold = 0s)",
       message: "Note: Clicking 'Trigger Immediate Sweep' runs with threshold_seconds = 0 to bypass the standard 30-second stale lease timeout for immediate demo verification.",
       type: "purple",
@@ -1853,7 +1853,7 @@ DOM.btnRetryActiveTx.addEventListener("click", async () => {
 
   const detailedError = extractDetailedErrorMessage(res, "Retry compensation executed");
   showToast({
-    icon: "🔄",
+    icon: "✦︎",
     title: "Retry Compensation",
     message: detailedError,
     type: res.ok ? "success" : "race",
@@ -2165,7 +2165,7 @@ const CanvasEngine = {
       this.btnResetLayout.addEventListener("click", () => {
         this.resetLayout();
         showToast({
-          icon: "🔄",
+          icon: "✦︎",
           title: "Topology Layout Reset",
           message: "Node positions and zoom restored to default configuration.",
           type: "normal",
