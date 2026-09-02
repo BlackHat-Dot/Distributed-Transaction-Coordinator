@@ -155,6 +155,8 @@ function saveHoldToStorage(hold) {
   try {
     const data = {
       seatId: hold.seatId,
+      seatIds: hold.seatIds || [hold.seatId],
+      seatNumbers: hold.seatNumbers || "",
       txId: hold.txId,
       heldUntil: hold.heldUntil,
       userId: (STATE.user && (STATE.user.userId || STATE.user.actorId)) || null,
@@ -816,44 +818,48 @@ async function loadCatalog(isInitial = false) {
     }
 
     // Populate Seats Map
-    let orphanedTxId = null;
-    let orphanedHeldUntil = null;
-    const orphanedSeatIds = [];
-    const orphanedSeatLabels = [];
+    let ownerTxId = STATE.myHold ? STATE.myHold.txId : null;
+    let ownerHeldUntil = STATE.myHold ? STATE.myHold.heldUntil : null;
+    const ownerSeatIds = [];
+    const ownerSeatLabels = [];
 
     seatsRes.data.forEach(seat => {
       STATE.seatsMap.set(seat.id, seat);
       
-      if (!STATE.myHold && STATE.user && (STATE.user.email || STATE.user.actorId)) {
+      if (STATE.user && (STATE.user.email || STATE.user.actorId)) {
         if (seat.status === "HELD") {
           const isOwner = (seat.user_email && STATE.user.email && seat.user_email === STATE.user.email) || 
                           (seat.user_id && STATE.user.actorId && seat.user_id === STATE.user.actorId) ||
-                          (seat.held_by_user_email && STATE.user.email && seat.held_by_user_email === STATE.user.email);
+                          (seat.held_by_user_email && STATE.user.email && seat.held_by_user_email === STATE.user.email) ||
+                          (STATE.myHold && seat.held_by_transaction_id === STATE.myHold.txId);
           if (isOwner) {
-            if (!orphanedTxId) orphanedTxId = seat.held_by_transaction_id;
-            if (!orphanedHeldUntil) orphanedHeldUntil = seat.held_until;
+            if (!ownerTxId) ownerTxId = seat.held_by_transaction_id;
+            if (!ownerHeldUntil) ownerHeldUntil = seat.held_until;
             
-            if (seat.held_by_transaction_id === orphanedTxId) {
-              orphanedSeatIds.push(seat.id);
-              orphanedSeatLabels.push(`${seat.row}${seat.seat_number}`);
+            if (seat.held_by_transaction_id === ownerTxId) {
+              ownerSeatIds.push(seat.id);
+              ownerSeatLabels.push(`${seat.row}${seat.seat_number}`);
             }
           }
         }
       }
     });
 
-    if (!STATE.myHold && orphanedSeatIds.length > 0) {
-      STATE.myHold = {
-        seatId: orphanedSeatIds[0],
-        seatIds: orphanedSeatIds,
-        seatNumbers: orphanedSeatLabels.join(" - "),
-        txId: orphanedTxId,
-        heldUntil: orphanedHeldUntil,
-        timerInterval: null
-      };
-      saveHoldToStorage(STATE.myHold);
-      startHoldTimer(orphanedHeldUntil);
-      updateCheckoutSummary();
+    if (ownerSeatIds.length > 0) {
+      const currentIds = STATE.myHold && STATE.myHold.seatIds ? STATE.myHold.seatIds : [];
+      if (!STATE.myHold || currentIds.length !== ownerSeatIds.length) {
+        STATE.myHold = {
+          seatId: ownerSeatIds[0],
+          seatIds: ownerSeatIds,
+          seatNumbers: ownerSeatLabels.join(" - "),
+          txId: ownerTxId,
+          heldUntil: ownerHeldUntil,
+          timerInterval: STATE.myHold ? STATE.myHold.timerInterval : null
+        };
+        saveHoldToStorage(STATE.myHold);
+        if (!STATE.myHold || !STATE.myHold.timerInterval) startHoldTimer(ownerHeldUntil);
+        updateCheckoutSummary();
+      }
     }
 
     if (isInitial || !DOM.seatMatrix || DOM.seatMatrix.children.length === 0) {
@@ -950,7 +956,6 @@ function createSeatTile(seat) {
 
 function getSeatStatusIcon(status) {
   if (status === "SELECTED") return "✓";
-  if (status === "HELD") return "";
   if (status === "BOOKED") return "✕";
   return "•";
 }
