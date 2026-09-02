@@ -950,7 +950,7 @@ function createSeatTile(seat) {
 
 function getSeatStatusIcon(status) {
   if (status === "SELECTED") return "✓";
-  if (status === "HELD") return "🔒";
+  if (status === "HELD") return "";
   if (status === "BOOKED") return "✕";
   return "•";
 }
