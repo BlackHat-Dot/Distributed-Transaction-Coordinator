@@ -39,7 +39,7 @@ class RetryCompensationRaceNewCodeTests(TransactionTestCase):
         txn = Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=Transaction.Status.COMPENSATION_FAILED,
-            seat_id=1, quantity=1, amount=100,
+            seat_ids=[1], quantity=1, amount=100,
         )
         url = RETRY_URL.format(txn.transaction_id)
 
@@ -116,7 +116,7 @@ class RetryCompensationRaceOldCodeTests(TransactionTestCase):
         txn = Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=Transaction.Status.COMPENSATION_FAILED,
-            seat_id=1, quantity=1, amount=100,
+            seat_ids=[1], quantity=1, amount=100,
         )
         tid = txn.transaction_id
         snapshot = txn.status

@@ -50,7 +50,7 @@ class RecoveryAndRetryCompensationRaceTests(TransactionTestCase):
         txn = Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=Transaction.Status.RECOVERY_IN_PROGRESS,
-            seat_id=1,
+            seat_ids=[1],
             quantity=2,
             amount=100,
         )
@@ -149,7 +149,7 @@ class RecoveryClaimTests(TransactionTestCase):
         txn = Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=Transaction.Status.INVENTORY_RESERVED,
-            seat_id=1,
+            seat_ids=[1],
             quantity=1,
             amount=100,
         )
@@ -190,7 +190,7 @@ class RecoveryClaimTests(TransactionTestCase):
         txn = Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=Transaction.Status.STARTED,
-            seat_id=1,
+            seat_ids=[1],
             quantity=1,
             amount=100,
         )
@@ -232,7 +232,7 @@ class RecoveryClaimTests(TransactionTestCase):
         txn = Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=Transaction.Status.STARTED,
-            seat_id=1,
+            seat_ids=[1],
             quantity=1,
             amount=100,
         )
@@ -287,7 +287,7 @@ class RecoveryClaimTests(TransactionTestCase):
         txn = Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=Transaction.Status.COMPENSATION_FAILED,
-            seat_id=1,
+            seat_ids=[1],
             quantity=1,
             amount=100,
         )
@@ -332,7 +332,7 @@ class RecoveryClaimTests(TransactionTestCase):
         txn = Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=Transaction.Status.COMPENSATION_FAILED,
-            seat_id=1,
+            seat_ids=[1],
             quantity=1,
             amount=100,
         )

@@ -532,41 +532,44 @@ def _handle_create_transaction(request):
         return Response({"detail": "Intentional crash"})
 
     correlation_id = getattr(request, "correlation_id", None) or str(transaction_id)
+    
+    is_sync = request.query_params.get("sync") == "true"
+    
+    if not is_sync:
+        # Try async via Celery (supervisord keeps worker alive alongside gunicorn)
+        try:
+            from .tasks import execute_saga_task
+            execute_saga_task.delay(
+                str(transaction_id),
+                seat_ids=seat_ids,
+                amount=amount,
+                fail_compensation=fail_compensation,
+                correlation_id=correlation_id,
+                actor_id=user_id,
+                user_id=user_id,
+                user_email=user_email,
+                held_by_user_id=user_id,
+                held_by_user_email=user_email,
+            )
+            return Response(
+                {
+                    "transaction_id": str(transaction_id),
+                    "user_id": user_id,
+                    "user_email": user_email,
+                    "held_by_user_id": user_id,
+                    "held_by_user_email": user_email,
+                    "status": "PENDING",
+                    "poll_url": f"/transactions/{transaction_id}/",
+                    "message": "Saga dispatched to Celery worker",
+                },
+                status=202,
+                headers={"Location": f"/transactions/{transaction_id}/"},
+            )
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Celery unavailable (%s) - running synchronously", exc)
 
-    # Try async via Celery (supervisord keeps worker alive alongside gunicorn)
-    try:
-        from .tasks import execute_saga_task
-        execute_saga_task.delay(
-            str(transaction_id),
-            seat_ids=seat_ids,
-            amount=amount,
-            fail_compensation=fail_compensation,
-            correlation_id=correlation_id,
-            actor_id=user_id,
-            user_id=user_id,
-            user_email=user_email,
-            held_by_user_id=user_id,
-            held_by_user_email=user_email,
-        )
-        return Response(
-            {
-                "transaction_id": str(transaction_id),
-                "user_id": user_id,
-                "user_email": user_email,
-                "held_by_user_id": user_id,
-                "held_by_user_email": user_email,
-                "status": "PENDING",
-                "poll_url": f"/transactions/{transaction_id}/",
-                "message": "Saga dispatched to Celery worker",
-            },
-            status=202,
-            headers={"Location": f"/transactions/{transaction_id}/"},
-        )
-    except Exception as exc:
-        import logging
-        logging.getLogger(__name__).warning("Celery unavailable (%s) — running synchronously", exc)
-
-    # Fallback: run synchronously if Celery is not available
+    # Fallback: run synchronously if Celery is not available, or if sync=true was requested
     return _run_saga_pipeline(
         transaction_id=transaction_id,
         seat_ids=seat_ids,

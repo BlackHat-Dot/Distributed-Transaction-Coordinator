@@ -52,17 +52,16 @@ class CorrelationIdOutboundPropagationTests(TransactionTestCase):
             mock = MagicMock()
             mock.status_code = 200
             if "reserve" in url:
-                mock.json.return_value = {"message": "Seat reserved", "seat_id": 1}
+                mock.json.return_value = {"message": "Seat reserved", "seat_ids": [1]}
             elif "charge" in url:
                 mock.json.return_value = {"status": "CHARGED", "transaction_id": tid}
             elif "confirm" in url:
-                mock.json.return_value = {"message": "Seat confirmed", "seat_id": 1}
+                mock.json.return_value = {"message": "Seat confirmed", "seat_ids": [1]}
             return mock
 
         with patch("coordinator.views.requests.post", side_effect=mock_post):
-            resp = self.client.post(
-                "/transactions/",
-                {"transaction_id": tid, "seat_id": 1, "amount": 500},
+            resp = self.client.post("/transactions/?sync=true",
+                {"transaction_id": tid, "seat_ids": [1], "amount": 500},
                 format="json",
                 HTTP_X_CORRELATION_ID=custom_cid,
             )
@@ -83,7 +82,7 @@ class CorrelationIdOutboundPropagationTests(TransactionTestCase):
         txn = Transaction.objects.create(
             transaction_id=tid,
             status=Transaction.Status.PAYMENT_PROCESSING,
-            seat_id=1,
+            seat_ids=[1],
             quantity=1,
             amount=500,
         )

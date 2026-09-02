@@ -12,7 +12,7 @@ def _make_transaction(status=Transaction.Status.STARTED):
     return Transaction.objects.create(
         transaction_id=uuid.uuid4(),
         status=status,
-        seat_id=1,
+        seat_ids=[1],
         quantity=1,
         amount=100,
     )
@@ -195,7 +195,7 @@ class SetStatusWithEventConcurrencyTests(TransactionTestCase):
         txn = Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=Transaction.Status.STARTED,
-            seat_id=1,
+            seat_ids=[1],
             quantity=1,
             amount=100,
         )

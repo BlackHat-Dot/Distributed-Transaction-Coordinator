@@ -23,7 +23,7 @@ class ForwardSagaEventTests(TransactionTestCase):
                 mock.status_code = 200
                 mock.json.return_value = {
                     "message": "Seat reserved",
-                    "seat_id": 1,
+                    "seat_ids": [1],
                     "status": "INVENTORY_RESERVED",
                 }
                 return mock
@@ -39,16 +39,15 @@ class ForwardSagaEventTests(TransactionTestCase):
                 mock.status_code = 200
                 mock.json.return_value = {
                     "message": "Seat booked successfully",
-                    "seat_id": 1,
+                    "seat_ids": [1],
                     "status": "BOOKED",
                 }
                 return mock
             raise ValueError(f"Unexpected POST url: {url}")
 
         with patch("coordinator.views.requests.post", side_effect=mock_post):
-            resp = self.client.post(
-                "/transactions/",
-                {"transaction_id": tid, "seat_id": 1, "quantity": 1, "amount": 500},
+            resp = self.client.post("/transactions/?sync=true",
+                {"transaction_id": tid, "seat_ids": [1], "quantity": 1, "amount": 500},
                 format="json",
             )
 
@@ -86,7 +85,7 @@ class ForwardSagaEventTests(TransactionTestCase):
             mock = MagicMock()
             if "reserve" in url:
                 mock.status_code = 200
-                mock.json.return_value = {"message": "Seat reserved", "seat_id": 1}
+                mock.json.return_value = {"message": "Seat reserved", "seat_ids": [1]}
                 return mock
             if "charge" in url:
                 mock.status_code = 422
@@ -103,9 +102,8 @@ class ForwardSagaEventTests(TransactionTestCase):
             raise ValueError(f"Unexpected POST url: {url}")
 
         with patch("coordinator.views.requests.post", side_effect=mock_post):
-            resp = self.client.post(
-                "/transactions/",
-                {"transaction_id": tid, "seat_id": 1, "amount": 9999},
+            resp = self.client.post("/transactions/?sync=true",
+                {"transaction_id": tid, "seat_ids": [1], "amount": 9999},
                 format="json",
             )
 
@@ -146,7 +144,7 @@ class ForwardSagaEventTests(TransactionTestCase):
             mock = MagicMock()
             if "reserve" in url:
                 mock.status_code = 200
-                mock.json.return_value = {"message": "Seat reserved", "seat_id": 1}
+                mock.json.return_value = {"message": "Seat reserved", "seat_ids": [1]}
                 return mock
             if "charge" in url:
                 mock.status_code = 200
@@ -166,9 +164,8 @@ class ForwardSagaEventTests(TransactionTestCase):
             raise ValueError(f"Unexpected POST url: {url}")
 
         with patch("coordinator.views.requests.post", side_effect=mock_post):
-            resp = self.client.post(
-                "/transactions/",
-                {"transaction_id": tid, "seat_id": 1, "amount": 500},
+            resp = self.client.post("/transactions/?sync=true",
+                {"transaction_id": tid, "seat_ids": [1], "amount": 500},
                 format="json",
             )
 
@@ -190,9 +187,8 @@ class ForwardSagaEventTests(TransactionTestCase):
             raise ValueError(f"Unexpected POST url: {url}")
 
         with patch("coordinator.views.requests.post", side_effect=mock_post):
-            resp = self.client.post(
-                "/transactions/",
-                {"transaction_id": tid, "seat_id": 99, "amount": 500},
+            resp = self.client.post("/transactions/?sync=true",
+                {"transaction_id": tid, "seat_ids": [99], "amount": 500},
                 format="json",
             )
 
@@ -213,7 +209,7 @@ class ForwardSagaEventTests(TransactionTestCase):
         txn_f = Transaction.objects.create(
             transaction_id=tid_forward,
             status=Transaction.Status.PAYMENT_PROCESSING,
-            seat_id=1,
+            seat_ids=[1],
             amount=500,
         )
         past_time = timezone.now() - timedelta(minutes=10)
@@ -238,7 +234,7 @@ class ForwardSagaEventTests(TransactionTestCase):
         txn_b = Transaction.objects.create(
             transaction_id=tid_back,
             status=Transaction.Status.PAYMENT_PROCESSING,
-            seat_id=1,
+            seat_ids=[1],
             amount=500,
         )
         Transaction.objects.filter(pk=txn_b.pk).update(updated_at=past_time)

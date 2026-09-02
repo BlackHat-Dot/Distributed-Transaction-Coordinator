@@ -8,7 +8,7 @@ from rest_framework.test import APIClient
 
 from coordinator.models import Transaction
 
-URL = "/transactions/"
+URL = "/transactions/?sync=true"
 
 
 def _charged_response():
@@ -21,14 +21,14 @@ def _charged_response():
 def _reserve_ok_response():
     mock = MagicMock()
     mock.status_code = 200
-    mock.json.return_value = {"message": "Seat reserved", "seat_id": 1}
+    mock.json.return_value = {"message": "Seat reserved", "seat_ids": [1]}
     return mock
 
 
 def _confirm_ok_response():
     mock = MagicMock()
     mock.status_code = 200
-    mock.json.return_value = {"message": "Seat confirmed", "seat_id": 1, "status": "BOOKED"}
+    mock.json.return_value = {"message": "Seat confirmed", "seat_ids": [1], "status": "BOOKED"}
     return mock
 
 
@@ -160,7 +160,7 @@ class TerminalStateTests(TestCase):
         return Transaction.objects.create(
             transaction_id=tid,
             status=status,
-            seat_id=1,
+            seat_ids=[1],
             quantity=1,
             amount=500,
         )
@@ -224,7 +224,7 @@ class InProgressDuplicateTests(TestCase):
         return Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=status,
-            seat_id=1,
+            seat_ids=[1],
             quantity=1,
             amount=500,
         )

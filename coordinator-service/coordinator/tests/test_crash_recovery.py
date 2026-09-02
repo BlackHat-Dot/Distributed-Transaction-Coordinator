@@ -11,7 +11,7 @@ from rest_framework.test import APIClient
 from coordinator.models import Transaction, SagaEvent
 
 
-CREATE_URL = "/transactions/"
+CREATE_URL = "/transactions/?sync=true"
 PAYMENT_CHARGE_URL = "http://127.0.0.1:8001/payments/charge/"
 INVENTORY_RESERVE_URL = "http://127.0.0.1:8000/seats/reserve/"
 INVENTORY_CONFIRM_URL = "http://127.0.0.1:8000/seats/confirm/"
@@ -38,7 +38,7 @@ class CrashRecoveryTests(TransactionTestCase):
             if "reserve" in url:
                 mock = MagicMock()
                 mock.status_code = 200
-                mock.json.return_value = {"message": "Seat reserved", "seat_id": 1}
+                mock.json.return_value = {"message": "Seat reserved", "seat_ids": [1]}
                 return mock
             if "charge" in url:
                 raise SimulatedProcessDeath("Coordinator process killed mid-charge")
@@ -48,7 +48,7 @@ class CrashRecoveryTests(TransactionTestCase):
             with self.assertRaises(SimulatedProcessDeath):
                 self.client.post(
                     CREATE_URL,
-                    {"transaction_id": tid, "seat_id": 1, "quantity": 1, "amount": 500},
+                    {"transaction_id": tid, "seat_ids": [1], "quantity": 1, "amount": 500},
                     format="json",
                 )
 
@@ -107,7 +107,7 @@ class CrashRecoveryTests(TransactionTestCase):
             if "reserve" in url:
                 mock = MagicMock()
                 mock.status_code = 200
-                mock.json.return_value = {"message": "Seat reserved", "seat_id": 1}
+                mock.json.return_value = {"message": "Seat reserved", "seat_ids": [1]}
                 return mock
             if "charge" in url:
                 raise SimulatedProcessDeath("Coordinator process killed before charge")
@@ -118,7 +118,7 @@ class CrashRecoveryTests(TransactionTestCase):
             with self.assertRaises(SimulatedProcessDeath):
                 self.client.post(
                     CREATE_URL,
-                    {"transaction_id": tid, "seat_id": 1, "quantity": 1, "amount": 500},
+                    {"transaction_id": tid, "seat_ids": [1], "quantity": 1, "amount": 500},
                     format="json",
                 )
 

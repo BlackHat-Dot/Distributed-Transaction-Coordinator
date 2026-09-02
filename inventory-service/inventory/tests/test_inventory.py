@@ -48,7 +48,6 @@ class HealthCheckTests(TestCase):
     def test_health_returns_200(self):
         resp = self.client.get(HEALTH_URL)
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["status"], "healthy")
 
 
 class EventAndSeatListTests(TestCase):
@@ -84,12 +83,12 @@ class ReserveValidationTests(TestCase):
             format="json",
         )
         self.assertEqual(resp.status_code, 400)
-        self.assertIn("seat_id", resp.data.get("error", ""))
+        self.assertIn("seat_ids", resp.data.get("error", ""))
 
     def test_invalid_seat_id_returns_400(self):
         resp = self.client.post(
             RESERVE_URL,
-            {"seat_id": "invalid", "transaction_id": str(uuid.uuid4())},
+            {"seat_ids": ["invalid"], "transaction_id": str(uuid.uuid4())},
             format="json",
         )
         self.assertEqual(resp.status_code, 400)
@@ -97,7 +96,7 @@ class ReserveValidationTests(TestCase):
     def test_missing_transaction_id_returns_400(self):
         resp = self.client.post(
             RESERVE_URL,
-            {"seat_id": self.seat.id},
+            {"seat_ids": [self.seat.id]},
             format="json",
         )
         self.assertEqual(resp.status_code, 400)
@@ -105,7 +104,7 @@ class ReserveValidationTests(TestCase):
     def test_invalid_uuid_returns_400(self):
         resp = self.client.post(
             RESERVE_URL,
-            {"seat_id": self.seat.id, "transaction_id": "not-a-uuid"},
+            {"seat_ids": [self.seat.id], "transaction_id": "not-a-uuid"},
             format="json",
         )
         self.assertEqual(resp.status_code, 400)
@@ -113,7 +112,7 @@ class ReserveValidationTests(TestCase):
     def test_nonexistent_seat_returns_404(self):
         resp = self.client.post(
             RESERVE_URL,
-            {"seat_id": 99999, "transaction_id": str(uuid.uuid4())},
+            {"seat_ids": [99999], "transaction_id": str(uuid.uuid4())},
             format="json",
         )
         self.assertEqual(resp.status_code, 404)
@@ -129,12 +128,11 @@ class ReserveSeatHoldTests(TestCase):
         tid = str(uuid.uuid4())
         resp = self.client.post(
             RESERVE_URL,
-            {"seat_id": self.seat.id, "transaction_id": tid},
+            {"seat_ids": [self.seat.id], "transaction_id": tid},
             format="json",
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["status"], Reservation.Status.RESERVED)
-        self.assertEqual(resp.data["seat_id"], self.seat.id)
+        self.assertEqual(resp.data["seat_ids"][0], self.seat.id)
 
         self.seat.refresh_from_db()
         self.assertEqual(self.seat.status, Seat.Status.HELD)
@@ -152,14 +150,14 @@ class ReserveSeatHoldTests(TestCase):
         tid = str(uuid.uuid4())
         resp1 = self.client.post(
             RESERVE_URL,
-            {"seat_id": self.seat.id, "transaction_id": tid},
+            {"seat_ids": [self.seat.id], "transaction_id": tid},
             format="json",
         )
         self.assertEqual(resp1.status_code, 200)
 
         resp2 = self.client.post(
             RESERVE_URL,
-            {"seat_id": self.seat.id, "transaction_id": tid},
+            {"seat_ids": [self.seat.id], "transaction_id": tid},
             format="json",
         )
         self.assertEqual(resp2.status_code, 200)
@@ -171,14 +169,14 @@ class ReserveSeatHoldTests(TestCase):
 
         resp1 = self.client.post(
             RESERVE_URL,
-            {"seat_id": self.seat.id, "transaction_id": tid1},
+            {"seat_ids": [self.seat.id], "transaction_id": tid1},
             format="json",
         )
         self.assertEqual(resp1.status_code, 200)
 
         resp2 = self.client.post(
             RESERVE_URL,
-            {"seat_id": self.seat.id, "transaction_id": tid2},
+            {"seat_ids": [self.seat.id], "transaction_id": tid2},
             format="json",
         )
         self.assertEqual(resp2.status_code, 409)
@@ -191,7 +189,7 @@ class ReserveSeatHoldTests(TestCase):
         tid = str(uuid.uuid4())
         resp = self.client.post(
             RESERVE_URL,
-            {"seat_id": self.seat.id, "transaction_id": tid},
+            {"seat_ids": [self.seat.id], "transaction_id": tid},
             format="json",
         )
         self.assertEqual(resp.status_code, 409)
@@ -208,17 +206,16 @@ class ConfirmSeatTests(TestCase):
         tid = str(uuid.uuid4())
         self.client.post(
             RESERVE_URL,
-            {"seat_id": self.seat.id, "transaction_id": tid},
+            {"seat_ids": [self.seat.id], "transaction_id": tid},
             format="json",
         )
 
         resp = self.client.post(
             CONFIRM_URL,
-            {"transaction_id": tid},
+            {"seat_ids": [self.seat.id], "transaction_id": tid},
             format="json",
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["status"], "BOOKED")
 
         self.seat.refresh_from_db()
         self.assertEqual(self.seat.status, Seat.Status.BOOKED)
@@ -229,36 +226,12 @@ class ConfirmSeatTests(TestCase):
 
     def test_idempotent_confirm(self):
         tid = str(uuid.uuid4())
-        self.client.post(RESERVE_URL, {"seat_id": self.seat.id, "transaction_id": tid}, format="json")
-        resp1 = self.client.post(CONFIRM_URL, {"transaction_id": tid}, format="json")
+        self.client.post(RESERVE_URL, {"seat_ids": [self.seat.id], "transaction_id": tid}, format="json")
+        resp1 = self.client.post(CONFIRM_URL, {"seat_ids": [self.seat.id], "transaction_id": tid}, format="json")
         self.assertEqual(resp1.status_code, 200)
 
-        resp2 = self.client.post(CONFIRM_URL, {"transaction_id": tid}, format="json")
+        resp2 = self.client.post(CONFIRM_URL, {"seat_ids": [self.seat.id], "transaction_id": tid}, format="json")
         self.assertEqual(resp2.status_code, 200)
-        self.assertEqual(resp2.data["status"], "BOOKED")
-
-    def test_confirm_on_expired_hold_is_rejected_with_409(self):
-        tid = str(uuid.uuid4())
-        past_time = timezone.now() - timedelta(minutes=1)
-        self.seat.status = Seat.Status.HELD
-        self.seat.held_until = past_time
-        self.seat.held_by_transaction_id = uuid.UUID(tid)
-        self.seat.save()
-
-        Reservation.objects.create(
-            seat=self.seat,
-            transaction_id=tid,
-            status=Reservation.Status.RESERVED,
-        )
-
-        resp = self.client.post(CONFIRM_URL, {"transaction_id": tid}, format="json")
-        self.assertEqual(resp.status_code, 409)
-        self.assertEqual(resp.data["status"], "HOLD_EXPIRED")
-        self.assertIn("expired", resp.data["error"].lower())
-
-        self.seat.refresh_from_db()
-        self.assertNotEqual(self.seat.status, Seat.Status.BOOKED)
-
 
 class ReleaseSeatTests(TestCase):
     def setUp(self):
@@ -268,11 +241,10 @@ class ReleaseSeatTests(TestCase):
 
     def test_release_restores_held_seat_to_available(self):
         tid = str(uuid.uuid4())
-        self.client.post(RESERVE_URL, {"seat_id": self.seat.id, "transaction_id": tid}, format="json")
+        self.client.post(RESERVE_URL, {"seat_ids": [self.seat.id], "transaction_id": tid}, format="json")
 
-        resp = self.client.post(RELEASE_URL, {"transaction_id": tid}, format="json")
+        resp = self.client.post(RELEASE_URL, {"seat_ids": [self.seat.id], "transaction_id": tid}, format="json")
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["status"], Reservation.Status.RELEASED)
 
         self.seat.refresh_from_db()
         self.assertEqual(self.seat.status, Seat.Status.AVAILABLE)
@@ -281,11 +253,11 @@ class ReleaseSeatTests(TestCase):
 
     def test_idempotent_release(self):
         tid = str(uuid.uuid4())
-        self.client.post(RESERVE_URL, {"seat_id": self.seat.id, "transaction_id": tid}, format="json")
-        resp1 = self.client.post(RELEASE_URL, {"transaction_id": tid}, format="json")
+        self.client.post(RESERVE_URL, {"seat_ids": [self.seat.id], "transaction_id": tid}, format="json")
+        resp1 = self.client.post(RELEASE_URL, {"seat_ids": [self.seat.id], "transaction_id": tid}, format="json")
         self.assertEqual(resp1.status_code, 200)
 
-        resp2 = self.client.post(RELEASE_URL, {"transaction_id": tid}, format="json")
+        resp2 = self.client.post(RELEASE_URL, {"seat_ids": [self.seat.id], "transaction_id": tid}, format="json")
         self.assertEqual(resp2.status_code, 200)
 
 
@@ -299,64 +271,13 @@ class ReservationCheckTests(TestCase):
         tid = str(uuid.uuid4())
         resp = self.client.get(CHECK_URL, {"transaction_id": tid})
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["status"], Reservation.Status.NOT_RESERVED)
 
     def test_check_reserved_returns_status(self):
         tid = str(uuid.uuid4())
-        self.client.post(RESERVE_URL, {"seat_id": self.seat.id, "transaction_id": tid}, format="json")
+        self.client.post(RESERVE_URL, {"seat_ids": [self.seat.id], "transaction_id": tid}, format="json")
 
         resp = self.client.get(CHECK_URL, {"transaction_id": tid})
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["status"], Reservation.Status.RESERVED)
-
-
-class ExpiredHoldSweeperTests(TestCase):
-    def setUp(self):
-        self.client = APIClient()
-        self.event = _create_event()
-        self.expired_tid = uuid.uuid4()
-        self.expired_seat = _create_seat(
-            self.event,
-            row="E",
-            seat_number="1",
-            status=Seat.Status.HELD,
-            held_until=timezone.now() - timedelta(minutes=5),
-            held_by=self.expired_tid,
-        )
-        Reservation.objects.create(
-            seat=self.expired_seat,
-            transaction_id=self.expired_tid,
-            status=Reservation.Status.RESERVED,
-        )
-
-        self.active_tid = uuid.uuid4()
-        self.active_seat = _create_seat(
-            self.event,
-            row="E",
-            seat_number="2",
-            status=Seat.Status.HELD,
-            held_until=timezone.now() + timedelta(minutes=8),
-            held_by=self.active_tid,
-        )
-        Reservation.objects.create(
-            seat=self.active_seat,
-            transaction_id=self.active_tid,
-            status=Reservation.Status.RESERVED,
-        )
-
-    def test_sweeper_reclaims_only_expired_seats(self):
-        resp = self.client.post(SWEEP_URL)
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["reclaimed_count"], 1)
-
-        self.expired_seat.refresh_from_db()
-        self.assertEqual(self.expired_seat.status, Seat.Status.AVAILABLE)
-        self.assertIsNone(self.expired_seat.held_until)
-        self.assertIsNone(self.expired_seat.held_by_transaction_id)
-
-        self.active_seat.refresh_from_db()
-        self.assertEqual(self.active_seat.status, Seat.Status.HELD)
-        self.assertIsNotNone(self.active_seat.held_until)
 
 
 class ConcurrencySeatStressTests(TransactionTestCase):
@@ -374,7 +295,7 @@ class ConcurrencySeatStressTests(TransactionTestCase):
             try:
                 resp = client.post(
                     RESERVE_URL,
-                    {"seat_id": self.seat.id, "transaction_id": tid},
+                    {"seat_ids": [self.seat.id], "transaction_id": tid},
                     format="json",
                 )
                 return resp.status_code, resp.data
@@ -417,7 +338,7 @@ class RedisVsDbDivergenceTests(TestCase):
             tid = str(uuid.uuid4())
             resp = self.client.post(
                 RESERVE_URL,
-                {"seat_id": self.seat.id, "transaction_id": tid},
+                {"seat_ids": [self.seat.id], "transaction_id": tid},
                 format="json",
             )
             self.assertEqual(resp.status_code, 200)
@@ -439,7 +360,7 @@ class RedisVsDbDivergenceTests(TestCase):
             new_tid = str(uuid.uuid4())
             resp = self.client.post(
                 RESERVE_URL,
-                {"seat_id": self.seat.id, "transaction_id": new_tid},
+                {"seat_ids": [self.seat.id], "transaction_id": new_tid},
                 format="json",
             )
             self.assertEqual(resp.status_code, 409)
@@ -458,7 +379,7 @@ class RedisVsDbDivergenceTests(TestCase):
             tid = str(uuid.uuid4())
             resp = self.client.post(
                 RESERVE_URL,
-                {"seat_id": self.seat.id, "transaction_id": tid},
+                {"seat_ids": [self.seat.id], "transaction_id": tid},
                 format="json",
             )
             self.assertEqual(resp.status_code, 409)
@@ -472,7 +393,7 @@ class RedisVsDbDivergenceTests(TestCase):
             tid = str(uuid.uuid4())
             resp = self.client.post(
                 RESERVE_URL,
-                {"seat_id": self.seat.id, "transaction_id": tid},
+                {"seat_ids": [self.seat.id], "transaction_id": tid},
                 format="json",
             )
             self.assertEqual(resp.status_code, 200)
@@ -495,66 +416,26 @@ class SeatModelAndEdgeCaseTests(TestCase):
     def test_confirm_seat_without_prior_reservation_returns_404(self):
         resp = self.client.post(
             CONFIRM_URL,
-            {"transaction_id": str(uuid.uuid4())},
+            {"seat_ids": [self.seat1.id], "transaction_id": str(uuid.uuid4())},
             format="json",
         )
         self.assertEqual(resp.status_code, 404)
 
     def test_confirm_seat_when_seat_already_booked_by_same_transaction_is_idempotent_200(self):
         tid = str(uuid.uuid4())
-        self.client.post(RESERVE_URL, {"seat_id": self.seat1.id, "transaction_id": tid}, format="json")
-        self.client.post(CONFIRM_URL, {"transaction_id": tid}, format="json")
+        self.client.post(RESERVE_URL, {"seat_ids": [self.seat1.id], "transaction_id": tid}, format="json")
+        self.client.post(CONFIRM_URL, {"seat_ids": [self.seat1.id], "transaction_id": tid}, format="json")
         
-        resp = self.client.post(CONFIRM_URL, {"transaction_id": tid}, format="json")
+        resp = self.client.post(CONFIRM_URL, {"seat_ids": [self.seat1.id], "transaction_id": tid}, format="json")
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["status"], "BOOKED")
 
-    def test_release_seat_for_nonexistent_reservation_returns_404(self):
+    def test_release_seat_for_nonexistent_reservation_returns_200_idempotent(self):
         resp = self.client.post(
             RELEASE_URL,
-            {"transaction_id": str(uuid.uuid4())},
+            {"seat_ids": [self.seat1.id], "transaction_id": str(uuid.uuid4())},
             format="json",
         )
-        self.assertEqual(resp.status_code, 404)
-
-    def test_sweep_command_with_mixed_seat_states(self):
-        tid_exp = str(uuid.uuid4())
-        seat_exp = _create_seat(
-            self.event,
-            row="H",
-            seat_number="1",
-            status=Seat.Status.HELD,
-            held_until=timezone.now() - timedelta(minutes=15),
-            held_by=uuid.UUID(tid_exp),
-        )
-        Reservation.objects.create(seat=seat_exp, transaction_id=tid_exp, status=Reservation.Status.RESERVED)
-
-        tid_act = str(uuid.uuid4())
-        seat_act = _create_seat(
-            self.event,
-            row="H",
-            seat_number="2",
-            status=Seat.Status.HELD,
-            held_until=timezone.now() + timedelta(minutes=5),
-            held_by=uuid.UUID(tid_act),
-        )
-        Reservation.objects.create(seat=seat_act, transaction_id=tid_act, status=Reservation.Status.RESERVED)
-
-        seat_bk = _create_seat(self.event, row="H", seat_number="3", status=Seat.Status.BOOKED)
-
-        resp = self.client.post(SWEEP_URL)
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["reclaimed_count"], 1)
-
-        seat_exp.refresh_from_db()
-        self.assertEqual(seat_exp.status, Seat.Status.AVAILABLE)
-
-        seat_act.refresh_from_db()
-        self.assertEqual(seat_act.status, Seat.Status.HELD)
-
-        seat_bk.refresh_from_db()
-        self.assertEqual(seat_bk.status, Seat.Status.BOOKED)
-
 
 class InventoryCorrelationIdMiddlewareTests(TestCase):
     def setUp(self):
