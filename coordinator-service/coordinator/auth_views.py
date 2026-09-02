@@ -191,7 +191,7 @@ If you did not request this verification code, please ignore this message.
             "text": text_content,
         }
         result = resend.Emails.send(params)
-        print(f"[Email Dispatch Success] Verification code {otp_code} delivered to {to_email} via Resend. id={result.get('id')}")
+        print(f"[Email Dispatch Success] Verification code delivered to {to_email} via Resend. id={result.get('id')}")
     except Exception as e:
         print(f"[Email Dispatch Error] {type(e).__name__}: {e}")
 

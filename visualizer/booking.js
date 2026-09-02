@@ -11,9 +11,9 @@
 
 // Service Configuration (Locked to Production Invariants)
 const CONFIG = {
-  coordinatorUrl: "https://coordinator-production-4685.up.railway.app",
-  inventoryUrl: "https://inventory-production-9e43.up.railway.app",
-  paymentUrl: "https://payment-production-bcb1.up.railway.app",
+  coordinatorUrl: localStorage.getItem("dtc_coordinator_url") || "https://coordinator-production-4685.up.railway.app",
+  inventoryUrl: localStorage.getItem("dtc_inventory_url") || "https://inventory-production-9e43.up.railway.app",
+  paymentUrl: localStorage.getItem("dtc_payment_url") || "https://payment-production-bcb1.up.railway.app",
   pollIntervalMs: 1500,
 };
 
