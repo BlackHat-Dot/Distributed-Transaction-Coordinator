@@ -1232,10 +1232,14 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
   await animatePacketAlongPath({ route: "coord-pay", type: "success", durationMs: 350, destinationNodeId: "node-box-pay" });
   await animatePacketAlongPath({ route: "pay-coord", type: "success", durationMs: 300, destinationNodeId: "node-box-coord" });
 
+  const serverDurationMs = (res.data && res.data.created_at && res.data.updated_at)
+    ? Math.max(1, new Date(res.data.updated_at).getTime() - new Date(res.data.created_at).getTime())
+    : latencyMs;
+
   if (isAsync) {
     showToast({
       icon: "⦿",
-      title: `Async Saga Dispatched (202 Accepted · ${latencyMs}ms)`,
+      title: `Async Saga Dispatched (202 Accepted · ${latencyMs}ms client RTT)`,
       message: `[Mode: ASYNCHRONOUS] Task enqueued to Celery background worker! Client unblocked in ${latencyMs}ms. Celery worker is executing Reserve → Charge → Confirm.`,
       type: "success",
       duration: 6500,
@@ -1243,8 +1247,8 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
   } else {
     showToast({
       icon: "⦿",
-      title: `Sync Saga Completed (200 OK · ${latencyMs}ms)`,
-      message: `[Mode: SYNCHRONOUS] Blocking execution finished in ${latencyMs}ms. Seat #${nextSeatId} Reserved → Payment Charged ($500.00) → Confirmed.`,
+      title: `Sync Saga Completed (200 OK · ${serverDurationMs}ms server · ${latencyMs}ms client RTT)`,
+      message: `[Mode: SYNCHRONOUS] Completed in ${serverDurationMs}ms on server (${latencyMs}ms total round-trip). Seat #${nextSeatId} Reserved → Payment Charged ($500.00) → Confirmed.`,
       type: "success",
       duration: 6500,
     });
@@ -1729,19 +1733,23 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
     await animatePacketAlongPath({ route: "coord-pay", type: "success", durationMs: 350, destinationNodeId: "node-box-pay" });
     await animatePacketAlongPath({ route: "pay-coord", type: "success", durationMs: 300, destinationNodeId: "node-box-coord" });
 
+    const serverDurationMs = (txData.created_at && txData.updated_at)
+      ? Math.max(1, new Date(txData.updated_at).getTime() - new Date(txData.created_at).getTime())
+      : latencyMs;
+
     if (execMode === "async" || res.status === 202) {
       showToast({
         icon: "⦿",
-        title: `Async Saga Dispatched (202 Accepted · ${latencyMs}ms)`,
-        message: `[Mode: ASYNCHRONOUS] Task enqueued to Celery background worker! Client unblocked in ${latencyMs}ms. Celery worker is executing Reserve → Charge → Confirm.`,
+        title: `Async Saga Dispatched (202 Accepted · ${latencyMs}ms client RTT)`,
+        message: `[Mode: ASYNCHRONOUS] Task enqueued to Celery! Client released in ${latencyMs}ms. Background worker is orchestrating Reserve → Charge → Confirm.`,
         type: "success",
         duration: 6500,
       });
     } else {
       showToast({
         icon: "🔁",
-        title: `Sync Pipeline: 200 OK (${latencyMs}ms)`,
-        message: `Coordinator → Inventory Reserve → Payment Charge → Inventory Confirm — completed in ${latencyMs}ms. COMPLETED.`,
+        title: `Sync Pipeline: 200 OK (${serverDurationMs}ms server · ${latencyMs}ms client RTT)`,
+        message: `Coordinator → Inventory Reserve → Payment Charge → Inventory Confirm — completed in ${serverDurationMs}ms on server (${latencyMs}ms total round-trip). COMPLETED.`,
         type: "success",
         duration: 6500,
       });
@@ -1875,7 +1883,7 @@ if (btnExecInfo) {
     showToast({
       icon: "⦿",
       title: "Sync vs. Async Pipeline (Simple Guide)",
-      message: "Async (Background): Gives you an instant receipt (202 Accepted) in 10ms, then Celery workers finish booking the seat in the background (like BookMyShow).\n\n🔁 Sync (Wait): Keeps your browser connection waiting until all services (Seat + Bank + Confirmation) are 100% finished before responding (200 OK).",
+      message: "Async (Background): Gives you an instant receipt (202 Accepted) in 10ms, then Celery workers finish booking the seat in the background (like BookMyShow).\n\nSync (Wait): Keeps your browser connection waiting until all services (Seat + Bank + Confirmation) are 100% finished before responding (200 OK).",
       type: "normal",
       duration: 8500,
     });
