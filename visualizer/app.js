@@ -1607,39 +1607,52 @@ async function populateCustomSeatDropdown() {
 }
 
 DOM.btnToggleCustom.addEventListener("click", () => {
-  if (STATE.isSimulatedMode) {
-    showToast({
-      icon: "✦︎",
-      title: "Live Mode Required",
-      message: "Custom Payload parameters are only available in LIVE mode. Please switch to LIVE mode at the top navigation bar.",
-      type: "warning",
-      duration: 5000,
-    });
-    return;
-  }
   const isHidden = DOM.customDrawer.classList.toggle("hidden");
   if (!isHidden) {
     populateCustomSeatDropdown();
+    DOM.customDrawer.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 });
 
 DOM.formCustomTx.addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (STATE.isSimulatedMode) {
-    showToast({
-      icon: "✦︎",
-      title: "Live Mode Required",
-      message: "Custom Payload parameters are only available in LIVE mode.",
-      type: "warning",
-      duration: 5000,
-    });
-    return;
-  }
-  if (!checkLiveAuthGate("dispatch custom live distributed transactions")) return;
 
   const seatId = parseInt(document.getElementById("cust-seat-id").value, 10) || 31;
   const amount = parseFloat(document.getElementById("cust-amount").value) || 500;
   const execMode = document.getElementById("cust-exec-mode")?.value || "async";
+  const customId = document.getElementById("cust-tx-id").value.trim();
+
+  STATE.stats.dispatchedCount++;
+  DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
+  DOM.customDrawer.classList.add("hidden");
+
+  if (STATE.isSimulatedMode) {
+    if (execMode === "async") {
+      DOM.topoCoordState.textContent = "ASYNC DISPATCH";
+    } else {
+      DOM.topoCoordState.textContent = "SYNC DISPATCH";
+    }
+
+    await animatePacketAlongPath({ route: "client-coord", type: "info", durationMs: 300, destinationNodeId: "node-box-coord" });
+    await animatePacketAlongPath({ route: "coord-inv", type: "info", durationMs: 300, destinationNodeId: "node-box-inv" });
+    await animatePacketAlongPath({ route: "inv-coord", type: "success", durationMs: 250, destinationNodeId: "node-box-coord" });
+    await animatePacketAlongPath({ route: "coord-pay", type: "info", durationMs: 300, destinationNodeId: "node-box-pay" });
+    await animatePacketAlongPath({ route: "pay-coord", type: "success", durationMs: 250, destinationNodeId: "node-box-coord" });
+
+    createSimulatedTransaction("COMPLETED");
+    showToast({
+      icon: "⦿",
+      title: `Custom Saga (${execMode.toUpperCase()}) - Demo Mode`,
+      message: `Dispatched custom parameters: Seat #${seatId} ($${amount.toFixed(2)}) → COMPLETED`,
+      type: "success",
+      duration: 5000,
+    });
+    DOM.topoCoordState.textContent = "IDLE";
+    return;
+  }
+
+  if (!checkLiveAuthGate("dispatch custom live distributed transactions")) return;
+
   const payload = {
     seat_id: seatId,
     quantity: 1,
@@ -1647,12 +1660,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
     ...getActiveUserPayload(),
   };
 
-  const customId = document.getElementById("cust-tx-id").value.trim();
   if (customId) payload.transaction_id = customId;
-
-  STATE.stats.dispatchedCount++;
-  DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
-  DOM.customDrawer.classList.add("hidden");
 
   if (execMode === "async") {
     DOM.topoCoordState.textContent = "ASYNC DISPATCH";
