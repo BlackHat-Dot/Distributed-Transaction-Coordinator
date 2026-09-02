@@ -193,15 +193,16 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             http_status_code=release_response.status_code,
             http_payload=resp_json,
         )
-        return Response(
-            {
-                "transaction_id": str(transaction_id),
-                "status": Transaction.Status.COMPENSATED,
-                "payment_response": payment_data,
-                "compensation_response": resp_json,
-            },
-            status=400,
-        )
+        txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+        data = _serialize_transaction(txn) if txn else {
+            "transaction_id": str(transaction_id),
+            "status": Transaction.Status.COMPENSATED,
+        }
+        data.update({
+            "payment_response": payment_data,
+            "compensation_response": resp_json,
+        })
+        return Response(data, status=400)
 
     _set_status_with_event(
         transaction_id,
@@ -211,15 +212,16 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
         http_status_code=release_response.status_code,
         http_payload=resp_json,
     )
-    return Response(
-        {
-            "transaction_id": str(transaction_id),
-            "status": Transaction.Status.COMPENSATION_FAILED,
-            "payment_response": payment_data,
-            "compensation_response": resp_json,
-        },
-        status=500,
-    )
+    txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+    data = _serialize_transaction(txn) if txn else {
+        "transaction_id": str(transaction_id),
+        "status": Transaction.Status.COMPENSATION_FAILED,
+    }
+    data.update({
+        "payment_response": payment_data,
+        "compensation_response": resp_json,
+    })
+    return Response(data, status=500)
 
 
 def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, payment_status_code=200, correlation_id=None, seat_ids=None):
@@ -245,12 +247,16 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
                 http_status_code=payment_status_code,
                 http_payload={"payment": payment_data, "inventory": confirm_json},
             )
-            return Response({
+            txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+            data = _serialize_transaction(txn) if txn else {
                 "transaction_id": str(transaction_id),
                 "status": Transaction.Status.COMPLETED,
+            }
+            data.update({
                 "payment_response": payment_data,
                 "inventory_response": confirm_json,
             })
+            return Response(data)
 
         confirm_json = None
         if confirm_resp is not None:
