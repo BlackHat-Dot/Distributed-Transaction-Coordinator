@@ -309,7 +309,7 @@ def _charge_payment(
             PAYMENT_CHARGE_URL,
             json={
                 "transaction_id": str(transaction_id),
-                "amount": amount,
+                "amount": str(amount),
                 "user_id": uid,
                 "user_email": uemail,
                 "held_by_user_id": uid,
@@ -656,7 +656,7 @@ def retry_compensation(request, transaction_id):
     try:
         release_response = requests.post(
             INVENTORY_RELEASE_URL,
-            json={"transaction_id": str(transaction_id)},
+            json={"transaction_id": str(transaction_id), "seat_ids": txn.seat_ids},
             headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
