@@ -1045,7 +1045,7 @@ async function handleSeatTileClick(seatId) {
         title: "Seat Already Held",
         message: `Seat ${seat.row}${seat.seat_number} is currently held by another user. ${timeMsg}`,
         type: "warning",
-        icon: "🔒",
+        icon: "",
         duration: 5000,
       });
       return;
