@@ -1738,11 +1738,10 @@ DOM.btnTriggerSweep.addEventListener("click", async () => {
     const now = new Date().toISOString();
     STATE.transactions.forEach(tx => {
       if (tx.status === "STARTED") {
-        tx.status = "COMPLETED";
+        tx.status = "TIMEOUT";
+        tx.failure_reason = "Nothing reserved or charged (coordinator crashed before reservation) → Marked TIMEOUT";
         tx.events = [
-          { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVED", actor: "recovery", http_status_code: 200, http_payload: { message: "Recovered reservation" }, created_at: now },
-          { seq: 2, from_status: "INVENTORY_RESERVED", to_status: "PAYMENT_PROCESSING", actor: "recovery", http_status_code: null, http_payload: null, created_at: now },
-          { seq: 3, from_status: "PAYMENT_PROCESSING", to_status: "COMPLETED", actor: "recovery", http_status_code: 200, http_payload: { status: "CHARGED", note: "Swept by Celery Beat" }, created_at: now },
+          { seq: 1, from_status: "STARTED", to_status: "TIMEOUT", actor: "recovery", http_status_code: 200, http_payload: { message: "Swept by Celery Beat: nothing reserved or charged, marked TIMEOUT" }, created_at: now },
         ];
         tx.updated_at = now;
         swept++;
@@ -1757,7 +1756,7 @@ DOM.btnTriggerSweep.addEventListener("click", async () => {
     if (STATE.activeTxId) {
       inspectTransaction(STATE.activeTxId, true);
     }
-    recoveredSummary = swept > 0 ? `Simulated sweep recovered ${swept} orphaned transaction(s) to COMPLETED.` : "No stale records found to sweep.";
+    recoveredSummary = swept > 0 ? `Simulated sweep recovered ${swept} orphaned transaction(s) to TIMEOUT.` : "No stale records found to sweep.";
   } else {
     try {
       const sweepRes = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/recovery/sweep/`, {
@@ -1977,11 +1976,10 @@ function startRecoveryCountdown() {
         const now = new Date().toISOString();
         STATE.transactions.forEach(tx => {
           if (tx.status === "STARTED") {
-            tx.status = "COMPLETED";
+            tx.status = "TIMEOUT";
+            tx.failure_reason = "Nothing reserved or charged (coordinator crashed before reservation) → Marked TIMEOUT";
             tx.events = [
-              { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVED", actor: "recovery", http_status_code: 200, http_payload: { message: "Recovered reservation" }, created_at: now },
-              { seq: 2, from_status: "INVENTORY_RESERVED", to_status: "PAYMENT_PROCESSING", actor: "recovery", http_status_code: null, http_payload: null, created_at: now },
-              { seq: 3, from_status: "PAYMENT_PROCESSING", to_status: "COMPLETED", actor: "recovery", http_status_code: 200, http_payload: { status: "CHARGED", note: "Swept by Celery Beat" }, created_at: now },
+              { seq: 1, from_status: "STARTED", to_status: "TIMEOUT", actor: "recovery", http_status_code: 200, http_payload: { message: "Swept by Celery Beat: nothing reserved or charged, marked TIMEOUT" }, created_at: now },
             ];
             tx.updated_at = now;
             swept++;
