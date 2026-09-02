@@ -1592,6 +1592,16 @@ async function populateCustomSeatDropdown() {
 }
 
 DOM.btnToggleCustom.addEventListener("click", () => {
+  if (STATE.isSimulatedMode) {
+    showToast({
+      icon: "🔒",
+      title: "Live Mode Required",
+      message: "Custom Payload parameters are only available in LIVE mode. Please switch to LIVE mode at the top navigation bar.",
+      type: "warning",
+      duration: 5000,
+    });
+    return;
+  }
   const isHidden = DOM.customDrawer.classList.toggle("hidden");
   if (!isHidden) {
     populateCustomSeatDropdown();
@@ -1600,6 +1610,16 @@ DOM.btnToggleCustom.addEventListener("click", () => {
 
 DOM.formCustomTx.addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (STATE.isSimulatedMode) {
+    showToast({
+      icon: "🔒",
+      title: "Live Mode Required",
+      message: "Custom Payload parameters are only available in LIVE mode.",
+      type: "warning",
+      duration: 5000,
+    });
+    return;
+  }
   if (!checkLiveAuthGate("dispatch custom live distributed transactions")) return;
 
   const seatId = parseInt(document.getElementById("cust-seat-id").value, 10) || 31;
@@ -1620,9 +1640,9 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   DOM.customDrawer.classList.add("hidden");
 
   if (execMode === "async") {
-    DOM.topoCoordState.textContent = "ASYNC DISPATCH (NON-BLOCKING)";
+    DOM.topoCoordState.textContent = "ASYNC DISPATCH";
   } else {
-    DOM.topoCoordState.textContent = "SYNC · Holding HTTP · Calling Inventory...";
+    DOM.topoCoordState.textContent = "SYNC DISPATCH";
   }
 
   // Animate: Client → Coordinator
@@ -1632,13 +1652,13 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
 
   // Animate live pipeline steps while HTTP request is in-flight
   await animatePacketAlongPath({ route: "coord-inv", type: "info", durationMs: 300, destinationNodeId: "node-box-inv" });
-  if (execMode === "sync") DOM.topoCoordState.textContent = "🔁 SYNC · Inventory Reserved · Calling Payment...";
+  if (execMode === "sync") DOM.topoCoordState.textContent = "RESERVING";
 
   const payAnimPromise = (async () => {
     await new Promise(r => setTimeout(r, 100));
     await animatePacketAlongPath({ route: "inv-coord", type: "success", durationMs: 250, destinationNodeId: "node-box-coord" });
     if (execMode === "sync") {
-      DOM.topoCoordState.textContent = "🔁 SYNC · Charging Payment Gateway...";
+      DOM.topoCoordState.textContent = "CHARGING";
       await animatePacketAlongPath({ route: "coord-pay", type: "info", durationMs: 300, destinationNodeId: "node-box-pay" });
     }
   })();
@@ -1664,7 +1684,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   }
   else if (status === "COMPENSATED" || status === "COMPENSATION_FAILED") {
     await animatePacketAlongPath({ route: "pay-coord", type: "danger", durationMs: 300, destinationNodeId: "node-box-coord" });
-    DOM.topoCoordState.textContent = "🔁 SYNC · Payment Declined · Compensating...";
+    DOM.topoCoordState.textContent = "COMPENSATING";
     await animatePacketAlongPath({ route: "coord-inv", type: "warning", durationMs: 350, destinationNodeId: "node-box-inv" });
     await animatePacketAlongPath({ route: "inv-coord", type: "warning", durationMs: 300, destinationNodeId: "node-box-coord" });
     showToast({ icon: "🔄", title: "Payment Declined & Compensated", message: `[${res.status} in ${latencyMs}ms] $${amount} declined → seat released → COMPENSATED`, type: "normal", duration: 6000 });
@@ -1680,7 +1700,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   else {
     // 🔁 SYNC SUCCESS
     await animatePacketAlongPath({ route: "pay-coord", type: "success", durationMs: 300, destinationNodeId: "node-box-coord" });
-    DOM.topoCoordState.textContent = "⦿ SYNC · Confirming Seat in Inventory...";
+    DOM.topoCoordState.textContent = "CONFIRMING";
     await animatePacketAlongPath({ route: "coord-inv", type: "success", durationMs: 300, destinationNodeId: "node-box-inv" });
     await animatePacketAlongPath({ route: "inv-coord", type: "success", durationMs: 250, destinationNodeId: "node-box-coord" });
     showToast({ icon: "🔁", title: `Sync Pipeline: 200 OK (${latencyMs}ms)`, message: `Coordinator → Inventory Reserve → Payment Charge → Inventory Confirm — completed in ${latencyMs}ms. COMPLETED.`, type: "success", duration: 6500 });
@@ -2034,9 +2054,9 @@ const DEFAULT_CANVAS_NODES = {
   "db-redis-broker": { x: 86,   y: 89,  width: 185, height: 44 },
 
   // Center Column
-  beat:              { x: 400,  y: 14,  width: 160, height: 58 },
+  beat:              { x: 390,  y: 14,  width: 180, height: 58 },
   worker:            { x: 386,  y: 140, width: 190, height: 68 },
-  coord:             { x: 404,  y: 290, width: 200, height: 120 },
+  coord:             { x: 390,  y: 290, width: 225, height: 120 },
   "db-coord":        { x: 382,  y: 485, width: 170, height: 44 },
 
   // Right-Center Column

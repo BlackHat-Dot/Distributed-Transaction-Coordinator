@@ -415,14 +415,14 @@
 
               <!-- 2. Celery Beat Scheduler Node -->
               <g class="topo-node-group" id="node-group-beat" data-node-key="beat" title="Double click to focus node • Drag to reposition">
-                <rect id="node-box-beat" class="node-box node-box-beat" width="160" height="58" rx="10"/>
-                <rect class="node-header-bar node-header-beat" x="0" y="0" width="160" height="24" rx="10"/>
+                <rect id="node-box-beat" class="node-box node-box-beat" width="180" height="58" rx="10"/>
+                <rect class="node-header-bar node-header-beat" x="0" y="0" width="180" height="24" rx="10"/>
                 <circle cx="18" cy="12" r="6" fill="#ec4899" opacity="0.4"/>
                 <text x="18" y="15" font-size="8.5" fill="#f472b6" text-anchor="middle">⏱️</text>
                 <text x="32" y="16" class="node-title" style="font-size: 9.5px;">CELERY BEAT SCHEDULER</text>
                 
-                <text x="12" y="44" class="node-stat-label" style="font-size: 8.5px;">Cron Heartbeat</text>
-                <text x="148" y="44" class="node-stat-val font-mono" text-anchor="end" style="font-size: 8.5px;"><tspan class="text-accent" id="topo-beat-countdown">90s</tspan><tspan fill="#64748b"> • </tspan><tspan class="text-purple">CRON ACTIVE</tspan></text>
+                <text x="12" y="44" class="node-stat-label" style="font-size: 8.5px;">Heartbeat</text>
+                <text x="168" y="44" class="node-stat-val font-mono" text-anchor="end" style="font-size: 8.5px;"><tspan class="text-accent" id="topo-beat-countdown">90s</tspan><tspan fill="#64748b"> • </tspan><tspan class="text-purple">CRON ACTIVE</tspan></text>
               </g>
 
               <!-- 3. Dedicated Redis DB Node 1: Task Broker -->
@@ -468,21 +468,21 @@
 
               <!-- 6. Coordinator Service Node -->
               <g class="topo-node-group" id="node-group-coord" data-node-key="coord" title="Double click to focus node • Drag to reposition">
-                <rect id="node-box-coord" class="node-box node-box-coord" width="200" height="120" rx="14"/>
-                <rect class="node-header-bar" x="0" y="0" width="200" height="38" rx="14"/>
+                <rect id="node-box-coord" class="node-box node-box-coord" width="225" height="120" rx="14"/>
+                <rect class="node-header-bar" x="0" y="0" width="225" height="38" rx="14"/>
                 <circle cx="24" cy="20" r="8" fill="#6366f1" opacity="0.4"/>
                 <text x="24" y="24" font-size="10" fill="#a5b4fc" text-anchor="middle" id="icon-coord">⚙️</text>
                 <text x="42" y="19" class="node-title" id="title-coord">COORDINATOR SERVICE</text>
                 <text x="42" y="31" class="node-port-sub">Port 8002 • Saga Orchestrator</text>
                 
-                <text x="16" y="62" class="node-stat-label">State Machine</text>
-                <text x="186" y="62" class="node-stat-val font-mono" id="topo-coord-state" text-anchor="end">IDLE</text>
+                <text x="14" y="62" class="node-stat-label" style="font-size: 9px;">State Machine</text>
+                <text x="212" y="62" class="node-stat-val font-mono" id="topo-coord-state" text-anchor="end" style="font-size: 9px;">IDLE</text>
                 
-                <text x="16" y="84" class="node-stat-label">Audit SagaEvent</text>
-                <text x="186" y="84" class="node-stat-val" id="topo-coord-events" text-anchor="end">0 sagas</text>
+                <text x="14" y="84" class="node-stat-label" style="font-size: 9px;">Audit SagaEvent</text>
+                <text x="212" y="84" class="node-stat-val" id="topo-coord-events" text-anchor="end" style="font-size: 9px;">0 sagas</text>
                 
-                <text x="16" y="106" class="node-stat-label">Recovery Lease</text>
-                <text x="186" y="106" class="node-stat-val text-success font-mono" id="topo-coord-lease" text-anchor="end">READY</text>
+                <text x="14" y="106" class="node-stat-label" style="font-size: 9px;">Recovery Lease</text>
+                <text x="212" y="106" class="node-stat-val text-success font-mono" id="topo-coord-lease" text-anchor="end" style="font-size: 9px;">READY</text>
               </g>
 
               <!-- 7. Dedicated DB Node: Coordinator -->
