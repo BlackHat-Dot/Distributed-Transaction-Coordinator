@@ -1605,9 +1605,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   const seatId = parseInt(document.getElementById("cust-seat-id").value, 10) || 31;
   const amount = parseFloat(document.getElementById("cust-amount").value) || 500;
   const execMode = document.getElementById("cust-exec-mode")?.value || "async";
-  const isFailComp = document.getElementById("cust-flag-fail").checked;
-  const isCrash = document.getElementById("cust-flag-crash").checked;
-
   const payload = {
     seat_id: seatId,
     quantity: 1,
@@ -1617,8 +1614,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
 
   const customId = document.getElementById("cust-tx-id").value.trim();
   if (customId) payload.transaction_id = customId;
-  if (isFailComp) payload.fail_compensation = true;
-  if (isCrash) payload.coordinator = true;
 
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
