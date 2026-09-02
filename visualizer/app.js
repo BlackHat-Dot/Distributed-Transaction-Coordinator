@@ -982,7 +982,7 @@ function getWaterfallHTML(tx) {
       <div class="wf-seg wf-charge" style="width: 55%;" title="Charge Payment: ${pMs}ms"></div>
       <div class="wf-seg wf-commit" style="width: 15%;" title="Commit: ${cMs}ms"></div>
     `;
-    labelHTML = `<span>Res: ${rMs}ms</span><span>Chg: ${pMs}ms</span><span class="wf-duration">${totalMs}ms</span>`;
+    labelHTML = `<span>Res: ${rMs}ms</span><span>Chg: ${pMs}ms</span><span>Cmt: ${cMs}ms</span><span class="wf-duration">${totalMs}ms</span>`;
   } else if (s === "COMPENSATED" || s === "COMPENSATED_ON_RETRY") {
     rMs = Math.max(4, Math.round(totalMs * 0.25));
     pMs = Math.max(8, Math.round(totalMs * 0.45));
