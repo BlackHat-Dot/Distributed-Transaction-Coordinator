@@ -4,12 +4,11 @@ import hmac
 import json
 import os
 import secrets
-import smtplib
 import threading
 import time
 import redis
+import resend
 from django.conf import settings
-from django.core.mail import send_mail
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
 from rest_framework.decorators import api_view
@@ -147,12 +146,6 @@ def get_actor_from_request(request):
 
     return None
 
-
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-
-
-import resend
 
 resend.api_key = os.getenv("RESEND_API_KEY")
 

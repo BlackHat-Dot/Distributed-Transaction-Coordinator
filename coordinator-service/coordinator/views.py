@@ -6,11 +6,11 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from requests.exceptions import Timeout, ConnectionError
 from django.db import IntegrityError, transaction
-from django.utils import timezone
 
 from .models import Transaction, SagaEvent
 from .saga_log import _set_status_with_event
 from .middleware import get_correlation_id
+from coordinator.auth_views import get_actor_from_request
 
 
 @api_view(["GET"])
@@ -74,9 +74,6 @@ def _create_transaction_idempotent(
             },
             status=200,
         )
-
-
-from coordinator.auth_views import get_actor_from_request
 
 
 def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, actor_id=None, user_id=None, user_email=None, held_by_user_id=None, held_by_user_email=None):
@@ -830,18 +827,6 @@ def create_transaction(request):
 @api_view(["GET"])
 def list_transactions(request):
     return _handle_list_transactions(request)
-
-
-@api_view(["GET"])
-def transaction_status_update(request, transaction_id):
-    updated = _set_status_with_event(
-        transaction_id,
-        to_status=Transaction.Status.INVENTORY_RESERVED,
-        actor=SagaEvent.ACTOR_REQUEST,
-    )
-    if not updated:
-        return Response({"detail": "transaction not found"}, status=404)
-    return Response({"detail": "status updated"})
 
 
 def _serialize_event(event):

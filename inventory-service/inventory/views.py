@@ -1,11 +1,8 @@
 import os
 import uuid
-import time
 from datetime import timedelta
 from django.conf import settings
 from django.db import transaction, IntegrityError
-from django.http import Http404
-from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
