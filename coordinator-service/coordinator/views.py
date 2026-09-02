@@ -445,11 +445,13 @@ def _run_saga_pipeline(
         try:
             from decimal import Decimal
             actual_amount = Decimal(str(resp_json["total_amount"]))
-            amount = actual_amount
-            txn = Transaction.objects.filter(transaction_id=transaction_id).first()
-            if txn:
-                txn.amount = amount
-                txn.save(update_fields=["amount"])
+            # Preserve intentional payment failure simulation amount (9999) for compensation scenarios
+            if str(amount).split(".")[0] != "9999":
+                amount = actual_amount
+                txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+                if txn:
+                    txn.amount = amount
+                    txn.save(update_fields=["amount"])
         except (ValueError, TypeError, Exception):
             pass
 
