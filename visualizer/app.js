@@ -1348,6 +1348,17 @@ async function getNextAvailableSeatId() {
 if (DOM.btnResetSeats) {
   DOM.btnResetSeats.addEventListener("click", async () => {
     if (!checkLiveAuthGate("reset live venue seats")) return;
+    if (STATE.isSimulatedMode) {
+      showToast({
+        icon: "🎟️",
+        title: "Venue Restocked (Simulated)",
+        message: "All 30 venue seats have been reset to AVAILABLE! Ready for new bookings.",
+        type: "success",
+        duration: 4000,
+      });
+      fetchTransactionsFeed();
+      return;
+    }
     try {
       const res = await fetchWithTimeout(`${CONFIG.inventoryUrl}/seats/reset/`, { method: "POST" });
       if (res.ok) {
@@ -1619,6 +1630,22 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
   DOM.customDrawer.classList.add("hidden");
 
+  if (STATE.isSimulatedMode) {
+    if (amount === 9999) {
+      createSimulatedTransaction("COMPENSATED", customId);
+    } else {
+      createSimulatedTransaction("COMPLETED", customId);
+    }
+    DOM.topoCoordState.textContent = "IDLE";
+    showToast({
+      icon: "🔁",
+      title: "Custom Payload Dispatched (Simulated)",
+      message: `Transaction ${customId || "auto-generated"} simulated as ${amount === 9999 ? "COMPENSATED" : "COMPLETED"}`,
+      type: "success",
+    });
+    return;
+  }
+
   if (execMode === "async") {
     DOM.topoCoordState.textContent = "ASYNC DISPATCH (NON-BLOCKING)";
   } else {
@@ -1694,6 +1721,76 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   DOM.topoCoordState.textContent = "IDLE";
 });
 
+async 
+function sweepSimulatedTransactions() {
+  const now = new Date().toISOString();
+  const nonTerminal = ["STARTED", "INVENTORY_RESERVED", "PAYMENT_PROCESSING", "COMPENSATING", "COMPENSATION_FAILED", "RECOVERY_IN_PROGRESS"];
+  let sweptCount = 0;
+
+  STATE.transactions.forEach(tx => {
+    if (nonTerminal.includes(tx.status)) {
+      sweptCount++;
+      if (!tx.events) tx.events = [];
+      const nextSeq = tx.events.length + 1;
+
+      if (tx.status === "COMPENSATION_FAILED" || tx.status === "COMPENSATING" || tx.amount == 9999) {
+        tx.events.push({
+          seq: nextSeq,
+          from_status: tx.status,
+          to_status: "COMPENSATING",
+          actor: "recovery",
+          http_status_code: null,
+          http_payload: { probe: "/payments/check/ -> NOT_CHARGED", reason: "Celery recovery sweep releasing stale hold" },
+          created_at: now,
+        });
+        tx.events.push({
+          seq: nextSeq + 1,
+          from_status: "COMPENSATING",
+          to_status: "COMPENSATED",
+          actor: "recovery",
+          http_status_code: 200,
+          http_payload: { message: "Inventory released via Celery recovery sweep" },
+          created_at: now,
+        });
+        tx.status = "COMPENSATED";
+      } else {
+        tx.events.push({
+          seq: nextSeq,
+          from_status: tx.status,
+          to_status: "RECOVERY_IN_PROGRESS",
+          actor: "recovery",
+          http_status_code: null,
+          http_payload: { probe: "/payments/check/ -> NOT_CHARGED" },
+          created_at: now,
+        });
+        tx.events.push({
+          seq: nextSeq + 1,
+          from_status: "RECOVERY_IN_PROGRESS",
+          to_status: "COMPLETED",
+          actor: "recovery",
+          http_status_code: 200,
+          http_payload: { message: "Orphaned transaction resolved and marked COMPLETED by recovery sweep" },
+          created_at: now,
+        });
+        tx.status = "COMPLETED";
+      }
+      tx.updated_at = now;
+    }
+  });
+
+  if (sweptCount > 0) {
+    STATE.stats.orphansRecovered += sweptCount;
+    if (DOM.recOrphansRecovered) DOM.recOrphansRecovered.textContent = STATE.stats.orphansRecovered;
+    localStorage.setItem("dtc_stat_orphans", STATE.stats.orphansRecovered);
+  }
+
+  fetchTransactionsFeed();
+  if (STATE.activeTxId) {
+    inspectTransaction(STATE.activeTxId, true);
+  }
+  return sweptCount;
+}
+
 async function triggerRecoverySweepAnimation() {
   if (DOM.topoWorkerStatus) {
     DOM.topoWorkerStatus.textContent = "SWEEPING";
@@ -1733,7 +1830,12 @@ DOM.btnTriggerSweep.addEventListener("click", async () => {
   triggerRecoverySweepAnimation();
 
   let recoveredSummary = "Swept non-terminal states older than lease threshold.";
-  if (!STATE.isSimulatedMode) {
+  if (STATE.isSimulatedMode) {
+    const sweptCount = sweepSimulatedTransactions();
+    recoveredSummary = sweptCount > 0 
+      ? `Simulated Celery Beat sweep recovered ${sweptCount} stale transaction(s) to terminal state.`
+      : "No stale non-terminal records found to sweep.";
+  } else {
     try {
       const sweepRes = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/recovery/sweep/`, {
         method: "POST",
@@ -1803,6 +1905,44 @@ DOM.btnRetryActiveTx.addEventListener("click", async () => {
   await animatePacketAlongPath({ route: "coord-inv", type: "warning", durationMs: 450, destinationNodeId: "node-box-inv" });
   await animatePacketAlongPath({ route: "inv-coord", type: "warning", durationMs: 350, destinationNodeId: "node-box-coord" });
 
+  if (STATE.isSimulatedMode) {
+    const tx = STATE.transactions.find(t => t.transaction_id === STATE.activeTxId);
+    if (tx && (tx.status === "COMPENSATION_FAILED" || tx.status === "COMPENSATING")) {
+      const now = new Date().toISOString();
+      if (!tx.events) tx.events = [];
+      const nextSeq = tx.events.length + 1;
+      tx.events.push({
+        seq: nextSeq,
+        from_status: tx.status,
+        to_status: "COMPENSATING",
+        actor: "retry",
+        http_status_code: null,
+        http_payload: null,
+        created_at: now,
+      });
+      tx.events.push({
+        seq: nextSeq + 1,
+        from_status: "COMPENSATING",
+        to_status: "COMPENSATED_ON_RETRY",
+        actor: "retry",
+        http_status_code: 200,
+        http_payload: { message: "Inventory released via manual retry" },
+        created_at: now,
+      });
+      tx.status = "COMPENSATED_ON_RETRY";
+      tx.updated_at = now;
+      inspectTransaction(STATE.activeTxId, true);
+      fetchTransactionsFeed();
+      showToast({
+        icon: "🔄",
+        title: "Retry Compensation (Simulated)",
+        message: "Manual retry compensation executed successfully → Marked COMPENSATED_ON_RETRY",
+        type: "success",
+      });
+      return;
+    }
+  }
+
   const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/${STATE.activeTxId}/retry-compensation/`, {
     method: "POST",
   });
@@ -1835,12 +1975,24 @@ function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null, 
     events = [
       { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVED", actor: "request", http_status_code: 200, http_payload: { message: "Reserved" }, created_at: now },
       { seq: 2, from_status: "INVENTORY_RESERVED", to_status: "PAYMENT_PROCESSING", actor: "request", http_status_code: null, http_payload: null, created_at: now },
-      { seq: 3, from_status: "PAYMENT_PROCESSING", to_status: "COMPENSATING", actor: "request", http_status_code: 400, http_payload: { error: "Insufficient funds" }, created_at: now },
+      { seq: 3, from_status: "PAYMENT_PROCESSING", to_status: "COMPENSATING", actor: "request", http_status_code: 422, http_payload: { error: "Insufficient funds ($9,999)" }, created_at: now },
       { seq: 4, from_status: "COMPENSATING", to_status: "COMPENSATED", actor: "request", http_status_code: 200, http_payload: { message: "Inventory released" }, created_at: now },
+    ];
+  } else if (finalStatus === "STARTED") {
+    events = [
+      { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVED", actor: "request", http_status_code: 200, http_payload: { message: "Reserved 1 units" }, created_at: now },
+      { seq: 2, from_status: "INVENTORY_RESERVED", to_status: "PAYMENT_PROCESSING", actor: "request", http_status_code: null, http_payload: { note: "Coordinator process killed mid-flight (simulated crash)" }, created_at: now },
+    ];
+  } else if (finalStatus === "COMPENSATION_FAILED") {
+    events = [
+      { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVED", actor: "request", http_status_code: 200, http_payload: { message: "Reserved 1 units" }, created_at: now },
+      { seq: 2, from_status: "INVENTORY_RESERVED", to_status: "PAYMENT_PROCESSING", actor: "request", http_status_code: null, http_payload: null, created_at: now },
+      { seq: 3, from_status: "PAYMENT_PROCESSING", to_status: "COMPENSATING", actor: "request", http_status_code: 422, http_payload: { error: "Payment declined (testing amount $9,999)" }, created_at: now },
+      { seq: 4, from_status: "COMPENSATING", to_status: "COMPENSATION_FAILED", actor: "request", http_status_code: 500, http_payload: { error: "Compensating release rollback rejected (500 Internal Server Error)" }, created_at: now },
     ];
   } else if (finalStatus === "INVENTORY_RESERVE_FAILED") {
     events = [
-      { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVE_FAILED", actor: "request", http_status_code: 400, http_payload: { error: failureReason || "Quantity must be greater than 0" }, created_at: now },
+      { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVE_FAILED", actor: "request", http_status_code: 409, http_payload: { error: failureReason || "Seat is already booked / held by another transaction" }, created_at: now },
     ];
   } else if (finalStatus === "RECOVERY_IN_PROGRESS") {
     events = [
@@ -1855,7 +2007,7 @@ function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null, 
     status: finalStatus,
     seat_id: 1,
     quantity: finalStatus === "INVENTORY_RESERVE_FAILED" ? 0 : 1,
-    amount: finalStatus === "COMPENSATED" ? 9999 : 500,
+    amount: (finalStatus === "COMPENSATED" || finalStatus === "COMPENSATION_FAILED") ? 9999 : 500,
     failure_reason: failureReason,
     created_at: now,
     updated_at: now,
@@ -1947,7 +2099,9 @@ function startRecoveryCountdown() {
 
       triggerRecoverySweepAnimation();
 
-      if (!STATE.isSimulatedMode) {
+      if (STATE.isSimulatedMode) {
+        sweepSimulatedTransactions();
+      } else {
         try {
           const sweepRes = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/recovery/sweep/`, {
             method: "POST",
@@ -2916,6 +3070,27 @@ DOM.btnDemoCompFail.addEventListener("click", async () => {
     durationMs: 400,
     label: "POST /transactions/ (Decline+FailComp)"
   });
+
+  if (STATE.isSimulatedMode) {
+    await animatePacketAlongPath({ route: "coord-inv", type: "success", durationMs: 400, destinationNodeId: "node-box-inv" });
+    await animatePacketAlongPath({ route: "inv-coord", type: "success", durationMs: 300, destinationNodeId: "node-box-coord" });
+    await animatePacketAlongPath({ route: "coord-pay", type: "danger", durationMs: 400, destinationNodeId: "node-box-pay" });
+    await animatePacketAlongPath({ route: "pay-coord", type: "danger", durationMs: 300, destinationNodeId: "node-box-coord" });
+    await animatePacketAlongPath({ route: "coord-inv", type: "danger", durationMs: 400, destinationNodeId: "node-box-inv" });
+    await animatePacketAlongPath({ route: "inv-coord", type: "danger", durationMs: 300, destinationNodeId: "node-box-coord" });
+
+    createSimulatedTransaction("COMPENSATION_FAILED");
+    DOM.topoCoordState.textContent = "IDLE";
+
+    showToast({
+      icon: "💥",
+      title: "Decline & Compensate Fail (Simulated)",
+      message: "Payment declined ($9,999) → Rollback attempt failed (HTTP 500) → Stuck in COMPENSATION_FAILED awaiting sweep (or click 'Trigger Immediate Sweep' below)!",
+      type: "race",
+      duration: 7000
+    });
+    return;
+  }
 
   try {
     const res = await fetchJson(`${CONFIG.coordinatorUrl}/transactions/`, {
