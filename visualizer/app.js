@@ -1733,7 +1733,32 @@ DOM.btnTriggerSweep.addEventListener("click", async () => {
   triggerRecoverySweepAnimation();
 
   let recoveredSummary = "Swept non-terminal states older than lease threshold.";
-  if (!STATE.isSimulatedMode) {
+  if (STATE.isSimulatedMode) {
+    let swept = 0;
+    const now = new Date().toISOString();
+    STATE.transactions.forEach(tx => {
+      if (tx.status === "STARTED") {
+        tx.status = "COMPLETED";
+        tx.events = [
+          { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVED", actor: "recovery", http_status_code: 200, http_payload: { message: "Recovered reservation" }, created_at: now },
+          { seq: 2, from_status: "INVENTORY_RESERVED", to_status: "PAYMENT_PROCESSING", actor: "recovery", http_status_code: null, http_payload: null, created_at: now },
+          { seq: 3, from_status: "PAYMENT_PROCESSING", to_status: "COMPLETED", actor: "recovery", http_status_code: 200, http_payload: { status: "CHARGED", note: "Swept by Celery Beat" }, created_at: now },
+        ];
+        tx.updated_at = now;
+        swept++;
+      }
+    });
+    if (swept > 0) {
+      STATE.stats.orphansRecovered += swept;
+      if (DOM.recOrphansRecovered) DOM.recOrphansRecovered.textContent = STATE.stats.orphansRecovered;
+      localStorage.setItem("dtc_stat_orphans", STATE.stats.orphansRecovered);
+    }
+    fetchTransactionsFeed();
+    if (STATE.activeTxId) {
+      inspectTransaction(STATE.activeTxId, true);
+    }
+    recoveredSummary = swept > 0 ? `Simulated sweep recovered ${swept} orphaned transaction(s) to COMPLETED.` : "No stale records found to sweep.";
+  } else {
     try {
       const sweepRes = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/recovery/sweep/`, {
         method: "POST",
@@ -1947,7 +1972,31 @@ function startRecoveryCountdown() {
 
       triggerRecoverySweepAnimation();
 
-      if (!STATE.isSimulatedMode) {
+      if (STATE.isSimulatedMode) {
+        let swept = 0;
+        const now = new Date().toISOString();
+        STATE.transactions.forEach(tx => {
+          if (tx.status === "STARTED") {
+            tx.status = "COMPLETED";
+            tx.events = [
+              { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVED", actor: "recovery", http_status_code: 200, http_payload: { message: "Recovered reservation" }, created_at: now },
+              { seq: 2, from_status: "INVENTORY_RESERVED", to_status: "PAYMENT_PROCESSING", actor: "recovery", http_status_code: null, http_payload: null, created_at: now },
+              { seq: 3, from_status: "PAYMENT_PROCESSING", to_status: "COMPLETED", actor: "recovery", http_status_code: 200, http_payload: { status: "CHARGED", note: "Swept by Celery Beat" }, created_at: now },
+            ];
+            tx.updated_at = now;
+            swept++;
+          }
+        });
+        if (swept > 0) {
+          STATE.stats.orphansRecovered += swept;
+          if (DOM.recOrphansRecovered) DOM.recOrphansRecovered.textContent = STATE.stats.orphansRecovered;
+          localStorage.setItem("dtc_stat_orphans", STATE.stats.orphansRecovered);
+        }
+        fetchTransactionsFeed();
+        if (STATE.activeTxId) {
+          inspectTransaction(STATE.activeTxId, true);
+        }
+      } else {
         try {
           const sweepRes = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/recovery/sweep/`, {
             method: "POST",
