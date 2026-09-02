@@ -955,24 +955,38 @@ function getStatusBadgeHTML(status) {
 
 function getWaterfallHTML(tx) {
   const s = (tx.status || "").toUpperCase();
-  let rMs = 14;
-  let pMs = 26;
-  let cMs = 8;
-  let totalMs = 48;
+
+  // Calculate real execution duration from transaction timestamps or deterministic hash variance
+  let totalMs = 45;
+  if (tx.created_at && tx.updated_at) {
+    const diff = Math.max(1, new Date(tx.updated_at).getTime() - new Date(tx.created_at).getTime());
+    totalMs = Math.min(diff, 9999);
+  }
+  if (totalMs <= 1 && tx.transaction_id) {
+    const hash = String(tx.transaction_id).replace(/-/g, "");
+    const num = parseInt(hash.substring(0, 4), 16) || 45;
+    totalMs = 38 + (num % 35);
+  }
+
+  // Phase breakdown proportional to total execution duration
+  let rMs = Math.max(4, Math.round(totalMs * 0.28));
+  let pMs = Math.max(8, Math.round(totalMs * 0.54));
+  let cMs = Math.max(2, totalMs - rMs - pMs);
 
   let trackHTML = "";
   let labelHTML = "";
 
   if (s === "COMPLETED") {
-    rMs = 15; pMs = 28; cMs = 8; totalMs = 51;
     trackHTML = `
-      <div class="wf-seg wf-reserve" style="width: 32%;" title="Reserve Inventory: ${rMs}ms"></div>
-      <div class="wf-seg wf-charge" style="width: 52%;" title="Charge Payment: ${pMs}ms"></div>
-      <div class="wf-seg wf-commit" style="width: 16%;" title="Commit: ${cMs}ms"></div>
+      <div class="wf-seg wf-reserve" style="width: 30%;" title="Reserve Inventory: ${rMs}ms"></div>
+      <div class="wf-seg wf-charge" style="width: 55%;" title="Charge Payment: ${pMs}ms"></div>
+      <div class="wf-seg wf-commit" style="width: 15%;" title="Commit: ${cMs}ms"></div>
     `;
     labelHTML = `<span>Res: ${rMs}ms</span><span>Chg: ${pMs}ms</span><span class="wf-duration">${totalMs}ms</span>`;
   } else if (s === "COMPENSATED" || s === "COMPENSATED_ON_RETRY") {
-    rMs = 14; pMs = 32; cMs = 18; totalMs = 64;
+    rMs = Math.max(4, Math.round(totalMs * 0.25));
+    pMs = Math.max(8, Math.round(totalMs * 0.45));
+    cMs = Math.max(4, totalMs - rMs - pMs);
     trackHTML = `
       <div class="wf-seg wf-reserve" style="width: 25%;" title="Reserve Inventory: ${rMs}ms"></div>
       <div class="wf-seg wf-fail" style="width: 45%;" title="Payment Declined: ${pMs}ms"></div>
@@ -980,10 +994,11 @@ function getWaterfallHTML(tx) {
     `;
     labelHTML = `<span>Res: ${rMs}ms</span><span style="color: var(--accent-rose)">Decl: ${pMs}ms</span><span style="color: var(--accent-amber)">Rel: ${cMs}ms</span>`;
   } else if (s === "INVENTORY_RESERVE_FAILED") {
+    const failMs = Math.min(totalMs, 22);
     trackHTML = `
-      <div class="wf-seg wf-hatch-fail" style="width: 100%;" title="Inventory Reserve Rejected (Quantity 0 / Out of Stock)"></div>
+      <div class="wf-seg wf-hatch-fail" style="width: 100%;" title="Inventory Reserve Rejected (Out of Stock / Locked)"></div>
     `;
-    labelHTML = `<span style="color: var(--accent-rose); font-weight: 700;">Reserve Rejected</span><span class="wf-duration" style="color: var(--accent-rose);">12ms</span>`;
+    labelHTML = `<span style="color: var(--accent-rose); font-weight: 700;">Reserve Rejected</span><span class="wf-duration" style="color: var(--accent-rose);">${failMs}ms</span>`;
   } else if (s === "RECOVERY_IN_PROGRESS" || s === "COMPENSATING") {
     trackHTML = `
       <div class="wf-seg wf-reserve" style="width: 35%;" title="Reserve: ${rMs}ms"></div>
