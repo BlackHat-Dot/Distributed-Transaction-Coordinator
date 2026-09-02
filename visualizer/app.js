@@ -66,6 +66,33 @@ const STATE = {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const SCENARIO_DESCRIPTIONS = {
+  compfail: {
+    icon: "💥",
+    title: "Decline & Compensate Fail",
+    badge: "Rollback Failure Simulation",
+    badgeClass: "badge-danger",
+    desc: "Demonstrates a severe edge case where a payment fails, triggering a rollback (compensation) to release the seat. However, the release process is intentionally sabotaged to return a 500 Error. The Saga gets stuck in COMPENSATION_FAILED, triggering the Celery auto-recovery sweeper.",
+    payload: `POST http://127.0.0.1:8002/transactions/
+{
+  "seat_id": 34,
+  "quantity": 1,
+  "amount": 9999.00,
+  "fail_compensation": true
+}`,
+    steps: [
+      "Coordinator inserts Transaction(status=STARTED) and dispatches POST /seats/reserve/ to Inventory.",
+      "Inventory reserves the seat successfully.",
+      "Coordinator dispatches POST /payments/charge/ with amount=9999.00.",
+      "Payment service rejects the charge (simulating Insufficient Funds) and returns 402 Payment Required.",
+      "Coordinator begins Compensation phase to rollback.",
+      "Coordinator dispatches POST /seats/release/ to Inventory.",
+      "Inventory intentionally throws a 500 Error (Release Failure).",
+      "Transaction is stuck in COMPENSATION_FAILED and awaits Celery recovery."
+    ],
+    defenses: "At-Least-Once Delivery via Celery Beat background polling. The sweeper will retry the compensation until it succeeds.",
+    outcome: "Status hits COMPENSATION_FAILED. Celery sweeper detects it after ~18s, retries the release, and successfully transitions to COMPENSATED."
+  },
+
   happy: {
     icon: "⦿",
     title: "Happy Path Saga",
@@ -224,6 +251,7 @@ const DOM = {
 
   btnDemoHappy: document.getElementById("btn-demo-happy"),
   btnDemoFail: document.getElementById("btn-demo-fail"),
+  btnDemoCompFail: document.getElementById("btn-demo-comp-fail"),
   btnDemoRace: document.getElementById("btn-demo-race"),
   btnDemoCrash: document.getElementById("btn-demo-crash"),
   btnToggleCustom: document.getElementById("btn-toggle-custom"),
@@ -2878,4 +2906,38 @@ window.addEventListener("DOMContentLoaded", () => {
     checkServiceHealth();
     fetchTransactionsFeed();
   }, CONFIG.pollIntervalMs);
+});
+
+DOM.btnDemoCompFail.addEventListener("click", async () => {
+  if (!checkLiveAuthGate("execute the Decline & Compensate Fail scenario")) return;
+
+  STATE.stats.dispatchedCount++;
+  DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
+  DOM.topoCoordState.textContent = "COMPENSATING";
+
+  await animatePacketAlongPath({
+    route: "client-coord",
+    type: "info",
+    durationMs: 400,
+    label: "POST /transactions/ (Decline+FailComp)"
+  });
+
+  try {
+    const res = await fetchJson(`${CONFIG.coordinatorUrl}/transactions/`, {
+      method: "POST",
+      body: JSON.stringify({
+        seat_id: 34,
+        quantity: 1,
+        amount: 9999.00,
+        fail_compensation: true,
+        ...getActiveUserPayload(),
+      })
+    });
+    if (!res.ok) throw new Error(res.error || "Failed");
+
+    // The saga is running async in the background and will stick at COMPENSATION_FAILED
+    // Let poll capture the state
+  } catch (err) {
+    showToast({ title: "Scenario Failed", message: err.message, type: "error" });
+  }
 });
