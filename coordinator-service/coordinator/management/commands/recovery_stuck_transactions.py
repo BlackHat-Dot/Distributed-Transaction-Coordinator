@@ -248,11 +248,14 @@ class Command(BaseCommand):
             http_payload=None,
         )
 
+        txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+        seat_ids = txn.seat_ids if txn else []
+
         headers = {"X-Correlation-ID": str(transaction_id)}
         try:
             resp = requests.post(
                 INVENTORY_RELEASE_URL,
-                json={"transaction_id": str(transaction_id)},
+                json={"transaction_id": str(transaction_id), "seat_ids": seat_ids},
                 headers=headers,
                 timeout=REQUEST_TIMEOUT,
             )
