@@ -155,11 +155,14 @@ def reserve_seat(request):
                     res.save()
                 reservations.append(res)
             
+            total_amount = sum(seat.price for seat in seats)
+            
             resp_data = {
                 "message": f"{len(seats)} Seats reserved",
                 "transaction_id": str(transaction_id),
                 "seat_ids": seat_ids,
                 "held_until": held_until_dt,
+                "total_amount": str(total_amount),
             }
             return Response(resp_data, status=200)
 

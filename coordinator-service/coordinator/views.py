@@ -441,6 +441,18 @@ def _run_saga_pipeline(
     except Exception:
         pass
 
+    if resp_json and "total_amount" in resp_json:
+        try:
+            from decimal import Decimal
+            actual_amount = Decimal(str(resp_json["total_amount"]))
+            amount = actual_amount
+            txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+            if txn:
+                txn.amount = amount
+                txn.save(update_fields=["amount"])
+        except (ValueError, TypeError, Exception):
+            pass
+
     _set_status_with_event(
         transaction_id,
         Transaction.Status.INVENTORY_RESERVED,
