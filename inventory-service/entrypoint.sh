@@ -40,10 +40,7 @@ echo "[Inventory] Applying database migrations..."
 python manage.py migrate --noinput
 
 echo "[Inventory] Ensuring seed event/seat catalog exists..."
-python -c "
-import os, django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'inventory_service.settings')
-django.setup()
+python manage.py shell -c "
 from inventory.models import Event, Seat
 from django.utils import timezone
 from datetime import timedelta
