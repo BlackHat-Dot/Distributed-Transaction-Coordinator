@@ -10,7 +10,7 @@ fi
 
 echo "[Coordinator] Checking PostgreSQL connectivity..."
 python -c "
-import os, sys, socket, time
+import os, socket, time
 from urllib.parse import urlparse
 
 db_url = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL')
