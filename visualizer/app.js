@@ -2772,6 +2772,9 @@ function renderMainAuthStep(step) {
     p2.classList.remove("hidden");
     const input = document.getElementById("auth-otp-input");
     if (input) {
+      if (!isLocal) {
+        input.value = "";
+      }
       setTimeout(() => input.focus(), 100);
     }
   } else if (step === 3 && p3) {
@@ -2912,44 +2915,53 @@ async function handleMainSendOtp() {
     const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/auth/send-otp/`, {
       method: "POST",
       skipAuth: true,
-      body: JSON.stringify({ email, is_local: isLocal }),
+      body: JSON.stringify({ email }),
     });
 
     if (res.ok && res.data && res.data.success) {
       const targetEmail = document.getElementById("auth-target-email");
-      if (targetEmail) {
-        if (res.data.otp) {
-          targetEmail.innerHTML = `${res.data.email}<br><span style="display:inline-block;margin-top:8px;padding:6px 12px;background:rgba(56,189,248,0.15);border:1px dashed #38bdf8;border-radius:6px;font-size:0.95rem;color:#38bdf8;font-weight:600;">🔑 Local Dev OTP: <strong style="letter-spacing:3px;font-size:1.15rem;color:#ffffff;text-shadow:0 0 8px #38bdf8;">${res.data.otp}</strong></span>`;
-        } else {
-          targetEmail.textContent = res.data.email;
-        }
-      }
+      const otpInput = document.getElementById("auth-otp-input");
 
       renderMainAuthStep(2);
-      const otpInput = document.getElementById("auth-otp-input");
-      if (otpInput) {
-        otpInput.value = res.data.otp || "";
-      }
       startMainOtpCountdown(res.data.cooldown_remaining || 30);
 
       const chancesText = res.data.chances_remaining !== undefined ? `\n(You have ${res.data.chances_remaining} attempts remaining)` : "";
-      
-      const isCooldown = res.data.cooldown_remaining !== undefined;
-      const title = res.data.otp 
-        ? `🔑 Local OTP: ${res.data.otp}`
-        : (isCooldown ? "Code Already Sent!" : "Verification Code Sent!");
-      const messageBody = res.data.otp
-        ? `[LOCAL DEV] Simulated verification code: ${res.data.otp} (auto-filled in window)`
-        : (isCooldown 
-            ? `An active verification code was already sent to ${res.data.email}. Please check your inbox.`
-            : `6-Digit verification code sent to ${res.data.email}. Please check your inbox.`);
 
-      showToast({
-        title: title,
-        message: messageBody + chancesText,
-        type: "success",
-        duration: 9000,
-      });
+      if (isLocal && res.data.otp) {
+        // LOCAL DEVELOPMENT ONLY: Display badge & auto-fill code
+        if (targetEmail) {
+          targetEmail.innerHTML = `${res.data.email}<br><span style="display:inline-block;margin-top:8px;padding:6px 12px;background:rgba(56,189,248,0.15);border:1px dashed #38bdf8;border-radius:6px;font-size:0.95rem;color:#38bdf8;font-weight:600;">🔑 Local Dev OTP: <strong style="letter-spacing:3px;font-size:1.15rem;color:#ffffff;text-shadow:0 0 8px #38bdf8;">${res.data.otp}</strong></span>`;
+        }
+        if (otpInput) {
+          otpInput.value = res.data.otp;
+        }
+        showToast({
+          title: `🔑 Local OTP: ${res.data.otp}`,
+          message: `[LOCAL DEV] Simulated verification code: ${res.data.otp} (auto-filled in window)` + chancesText,
+          type: "success",
+          duration: 9000,
+        });
+      } else {
+        // LIVE PRODUCTION: Normal workflow, no autofill, manual entry required
+        if (targetEmail) {
+          targetEmail.textContent = res.data.email;
+        }
+        if (otpInput) {
+          otpInput.value = "";
+        }
+        const isCooldown = res.data.cooldown_remaining !== undefined;
+        const title = isCooldown ? "Code Already Sent!" : "Verification Code Sent!";
+        const messageBody = isCooldown 
+          ? `An active verification code was already sent to ${res.data.email}. Please check your inbox.`
+          : `6-Digit verification code sent to ${res.data.email}. Please check your inbox.`;
+
+        showToast({
+          title: title,
+          message: messageBody + chancesText,
+          type: "success",
+          duration: 8000,
+        });
+      }
     } else if (res.status === 429) {
       showToast({
         title: "Account Blocked",

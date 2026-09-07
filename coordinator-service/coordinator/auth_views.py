@@ -205,8 +205,9 @@ def send_otp(request):
     except ValidationError:
         return Response({"error": "Invalid email address format"}, status=400)
 
-    host_header = request.get_host().lower()
-    is_local = any(h in host_header for h in ["localhost", "127.0.0.1", "0.0.0.0", "coordinator"]) or bool(request.data.get("is_local"))
+    host_raw = request.get_host().split(":")[0].lower()
+    is_railway = "railway.app" in host_raw or bool(os.getenv("RAILWAY_ENVIRONMENT")) or bool(os.getenv("RAILWAY_PUBLIC_DOMAIN"))
+    is_local = not is_railway and (host_raw in ["localhost", "127.0.0.1", "0.0.0.0", "dtc-coordinator"])
 
     client = _get_redis_client()
     session_key = f"dtc:session:{email}"
