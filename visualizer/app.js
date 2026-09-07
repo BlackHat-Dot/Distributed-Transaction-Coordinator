@@ -2160,7 +2160,7 @@ const CanvasEngine = {
 
     if (!this.container || !this.svg || !this.world) return;
 
-    const TOPOLOGY_SCHEMA_VER = "dtc_topo_v11";
+    const TOPOLOGY_SCHEMA_VER = "dtc_topo_v12";
     if (localStorage.getItem("dtc_topo_schema") !== TOPOLOGY_SCHEMA_VER) {
       localStorage.removeItem("dtc_topology_nodes");
       localStorage.removeItem("dtc_topology_viewport");
