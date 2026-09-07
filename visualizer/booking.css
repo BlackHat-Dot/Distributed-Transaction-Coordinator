@@ -1407,3 +1407,120 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* --- Floating Bottom Bar --- */
+.bottom-pay-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+  padding: 16px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 50;
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.05);
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.bottom-pay-bar.show {
+  transform: translateY(0);
+}
+.theme-dark .bottom-pay-bar {
+  background: #1e293b;
+  border-top: 1px solid #334155;
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.5);
+}
+.bp-left {
+  display: flex;
+  flex-direction: column;
+}
+.bp-qty {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.theme-dark .bp-qty {
+  color: #f8fafc;
+}
+.bp-msg {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+.btn-bottom-pay {
+  background: #f43f5e;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 36px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.btn-bottom-pay:hover {
+  opacity: 0.9;
+}
+
+/* --- Race Condition Modal (Light styling based on image) --- */
+.race-modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+.race-modal-overlay.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+.race-modal {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 32px 24px;
+  width: 90%;
+  max-width: 420px;
+  text-align: center;
+  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
+  transform: scale(0.95);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.race-modal-overlay.show .race-modal {
+  transform: scale(1);
+}
+.race-modal h3 {
+  color: #0f172a;
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.race-modal p {
+  color: #64748b;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+.btn-race-refresh {
+  background: #f43f5e;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 36px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.race-illustration {
+  font-size: 4rem;
+  margin-bottom: 16px;
+}
+

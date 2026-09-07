@@ -480,6 +480,25 @@
     </div>
   </div>
 
+  <!-- RACE CONDITION MODAL -->
+  <div class="race-modal-overlay" id="race-condition-modal">
+    <div class="race-modal">
+      <img src="assets/race-condition.png" alt="Error" style="max-width: 200px; margin: 0 auto 16px; display: block;" onerror="this.style.display='none'" />
+      <h3>Sorry! Something is not right.</h3>
+      <p>Sorry! These seats are no longer available. Please try again with other seats. (#3)</p>
+      <button id="btn-race-refresh" class="btn-race-refresh">Refresh</button>
+    </div>
+  </div>
+
+  <!-- FLOATING BOTTOM PAY BAR -->
+  <div id="bottom-pay-bar" class="bottom-pay-bar hidden">
+    <div class="bp-left">
+      <span class="bp-qty" id="bp-qty-text">0/1 Seats</span>
+      <span class="bp-msg">Total: <strong id="bp-price-text">$0</strong></span>
+    </div>
+    <button id="btn-bottom-pay" class="btn-bottom-pay">Pay Amount</button>
+  </div>
+
   <script src="booking.js?v=5.2.0"></script>
 </body>
 </html>

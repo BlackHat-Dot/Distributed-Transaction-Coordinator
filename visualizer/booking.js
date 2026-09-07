@@ -746,6 +746,32 @@ function initEventListeners() {
     DOM.btnProceedPay.addEventListener("click", initiateSagaCheckout);
   }
 
+  // Bottom Pay Bar
+  const btnBottomPay = document.getElementById("btn-bottom-pay");
+  if (btnBottomPay) {
+    btnBottomPay.addEventListener("click", handleBottomPaySubmit);
+  }
+
+  // Race Condition Modal Refresh
+  const btnRaceRefresh = document.getElementById("btn-race-refresh");
+  if (btnRaceRefresh) {
+    btnRaceRefresh.addEventListener("click", () => {
+      const raceModal = document.getElementById("race-condition-modal");
+      if (raceModal) raceModal.classList.remove("show");
+      
+      STATE.draftSeatIds = [];
+      STATE.draftSeatLabels = [];
+      
+      const bpBar = document.getElementById("bottom-pay-bar");
+      if (bpBar) {
+        bpBar.classList.remove("show");
+        bpBar.classList.add("hidden");
+      }
+      
+      loadCatalog(false);
+    });
+  }
+
   // Simulation Option Radio Buttons
   const radioInputs = document.querySelectorAll('input[name="pay_sim"]');
   radioInputs.forEach(radio => {
@@ -1181,29 +1207,48 @@ async function handleSeatTileClick(seatId) {
     }
   }
 
-  // 6. Proceed to Acquire Hold
-  STATE.isActionInProgress = true;
+  // 6. Update Bottom Pay Bar
+  const seatPrice = 1500;
+  if (!DOM.bpQtyText) DOM.bpQtyText = document.getElementById("bp-qty-text");
+  if (!DOM.bpPriceText) DOM.bpPriceText = document.getElementById("bp-price-text");
+  if (!DOM.bottomPayBar) DOM.bottomPayBar = document.getElementById("bottom-pay-bar");
   
+  if (DOM.bpQtyText && DOM.bpPriceText) {
+    DOM.bpQtyText.textContent = `${STATE.draftSeatIds.length}/${requestedQuantity} Seats`;
+    DOM.bpPriceText.textContent = `$${STATE.draftSeatIds.length * seatPrice}`;
+  }
+  
+  if (DOM.bottomPayBar) {
+    if (STATE.draftSeatIds.length === requestedQuantity) {
+      DOM.bottomPayBar.classList.remove("hidden");
+      DOM.bottomPayBar.classList.add("show");
+    } else {
+      DOM.bottomPayBar.classList.remove("show");
+      DOM.bottomPayBar.classList.add("hidden");
+    }
+  }
+}
+
+async function handleBottomPaySubmit() {
+  if (STATE.draftSeatIds.length === 0) return;
+  if (STATE.isActionInProgress) return;
+
+  STATE.isActionInProgress = true;
+  if (!DOM.btnBottomPay) DOM.btnBottomPay = document.getElementById("btn-bottom-pay");
+  if (!DOM.raceConditionModal) DOM.raceConditionModal = document.getElementById("race-condition-modal");
+
+  if (DOM.btnBottomPay) {
+    DOM.btnBottomPay.disabled = true;
+    DOM.btnBottomPay.textContent = "Processing...";
+  }
+
   const holdTxId = crypto.randomUUID();
   const allSeatIds = [...STATE.draftSeatIds];
   const allSeatLabels = [...STATE.draftSeatLabels];
 
-  // Clear draft
-  STATE.draftSeatIds = [];
-  STATE.draftSeatLabels = [];
-
   STATE.pendingHoldSeatIds = allSeatIds;
   allSeatIds.forEach(id => STATE.inFlightSeatIds.add(id));
-
   updateMatrixHoldState();
-
-  showToast({
-    title: "Holding Seats...",
-    message: `Locking ${allSeatLabels.join(", ")} in Redis & PostgreSQL CAS hold...`,
-    type: "normal",
-    icon: "",
-    duration: 1500,
-  });
 
   try {
     const uid = STATE.user ? (STATE.user.userId || STATE.user.actorId) : undefined;
@@ -1219,18 +1264,10 @@ async function handleSeatTileClick(seatId) {
     });
 
     if (res.ok) {
-      if (res.data.warning) {
-          showToast({
-              title: "Warning",
-              message: res.data.warning,
-              type: "warning",
-              duration: 8000,
-          });
-      }
-      
+      // SUCCESS
       const heldUntil = res.data.held_until || new Date(Date.now() + 10 * 60 * 1000).toISOString();
       STATE.myHold = {
-        seatId: allSeatIds[0], 
+        seatId: allSeatIds[0],
         seatIds: allSeatIds,
         seatNumbers: allSeatLabels,
         txId: holdTxId,
@@ -1238,7 +1275,16 @@ async function handleSeatTileClick(seatId) {
         timerInterval: null,
       };
       saveHoldToStorage(STATE.myHold);
+      
+      STATE.draftSeatIds = [];
+      STATE.draftSeatLabels = [];
       STATE.pendingHoldSeatIds = null;
+      allSeatIds.forEach(id => STATE.inFlightSeatIds.delete(id));
+      
+      if (DOM.bottomPayBar) {
+        DOM.bottomPayBar.classList.remove("show");
+        DOM.bottomPayBar.classList.add("hidden");
+      }
 
       // Update internal map
       allSeatIds.forEach(id => {
@@ -1254,74 +1300,46 @@ async function handleSeatTileClick(seatId) {
 
       startHoldTimer(heldUntil);
       updateCheckoutSummary();
-      selectedSeatIds.forEach(id => applySeatTileDOMState(id, "SELECTED"));
       updateMatrixHoldState();
       updateInventoryStats();
-
+      
       showToast({
         title: "10-Minute Hold Acquired!",
-        message: `${selectedSeatIds.length} seat(s) reserved for you. Complete payment before the timer expires.`,
+        message: `${allSeatIds.length} seat(s) reserved for you. Complete payment before the timer expires.`,
         type: "success",
         icon: "",
         duration: 4000,
       });
-    } else {
-      // 409 Conflict: Another buyer grabbed seat OR hold cap exceeded/penalty blocked!
-      const conflictMsg = (res.data && res.data.error) || "Seats were just claimed by another user!";
-      STATE.pendingHoldSeatIds = null;
-      STATE.myHold = null;
-      clearHoldFromStorage();
-      
-      allSeatIds.forEach(id => {
-        applySeatTileDOMState(id, "AVAILABLE");
-        const tile = document.getElementById(`seat-tile-${id}`);
-        if (tile) {
-          tile.style.animation = "shake 0.4s ease-in-out";
-          setTimeout(() => (tile.style.animation = ""), 400);
-        }
-      });
 
-      if (res.status === 403) {
-          showToast({
-              title: "Account Blocked",
-              message: conflictMsg,
-              type: "danger",
-              duration: 8000,
-          });
-      } else if (res.data && res.data.code === "HOLD_CAP_EXCEEDED") {
-        showToast({
-          title: "Hold Cap Exceeded",
-          message: conflictMsg,
-          type: "danger",
-          icon: "",
-          duration: 6000,
-        });
-      } else {
-        showToast({
-          title: "Hold Conflict",
-          message: `${conflictMsg} Please pick available seats.`,
-          type: "danger",
-          icon: "",
-          duration: 4000,
-        });
+    } else {
+      // FAILED - RACE CONDITION
+      STATE.pendingHoldSeatIds = null;
+      allSeatIds.forEach(id => STATE.inFlightSeatIds.delete(id));
+      allSeatIds.forEach(id => {
+         applySeatTileDOMState(id, "AVAILABLE");
+      });
+      updateMatrixHoldState();
+      
+      if (DOM.raceConditionModal) {
+        DOM.raceConditionModal.classList.add("show");
       }
     }
   } catch (err) {
-    STATE.pendingHoldSeatIds = null;
-    STATE.myHold = null;
-    clearHoldFromStorage();
-    allSeatIds.forEach(id => applySeatTileDOMState(id, "AVAILABLE"));
-    showToast({
-      title: "Network Error",
-      message: err.message || "Failed to reserve seats.",
-      type: "danger",
-      icon: "",
-    });
+      STATE.pendingHoldSeatIds = null;
+      allSeatIds.forEach(id => STATE.inFlightSeatIds.delete(id));
+      allSeatIds.forEach(id => {
+         applySeatTileDOMState(id, "AVAILABLE");
+      });
+      updateMatrixHoldState();
+      if (DOM.raceConditionModal) {
+        DOM.raceConditionModal.classList.add("show");
+      }
   } finally {
-    STATE.isActionInProgress = false;
-    allSeatIds.forEach(id => STATE.inFlightSeatIds.delete(id));
-    updateMatrixHoldState();
-    updateInventoryStats();
+      if (DOM.btnBottomPay) {
+        DOM.btnBottomPay.disabled = false;
+        DOM.btnBottomPay.textContent = "Pay Amount";
+      }
+      STATE.isActionInProgress = false;
   }
 }
 
