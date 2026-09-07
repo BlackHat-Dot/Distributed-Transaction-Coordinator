@@ -1390,7 +1390,7 @@ if (DOM.btnResetSeats) {
       const res = await fetchWithTimeout(`${CONFIG.inventoryUrl}/seats/reset/`, { method: "POST" });
       if (res.ok) {
         showToast({
-          icon: "🎟️",
+          icon: "⦿",
           title: "Venue Restocked",
           message: "All 30 venue seats have been reset to AVAILABLE! Ready for new bookings.",
           type: "success",
@@ -1399,7 +1399,7 @@ if (DOM.btnResetSeats) {
         fetchTransactionsFeed();
       } else {
         showToast({
-          icon: "❌",
+          icon: "⦿",
           title: "Reset Failed",
           message: "Could not reset venue seats. Verify Inventory service is running.",
           type: "danger",
@@ -1407,7 +1407,7 @@ if (DOM.btnResetSeats) {
       }
     } catch (e) {
       showToast({
-        icon: "❌",
+        icon: "⦿",
         title: "Network Error",
         message: e.message,
         type: "danger",
@@ -1708,7 +1708,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
     await animatePacketAlongPath({ route: "coord-inv", type: "danger", durationMs: 350, destinationNodeId: "node-box-inv" });
     await animatePacketAlongPath({ route: "inv-coord", type: "danger", durationMs: 300, destinationNodeId: "node-box-coord" });
     showToast({
-      icon: "❌",
+      icon: "⦿",
       title: "Seat Reservation Conflict / Locked",
       message: `[${res.status} in ${latencyMs}ms] ${detailedError}`,
       type: "race",
