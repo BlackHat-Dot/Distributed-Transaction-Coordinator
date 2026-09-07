@@ -124,56 +124,6 @@ services:
       timeout: 3s
       retries: 10
 
-  celery_worker:
-    build:
-      context: ./coordinator-service
-      dockerfile: Dockerfile
-    container_name: dtc-celery-worker
-    restart: unless-stopped
-    command: ["celery", "-A", "coordinator_service", "worker", "-l", "info"]
-    environment:
-      DB_NAME: ${COORDINATOR_DB_NAME:-coordinator_db}
-      DB_USER: ${POSTGRES_USER:-postgres}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      DB_HOST: ${POSTGRES_HOST:-postgres}
-      DB_PORT: ${POSTGRES_PORT:-5432}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      INVENTORY_SERVICE_URL: ${INVENTORY_SERVICE_URL:-http://inventory:8000}
-      PAYMENT_SERVICE_URL: ${PAYMENT_SERVICE_URL:-http://payment:8001}
-      SECRET_KEY: ${SECRET_KEY:-django-insecure-coordinator-secret}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      coordinator:
-        condition: service_healthy
-
-  celery_beat:
-    build:
-      context: ./coordinator-service
-      dockerfile: Dockerfile
-    container_name: dtc-celery-beat
-    restart: unless-stopped
-    command: ["celery", "-A", "coordinator_service", "beat", "-l", "info"]
-    environment:
-      DB_NAME: ${COORDINATOR_DB_NAME:-coordinator_db}
-      DB_USER: ${POSTGRES_USER:-postgres}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      DB_HOST: ${POSTGRES_HOST:-postgres}
-      DB_PORT: ${POSTGRES_PORT:-5432}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      INVENTORY_SERVICE_URL: ${INVENTORY_SERVICE_URL:-http://inventory:8000}
-      PAYMENT_SERVICE_URL: ${PAYMENT_SERVICE_URL:-http://payment:8001}
-      SECRET_KEY: ${SECRET_KEY:-django-insecure-coordinator-secret}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      celery_worker:
-        condition: service_started
-
   visualizer:
     build:
       context: ./visualizer

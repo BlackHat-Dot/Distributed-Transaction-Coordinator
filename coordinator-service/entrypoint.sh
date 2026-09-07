@@ -102,5 +102,10 @@ stderr_logfile=/dev/stderr
 stderr_logfile_maxbytes=0
 SUPEOF
 
-echo "[Coordinator] Starting supervisord (gunicorn + celery worker + celery beat)..."
-exec supervisord -c /tmp/supervisord.conf
+if [ $# -eq 0 ]; then
+  echo "[Coordinator] Starting supervisord (gunicorn + celery worker + celery beat)..."
+  exec supervisord -c /tmp/supervisord.conf
+else
+  echo "[Coordinator] Starting custom command: $@"
+  exec "$@"
+fi
