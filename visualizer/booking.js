@@ -508,27 +508,37 @@ async function handleSendOtp() {
       body: JSON.stringify({ email }),
     });
 
-    if (res.ok && res.data.success) {
-      if (DOM.authTargetEmail) DOM.authTargetEmail.textContent = res.data.email;
+    if (res.ok && res.data && res.data.success) {
+      if (DOM.authTargetEmail) {
+        if (res.data.otp) {
+          DOM.authTargetEmail.innerHTML = `${res.data.email}<br><span style="display:inline-block;margin-top:8px;padding:6px 12px;background:rgba(56,189,248,0.15);border:1px dashed #38bdf8;border-radius:6px;font-size:0.95rem;color:#38bdf8;font-weight:600;">🔑 Local Dev OTP: <strong style="letter-spacing:3px;font-size:1.15rem;color:#ffffff;text-shadow:0 0 8px #38bdf8;">${res.data.otp}</strong></span>`;
+        } else {
+          DOM.authTargetEmail.textContent = res.data.email;
+        }
+      }
       renderAuthStep(2);
       if (DOM.authOtpInput) {
-        DOM.authOtpInput.value = "";
+        DOM.authOtpInput.value = res.data.otp || "";
       }
       startOtpCountdown(res.data.cooldown_remaining || 30);
 
       const chancesText = res.data.chances_remaining !== undefined ? `\n(You have ${res.data.chances_remaining} attempts remaining)` : "";
       
       const isCooldown = res.data.cooldown_remaining !== undefined;
-      const title = isCooldown ? "Code Already Sent!" : "Verification Code Sent!";
-      const messageBody = isCooldown 
-        ? `An active verification code was already sent to ${res.data.email}. Please check your inbox.`
-        : `6-Digit verification code sent to ${res.data.email}. Please check your inbox.`;
+      const title = res.data.otp 
+        ? `🔑 Local OTP: ${res.data.otp}`
+        : (isCooldown ? "Code Already Sent!" : "Verification Code Sent!");
+      const messageBody = res.data.otp
+        ? `[LOCAL DEV] Simulated verification code: ${res.data.otp} (auto-filled in window)`
+        : (isCooldown 
+            ? `An active verification code was already sent to ${res.data.email}. Please check your inbox.`
+            : `6-Digit verification code sent to ${res.data.email}. Please check your inbox.`);
 
       showToast({
         title: title,
         message: messageBody + chancesText,
         type: "success",
-        duration: 8000,
+        duration: 9000,
       });
     } else if (res.status === 429) {
       showToast({

@@ -205,6 +205,9 @@ def send_otp(request):
     except ValidationError:
         return Response({"error": "Invalid email address format"}, status=400)
 
+    host_header = request.get_host().lower()
+    is_local = any(h in host_header for h in ["localhost", "127.0.0.1", "0.0.0.0", "coordinator"]) or bool(request.data.get("is_local"))
+
     client = _get_redis_client()
     session_key = f"dtc:session:{email}"
     daily_block_key = f"dtc:otp_daily_blocked:{email}"
@@ -222,13 +225,18 @@ def send_otp(request):
             if client.exists(cooldown_key):
                 ttl = client.ttl(cooldown_key)
                 if ttl > 0:
-                    return Response({
+                    cached_otp = client.get(f"dtc:otp:{email}")
+                    resp_data = {
                         "success": True,
-                        "message": "Verification code was recently sent.",
+                        "message": f"[LOCAL DEV] Active verification code: {cached_otp}" if is_local else "Verification code was recently sent.",
                         "email": email,
                         "actor_id": _generate_actor_id(email),
                         "cooldown_remaining": ttl,
-                    }, status=200)
+                    }
+                    if is_local and cached_otp:
+                        resp_data["otp"] = cached_otp
+                        resp_data["is_local"] = True
+                    return Response(resp_data, status=200)
                 
             if client.exists(daily_block_key):
                 return Response({"error": "Too many login requests. Wait 12 hours before you login."}, status=429)
@@ -276,8 +284,11 @@ def send_otp(request):
     except Exception:
         pass
 
-    # Dispatch email asynchronously in background thread so HTTP response never hangs
-    threading.Thread(target=_dispatch_otp_email, args=(email, otp_code), daemon=True).start()
+    # Only dispatch real email if NOT running in local development
+    if not is_local:
+        threading.Thread(target=_dispatch_otp_email, args=(email, otp_code), daemon=True).start()
+    else:
+        print(f"[Local Auth] Simulated OTP generated for {email}: {otp_code} (No external email sent)")
 
     if client:
         try:
@@ -287,16 +298,21 @@ def send_otp(request):
 
     user_id = _generate_actor_id(email)
 
-    return Response({
+    resp_data = {
         "success": True,
-        "message": f"Verification code sent to {email}",
+        "message": f"[LOCAL DEV] Verification code: {otp_code}" if is_local else f"Verification code sent to {email}",
         "email": email,
         "user_email": email,
         "user_id": user_id,
         "actor_id": user_id,
         "expires_in_seconds": 300,
-        "chances_remaining": chances_remaining
-    }, status=200)
+        "chances_remaining": chances_remaining,
+    }
+    if is_local:
+        resp_data["otp"] = otp_code
+        resp_data["is_local"] = True
+
+    return Response(resp_data, status=200)
 
 
 @api_view(["POST"])
