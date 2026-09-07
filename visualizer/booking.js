@@ -151,6 +151,13 @@ const DOM = {
   compReason: document.getElementById("comp-reason"),
   btnModalClose: document.getElementById("btn-modal-close"),
   btnViewForensics: document.getElementById("btn-view-forensics"),
+
+  bottomPayBar: document.getElementById("bottom-pay-bar"),
+  btnBottomPay: document.getElementById("btn-bottom-pay"),
+  bpQtyText: document.getElementById("bp-qty-text"),
+  bpPriceText: document.getElementById("bp-price-text"),
+  raceConditionModal: document.getElementById("race-condition-modal"),
+  btnRaceRefresh: document.getElementById("btn-race-refresh"),
 };
 
 // Tier Metadata Definition
@@ -159,6 +166,52 @@ const TIERS = {
   B: { name: "Premium Balcony", price: "500.00", basePrice: 500 },
   C: { name: "Executive Stalls", price: "350.00", basePrice: 350 },
 };
+
+function updateBottomPayBar() {
+  if (!DOM.bottomPayBar) DOM.bottomPayBar = document.getElementById("bottom-pay-bar");
+  if (!DOM.bpQtyText) DOM.bpQtyText = document.getElementById("bp-qty-text");
+  if (!DOM.bpPriceText) DOM.bpPriceText = document.getElementById("bp-price-text");
+
+  if (STATE.myHold) {
+    if (DOM.bottomPayBar) {
+      DOM.bottomPayBar.classList.remove("show");
+      DOM.bottomPayBar.classList.add("hidden");
+    }
+    return;
+  }
+
+  const quantityEl = document.getElementById("seat-quantity");
+  const requestedQuantity = quantityEl ? parseInt(quantityEl.value, 10) : 1;
+  const draftCount = STATE.draftSeatIds ? STATE.draftSeatIds.length : 0;
+
+  let totalPrice = 0;
+  if (STATE.draftSeatIds && STATE.draftSeatIds.length > 0) {
+    STATE.draftSeatIds.forEach(id => {
+      const s = STATE.seatsMap.get(id);
+      if (s) {
+        const tierMeta = TIERS[s.row] || { basePrice: 500 };
+        totalPrice += s.price ? parseFloat(s.price) : tierMeta.basePrice;
+      }
+    });
+  }
+
+  if (DOM.bpQtyText) {
+    DOM.bpQtyText.textContent = `${draftCount}/${requestedQuantity} Seats`;
+  }
+  if (DOM.bpPriceText) {
+    DOM.bpPriceText.textContent = `$${totalPrice % 1 === 0 ? totalPrice.toFixed(0) : totalPrice.toFixed(2)}`;
+  }
+
+  if (DOM.bottomPayBar) {
+    if (draftCount > 0 && draftCount === requestedQuantity) {
+      DOM.bottomPayBar.classList.remove("hidden");
+      DOM.bottomPayBar.classList.add("show");
+    } else {
+      DOM.bottomPayBar.classList.remove("show");
+      DOM.bottomPayBar.classList.add("hidden");
+    }
+  }
+}
 
 /* ==========================================================================
    NETWORK & API UTILITIES
@@ -731,12 +784,15 @@ function initEventListeners() {
            const seat = STATE.seatsMap.get(id);
            applySeatTileDOMState(id, seat ? seat.status : "AVAILABLE");
         });
+        updateBottomPayBar();
         showToast({
           title: "Selection Reset",
           message: "You changed the seat quantity. Your pending selection has been cleared. Please pick your seats again.",
           type: "info",
           duration: 3000
         });
+      } else {
+        updateBottomPayBar();
       }
     });
   }
@@ -761,12 +817,7 @@ function initEventListeners() {
       
       STATE.draftSeatIds = [];
       STATE.draftSeatLabels = [];
-      
-      const bpBar = document.getElementById("bottom-pay-bar");
-      if (bpBar) {
-        bpBar.classList.remove("show");
-        bpBar.classList.add("hidden");
-      }
+      updateBottomPayBar();
       
       loadCatalog(false);
     });
@@ -1126,6 +1177,7 @@ async function handleSeatTileClick(seatId) {
     STATE.draftSeatIds.splice(idx, 1);
     STATE.draftSeatLabels.splice(idx, 1);
     applySeatTileDOMState(seatId, seat.status);
+    updateBottomPayBar();
     return;
   }
 
@@ -1189,6 +1241,7 @@ async function handleSeatTileClick(seatId) {
   if (STATE.draftSeatIds.length < requestedQuantity) {
     if (STATE.draftSeatIds.length >= totalAvailableNow) {
        if (quantityEl) quantityEl.value = STATE.draftSeatIds.length;
+       updateBottomPayBar();
        showToast({
          title: "Max Available Reached",
          message: `Only ${STATE.draftSeatIds.length} seat(s) are available right now. Proceeding to book them.`,
@@ -1197,6 +1250,7 @@ async function handleSeatTileClick(seatId) {
        });
     } else {
        const missing = requestedQuantity - STATE.draftSeatIds.length;
+       updateBottomPayBar();
        showToast({
          title: "Selection Pending",
          message: `You have selected ${STATE.draftSeatIds.length} seat(s). Please click ${missing} more seat(s) to finish your selection. No seats are reserved yet.`,
@@ -1208,25 +1262,7 @@ async function handleSeatTileClick(seatId) {
   }
 
   // 6. Update Bottom Pay Bar
-  const seatPrice = 1500;
-  if (!DOM.bpQtyText) DOM.bpQtyText = document.getElementById("bp-qty-text");
-  if (!DOM.bpPriceText) DOM.bpPriceText = document.getElementById("bp-price-text");
-  if (!DOM.bottomPayBar) DOM.bottomPayBar = document.getElementById("bottom-pay-bar");
-  
-  if (DOM.bpQtyText && DOM.bpPriceText) {
-    DOM.bpQtyText.textContent = `${STATE.draftSeatIds.length}/${requestedQuantity} Seats`;
-    DOM.bpPriceText.textContent = `$${STATE.draftSeatIds.length * seatPrice}`;
-  }
-  
-  if (DOM.bottomPayBar) {
-    if (STATE.draftSeatIds.length === requestedQuantity) {
-      DOM.bottomPayBar.classList.remove("hidden");
-      DOM.bottomPayBar.classList.add("show");
-    } else {
-      DOM.bottomPayBar.classList.remove("show");
-      DOM.bottomPayBar.classList.add("hidden");
-    }
-  }
+  updateBottomPayBar();
 }
 
 async function handleBottomPaySubmit() {
@@ -1280,11 +1316,7 @@ async function handleBottomPaySubmit() {
       STATE.draftSeatLabels = [];
       STATE.pendingHoldSeatIds = null;
       allSeatIds.forEach(id => STATE.inFlightSeatIds.delete(id));
-      
-      if (DOM.bottomPayBar) {
-        DOM.bottomPayBar.classList.remove("show");
-        DOM.bottomPayBar.classList.add("hidden");
-      }
+      updateBottomPayBar();
 
       // Update internal map
       allSeatIds.forEach(id => {
@@ -1318,6 +1350,9 @@ async function handleBottomPaySubmit() {
       allSeatIds.forEach(id => {
          applySeatTileDOMState(id, "AVAILABLE");
       });
+      STATE.draftSeatIds = [];
+      STATE.draftSeatLabels = [];
+      updateBottomPayBar();
       updateMatrixHoldState();
       
       if (DOM.raceConditionModal) {
@@ -1330,6 +1365,9 @@ async function handleBottomPaySubmit() {
       allSeatIds.forEach(id => {
          applySeatTileDOMState(id, "AVAILABLE");
       });
+      STATE.draftSeatIds = [];
+      STATE.draftSeatLabels = [];
+      updateBottomPayBar();
       updateMatrixHoldState();
       if (DOM.raceConditionModal) {
         DOM.raceConditionModal.classList.add("show");
@@ -1377,6 +1415,7 @@ async function releaseActiveHold() {
   hideHoldTimer();
   updateCheckoutSummary();
   updateMatrixHoldState();
+  updateBottomPayBar();
 
   try {
     await fetchJson(`${CONFIG.inventoryUrl}/seats/release/`, {
