@@ -2772,7 +2772,6 @@ function renderMainAuthStep(step) {
     p2.classList.remove("hidden");
     const input = document.getElementById("auth-otp-input");
     if (input) {
-      input.value = "";
       setTimeout(() => input.focus(), 100);
     }
   } else if (step === 3 && p3) {
@@ -2912,7 +2911,8 @@ async function handleMainSendOtp() {
   try {
     const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/auth/send-otp/`, {
       method: "POST",
-      body: JSON.stringify({ email }),
+      skipAuth: true,
+      body: JSON.stringify({ email, is_local: isLocal }),
     });
 
     if (res.ok && res.data && res.data.success) {
@@ -2990,6 +2990,7 @@ async function handleMainVerifyOtp() {
   try {
     const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/auth/verify-otp/`, {
       method: "POST",
+      skipAuth: true,
       body: JSON.stringify({ email, otp }),
     });
 

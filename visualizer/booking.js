@@ -428,7 +428,6 @@ function renderAuthStep(step) {
   } else if (step === 2 && DOM.authStep2) {
     DOM.authStep2.classList.remove("hidden");
     if (DOM.authOtpInput) {
-      DOM.authOtpInput.value = "";
       setTimeout(() => DOM.authOtpInput.focus(), 100);
     }
   } else if (step === 3 && DOM.authStep3) {
@@ -505,7 +504,8 @@ async function handleSendOtp() {
   try {
     const res = await fetchJson(`${CONFIG.coordinatorUrl}/auth/send-otp/`, {
       method: "POST",
-      body: JSON.stringify({ email }),
+      skipAuth: true,
+      body: JSON.stringify({ email, is_local: isLocal }),
     });
 
     if (res.ok && res.data && res.data.success) {
@@ -576,6 +576,7 @@ async function handleVerifyOtp() {
   try {
     const res = await fetchJson(`${CONFIG.coordinatorUrl}/auth/verify-otp/`, {
       method: "POST",
+      skipAuth: true,
       body: JSON.stringify({ email, otp }),
     });
 
@@ -756,38 +757,6 @@ function initEventListeners() {
       loadCatalog(false);
     });
   }
-
-  // Config Modal Integration
-  initConfigModal();
-}
-
-function initConfigModal() {
-  const btnConfig = document.getElementById("btn-config");
-  const modalConfig = document.getElementById("modal-config");
-  const btnCloseConfig = document.getElementById("btn-close-config");
-  const formConfig = document.getElementById("form-config");
-  const cfgCoordUrl = document.getElementById("cfg-coord-url");
-  const cfgInvUrl = document.getElementById("cfg-inv-url");
-  const cfgPayUrl = document.getElementById("cfg-pay-url");
-  const cfgPollMs = document.getElementById("cfg-poll-ms");
-  const btnResetCfg = document.getElementById("btn-reset-cfg");
-
-  if (!btnConfig || !modalConfig) return;
-
-  btnConfig.addEventListener("click", () => {
-    if (cfgCoordUrl) cfgCoordUrl.value = CONFIG.coordinatorUrl;
-    if (cfgInvUrl) cfgInvUrl.value = CONFIG.inventoryUrl;
-    if (cfgPayUrl) cfgPayUrl.value = CONFIG.paymentUrl;
-    if (cfgPollMs) cfgPollMs.value = CONFIG.pollIntervalMs;
-    modalConfig.classList.remove("hidden");
-  });
-
-  btnCloseConfig?.addEventListener("click", () => modalConfig.classList.add("hidden"));
-  const btnCloseConfigFooter = document.getElementById("btn-close-config-footer");
-  btnCloseConfigFooter?.addEventListener("click", () => modalConfig.classList.add("hidden"));
-  modalConfig.addEventListener("click", (e) => {
-    if (e.target === modalConfig) modalConfig.classList.add("hidden");
-  });
 }
 
 /* ==========================================================================
