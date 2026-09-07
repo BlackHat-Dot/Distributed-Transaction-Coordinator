@@ -27,10 +27,31 @@ window.copyTxUUIDToClipboard = function(uuid, btnElement) {
   });
 };
 
+const isLocal = typeof window !== "undefined" && (
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1" ||
+  window.location.hostname === "0.0.0.0"
+);
+
+const defaultCoord = isLocal ? "http://localhost:8002" : "https://coordinator-production-4685.up.railway.app";
+const defaultInv = isLocal ? "http://localhost:8000" : "https://inventory-production-9e43.up.railway.app";
+const defaultPay = isLocal ? "http://localhost:8001" : "https://payment-production-bcb1.up.railway.app";
+
+const getSavedUrl = (key, fallback) => {
+  try {
+    const val = localStorage.getItem(key);
+    if (!val) return fallback;
+    if (isLocal && val.includes("railway.app")) return fallback;
+    return val;
+  } catch (e) {
+    return fallback;
+  }
+};
+
 const CONFIG = {
-  coordinatorUrl: localStorage.getItem("dtc_coordinator_url") || "https://coordinator-production-4685.up.railway.app",
-  inventoryUrl: localStorage.getItem("dtc_inventory_url") || "https://inventory-production-9e43.up.railway.app",
-  paymentUrl: localStorage.getItem("dtc_payment_url") || "https://payment-production-bcb1.up.railway.app",
+  coordinatorUrl: getSavedUrl("dtc_coordinator_url", defaultCoord),
+  inventoryUrl: getSavedUrl("dtc_inventory_url", defaultInv),
+  paymentUrl: getSavedUrl("dtc_payment_url", defaultPay),
   pollIntervalMs: 1500,
 };
 
