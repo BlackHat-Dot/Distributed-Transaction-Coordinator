@@ -15,26 +15,24 @@ const isLocal = typeof window !== "undefined" && (
   window.location.hostname === "0.0.0.0"
 );
 
-const defaultCoord = isLocal ? "http://localhost:8002" : "https://coordinator-production-4685.up.railway.app";
-const defaultInv = isLocal ? "http://localhost:8000" : "https://inventory-production-9e43.up.railway.app";
-const defaultPay = isLocal ? "http://localhost:8001" : "https://payment-production-bcb1.up.railway.app";
-
-const getSavedUrl = (key, fallback) => {
+if (isLocal) {
   try {
-    const val = localStorage.getItem(key);
-    if (!val) return fallback;
-    if (isLocal && val.includes("railway.app")) return fallback;
-    return val;
-  } catch (e) {
-    return fallback;
-  }
-};
+    localStorage.removeItem("dtc_coordinator_url");
+    localStorage.removeItem("dtc_inventory_url");
+    localStorage.removeItem("dtc_payment_url");
+  } catch (e) {}
+}
+
+const localHost = typeof window !== "undefined" && window.location.hostname ? window.location.hostname : "localhost";
+const defaultCoord = isLocal ? `http://${localHost}:8002` : "https://coordinator-production-4685.up.railway.app";
+const defaultInv = isLocal ? `http://${localHost}:8000` : "https://inventory-production-9e43.up.railway.app";
+const defaultPay = isLocal ? `http://${localHost}:8001` : "https://payment-production-bcb1.up.railway.app";
 
 // Service Configuration (Local Microservices in Docker / Localhost, Railway in Cloud)
 const CONFIG = {
-  coordinatorUrl: getSavedUrl("dtc_coordinator_url", defaultCoord),
-  inventoryUrl: getSavedUrl("dtc_inventory_url", defaultInv),
-  paymentUrl: getSavedUrl("dtc_payment_url", defaultPay),
+  coordinatorUrl: isLocal ? defaultCoord : (localStorage.getItem("dtc_coordinator_url") || defaultCoord),
+  inventoryUrl: isLocal ? defaultInv : (localStorage.getItem("dtc_inventory_url") || defaultInv),
+  paymentUrl: isLocal ? defaultPay : (localStorage.getItem("dtc_payment_url") || defaultPay),
   pollIntervalMs: 1500,
 };
 

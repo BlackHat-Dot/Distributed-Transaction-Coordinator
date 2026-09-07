@@ -8,6 +8,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="booking.css?v=4.2.0">
+  <script>
+    if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname === "0.0.0.0") {
+      try {
+        localStorage.removeItem("dtc_coordinator_url");
+        localStorage.removeItem("dtc_inventory_url");
+        localStorage.removeItem("dtc_payment_url");
+      } catch (e) {}
+    }
+  </script>
 </head>
 <body class="theme-dark">
 
@@ -471,7 +480,7 @@
     </div>
   </div>
 
-  <script src="booking.js?v=5.0.0"></script>
+  <script src="booking.js?v=5.2.0"></script>
 </body>
 </html>
 
