@@ -483,7 +483,15 @@
   <!-- RACE CONDITION MODAL -->
   <div class="race-modal-overlay" id="race-condition-modal">
     <div class="race-modal">
-      <img src="assets/race-condition.png" alt="Error" style="max-width: 200px; margin: 0 auto 16px; display: block;" onerror="this.style.display='none'" />
+      <div style="display: flex; justify-content: center; margin-bottom: 24px;">
+        <div style="background: #fff1f2; width: 84px; height: 84px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 8px rgba(244, 63, 94, 0.05);">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+        </div>
+      </div>
       <h3>Sorry! Something is not right.</h3>
       <p>Sorry! These seats are no longer available. Please try again with other seats. (#3)</p>
       <button id="btn-race-refresh" class="btn-race-refresh">Refresh</button>
