@@ -2928,13 +2928,13 @@ async function handleMainSendOtp() {
       if (isLocal && res.data.otp) {
         // LOCAL DEVELOPMENT ONLY: Display badge & auto-fill code
         if (targetEmail) {
-          targetEmail.innerHTML = `${res.data.email}<br><span style="display:inline-block;margin-top:8px;padding:6px 12px;background:rgba(56,189,248,0.15);border:1px dashed #38bdf8;border-radius:6px;font-size:0.95rem;color:#38bdf8;font-weight:600;">🔑 Local Dev OTP: <strong style="letter-spacing:3px;font-size:1.15rem;color:#ffffff;text-shadow:0 0 8px #38bdf8;">${res.data.otp}</strong></span>`;
+          targetEmail.innerHTML = `${res.data.email}<br><span style="display:inline-block;margin-top:8px;padding:6px 12px;background:rgba(56,189,248,0.15);border:1px dashed #38bdf8;border-radius:6px;font-size:0.95rem;color:#38bdf8;font-weight:600;">Local Dev OTP: <strong style="letter-spacing:3px;font-size:1.15rem;color:#ffffff;text-shadow:0 0 8px #38bdf8;">${res.data.otp}</strong></span>`;
         }
         if (otpInput) {
           otpInput.value = res.data.otp;
         }
         showToast({
-          title: `🔑 Local OTP: ${res.data.otp}`,
+          title: `Local OTP: ${res.data.otp}`,
           message: `[LOCAL DEV] Simulated verification code: ${res.data.otp} (auto-filled in window)` + chancesText,
           type: "success",
           duration: 9000,
