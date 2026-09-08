@@ -19,10 +19,10 @@ class TransactionAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ("Saga Transaction Overview", {
-            "fields": ("transaction_id", "status", "amount", "created_at", "updated_at")
+            "fields": ("transaction_id", "status", "amount", "user_id", "user_email", "created_at", "updated_at")
         }),
         ("Seat Booking Details", {
-            "fields": ("seat_id", "quantity"),
-            "description": "Discrete physical seat identifier in Inventory Service (PostgreSQL Primary Key)."
+            "fields": ("seat_ids", "seat_numbers", "quantity"),
+            "description": "Discrete physical seat identifier(s) in Inventory Service."
         }),
     )
