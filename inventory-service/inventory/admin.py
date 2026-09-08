@@ -17,9 +17,13 @@ class SeatAdmin(admin.ModelAdmin):
     search_fields = ("row", "seat_number", "held_by_transaction_id")
 
     def get_queryset(self, request):
-        return super().get_queryset(request).annotate(
+        qs = self.model._default_manager.get_queryset().annotate(
             seat_num_int=Cast("seat_number", IntegerField())
         )
+        ordering = self.get_ordering(request)
+        if ordering:
+            qs = qs.order_by(*ordering)
+        return qs
 
     def get_ordering(self, request):
         return ["event", "row", "seat_num_int"]
