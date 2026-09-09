@@ -2,14 +2,9 @@ from pathlib import Path
 
 import os
 import sys
-from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-
-# Load .env file from service directory or repository root
-load_dotenv(BASE_DIR / ".env")
-load_dotenv(BASE_DIR.parent / ".env")
-load_dotenv()
+# Determines the absolute folder path and stores in inside the variable
 
 DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "t")
 IS_TESTING = 'test' in sys.argv
