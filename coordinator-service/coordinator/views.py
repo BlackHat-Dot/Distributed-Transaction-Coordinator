@@ -989,8 +989,8 @@ def trigger_recovery_sweep(request):
     from django.conf import settings
 
     is_authenticated, auth_user_id, is_staff = _get_requester_identity(request)
-    if not is_staff:
-        return Response({"error": "Staff authorization required to trigger recovery sweep."}, status=403)
+    if not is_authenticated:
+        return Response({"error": "Authentication required to trigger recovery sweep."}, status=401)
 
     out = io.StringIO()
     raw_threshold = int(request.data.get("threshold_seconds", 60) if request.data else 60)

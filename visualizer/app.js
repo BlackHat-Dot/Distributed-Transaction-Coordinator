@@ -2095,14 +2095,16 @@ function startRecoveryCountdown() {
         }
       } else {
         try {
-          const sweepRes = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/recovery/sweep/`, {
-            method: "POST",
-            body: JSON.stringify({ threshold_seconds: 30 }),
-          });
-          if (sweepRes.ok) {
-            fetchTransactionsFeed();
-            if (STATE.activeTxId) {
-              inspectTransaction(STATE.activeTxId, true);
+          if (isUserAuthenticated()) {
+            const sweepRes = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/recovery/sweep/`, {
+              method: "POST",
+              body: JSON.stringify({ threshold_seconds: 30 }),
+            });
+            if (sweepRes.ok) {
+              fetchTransactionsFeed();
+              if (STATE.activeTxId) {
+                inspectTransaction(STATE.activeTxId, true);
+              }
             }
           }
         } catch (e) {}
