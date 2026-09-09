@@ -863,7 +863,11 @@ async function fetchTransactionsFeed(targetPage = STATE.pagination.currentPage) 
   } else {
     if (!STATE.transactions || STATE.transactions.length === 0) {
       if (DOM.tbodyTxFeed) {
-        DOM.tbodyTxFeed.innerHTML = `<tr><td colspan="5" class="table-empty text-danger">⚠️ Coordinator Service offline at ${CONFIG.coordinatorUrl}. Start the service or toggle DEMO MODE above.</td></tr>`;
+        if (res && res.status === 401) {
+          DOM.tbodyTxFeed.innerHTML = `<tr><td colspan="5" class="table-empty text-warning">🔒 Authentication Required: Verify email identity via the <strong>User Identity Gate</strong> above to view your live sagas, or toggle <strong>DEMO MODE</strong>.</td></tr>`;
+        } else {
+          DOM.tbodyTxFeed.innerHTML = `<tr><td colspan="5" class="table-empty text-danger">⚠️ Coordinator Service offline at ${CONFIG.coordinatorUrl}. Start the service or toggle DEMO MODE above.</td></tr>`;
+        }
       }
       if (DOM.txPageRange) DOM.txPageRange.textContent = "0–0";
       if (DOM.txPageTotal) DOM.txPageTotal.textContent = "0";
