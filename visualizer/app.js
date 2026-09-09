@@ -56,7 +56,8 @@ const CONFIG = {
   coordinatorUrl: isLocal ? defaultCoord : (localStorage.getItem("dtc_coordinator_url") || defaultCoord),
   inventoryUrl: isLocal ? defaultInv : (localStorage.getItem("dtc_inventory_url") || defaultInv),
   paymentUrl: isLocal ? defaultPay : (localStorage.getItem("dtc_payment_url") || defaultPay),
-  pollIntervalMs: 1500,
+  healthPollIntervalMs: 15000,
+  txFeedPollIntervalMs: 6000,
 };
 
 const STATE = {
@@ -821,6 +822,17 @@ async function fetchTransactionsFeed(targetPage = STATE.pagination.currentPage) 
     const pageSlice = filtered.slice(offset, offset + pageSize);
     renderTransactionsTable(pageSlice, totalFiltered, STATE.transactions.length);
     renderPaginationControls();
+    return;
+  }
+
+  if (!isUserAuthenticated()) {
+    if (!STATE.transactions || STATE.transactions.length === 0) {
+      if (DOM.tbodyTxFeed) {
+        DOM.tbodyTxFeed.innerHTML = `<tr><td colspan="5" class="table-empty text-warning">🔒 Authentication Required: Verify email identity via the <strong>User Identity Gate</strong> above to view your live sagas, or toggle <strong>DEMO MODE</strong>.</td></tr>`;
+      }
+      if (DOM.txPageRange) DOM.txPageRange.textContent = "0–0";
+      if (DOM.txPageTotal) DOM.txPageTotal.textContent = "0";
+    }
     return;
   }
 
@@ -2894,6 +2906,7 @@ function setupMainAuthEventListeners() {
       updateMainAuthWidgetUI();
       closeMainAuthModal();
       showToast({ title: "Signed Out", message: "Identity detached.", type: "normal" });
+      fetchTransactionsFeed();
     });
   }
 
@@ -3051,6 +3064,7 @@ async function handleMainVerifyOtp() {
       });
 
       renderMainAuthStep(3);
+      fetchTransactionsFeed();
     } else {
       showToast({
         title: "Verification Failed",
@@ -3085,10 +3099,29 @@ window.addEventListener("DOMContentLoaded", () => {
   fetchTransactionsFeed();
   startRecoveryCountdown();
 
+  // Dedicated health checks on 15s interval (skipped when tab is in background)
   setInterval(() => {
+    if (document.hidden) return;
     checkServiceHealth();
-    fetchTransactionsFeed();
-  }, CONFIG.pollIntervalMs);
+  }, CONFIG.healthPollIntervalMs);
+
+  // Dedicated transaction feed polling on 6s interval (only when authenticated or in Demo mode)
+  setInterval(() => {
+    if (document.hidden) return;
+    if (STATE.isSimulatedMode || isUserAuthenticated()) {
+      fetchTransactionsFeed();
+    }
+  }, CONFIG.txFeedPollIntervalMs);
+
+  // Immediate refresh when user switches back to this tab
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      checkServiceHealth();
+      if (STATE.isSimulatedMode || isUserAuthenticated()) {
+        fetchTransactionsFeed();
+      }
+    }
+  });
 });
 
 DOM.btnDemoCompFail.addEventListener("click", async () => {

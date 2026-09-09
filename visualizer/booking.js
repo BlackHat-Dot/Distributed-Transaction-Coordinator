@@ -39,7 +39,7 @@ const CONFIG = {
   coordinatorUrl: isLocal ? defaultCoord : (localStorage.getItem("dtc_coordinator_url") || defaultCoord),
   inventoryUrl: isLocal ? defaultInv : (localStorage.getItem("dtc_inventory_url") || defaultInv),
   paymentUrl: isLocal ? defaultPay : (localStorage.getItem("dtc_payment_url") || defaultPay),
-  pollIntervalMs: 1500,
+  pollIntervalMs: 4000,
 };
 
 // Global Reactive Application State
@@ -747,6 +747,17 @@ document.addEventListener("DOMContentLoaded", () => {
   loadCatalog(true);
   startDifferentialPolling();
   setupBeaconUnloadHandler();
+
+  // Immediate seat refresh when user switches back to this tab
+  document.addEventListener("visibilitychange", async () => {
+    if (!document.hidden) {
+      const res = await fetchJson(`${CONFIG.inventoryUrl}/seats/`);
+      if (res.ok && Array.isArray(res.data)) {
+        reconcileSeatStates(res.data);
+        updateInventoryStats();
+      }
+    }
+  });
 });
 
 function initEventListeners() {
@@ -1858,6 +1869,7 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
 function startDifferentialPolling() {
   if (STATE.pollTimer) clearInterval(STATE.pollTimer);
   STATE.pollTimer = setInterval(async () => {
+    if (document.hidden) return;
     const res = await fetchJson(`${CONFIG.inventoryUrl}/seats/`);
     if (res.ok && Array.isArray(res.data)) {
       reconcileSeatStates(res.data);
