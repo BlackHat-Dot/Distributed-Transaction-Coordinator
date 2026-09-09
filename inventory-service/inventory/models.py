@@ -26,6 +26,7 @@ class Seat(models.Model):
         max_length=20,
         choices=Status.choices,
         default=Status.AVAILABLE,
+        db_index=True,
     )
     held_until = models.DateTimeField(
         null=True,
@@ -35,6 +36,7 @@ class Seat(models.Model):
     held_by_transaction_id = models.UUIDField(
         null=True,
         blank=True,
+        db_index=True,
         help_text="Transaction ID currently holding or booking the seat.",
     )
     user_id = models.CharField(

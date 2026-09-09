@@ -11,9 +11,12 @@ INVENTORY_BASE_URL = os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000")
 PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rstrip("/")
 
 PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
+PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
 INVENTORY_CHECK_URL = f"{INVENTORY_BASE_URL}/reserve/check/"
+INVENTORY_CONFIRM_URL = f"{INVENTORY_BASE_URL}/seats/confirm/"
 INVENTORY_RELEASE_URL = f"{INVENTORY_BASE_URL}/seats/release/"
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "5"))
+INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "dtc-internal-coordinator-secret-key-2026")
 
 
 PAYMENT_CHARGED = "CHARGED"
@@ -32,20 +35,21 @@ class Command(BaseCommand):
         parser.add_argument(
             "--threshold-seconds",
             type=int,
-            default=int(os.getenv("RECOVERY_THRESHOLD_SECONDS", "10")),
-            help="Age in seconds before a stuck transaction is eligible for recovery sweep (default: 10s).",
+            default=int(os.getenv("RECOVERY_THRESHOLD_SECONDS", "60")),
+            help="Age in seconds before a stuck transaction is eligible for recovery sweep (default: 60s).",
         )
 
     def handle(self, *args, **options):
         threshold_seconds = options.get("threshold_seconds")
         if threshold_seconds is None:
-            threshold_seconds = int(os.getenv("RECOVERY_THRESHOLD_SECONDS", "10"))
+            threshold_seconds = int(os.getenv("RECOVERY_THRESHOLD_SECONDS", "60"))
 
         threshold = timezone.now() - timedelta(seconds=threshold_seconds)
 
         self.recover_payment_processing(threshold)
         self.recover_reserved(threshold)
         self.recover_started(threshold)
+        self.recover_timeouts(threshold)
         self.recover_compensating(threshold)
         self.recover_compensation_failed(threshold)
 
@@ -107,6 +111,20 @@ class Command(BaseCommand):
             )
             self._resolve_transaction(transaction_id)
 
+    def recover_timeouts(self, threshold):
+        timeout_statuses = [
+            Transaction.Status.INVENTORY_TIMEOUT,
+            Transaction.Status.PAYMENT_TIMEOUT,
+            Transaction.Status.INVENTORY_CONNECTION_ERROR,
+            Transaction.Status.PAYMENT_CONNECTION_ERROR,
+        ]
+        for st in timeout_statuses:
+            for transaction_id in self._claim(st, threshold):
+                self.stdout.write(
+                    f"Recovering {transaction_id} claimed from {st}..."
+                )
+                self._resolve_transaction(transaction_id)
+
     def recover_compensating(self, threshold):
 
         for transaction_id in self._claim(Transaction.Status.COMPENSATING, threshold):
@@ -158,7 +176,10 @@ class Command(BaseCommand):
 
 
     def _resolve_transaction(self, transaction_id):
-        headers = {"X-Correlation-ID": str(transaction_id)}
+        headers = {
+            "X-Correlation-ID": str(transaction_id),
+            "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+        }
         try:
             payment_resp = requests.get(
                 PAYMENT_CHECK_URL,
@@ -173,21 +194,44 @@ class Command(BaseCommand):
         payment_status = payment_resp.json().get("status") if payment_resp.status_code == 200 else None
 
         if payment_status == PAYMENT_CHARGED:
+            txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+            seat_ids = txn.seat_ids if txn else []
 
-            _set_status_with_event(
-                transaction_id=transaction_id,
-                to_status=Transaction.Status.COMPLETED,
-                expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
-                actor=SagaEvent.ACTOR_RECOVERY,
-                http_status_code=payment_resp.status_code,
-                http_payload=payment_resp.json() if payment_resp.status_code == 200 else None,
-            )
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f"  -> {transaction_id}: rolled forward to COMPLETED."
+            # Before completing, confirm inventory
+            try:
+                confirm_resp = requests.post(
+                    INVENTORY_CONFIRM_URL,
+                    json={"seat_ids": seat_ids, "transaction_id": str(transaction_id)},
+                    headers=headers,
+                    timeout=REQUEST_TIMEOUT,
                 )
-            )
-            return
+            except requests.exceptions.RequestException:
+                self._leave_in_progress(transaction_id, "inventory confirm network error during recovery")
+                return
+
+            if confirm_resp.status_code == 200:
+                _set_status_with_event(
+                    transaction_id=transaction_id,
+                    to_status=Transaction.Status.COMPLETED,
+                    expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+                    actor=SagaEvent.ACTOR_RECOVERY,
+                    http_status_code=payment_resp.status_code,
+                    http_payload=payment_resp.json() if payment_resp.status_code == 200 else None,
+                )
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"  -> {transaction_id}: inventory confirmed, rolled forward to COMPLETED."
+                    )
+                )
+                return
+            else:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"  -> {transaction_id}: inventory confirm failed (HTTP {confirm_resp.status_code}); routing to compensation."
+                    )
+                )
+                self._compensate(transaction_id, payment_was_charged=True)
+                return
 
         if payment_status != PAYMENT_NOT_CHARGED:
             self._leave_in_progress(
@@ -209,7 +253,7 @@ class Command(BaseCommand):
         inventory_status = inventory_resp.json().get("status") if inventory_resp.status_code == 200 else None
 
         if inventory_status == INVENTORY_RESERVED:
-            self._compensate(transaction_id)
+            self._compensate(transaction_id, payment_was_charged=False)
         elif inventory_status in (INVENTORY_RELEASED, INVENTORY_NOT_RESERVED):
             _set_status_with_event(
                 transaction_id=transaction_id,
@@ -238,7 +282,7 @@ class Command(BaseCommand):
             )
         )
 
-    def _compensate(self, transaction_id):
+    def _compensate(self, transaction_id, payment_was_charged=None):
         _set_status_with_event(
             transaction_id=transaction_id,
             to_status=Transaction.Status.COMPENSATING,
@@ -251,7 +295,10 @@ class Command(BaseCommand):
         txn = Transaction.objects.filter(transaction_id=transaction_id).first()
         seat_ids = txn.seat_ids if txn else []
 
-        headers = {"X-Correlation-ID": str(transaction_id)}
+        headers = {
+            "X-Correlation-ID": str(transaction_id),
+            "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+        }
         try:
             resp = requests.post(
                 INVENTORY_RELEASE_URL,
@@ -270,26 +317,12 @@ class Command(BaseCommand):
             )
             self.stdout.write(
                 self.style.ERROR(
-                    f"  -> {transaction_id}: compensation failed (network error)."
+                    f"  -> {transaction_id}: compensation failed (network error releasing inventory)."
                 )
             )
             return
 
-        if resp.status_code == 200:
-            _set_status_with_event(
-                transaction_id=transaction_id,
-                to_status=Transaction.Status.COMPENSATED,
-                expected_status=Transaction.Status.COMPENSATING,
-                actor=SagaEvent.ACTOR_RECOVERY,
-                http_status_code=resp.status_code,
-                http_payload=resp.json() if resp.status_code == 200 else None,
-            )
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f"  -> {transaction_id}: compensated successfully."
-                )
-            )
-        else:
+        if resp.status_code != 200:
             _set_status_with_event(
                 transaction_id=transaction_id,
                 to_status=Transaction.Status.COMPENSATION_FAILED,
@@ -304,3 +337,72 @@ class Command(BaseCommand):
                     f"(HTTP {resp.status_code})."
                 )
             )
+            return
+
+        # Check if payment was charged and needs refund
+        if payment_was_charged is None:
+            try:
+                p_resp = requests.get(
+                    PAYMENT_CHECK_URL,
+                    params={"transaction_id": str(transaction_id)},
+                    headers=headers,
+                    timeout=REQUEST_TIMEOUT,
+                )
+                if p_resp.status_code == 200 and p_resp.json().get("status") == PAYMENT_CHARGED:
+                    payment_was_charged = True
+            except requests.exceptions.RequestException:
+                pass
+
+        if payment_was_charged:
+            try:
+                refund_resp = requests.post(
+                    PAYMENT_REFUND_URL,
+                    json={"transaction_id": str(transaction_id)},
+                    headers=headers,
+                    timeout=REQUEST_TIMEOUT,
+                )
+            except requests.exceptions.RequestException:
+                _set_status_with_event(
+                    transaction_id=transaction_id,
+                    to_status=Transaction.Status.COMPENSATION_FAILED,
+                    expected_status=Transaction.Status.COMPENSATING,
+                    actor=SagaEvent.ACTOR_RECOVERY,
+                    http_status_code=None,
+                    http_payload=None,
+                )
+                self.stdout.write(
+                    self.style.ERROR(
+                        f"  -> {transaction_id}: refund failed (network error reaching payment service)."
+                    )
+                )
+                return
+
+            if refund_resp.status_code != 200:
+                _set_status_with_event(
+                    transaction_id=transaction_id,
+                    to_status=Transaction.Status.COMPENSATION_FAILED,
+                    expected_status=Transaction.Status.COMPENSATING,
+                    actor=SagaEvent.ACTOR_RECOVERY,
+                    http_status_code=refund_resp.status_code,
+                    http_payload=refund_resp.json() if refund_resp.content else None,
+                )
+                self.stdout.write(
+                    self.style.ERROR(
+                        f"  -> {transaction_id}: refund rejected by payment service (HTTP {refund_resp.status_code})."
+                    )
+                )
+                return
+
+        _set_status_with_event(
+            transaction_id=transaction_id,
+            to_status=Transaction.Status.COMPENSATED,
+            expected_status=Transaction.Status.COMPENSATING,
+            actor=SagaEvent.ACTOR_RECOVERY,
+            http_status_code=resp.status_code,
+            http_payload=resp.json() if resp.status_code == 200 else None,
+        )
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"  -> {transaction_id}: compensated successfully."
+            )
+        )

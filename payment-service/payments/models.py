@@ -6,6 +6,7 @@ class Payment(models.Model):
     class Status(models.TextChoices):
         CHARGED = "CHARGED"
         NOT_CHARGED = "NOT_CHARGED"
+        REFUNDED = "REFUNDED"
 
     transaction_id = models.UUIDField(unique=True)
     user_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)

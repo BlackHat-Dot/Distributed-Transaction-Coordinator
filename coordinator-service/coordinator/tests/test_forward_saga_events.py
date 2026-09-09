@@ -161,6 +161,10 @@ class ForwardSagaEventTests(TransactionTestCase):
                 mock.status_code = 200
                 mock.json.return_value = {"message": "Seat released"}
                 return mock
+            if "refund" in url:
+                mock.status_code = 200
+                mock.json.return_value = {"status": "REFUNDED", "transaction_id": tid}
+                return mock
             raise ValueError(f"Unexpected POST url: {url}")
 
         with patch("coordinator.views.requests.post", side_effect=mock_post):
@@ -219,7 +223,12 @@ class ForwardSagaEventTests(TransactionTestCase):
         mock_payment_charged.status_code = 200
         mock_payment_charged.json.return_value = {"status": "CHARGED"}
 
-        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", return_value=mock_payment_charged):
+        mock_confirm_ok = MagicMock()
+        mock_confirm_ok.status_code = 200
+        mock_confirm_ok.json.return_value = {"message": "Seats confirmed"}
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", return_value=mock_payment_charged), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", return_value=mock_confirm_ok):
             call_command("recovery_stuck_transactions")
 
         events_f = self.client.get(f"/transactions/{tid_forward}/events/").data["events"]

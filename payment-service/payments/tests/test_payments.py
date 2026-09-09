@@ -305,3 +305,71 @@ class PaymentCorrelationIdMiddlewareTests(TestCase):
         cid = resp.get("X-Correlation-ID")
         self.assertTrue(cid)
         uuid.UUID(cid)
+
+
+class RefundPaymentTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.refund_url = "/payments/refund/"
+        self.charge_url = "/payments/charge/"
+
+    def test_refund_missing_transaction_id(self):
+        resp = self.client.post(self.refund_url, {}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("transaction_id", resp.data.get("error", ""))
+
+    def test_refund_invalid_uuid(self):
+        resp = self.client.post(self.refund_url, {"transaction_id": "not-a-uuid"}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("valid UUID", resp.data.get("error", ""))
+
+    def test_refund_nonexistent_payment_returns_404(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(self.refund_url, {"transaction_id": tid}, format="json")
+        self.assertEqual(resp.status_code, 404)
+        self.assertIn("Payment not found", resp.data.get("error", ""))
+
+    def test_refund_charged_payment_succeeds(self):
+        tid = str(uuid.uuid4())
+        charge_resp = self.client.post(
+            self.charge_url,
+            {"transaction_id": tid, "amount": 500},
+            format="json",
+        )
+        self.assertEqual(charge_resp.status_code, 201)
+
+        refund_resp = self.client.post(
+            self.refund_url,
+            {"transaction_id": tid},
+            format="json",
+        )
+        self.assertEqual(refund_resp.status_code, 200)
+        self.assertEqual(refund_resp.data.get("status"), Payment.Status.REFUNDED)
+
+        payment = Payment.objects.get(transaction_id=tid)
+        self.assertEqual(payment.status, Payment.Status.REFUNDED)
+
+    def test_refund_idempotent_multiple_calls_return_200(self):
+        tid = str(uuid.uuid4())
+        self.client.post(self.charge_url, {"transaction_id": tid, "amount": 500}, format="json")
+
+        resp1 = self.client.post(self.refund_url, {"transaction_id": tid}, format="json")
+        self.assertEqual(resp1.status_code, 200)
+        self.assertEqual(resp1.data.get("status"), Payment.Status.REFUNDED)
+
+        resp2 = self.client.post(self.refund_url, {"transaction_id": tid}, format="json")
+        self.assertEqual(resp2.status_code, 200)
+        self.assertEqual(resp2.data.get("status"), Payment.Status.REFUNDED)
+
+    def test_refund_non_charged_payment_returns_400(self):
+        tid = str(uuid.uuid4())
+        Payment.objects.create(
+            transaction_id=tid,
+            amount=500,
+            status=Payment.Status.NOT_CHARGED,
+        )
+
+        resp = self.client.post(self.refund_url, {"transaction_id": tid}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Cannot refund", resp.data.get("error", ""))
+

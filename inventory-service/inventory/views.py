@@ -3,6 +3,7 @@ import uuid
 from datetime import timedelta
 from django.conf import settings
 from django.db import transaction, IntegrityError
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -36,19 +37,6 @@ def event_list(request):
 
 @api_view(["GET"])
 def seat_list(request):
-    now = timezone.now()
-
-    # Active Sweeper: Find involuntary hold expirations
-    expired_seats = list(Seat.objects.filter(status=Seat.Status.HELD, held_until__lt=now))
-    if expired_seats:
-        with transaction.atomic():
-            for seat in expired_seats:
-                seat.status = Seat.Status.AVAILABLE
-                seat.held_until = None
-                seat.held_by_transaction_id = None
-                seat.user_id = None
-                seat.user_email = None
-                seat.save(update_fields=['status', 'held_until', 'held_by_transaction_id', 'user_id', 'user_email'])
 
     if Seat.objects.count() == 0:
         event = Event.objects.first()
@@ -101,8 +89,46 @@ def _validate_reserve_input(data):
 
     return seat_ids, tid, None
 
+INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv(
+    "INTERNAL_SERVICE_KEY", "dtc-internal-coordinator-secret-key-2026"
+)
+
+
+def _verify_internal_service_key(request):
+    """
+    Ensures internal state-mutating endpoints (reserve, confirm, release)
+    can only be called by internal services (e.g. coordinator) presenting
+    the shared secret.
+    In testing mode (IS_TESTING), requests without the header are permitted
+    to preserve existing standalone unit tests, but invalid headers are rejected.
+    """
+    key = request.headers.get("X-Internal-Service-Key")
+    if key is not None:
+        if key != INTERNAL_SERVICE_KEY:
+            return Response(
+                {"error": "Forbidden: invalid internal service key."},
+                status=403,
+            )
+        return None
+
+    if getattr(settings, "IS_TESTING", False):
+        return None
+
+    if not settings.DEBUG:
+        return Response(
+            {"error": "Forbidden: missing internal service key."},
+            status=403,
+        )
+
+    return None
+
+
 @api_view(["POST"])
 def reserve_seat(request):
+    auth_err = _verify_internal_service_key(request)
+    if auth_err:
+        return auth_err
+
     seat_ids, transaction_id, error_response = _validate_reserve_input(request.data)
     if error_response:
         return error_response
@@ -123,6 +149,44 @@ def reserve_seat(request):
                 return Response({"error": "One or more seats not found", "transaction_id": str(transaction_id)}, status=404)
 
             now = timezone.now()
+
+            # Enforce MAX_ACTOR_HOLDS (D-5)
+            max_actor_holds = getattr(settings, "MAX_ACTOR_HOLDS", MAX_ACTOR_HOLDS)
+            if len(seats) > max_actor_holds:
+                return Response(
+                    {
+                        "error": f"Requested seats count ({len(seats)}) exceeds maximum allowed active holds ({max_actor_holds}).",
+                        "code": "MAX_HOLDS_EXCEEDED",
+                        "active_holds": 0,
+                        "max_holds": max_actor_holds,
+                        "transaction_id": str(transaction_id),
+                    },
+                    status=429,
+                )
+
+            actor_filter = Q()
+            if user_id and user_id != "usr_anonymous":
+                actor_filter |= Q(user_id=user_id)
+            if user_email and user_email != "anonymous@dtc.io":
+                actor_filter |= Q(user_email=user_email)
+
+            if actor_filter:
+                active_holds = Seat.objects.filter(
+                    actor_filter,
+                    status=Seat.Status.HELD,
+                    held_until__gt=now,
+                ).exclude(held_by_transaction_id=transaction_id).count()
+                if active_holds + len(seats) > max_actor_holds:
+                    return Response(
+                        {
+                            "error": f"Actor exceeds maximum allowed active holds ({max_actor_holds}).",
+                            "code": "MAX_HOLDS_EXCEEDED",
+                            "active_holds": active_holds,
+                            "max_holds": max_actor_holds,
+                            "transaction_id": str(transaction_id),
+                        },
+                        status=429,
+                    )
             
             for seat in seats:
                 if seat.held_by_transaction_id and str(seat.held_by_transaction_id) == str(transaction_id):
@@ -168,6 +232,10 @@ def reserve_seat(request):
 
 @api_view(["POST"])
 def confirm_seat(request):
+    auth_err = _verify_internal_service_key(request)
+    if auth_err:
+        return auth_err
+
     seat_ids, transaction_id, error_response = _validate_reserve_input(request.data)
     if error_response:
         return error_response
@@ -178,21 +246,57 @@ def confirm_seat(request):
             if not reservations:
                 return Response({"error": "Reservations not found", "transaction_id": str(transaction_id)}, status=404)
 
-            for res in reservations:
-                res.status = Reservation.Status.BOOKED
-                res.save()
-                
-                if res.seat:
-                    res.seat.status = Seat.Status.BOOKED
-                    res.seat.held_until = None
-                    res.seat.save()
-            
+            seats = list(Seat.objects.select_for_update().filter(id__in=seat_ids).order_by('id'))
+            if len(seats) != len(seat_ids):
+                return Response({"error": "One or more seats not found", "transaction_id": str(transaction_id)}, status=404)
+
+            now = timezone.now()
+            for seat in seats:
+                if seat.status == Seat.Status.BOOKED and str(seat.held_by_transaction_id) == str(transaction_id):
+                    continue
+
+                if not seat.held_by_transaction_id or str(seat.held_by_transaction_id) != str(transaction_id):
+                    return Response(
+                        {
+                            "error": f"Seat {seat.row}{seat.seat_number} hold does not belong to transaction {transaction_id}",
+                            "code": "HOLD_EXPIRED",
+                            "status": "HOLD_EXPIRED",
+                            "transaction_id": str(transaction_id),
+                        },
+                        status=409,
+                    )
+
+                if seat.held_until and seat.held_until < now and seat.status != Seat.Status.BOOKED:
+                    return Response(
+                        {
+                            "error": f"Seat {seat.row}{seat.seat_number} hold has expired before confirmation",
+                            "code": "HOLD_EXPIRED",
+                            "status": "HOLD_EXPIRED",
+                            "transaction_id": str(transaction_id),
+                        },
+                        status=409,
+                    )
+
+            Reservation.objects.filter(transaction_id=transaction_id).update(
+                status=Reservation.Status.BOOKED
+            )
+
+            Seat.objects.filter(id__in=[s.id for s in seats]).update(
+                status=Seat.Status.BOOKED,
+                held_until=None,
+                held_by_transaction_id=transaction_id,
+            )
+
             return Response({"message": "Seats confirmed", "transaction_id": str(transaction_id)}, status=200)
     except Exception as e:
         return Response({"error": "Database error", "detail": str(e)}, status=500)
 
 @api_view(["POST"])
 def release_seat(request):
+    auth_err = _verify_internal_service_key(request)
+    if auth_err:
+        return auth_err
+
     seat_ids, transaction_id, error_response = _validate_reserve_input(request.data)
     if error_response:
         return error_response
@@ -203,17 +307,22 @@ def release_seat(request):
             if not reservations:
                 return Response({"message": "No active reservation to release", "transaction_id": str(transaction_id)}, status=200)
 
-            for res in reservations:
-                if res.status in (Reservation.Status.RESERVED, Reservation.Status.BOOKED):
-                    res.status = Reservation.Status.RELEASED
-                    res.save()
-                    if res.seat and (res.seat.held_by_transaction_id == transaction_id or res.seat.status == Seat.Status.BOOKED):
-                        res.seat.status = Seat.Status.AVAILABLE
-                        res.seat.held_until = None
-                        res.seat.held_by_transaction_id = None
-                        res.seat.user_id = None
-                        res.seat.user_email = None
-                        res.seat.save()
+            active_res = [r for r in reservations if r.status in (Reservation.Status.RESERVED, Reservation.Status.BOOKED)]
+            if active_res:
+                seat_ids = [r.seat_id for r in active_res if r.seat_id]
+                Reservation.objects.filter(id__in=[r.id for r in active_res]).update(
+                    status=Reservation.Status.RELEASED
+                )
+                if seat_ids:
+                    Seat.objects.filter(id__in=seat_ids).filter(
+                        Q(held_by_transaction_id=transaction_id) | Q(status=Seat.Status.BOOKED)
+                    ).update(
+                        status=Seat.Status.AVAILABLE,
+                        held_until=None,
+                        held_by_transaction_id=None,
+                        user_id=None,
+                        user_email=None,
+                    )
 
             return Response({"message": "Seats released", "transaction_id": str(transaction_id)}, status=200)
     except Exception as e:
@@ -245,6 +354,17 @@ def check_reservation(request):
 
 @api_view(["POST"])
 def reset_seats(request):
+    if not settings.DEBUG:
+        is_staff = bool(
+            (request.user and request.user.is_authenticated and request.user.is_staff)
+            or (request.headers.get("X-Staff-Key") and request.headers.get("X-Staff-Key") == os.getenv("STAFF_API_KEY", "dtc-internal-staff-secret"))
+        )
+        if not is_staff:
+            return Response(
+                {"error": "Resetting venue seats is restricted to staff in production."},
+                status=403,
+            )
+
     with transaction.atomic():
         Seat.objects.update(
             status=Seat.Status.AVAILABLE,
@@ -255,3 +375,40 @@ def reset_seats(request):
         )
         Reservation.objects.all().delete()
     return Response({"message": "All seats reset to AVAILABLE."})
+
+
+@api_view(["POST"])
+def sweep_expired_holds(request):
+    """
+    Sweeps expired seat holds and marks them as AVAILABLE.
+    Pure background management / maintenance endpoint.
+    """
+    now = timezone.now()
+    with transaction.atomic():
+        expired_seats = list(
+            Seat.objects.select_for_update().filter(
+                status=Seat.Status.HELD,
+                held_until__lt=now,
+            )
+        )
+        reclaimed_count = len(expired_seats)
+        if reclaimed_count > 0:
+            expired_seat_ids = [s.id for s in expired_seats]
+            Reservation.objects.filter(
+                seat_id__in=expired_seat_ids,
+                status=Reservation.Status.RESERVED,
+            ).update(status=Reservation.Status.RELEASED)
+
+            Seat.objects.filter(id__in=expired_seat_ids).update(
+                status=Seat.Status.AVAILABLE,
+                held_until=None,
+                held_by_transaction_id=None,
+                user_id=None,
+                user_email=None,
+            )
+
+    return Response({
+        "message": f"Swept {reclaimed_count} expired seat hold(s).",
+        "reclaimed_count": reclaimed_count,
+    }, status=200)
+

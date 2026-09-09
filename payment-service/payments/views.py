@@ -146,3 +146,53 @@ def payment_check(request):
         })
 
     return Response({"transaction_id": str(transaction_uuid), "status": NOT_CHARGED})
+
+
+@api_view(["POST"])
+def refund_payment(request):
+    transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
+    if error_response:
+        return error_response
+
+    payment = Payment.objects.filter(transaction_id=transaction_uuid).first()
+    if payment is None:
+        return Response(
+            {
+                "error": "Payment not found",
+                "transaction_id": str(transaction_uuid),
+            },
+            status=404,
+        )
+
+    # Idempotent: multiple refunds for the same transaction return the existing refunded record
+    if payment.status == Payment.Status.REFUNDED:
+        return _payment_response(payment, status=200)
+
+    # Reject refund for transactions that were not charged
+    if payment.status != Payment.Status.CHARGED:
+        return Response(
+            {
+                "error": f"Cannot refund transaction with status {payment.status}",
+                "transaction_id": str(transaction_uuid),
+                "status": payment.status,
+            },
+            status=400,
+        )
+
+    with transaction.atomic():
+        p = Payment.objects.select_for_update().get(id=payment.id)
+        if p.status == Payment.Status.REFUNDED:
+            return _payment_response(p, status=200)
+        if p.status != Payment.Status.CHARGED:
+            return Response(
+                {
+                    "error": f"Cannot refund transaction with status {p.status}",
+                    "transaction_id": str(transaction_uuid),
+                    "status": p.status,
+                },
+                status=400,
+            )
+
+        p.status = Payment.Status.REFUNDED
+        p.save(update_fields=["status"])
+        return _payment_response(p, status=200)

@@ -319,3 +319,81 @@ class ConcurrentCreateTests(TransactionTestCase):
             1,
             f"Expected exactly 1 saga execution but got: {saga_execution_counts}",
         )
+
+
+class Batch3RefundCompensationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_compensation_when_payment_was_charged_calls_refund_and_compensates(self):
+        tid = str(uuid.uuid4())
+        captured_calls = []
+
+        def mock_post(url, *args, **kwargs):
+            captured_calls.append(url)
+            mock = MagicMock()
+            if "reserve" in url:
+                mock.status_code = 200
+                mock.json.return_value = {"message": "Reserved", "seat_ids": [1]}
+                return mock
+            if "charge" in url:
+                mock.status_code = 200
+                mock.json.return_value = {"status": "CHARGED", "transaction_id": tid}
+                return mock
+            if "confirm" in url:
+                mock.status_code = 409
+                mock.json.return_value = {"error": "Hold expired", "code": "HOLD_EXPIRED"}
+                return mock
+            if "release" in url:
+                mock.status_code = 200
+                mock.json.return_value = {"message": "Seat released"}
+                return mock
+            if "refund" in url:
+                mock.status_code = 200
+                mock.json.return_value = {"status": "REFUNDED", "transaction_id": tid}
+                return mock
+            raise ValueError(f"Unexpected URL: {url}")
+
+        with patch("coordinator.views.requests.post", side_effect=mock_post):
+            resp = self.client.post("/transactions/?sync=true", {"transaction_id": tid, "seat_ids": [1], "amount": 500}, format="json")
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("status"), Transaction.Status.COMPENSATED)
+        self.assertIn("refund_response", resp.data)
+        self.assertTrue(any("refund" in u for u in captured_calls), "Refund endpoint must be called")
+
+    def test_compensation_when_refund_fails_transitions_to_compensation_failed(self):
+        tid = str(uuid.uuid4())
+
+        def mock_post(url, *args, **kwargs):
+            mock = MagicMock()
+            if "reserve" in url:
+                mock.status_code = 200
+                mock.json.return_value = {"message": "Reserved", "seat_ids": [1]}
+                return mock
+            if "charge" in url:
+                mock.status_code = 200
+                mock.json.return_value = {"status": "CHARGED", "transaction_id": tid}
+                return mock
+            if "confirm" in url:
+                mock.status_code = 409
+                mock.json.return_value = {"error": "Hold expired", "code": "HOLD_EXPIRED"}
+                return mock
+            if "release" in url:
+                mock.status_code = 200
+                mock.json.return_value = {"message": "Seat released"}
+                return mock
+            if "refund" in url:
+                mock.status_code = 500
+                mock.json.return_value = {"error": "Payment gateway down"}
+                return mock
+            raise ValueError(f"Unexpected URL: {url}")
+
+        with patch("coordinator.views.requests.post", side_effect=mock_post):
+            resp = self.client.post("/transactions/?sync=true", {"transaction_id": tid, "seat_ids": [1], "amount": 500}, format="json")
+
+        self.assertEqual(resp.status_code, 500)
+        self.assertEqual(resp.data.get("status"), Transaction.Status.COMPENSATION_FAILED)
+        txn = Transaction.objects.get(transaction_id=tid)
+        self.assertEqual(txn.status, Transaction.Status.COMPENSATION_FAILED)
+

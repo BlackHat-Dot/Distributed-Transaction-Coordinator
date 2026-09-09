@@ -453,3 +453,190 @@ class InventoryCorrelationIdMiddlewareTests(TestCase):
         cid = resp.get("X-Correlation-ID")
         self.assertTrue(cid)
         uuid.UUID(cid)
+
+
+class Batch2InventorySecurityAndRaceTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.event = _create_event()
+        self.seat = _create_seat(self.event, row="E", seat_number="1")
+        self.valid_key = "dtc-internal-coordinator-secret-key-2026"
+
+    def test_confirm_seat_fails_with_409_if_seat_held_by_another_transaction(self):
+        tid1 = str(uuid.uuid4())
+        tid2 = str(uuid.uuid4())
+        # Reserve with tid1
+        resp = self.client.post(RESERVE_URL, {"seat_ids": [self.seat.id], "transaction_id": tid1}, format="json")
+        self.assertEqual(resp.status_code, 200)
+
+        # Simulate another transaction re-holding or stealing the seat
+        self.seat.refresh_from_db()
+        self.seat.held_by_transaction_id = uuid.UUID(tid2)
+        self.seat.save()
+
+        # Confirm attempt by tid1 must be rejected with 409 HOLD_EXPIRED
+        confirm_resp = self.client.post(CONFIRM_URL, {"seat_ids": [self.seat.id], "transaction_id": tid1}, format="json")
+        self.assertEqual(confirm_resp.status_code, 409)
+        self.assertEqual(confirm_resp.data.get("code"), "HOLD_EXPIRED")
+
+    def test_confirm_seat_fails_with_409_if_hold_expired(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(RESERVE_URL, {"seat_ids": [self.seat.id], "transaction_id": tid}, format="json")
+        self.assertEqual(resp.status_code, 200)
+
+        # Expire the hold
+        self.seat.refresh_from_db()
+        self.seat.held_until = timezone.now() - timedelta(minutes=1)
+        self.seat.save()
+
+        # Confirm attempt must be rejected with 409 HOLD_EXPIRED
+        confirm_resp = self.client.post(CONFIRM_URL, {"seat_ids": [self.seat.id], "transaction_id": tid}, format="json")
+        self.assertEqual(confirm_resp.status_code, 409)
+        self.assertEqual(confirm_resp.data.get("code"), "HOLD_EXPIRED")
+
+    def test_internal_service_key_invalid_header_returns_403(self):
+        tid = str(uuid.uuid4())
+        for url in [RESERVE_URL, CONFIRM_URL, RELEASE_URL]:
+            resp = self.client.post(
+                url,
+                {"seat_ids": [self.seat.id], "transaction_id": tid},
+                format="json",
+                HTTP_X_INTERNAL_SERVICE_KEY="invalid-attacker-key",
+            )
+            self.assertEqual(resp.status_code, 403, f"Expected 403 on {url} with invalid key")
+            self.assertIn("Forbidden", resp.data.get("error", ""))
+
+    def test_internal_service_key_valid_header_succeeds(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(
+            RESERVE_URL,
+            {"seat_ids": [self.seat.id], "transaction_id": tid},
+            format="json",
+            HTTP_X_INTERNAL_SERVICE_KEY=self.valid_key,
+        )
+        self.assertEqual(resp.status_code, 200)
+
+
+class MaxActorHoldsTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.event = _create_event()
+        self.seats = [_create_seat(self.event, row="B", seat_number=str(i)) for i in range(1, 15)]
+
+    def test_single_request_exceeding_max_holds_rejected_with_429(self):
+        tid = str(uuid.uuid4())
+        with self.settings(MAX_ACTOR_HOLDS=5):
+            seat_ids = [s.id for s in self.seats[:6]]
+            resp = self.client.post(
+                RESERVE_URL,
+                {"seat_ids": seat_ids, "transaction_id": tid, "user_id": "usr_test_limit"},
+                format="json",
+            )
+            self.assertEqual(resp.status_code, 429)
+            self.assertEqual(resp.data.get("code"), "MAX_HOLDS_EXCEEDED")
+
+    def test_accumulated_holds_exceeding_max_holds_rejected_with_429(self):
+        with self.settings(MAX_ACTOR_HOLDS=3):
+            # First reservation of 2 seats succeeds
+            tid1 = str(uuid.uuid4())
+            resp1 = self.client.post(
+                RESERVE_URL,
+                {"seat_ids": [self.seats[0].id, self.seats[1].id], "transaction_id": tid1, "user_id": "usr_test_limit_2"},
+                format="json",
+            )
+            self.assertEqual(resp1.status_code, 200)
+
+            # Second reservation of 2 more seats exceeds limit (2 + 2 = 4 > 3)
+            tid2 = str(uuid.uuid4())
+            resp2 = self.client.post(
+                RESERVE_URL,
+                {"seat_ids": [self.seats[2].id, self.seats[3].id], "transaction_id": tid2, "user_id": "usr_test_limit_2"},
+                format="json",
+            )
+            self.assertEqual(resp2.status_code, 429)
+            self.assertEqual(resp2.data.get("code"), "MAX_HOLDS_EXCEEDED")
+
+
+class SweepExpiredHoldsTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.event = _create_event()
+        self.seat1 = _create_seat(self.event, row="C", seat_number="1")
+        self.seat2 = _create_seat(self.event, row="C", seat_number="2")
+
+    def test_sweep_expired_holds_reclaims_seats(self):
+        from django.core.management import call_command
+        # Hold both seats
+        tid = str(uuid.uuid4())
+        resp = self.client.post(
+            RESERVE_URL,
+            {"seat_ids": [self.seat1.id, self.seat2.id], "transaction_id": tid},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        # Manually expire seat1
+        self.seat1.refresh_from_db()
+        self.seat1.held_until = timezone.now() - timedelta(minutes=5)
+        self.seat1.save()
+
+        # Call management command
+        call_command("sweep_expired_holds")
+
+        self.seat1.refresh_from_db()
+        self.seat2.refresh_from_db()
+        self.assertEqual(self.seat1.status, Seat.Status.AVAILABLE)
+        self.assertIsNone(self.seat1.held_until)
+        self.assertIsNone(self.seat1.held_by_transaction_id)
+        # Seat 2 should still be held
+        self.assertEqual(self.seat2.status, Seat.Status.HELD)
+
+    def test_sweep_expired_holds_endpoint(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(
+            RESERVE_URL,
+            {"seat_ids": [self.seat1.id], "transaction_id": tid},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        self.seat1.refresh_from_db()
+        self.seat1.held_until = timezone.now() - timedelta(minutes=1)
+        self.seat1.save()
+
+        resp = self.client.post(SWEEP_URL)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data.get("reclaimed_count"), 1)
+
+        self.seat1.refresh_from_db()
+        self.assertEqual(self.seat1.status, Seat.Status.AVAILABLE)
+
+
+class BulkConfirmAndReleaseTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.event = _create_event()
+        self.seats = [_create_seat(self.event, row="D", seat_number=str(i)) for i in range(1, 4)]
+
+    def test_bulk_confirm_and_release(self):
+        seat_ids = [s.id for s in self.seats]
+        tid = str(uuid.uuid4())
+
+        # Reserve all 3
+        res = self.client.post(RESERVE_URL, {"seat_ids": seat_ids, "transaction_id": tid}, format="json")
+        self.assertEqual(res.status_code, 200)
+
+        # Confirm all 3 in bulk
+        confirm_res = self.client.post(CONFIRM_URL, {"seat_ids": seat_ids, "transaction_id": tid}, format="json")
+        self.assertEqual(confirm_res.status_code, 200)
+        for s in Seat.objects.filter(id__in=seat_ids):
+            self.assertEqual(s.status, Seat.Status.BOOKED)
+
+        # Release all 3 in bulk
+        release_res = self.client.post(RELEASE_URL, {"seat_ids": seat_ids, "transaction_id": tid}, format="json")
+        self.assertEqual(release_res.status_code, 200)
+        for s in Seat.objects.filter(id__in=seat_ids):
+            self.assertEqual(s.status, Seat.Status.AVAILABLE)
+            self.assertIsNone(s.held_by_transaction_id)
+
+

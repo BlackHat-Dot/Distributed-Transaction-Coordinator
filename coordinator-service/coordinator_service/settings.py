@@ -43,6 +43,7 @@ else:
         "CRITICAL SECURITY ERROR: ALLOWED_HOSTS environment variable is not set in production (DEBUG=False)!"
     )
 
+INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "dtc-internal-coordinator-secret-key-2026")
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -69,8 +70,28 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = True
+
+_cors_env = os.getenv("CORS_ALLOWED_ORIGINS")
+if _cors_env:
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in _cors_env.split(",") if origin.strip()]
+else:
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:8001",
+        "http://127.0.0.1:8001",
+        "http://localhost:8002",
+        "http://127.0.0.1:8002",
+    ]
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.railway\.app$",
+    r"^https://.*\.up\.railway\.app$",
+]
 CORS_EXPOSE_HEADERS = [
     "x-total-count",
     "x-overall-total",

@@ -4,24 +4,44 @@ import hmac
 import json
 import os
 import secrets
+import sys
 import threading
 import time
 import redis
 import resend
 from django.conf import settings
+from django.core.cache import cache
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 
+_redis_last_check = 0
+_redis_is_available = False
+_redis_client_instance = None
+
+
 def _get_redis_client():
-    broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://localhost:6379/0")
+    global _redis_last_check, _redis_is_available, _redis_client_instance
+    now = time.time()
+    if _redis_client_instance is not None and _redis_is_available:
+        return _redis_client_instance
+    if now - _redis_last_check < 5.0 and not _redis_is_available:
+        return None
+    _redis_last_check = now
+    broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
     try:
-        return redis.Redis.from_url(
-            broker_url, decode_responses=True, socket_connect_timeout=0.2, socket_timeout=0.2
+        client = redis.Redis.from_url(
+            broker_url, decode_responses=True, socket_connect_timeout=0.05, socket_timeout=0.05
         )
+        client.ping()
+        _redis_is_available = True
+        _redis_client_instance = client
+        return client
     except Exception:
+        _redis_is_available = False
+        _redis_client_instance = None
         return None
 
 
@@ -205,9 +225,8 @@ def send_otp(request):
     except ValidationError:
         return Response({"error": "Invalid email address format"}, status=400)
 
-    host_raw = request.get_host().split(":")[0].lower()
-    is_railway = "railway.app" in host_raw or bool(os.getenv("RAILWAY_ENVIRONMENT")) or bool(os.getenv("RAILWAY_PUBLIC_DOMAIN"))
-    is_local = not is_railway and (host_raw in ["localhost", "127.0.0.1", "0.0.0.0", "dtc-coordinator"])
+    # Server-side controlled dev auth mode — strictly never determined from request headers
+    is_dev_mode = bool(getattr(settings, "DEBUG", False)) or os.getenv("DTC_DEV_AUTH_MODE", "").lower() in ("true", "1")
 
     client = _get_redis_client()
     session_key = f"dtc:session:{email}"
@@ -216,6 +235,33 @@ def send_otp(request):
     daily_attempts_key = f"dtc:otp_daily_attempts:{email}"
     session_attempts_key = f"dtc:otp_session_attempts:{email}"
     chances_remaining = 3
+
+    lock_key = f"dtc:otp_locked:{email}"
+    is_locked = False
+    lock_ttl = 900
+    if client:
+        try:
+            if client.exists(lock_key):
+                is_locked = True
+                lock_ttl = max(0, client.ttl(lock_key))
+        except Exception:
+            pass
+    if not is_locked:
+        try:
+            if cache.get(lock_key):
+                is_locked = True
+        except Exception:
+            pass
+
+    if is_locked:
+        return Response(
+            {
+                "error": "Account is locked due to too many failed OTP attempts. Try again later.",
+                "code": "ACCOUNT_LOCKED",
+                "lockout_remaining": lock_ttl,
+            },
+            status=429,
+        )
 
     if client:
         try:
@@ -229,12 +275,12 @@ def send_otp(request):
                     cached_otp = client.get(f"dtc:otp:{email}")
                     resp_data = {
                         "success": True,
-                        "message": f"[LOCAL DEV] Active verification code: {cached_otp}" if is_local else "Verification code was recently sent.",
+                        "message": f"[LOCAL DEV] Active verification code: {cached_otp}" if is_dev_mode else "Verification code was recently sent.",
                         "email": email,
                         "actor_id": _generate_actor_id(email),
                         "cooldown_remaining": ttl,
                     }
-                    if is_local and cached_otp:
+                    if is_dev_mode and cached_otp:
                         resp_data["otp"] = cached_otp
                         resp_data["is_local"] = True
                     return Response(resp_data, status=200)
@@ -280,13 +326,13 @@ def send_otp(request):
 
     # Redundant memory backup in case Redis is rebooting
     try:
-        from django.core.cache import cache
         cache.set(cache_key, otp_code, timeout=300)
     except Exception:
         pass
 
-    # Only dispatch real email if NOT running in local development
-    if not is_local:
+    # Only dispatch real email if NOT running in development or test mode
+    is_testing = bool(getattr(settings, "IS_TESTING", False)) or ('test' in sys.argv)
+    if not is_dev_mode and not is_testing:
         threading.Thread(target=_dispatch_otp_email, args=(email, otp_code), daemon=True).start()
     else:
         print(f"[Local Auth] Simulated OTP generated for {email}: {otp_code} (No external email sent)")
@@ -301,7 +347,7 @@ def send_otp(request):
 
     resp_data = {
         "success": True,
-        "message": f"[LOCAL DEV] Verification code: {otp_code}" if is_local else f"Verification code sent to {email}",
+        "message": f"[LOCAL DEV] Verification code: {otp_code}" if is_dev_mode else f"Verification code sent to {email}",
         "email": email,
         "user_email": email,
         "user_id": user_id,
@@ -309,7 +355,7 @@ def send_otp(request):
         "expires_in_seconds": 300,
         "chances_remaining": chances_remaining,
     }
-    if is_local:
+    if is_dev_mode:
         resp_data["otp"] = otp_code
         resp_data["is_local"] = True
 
@@ -330,9 +376,39 @@ def verify_otp(request):
 
     email = _normalize_email(email_raw)
     cache_key = f"dtc:otp:{email}"
-    stored_otp = None
+    lock_key = f"dtc:otp_locked:{email}"
+    fail_key = f"dtc:otp_fail_count:{email}"
 
     client = _get_redis_client()
+
+    # Check if currently locked out
+    is_locked = False
+    lock_ttl = 900
+    if client:
+        try:
+            if client.exists(lock_key):
+                is_locked = True
+                lock_ttl = max(0, client.ttl(lock_key))
+        except Exception:
+            pass
+    if not is_locked:
+        try:
+            if cache.get(lock_key):
+                is_locked = True
+        except Exception:
+            pass
+
+    if is_locked:
+        return Response(
+            {
+                "error": "Account is temporarily locked due to 5 failed attempts. Please try again in 15 minutes.",
+                "code": "ACCOUNT_LOCKED",
+                "lockout_remaining": lock_ttl,
+            },
+            status=429,
+        )
+
+    stored_otp = None
     if client:
         try:
             stored_otp = client.get(cache_key)
@@ -341,23 +417,72 @@ def verify_otp(request):
 
     if not stored_otp:
         try:
-            from django.core.cache import cache
             stored_otp = cache.get(cache_key)
         except Exception:
             pass
 
     if not stored_otp or str(stored_otp).strip() != submitted_otp:
-        return Response({"error": "Invalid or expired verification code. Please request a new one."}, status=400)
+        fail_count = None
+        if client:
+            try:
+                fail_count = client.incr(fail_key)
+                if fail_count == 1:
+                    client.expire(fail_key, 900)
+            except Exception:
+                fail_count = None
 
-    # Delete key on success (single-use)
+        if fail_count is None:
+            try:
+                fail_count = (cache.get(fail_key) or 0) + 1
+                cache.set(fail_key, fail_count, timeout=900)
+            except Exception:
+                fail_count = 1
+
+        if fail_count >= 5:
+            # Lock out for 15 minutes (900 seconds)
+            if client:
+                try:
+                    client.setex(lock_key, 900, "locked")
+                    client.delete(cache_key)
+                    client.delete(fail_key)
+                except Exception:
+                    pass
+            try:
+                cache.set(lock_key, "locked", timeout=900)
+                cache.delete(cache_key)
+                cache.delete(fail_key)
+            except Exception:
+                pass
+
+            return Response(
+                {
+                    "error": "Too many failed attempts. Account is locked for 15 minutes.",
+                    "code": "ACCOUNT_LOCKED",
+                    "lockout_remaining": 900,
+                },
+                status=429,
+            )
+
+        attempts_remaining = max(0, 5 - fail_count)
+        return Response(
+            {
+                "error": f"Invalid or expired verification code. {attempts_remaining} attempt(s) remaining.",
+                "code": "INVALID_OTP",
+                "attempts_remaining": attempts_remaining,
+            },
+            status=400,
+        )
+
+    # Delete key on success (single-use + reset failures)
     if client:
         try:
             client.delete(cache_key)
+            client.delete(fail_key)
         except Exception:
             pass
     try:
-        from django.core.cache import cache
         cache.delete(cache_key)
+        cache.delete(fail_key)
     except Exception:
         pass
 

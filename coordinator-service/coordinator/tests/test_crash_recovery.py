@@ -64,9 +64,12 @@ class CrashRecoveryTests(TransactionTestCase):
                 mock.status_code = 200
                 mock.json.return_value = {"status": "CHARGED"}
                 return mock
-            raise ValueError(f"Unexpected GET url: {url}")
+        mock_post_recovery = MagicMock()
+        mock_post_recovery.status_code = 200
+        mock_post_recovery.json.return_value = {"message": "Seats confirmed"}
 
-        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=mock_get_recovery):
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=mock_get_recovery), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", return_value=mock_post_recovery):
             call_command("recovery_stuck_transactions")
 
 
@@ -190,3 +193,128 @@ class CrashRecoveryTests(TransactionTestCase):
         self.assertEqual(events[4].actor, SagaEvent.ACTOR_RECOVERY)
         self.assertEqual(events[4].http_status_code, 200)
         self.assertEqual(events[4].http_payload, {"message": "Seat released"})
+
+    def test_recovery_payment_charged_but_inventory_confirm_fails_routes_to_compensate(self):
+        tid = str(uuid.uuid4())
+        txn = Transaction.objects.create(
+            transaction_id=tid,
+            status=Transaction.Status.PAYMENT_PROCESSING,
+            seat_ids=[1],
+            amount=500,
+        )
+        past_time = timezone.now() - timedelta(minutes=10)
+        Transaction.objects.filter(transaction_id=tid).update(updated_at=past_time)
+
+        def mock_get(url, *args, **kwargs):
+            if "payments/check" in url:
+                mock = MagicMock()
+                mock.status_code = 200
+                mock.json.return_value = {"status": "CHARGED"}
+                return mock
+            raise ValueError(f"Unexpected GET: {url}")
+
+        def mock_post(url, *args, **kwargs):
+            mock = MagicMock()
+            if "seats/confirm" in url:
+                mock.status_code = 409
+                mock.json.return_value = {"error": "Hold expired", "code": "HOLD_EXPIRED"}
+                return mock
+            if "seats/release" in url:
+                mock.status_code = 200
+                mock.json.return_value = {"message": "Seat released"}
+                return mock
+            if "payments/refund" in url:
+                mock.status_code = 200
+                mock.json.return_value = {"status": "REFUNDED", "transaction_id": tid}
+                return mock
+            raise ValueError(f"Unexpected POST: {url}")
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=mock_get), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=mock_post):
+            call_command("recovery_stuck_transactions")
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.status, Transaction.Status.COMPENSATED, "Should compensate, NOT complete!")
+
+    def test_recovery_sweeps_timeout_and_connection_error_statuses(self):
+        past_time = timezone.now() - timedelta(minutes=10)
+        tids = []
+        statuses = [
+            Transaction.Status.INVENTORY_TIMEOUT,
+            Transaction.Status.PAYMENT_TIMEOUT,
+            Transaction.Status.INVENTORY_CONNECTION_ERROR,
+            Transaction.Status.PAYMENT_CONNECTION_ERROR,
+        ]
+        for st in statuses:
+            tid = str(uuid.uuid4())
+            tids.append(tid)
+            Transaction.objects.create(
+                transaction_id=tid,
+                status=st,
+                seat_ids=[1],
+                amount=500,
+            )
+            Transaction.objects.filter(transaction_id=tid).update(updated_at=past_time)
+
+        def mock_get(url, *args, **kwargs):
+            mock = MagicMock()
+            if "payments/check" in url:
+                mock.status_code = 200
+                mock.json.return_value = {"status": "NOT_CHARGED"}
+                return mock
+            if "reserve/check" in url:
+                mock.status_code = 200
+                mock.json.return_value = {"status": Transaction.Status.NOT_RESERVED}
+                return mock
+            raise ValueError(f"Unexpected GET: {url}")
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=mock_get):
+            call_command("recovery_stuck_transactions")
+
+        for tid in tids:
+            t = Transaction.objects.get(transaction_id=tid)
+            self.assertEqual(t.status, Transaction.Status.TIMEOUT)
+
+    def test_recovery_compensation_when_refund_fails_leaves_compensation_failed(self):
+        tid = str(uuid.uuid4())
+        Transaction.objects.create(
+            transaction_id=tid,
+            status=Transaction.Status.PAYMENT_PROCESSING,
+            seat_ids=[1],
+            amount=500,
+        )
+        past_time = timezone.now() - timedelta(minutes=10)
+        Transaction.objects.filter(transaction_id=tid).update(updated_at=past_time)
+
+        def mock_get(url, *args, **kwargs):
+            if "payments/check" in url:
+                mock = MagicMock()
+                mock.status_code = 200
+                mock.json.return_value = {"status": "CHARGED"}
+                return mock
+            raise ValueError(f"Unexpected GET: {url}")
+
+        def mock_post(url, *args, **kwargs):
+            mock = MagicMock()
+            if "seats/confirm" in url:
+                mock.status_code = 409
+                mock.json.return_value = {"error": "Hold expired", "code": "HOLD_EXPIRED"}
+                return mock
+            if "seats/release" in url:
+                mock.status_code = 200
+                mock.json.return_value = {"message": "Seat released"}
+                return mock
+            if "payments/refund" in url:
+                mock.status_code = 500
+                mock.json.return_value = {"error": "Gateway timeout"}
+                return mock
+            raise ValueError(f"Unexpected POST: {url}")
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=mock_get), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=mock_post):
+            call_command("recovery_stuck_transactions")
+
+        txn = Transaction.objects.get(transaction_id=tid)
+        self.assertEqual(txn.status, Transaction.Status.COMPENSATION_FAILED)
+
+
