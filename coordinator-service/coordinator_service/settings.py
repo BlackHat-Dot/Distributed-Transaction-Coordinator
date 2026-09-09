@@ -1,21 +1,47 @@
 from pathlib import Path
 
 import os
+import sys
 from dotenv import load_dotenv
-
-load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-#)8x**j4@!pjsa4qr%1##8k=4$6wa-p1a@+o^h6(18b_tx&k1d")
+# Load .env file from service directory or repository root
+load_dotenv(BASE_DIR / ".env")
+load_dotenv(BASE_DIR.parent / ".env")
+load_dotenv()
 
-DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "t")
+DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "t")
+IS_TESTING = 'test' in sys.argv
 
-import sys
+# Pattern B: Safe fallback in Development/Testing, Fail-Fast in Production
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    if DEBUG or IS_TESTING:
+        SECRET_KEY = "django-insecure-#)8x**j4@!pjsa4qr%1##8k=4$6wa-p1a@+o^h6(18b_tx&k1d"
+    else:
+        raise RuntimeError(
+            "CRITICAL SECURITY ERROR: SECRET_KEY environment variable is not set! "
+            "A secure, unique SECRET_KEY must be provided in production (DEBUG=False)."
+        )
+elif not (DEBUG or IS_TESTING) and SECRET_KEY.startswith("django-insecure"):
+    raise RuntimeError(
+        "CRITICAL SECURITY ERROR: Insecure default SECRET_KEY detected in production (DEBUG=False)! "
+        "You must configure a strong, random SECRET_KEY for production."
+    )
+
 # Force sync if running tests OR if FORCE_SYNC env var is set to true
-TESTING_SYNC_MODE = 'test' in sys.argv or os.getenv("FORCE_SYNC", "false").lower() in ("true", "1", "t")
+TESTING_SYNC_MODE = IS_TESTING or os.getenv("FORCE_SYNC", "false").lower() in ("true", "1", "t")
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",") if os.getenv("ALLOWED_HOSTS") else ["*"]
+raw_allowed_hosts = os.getenv("ALLOWED_HOSTS")
+if raw_allowed_hosts:
+    ALLOWED_HOSTS = [host.strip() for host in raw_allowed_hosts.split(",") if host.strip()]
+elif DEBUG or IS_TESTING:
+    ALLOWED_HOSTS = ["*"]
+else:
+    raise RuntimeError(
+        "CRITICAL SECURITY ERROR: ALLOWED_HOSTS environment variable is not set in production (DEBUG=False)!"
+    )
 
 
 INSTALLED_APPS = [
@@ -106,23 +132,39 @@ DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
 if DATABASE_URL:
     url = urlparse(DATABASE_URL)
     db_name = url.path.lstrip("/") or os.getenv("DB_NAME", "coordinator_db")
+    db_password = url.password or os.getenv("DB_PASSWORD", os.getenv("PGPASSWORD"))
+    if not db_password:
+        if DEBUG or IS_TESTING:
+            db_password = "postgres"
+        else:
+            raise RuntimeError(
+                "CRITICAL SECURITY ERROR: Database password is not configured in production (DEBUG=False)!"
+            )
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": db_name,
             "USER": url.username or os.getenv("DB_USER", os.getenv("PGUSER", "postgres")),
-            "PASSWORD": url.password or os.getenv("DB_PASSWORD", os.getenv("PGPASSWORD", "postgres")),
+            "PASSWORD": db_password,
             "HOST": url.hostname or os.getenv("DB_HOST", os.getenv("PGHOST", "localhost")),
             "PORT": str(url.port or os.getenv("DB_PORT", os.getenv("PGPORT", "5432"))),
         }
     }
 else:
+    db_password = os.getenv("DB_PASSWORD", os.getenv("PGPASSWORD"))
+    if not db_password:
+        if DEBUG or IS_TESTING:
+            db_password = "postgres"
+        else:
+            raise RuntimeError(
+                "CRITICAL SECURITY ERROR: DB_PASSWORD / PGPASSWORD environment variable is not set in production (DEBUG=False)!"
+            )
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": os.getenv("DB_NAME", os.getenv("PGDATABASE", "coordinator_db")),
             "USER": os.getenv("DB_USER", os.getenv("PGUSER", "postgres")),
-            "PASSWORD": os.getenv("DB_PASSWORD", os.getenv("PGPASSWORD", "postgres")),
+            "PASSWORD": db_password,
             "HOST": os.getenv("DB_HOST", os.getenv("PGHOST", "localhost")),
             "PORT": str(os.getenv("DB_PORT", os.getenv("PGPORT", "5432"))),
         }
@@ -170,11 +212,16 @@ STORAGES = {
 # Email Configuration (Gmail SMTP with console fallback for local development)
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "vijayzidane321@gmail.com").strip()
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "").strip()
 # Automatically sanitize internal spaces from Google App Passwords (e.g. 'xxxx xxxx xxxx xxxx' -> 'xxxxxxxxxxxxxxxx')
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "ieqywwywyfsqmgui").strip().replace(" ", "")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "vijayzidane321@gmail.com")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "").strip().replace(" ", "")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "noreply@dtc.local")
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", 10))
+
+if not (DEBUG or IS_TESTING) and EMAIL_HOST_USER and not EMAIL_HOST_PASSWORD:
+    raise RuntimeError(
+        "CRITICAL SECURITY ERROR: EMAIL_HOST_USER is configured but EMAIL_HOST_PASSWORD is missing in production (DEBUG=False)!"
+    )
 
 if EMAIL_PORT == 465:
     EMAIL_USE_SSL = True
