@@ -75,6 +75,7 @@ if _cors_env:
     CORS_ALLOWED_ORIGINS = [origin.strip() for origin in _cors_env.split(",") if origin.strip()]
 else:
     CORS_ALLOWED_ORIGINS = [
+        "null",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:8000",
@@ -86,6 +87,8 @@ else:
     ]
 
 CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^http://localhost(:\d+)?$",
+    r"^http://127\.0\.0\.1(:\d+)?$",
     r"^https://.*\.railway\.app$",
     r"^https://.*\.up\.railway\.app$",
 ]

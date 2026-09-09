@@ -30,7 +30,11 @@ window.copyTxUUIDToClipboard = function(uuid, btnElement) {
 const isLocal = typeof window !== "undefined" && (
   window.location.hostname === "localhost" ||
   window.location.hostname === "127.0.0.1" ||
-  window.location.hostname === "0.0.0.0"
+  window.location.hostname === "0.0.0.0" ||
+  window.location.hostname === "::1" ||
+  window.location.hostname === "[::1]" ||
+  window.location.protocol === "file:" ||
+  !window.location.hostname
 );
 
 if (isLocal) {
@@ -41,7 +45,9 @@ if (isLocal) {
   } catch (e) {}
 }
 
-const localHost = typeof window !== "undefined" && window.location.hostname ? window.location.hostname : "localhost";
+const localHost = (typeof window !== "undefined" && window.location.hostname && window.location.protocol !== "file:" && window.location.hostname !== "::1" && window.location.hostname !== "[::1]")
+  ? window.location.hostname
+  : "localhost";
 const defaultCoord = isLocal ? `http://${localHost}:8002` : "https://coordinator-production-4685.up.railway.app";
 const defaultInv = isLocal ? `http://${localHost}:8000` : "https://inventory-production-9e43.up.railway.app";
 const defaultPay = isLocal ? `http://${localHost}:8001` : "https://payment-production-bcb1.up.railway.app";

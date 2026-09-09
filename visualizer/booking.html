@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="booking.css?v=4.2.0">
   <script>
-    if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname === "0.0.0.0") {
+    if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname === "0.0.0.0" || window.location.hostname === "::1" || window.location.hostname === "[::1]" || window.location.protocol === "file:" || !window.location.hostname) {
       try {
         localStorage.removeItem("dtc_coordinator_url");
         localStorage.removeItem("dtc_inventory_url");
@@ -507,7 +507,7 @@
     <button id="btn-bottom-pay" class="btn-bottom-pay">Pay Amount</button>
   </div>
 
-  <script src="booking.js?v=5.3.0"></script>
+  <script src="booking.js?v=5.3.1"></script>
 </body>
 </html>
 
