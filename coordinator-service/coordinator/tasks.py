@@ -43,6 +43,11 @@ def recover_stuck_transactions():
     logger.info("Starting recovery_stuck_transactions task run.")
     try:
         call_command("recovery_stuck_transactions")
+        try:
+            import time
+            client.set("dtc:recovery:last_run_timestamp", str(time.time()))
+        except Exception:
+            pass
         logger.info("recovery_stuck_transactions task run completed normally.")
         return "completed"
     finally:

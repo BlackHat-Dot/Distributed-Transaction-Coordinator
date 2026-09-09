@@ -999,8 +999,51 @@ def trigger_recovery_sweep(request):
     threshold_seconds = max(raw_threshold, min_floor)
 
     call_command("recovery_stuck_transactions", threshold_seconds=threshold_seconds, stdout=out)
+    try:
+        import time
+        from coordinator.tasks import get_redis_client
+        client = get_redis_client()
+        client.set("dtc:recovery:last_run_timestamp", str(time.time()))
+    except Exception:
+        pass
+
     return Response({
         "message": "Recovery sweep complete",
         "threshold_seconds_applied": threshold_seconds,
         "output": out.getvalue().strip(),
     })
+
+
+@api_view(["GET"])
+def recovery_status(request):
+    import time
+    from coordinator.tasks import get_redis_client
+
+    last_run_ts = None
+    redis_available = False
+    try:
+        client = get_redis_client()
+        val = client.get("dtc:recovery:last_run_timestamp")
+        if val:
+            last_run_ts = float(val.decode("utf-8") if isinstance(val, bytes) else val)
+        redis_available = True
+    except Exception:
+        pass
+
+    now = time.time()
+    cycle = 90.0
+    if last_run_ts:
+        elapsed = now - last_run_ts
+        next_in = max(1, int(cycle - (elapsed % cycle)))
+    else:
+        next_in = max(1, int(cycle - (now % cycle)))
+
+    return Response({
+        "status": "active",
+        "service": "celery_beat",
+        "schedule_seconds": int(cycle),
+        "last_run_timestamp": last_run_ts,
+        "seconds_until_next_run": next_in,
+        "redis_connected": redis_available,
+        "server_time": now,
+    }, status=200)

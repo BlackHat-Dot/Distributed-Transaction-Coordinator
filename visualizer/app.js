@@ -85,7 +85,8 @@ const STATE = {
     totalCount: 0,
     totalPages: 1,
   },
-  sweepCountdown: 90,
+  sweepCountdown: 90 - (Math.floor(Date.now() / 1000) % 90),
+  recoveryLastRunTimestamp: null,
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1869,6 +1870,7 @@ DOM.btnTriggerSweep.addEventListener("click", async () => {
         }
         recoveredSummary = sweepRes.data && sweepRes.data.output ? sweepRes.data.output : "Live sweep completed across PostgreSQL & Redis.";
       }
+      fetchRecoveryStatus();
     } catch (e) {
       recoveredSummary = `Sweep network error: ${e.message}`;
     }
@@ -2059,7 +2061,28 @@ if (DOM.toggleTheme) {
 DOM.btnHowItWorks.addEventListener("click", () => DOM.modalArch.classList.remove("hidden"));
 DOM.btnCloseArch.addEventListener("click", () => DOM.modalArch.classList.add("hidden"));
 
+async function fetchRecoveryStatus() {
+  if (STATE.isSimulatedMode) return;
+  try {
+    const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/recovery/status/`, {
+      method: "GET",
+      skipAuth: true,
+    }, 4000);
+    if (res.ok && res.data && typeof res.data.seconds_until_next_run === "number") {
+      STATE.sweepCountdown = res.data.seconds_until_next_run;
+      if (res.data.last_run_timestamp) {
+        STATE.recoveryLastRunTimestamp = res.data.last_run_timestamp;
+      }
+    }
+  } catch (e) {
+    // Graceful fallback to epoch wall-clock calculation
+  }
+}
+
 function startRecoveryCountdown() {
+  // Synchronize with server recovery status immediately on boot
+  fetchRecoveryStatus();
+
   setInterval(async () => {
     STATE.sweepCountdown--;
     if (STATE.sweepCountdown <= 0) {
@@ -2094,20 +2117,14 @@ function startRecoveryCountdown() {
           inspectTransaction(STATE.activeTxId, true);
         }
       } else {
-        try {
-          if (isUserAuthenticated()) {
-            const sweepRes = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/recovery/sweep/`, {
-              method: "POST",
-              body: JSON.stringify({ threshold_seconds: 30 }),
-            });
-            if (sweepRes.ok) {
-              fetchTransactionsFeed();
-              if (STATE.activeTxId) {
-                inspectTransaction(STATE.activeTxId, true);
-              }
-            }
-          }
-        } catch (e) {}
+        // IN LIVE MODE: Celery Beat runs automatically as an independent background service on Railway.
+        // The frontend does NOT dispatch HTTP POST requests for automated 90s sweeps.
+        // Instead, the frontend polls the latest transactions to display any records swept by the server.
+        fetchTransactionsFeed();
+        if (STATE.activeTxId) {
+          inspectTransaction(STATE.activeTxId, true);
+        }
+        fetchRecoveryStatus();
       }
 
       setTimeout(() => {

@@ -9,6 +9,7 @@ from coordinator.views import (
     health_check,
     transactions_endpoint,
     trigger_recovery_sweep,
+    recovery_status,
 )
 from coordinator.auth_views import (
     send_otp,
@@ -35,4 +36,5 @@ urlpatterns = [
     path("transactions/all/", list_transactions),
     path("transactions/feed/", list_transactions),
     path("recovery/sweep/", trigger_recovery_sweep),
+    path("recovery/status/", recovery_status),
 ]
