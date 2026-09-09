@@ -90,6 +90,10 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^http://127\.0\.0\.1(:\d+)?$",
     r"^https://.*\.railway\.app$",
     r"^https://.*\.up\.railway\.app$",
+    r"^https://.*\.vercel\.app$",
+    r"^https://.*\.netlify\.app$",
+    r"^https://.*\.pages\.dev$",
+    r"^https://.*\.github\.io$",
 ]
 CORS_EXPOSE_HEADERS = [
     "x-total-count",
@@ -121,7 +125,7 @@ CORS_ALLOW_HEADERS = [
 CSRF_TRUSTED_ORIGINS = [
     origin.strip() for origin in os.getenv(
         "CSRF_TRUSTED_ORIGINS",
-        "https://*.railway.app,https://*.up.railway.app,http://localhost:3000,http://127.0.0.1:3000"
+        "https://*.railway.app,https://*.up.railway.app,https://*.vercel.app,https://*.netlify.app,https://*.pages.dev,https://*.github.io,http://localhost:3000,http://127.0.0.1:3000"
     ).split(",") if origin.strip()
 ]
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
