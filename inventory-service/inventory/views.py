@@ -94,13 +94,14 @@ INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.get
 )
 
 
-def _verify_internal_service_key(request):
+def _verify_internal_service_key(request, allow_client=False):
     """
-    Ensures internal state-mutating endpoints (reserve, confirm, release)
+    Ensures internal state-mutating endpoints (confirm, release-booked)
     can only be called by internal services (e.g. coordinator) presenting
     the shared secret.
-    In testing mode (IS_TESTING), requests without the header are permitted
-    to preserve existing standalone unit tests, but invalid headers are rejected.
+    If allow_client=True (e.g. reserve_seat or user hold cancel), calls without
+    the header are permitted (subject to actor quota and validation), but invalid
+    keys are always rejected with 403.
     """
     key = request.headers.get("X-Internal-Service-Key")
     if key is not None:
@@ -111,7 +112,7 @@ def _verify_internal_service_key(request):
             )
         return None
 
-    if getattr(settings, "IS_TESTING", False):
+    if allow_client or getattr(settings, "IS_TESTING", False):
         return None
 
     if not settings.DEBUG:
@@ -125,7 +126,7 @@ def _verify_internal_service_key(request):
 
 @api_view(["POST"])
 def reserve_seat(request):
-    auth_err = _verify_internal_service_key(request)
+    auth_err = _verify_internal_service_key(request, allow_client=True)
     if auth_err:
         return auth_err
 
@@ -293,7 +294,9 @@ def confirm_seat(request):
 
 @api_view(["POST"])
 def release_seat(request):
-    auth_err = _verify_internal_service_key(request)
+    key = request.headers.get("X-Internal-Service-Key")
+    is_internal = (key == INTERNAL_SERVICE_KEY)
+    auth_err = _verify_internal_service_key(request, allow_client=True)
     if auth_err:
         return auth_err
 
@@ -307,7 +310,12 @@ def release_seat(request):
             if not reservations:
                 return Response({"message": "No active reservation to release", "transaction_id": str(transaction_id)}, status=200)
 
-            active_res = [r for r in reservations if r.status in (Reservation.Status.RESERVED, Reservation.Status.BOOKED)]
+            if is_internal or settings.DEBUG or getattr(settings, "IS_TESTING", False):
+                active_res = [r for r in reservations if r.status in (Reservation.Status.RESERVED, Reservation.Status.BOOKED)]
+            else:
+                # Client callers can only release their own temporary holds (RESERVED), not finalized BOOKED seats
+                active_res = [r for r in reservations if r.status == Reservation.Status.RESERVED]
+
             if active_res:
                 seat_ids = [r.seat_id for r in active_res if r.seat_id]
                 Reservation.objects.filter(id__in=[r.id for r in active_res]).update(

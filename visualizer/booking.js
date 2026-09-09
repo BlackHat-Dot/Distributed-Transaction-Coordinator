@@ -1350,7 +1350,6 @@ async function handleBottomPaySubmit() {
       });
 
     } else {
-      // FAILED - RACE CONDITION
       STATE.pendingHoldSeatIds = null;
       allSeatIds.forEach(id => STATE.inFlightSeatIds.delete(id));
       allSeatIds.forEach(id => {
@@ -1360,9 +1359,33 @@ async function handleBottomPaySubmit() {
       STATE.draftSeatLabels = [];
       updateBottomPayBar();
       updateMatrixHoldState();
-      
-      if (DOM.raceConditionModal) {
-        DOM.raceConditionModal.classList.add("show");
+
+      if (res.status === 409 || (res.data && res.data.code === "SEAT_UNAVAILABLE")) {
+        // Genuine race condition: seat was acquired by another transaction
+        if (DOM.raceConditionModal) {
+          DOM.raceConditionModal.classList.add("show");
+        }
+      } else if (res.status === 429 || (res.data && res.data.code === "MAX_HOLDS_EXCEEDED")) {
+        showToast({
+          title: "Hold Limit Reached",
+          message: (res.data && res.data.error) || "You have reached the maximum allowed active holds. Please complete checkout or wait for previous holds to expire.",
+          type: "warning",
+          duration: 6000,
+        });
+      } else if (res.status === 401 || res.status === 403) {
+        showToast({
+          title: "Authentication Required",
+          message: (res.data && res.data.error) || "Please verify your email identity via the User Identity Gate above before reserving seats.",
+          type: "warning",
+          duration: 6000,
+        });
+      } else {
+        showToast({
+          title: "Hold Failed",
+          message: (res.data && res.data.error) || "Unable to reserve selected seats. Please try again.",
+          type: "danger",
+          duration: 5000,
+        });
       }
     }
   } catch (err) {
@@ -1375,9 +1398,12 @@ async function handleBottomPaySubmit() {
       STATE.draftSeatLabels = [];
       updateBottomPayBar();
       updateMatrixHoldState();
-      if (DOM.raceConditionModal) {
-        DOM.raceConditionModal.classList.add("show");
-      }
+      showToast({
+        title: "Network Error",
+        message: "Could not reach Inventory service. Please check your connection and try again.",
+        type: "danger",
+        duration: 5000,
+      });
   } finally {
       if (DOM.btnBottomPay) {
         DOM.btnBottomPay.disabled = false;
