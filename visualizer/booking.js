@@ -282,6 +282,56 @@ function restoreHoldFromStorage() {
   }
 }
 
+function isTokenExpired(token) {
+  if (!token || typeof token !== "string" || !token.includes(".")) return true;
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return true;
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    const payload = JSON.parse(jsonPayload);
+    if (payload.exp && Date.now() >= payload.exp * 1000) {
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+function isUserAuthenticated(promptIfNeeded = true) {
+  if (!STATE.user || !STATE.user.token) {
+    if (promptIfNeeded) {
+      showAuthModal(1);
+      showToast({
+        title: "Sign In Required",
+        message: "Please sign in with your email OTP to place real-time seat holds.",
+        type: "warning",
+        duration: 6000,
+      });
+    }
+    return false;
+  }
+  if (isTokenExpired(STATE.user.token)) {
+    handleLogout();
+    if (promptIfNeeded) {
+      showToast({
+        title: "Session Expired",
+        message: "Your session has expired. Please sign in again with your email.",
+        type: "warning",
+        duration: 6000,
+      });
+    }
+    return false;
+  }
+  return true;
+}
+
 async function fetchJson(url, options = {}, timeoutMs = 8000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -296,7 +346,11 @@ async function fetchJson(url, options = {}, timeoutMs = 8000) {
   // Inject JWT & User ID / Email footprints if authenticated
   if (!options.skipAuth) {
     if (STATE.user && STATE.user.token) {
-      headers["Authorization"] = `Bearer ${STATE.user.token}`;
+      if (isTokenExpired(STATE.user.token)) {
+        handleLogout();
+      } else {
+        headers["Authorization"] = `Bearer ${STATE.user.token}`;
+      }
     }
     if (STATE.user && (STATE.user.userId || STATE.user.actorId)) {
       const uid = STATE.user.userId || STATE.user.actorId;
@@ -714,11 +768,38 @@ function handleLogout() {
   updateAuthWidgetUI();
   closeAuthModal();
 
+  // Clear unreserved draft seat selection
+  if (STATE.draftSeatIds && STATE.draftSeatIds.length > 0) {
+    const drafted = [...STATE.draftSeatIds];
+    STATE.draftSeatIds = [];
+    STATE.draftSeatLabels = [];
+    drafted.forEach(id => {
+      const seat = STATE.seatsMap.get(id);
+      applySeatTileDOMState(id, seat ? seat.status : "AVAILABLE");
+    });
+    updateBottomPayBar();
+  }
+
+  // Clear active hold state if user was holding seats
+  if (STATE.myHold) {
+    if (STATE.myHold.timerInterval) clearInterval(STATE.myHold.timerInterval);
+    STATE.myHold = null;
+    clearHoldFromStorage();
+    hideHoldTimer();
+    updateCheckoutSummary();
+    updateMatrixHoldState();
+  }
+
   showToast({
     title: "Signed Out",
     message: "Identity detached. Live seat reservations will require signing in again.",
     type: "info",
   });
+
+  // Prompt the user to sign back in
+  setTimeout(() => {
+    showAuthModal(1);
+  }, 400);
 }
 
 /* ==========================================================================
@@ -730,6 +811,10 @@ const heartbeatInterval = isLocal ? 3000 : 15000;
 setInterval(() => {
   const token = localStorage.getItem("dtc_auth_token");
   if (token) {
+    if (isTokenExpired(token)) {
+      handleLogout();
+      return;
+    }
     fetch(`${CONFIG.coordinatorUrl}/auth/heartbeat/`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}` }
@@ -754,6 +839,9 @@ window.addEventListener("beforeunload", () => {
 });
 
 document.addEventListener("DOMContentLoaded", () => {
+  if (STATE.user && STATE.user.token && isTokenExpired(STATE.user.token)) {
+    handleLogout();
+  }
   setupAuthEventListeners();
   updateAuthWidgetUI();
   restoreHoldFromStorage();
@@ -1087,14 +1175,7 @@ async function handleSeatTileClick(seatId) {
   if (!seat) return;
 
   // 0. Enforce Authentication Requirement for Live Holds
-  if (!STATE.user || !STATE.user.token) {
-    showAuthModal(1);
-    showToast({
-      title: "Sign In Required",
-      message: "Please sign in with your email OTP to place real-time seat holds, or switch to Mission Control Demo Mode.",
-      type: "warning",
-      duration: 6000,
-    });
+  if (!isUserAuthenticated(true)) {
     return;
   }
 
@@ -1297,6 +1378,11 @@ async function handleSeatTileClick(seatId) {
 }
 
 async function handleBottomPaySubmit() {
+  // Enforce Authentication Requirement
+  if (!isUserAuthenticated(true)) {
+    return;
+  }
+
   if (STATE.draftSeatIds.length === 0) return;
   if (STATE.isActionInProgress) return;
 
@@ -1398,9 +1484,11 @@ async function handleBottomPaySubmit() {
           duration: 6000,
         });
       } else if (res.status === 401 || res.status === 403) {
+        handleLogout();
+        showAuthModal(1);
         showToast({
           title: "Authentication Required",
-          message: (res.data && res.data.error) || "Please verify your email identity via the User Identity Gate above before reserving seats.",
+          message: (res.data && res.data.error) || "Your session expired. Please sign in again with your email to reserve seats.",
           type: "warning",
           duration: 6000,
         });
@@ -1645,6 +1733,12 @@ function updateCheckoutSummary() {
 async function initiateSagaCheckout() {
   if (!STATE.myHold) return;
 
+  // Enforce Authentication Requirement
+  if (!isUserAuthenticated(true)) {
+    if (DOM.btnProceedPay) DOM.btnProceedPay.disabled = false;
+    return;
+  }
+
   const seatIds = STATE.myHold.seatIds || [STATE.myHold.seatId];
   const firstSeat = STATE.seatsMap.get(seatIds[0]);
   if (!firstSeat) return;
@@ -1700,6 +1794,19 @@ async function initiateSagaCheckout() {
       handleSagaTerminalState(res.data.status, txId, selectedAmount);
     }
   } else {
+    if (res.status === 401 || (res.data && res.data.code === "AUTHENTICATION_REQUIRED")) {
+      handleLogout();
+      showAuthModal(1);
+      showToast({
+        title: "Session Expired",
+        message: (res.data && res.data.error) || "Your session expired during checkout. Please sign in again to book your seats.",
+        type: "warning",
+        duration: 6000,
+      });
+      if (DOM.sagaModal) DOM.sagaModal.classList.add("hidden");
+      if (DOM.btnProceedPay) DOM.btnProceedPay.disabled = false;
+      return;
+    }
     // Show failure reason
     handleSagaTerminalState("FAILED", txId, selectedAmount);
     showToast({

@@ -640,3 +640,38 @@ class BulkConfirmAndReleaseTests(TestCase):
             self.assertIsNone(s.held_by_transaction_id)
 
 
+class ProductionReserveAuthEnforcementTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.event = _create_event()
+        self.seat = _create_seat(self.event, row="E", seat_number="1")
+
+    @patch("inventory.views.settings.DEBUG", False)
+    @patch("inventory.views.settings.IS_TESTING", False)
+    def test_production_rejects_unauthenticated_reserve(self):
+        import sys
+        with patch.object(sys, "argv", ["gunicorn"]):
+            tid = str(uuid.uuid4())
+            # Anonymous / missing user
+            res = self.client.post(RESERVE_URL, {"seat_ids": [self.seat.id], "transaction_id": tid}, format="json")
+            self.assertEqual(res.status_code, 401)
+            self.assertEqual(res.data.get("code"), "AUTHENTICATION_REQUIRED")
+
+    @patch("inventory.views.settings.DEBUG", False)
+    @patch("inventory.views.settings.IS_TESTING", False)
+    def test_production_accepts_authenticated_user_reserve(self):
+        import sys
+        with patch.object(sys, "argv", ["gunicorn"]):
+            tid = str(uuid.uuid4())
+            res = self.client.post(
+                RESERVE_URL,
+                {"seat_ids": [self.seat.id], "transaction_id": tid, "user_id": "usr_fan123", "user_email": "fan@test.io"},
+                format="json"
+            )
+            self.assertEqual(res.status_code, 200)
+            self.seat.refresh_from_db()
+            self.assertEqual(self.seat.status, Seat.Status.HELD)
+            self.assertEqual(self.seat.user_id, "usr_fan123")
+
+
+

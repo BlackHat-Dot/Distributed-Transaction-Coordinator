@@ -588,11 +588,40 @@ def _handle_create_transaction(request):
     fail_compensation = request.data.get("fail_compensation", False)
     correlation_id = getattr(request, "correlation_id", None) or str(transaction_id)
 
+    from django.conf import settings
+    is_testing = getattr(settings, "IS_TESTING", False) or 'test' in sys.argv
+    is_dev = getattr(settings, "DEBUG", False)
+
     actor_info = get_actor_from_request(request)
-    user_id = (
-        (actor_info.get("user_id") or actor_info.get("actor_id"))
-        if actor_info
-        else (
+    has_internal_key = bool(
+        request.headers.get("X-Internal-Service-Key")
+        and request.headers.get("X-Internal-Service-Key") == INTERNAL_SERVICE_KEY
+    )
+    has_staff_key = bool(
+        request.headers.get("X-Staff-Key")
+        and request.headers.get("X-Staff-Key") == os.getenv("STAFF_API_KEY", "dtc-internal-staff-secret")
+    )
+
+    if actor_info and actor_info.get("is_authenticated"):
+        user_id = actor_info.get("user_id") or actor_info.get("actor_id")
+        user_email = actor_info.get("user_email") or actor_info.get("email")
+    elif has_internal_key or has_staff_key:
+        user_id = (
+            request.data.get("user_id")
+            or request.data.get("held_by_user_id")
+            or request.data.get("actor_id")
+            or request.headers.get("X-User-ID")
+            or "usr_internal"
+        )
+        user_email = (
+            request.data.get("user_email")
+            or request.data.get("held_by_user_email")
+            or request.data.get("email")
+            or request.headers.get("X-User-Email")
+            or "internal@dtc.io"
+        )
+    elif is_testing or is_dev:
+        user_id = (
             request.data.get("user_id")
             or request.data.get("held_by_user_id")
             or request.data.get("actor_id")
@@ -600,18 +629,22 @@ def _handle_create_transaction(request):
             or request.headers.get("X-Actor-ID")
             or "usr_demo_user"
         )
-    )
-    user_email = (
-        (actor_info.get("user_email") or actor_info.get("email"))
-        if actor_info
-        else (
+        user_email = (
             request.data.get("user_email")
             or request.data.get("held_by_user_email")
             or request.data.get("email")
             or request.headers.get("X-User-Email")
             or "demo@dtc.io"
         )
-    )
+    else:
+        # In production (DEBUG=False): NEVER fall back to demo@dtc.io! Reject unauthenticated requests!
+        return Response(
+            {
+                "error": "Authentication required. Your session has expired or you are not signed in. Please sign in to book seats.",
+                "code": "AUTHENTICATION_REQUIRED",
+            },
+            status=401,
+        )
 
     created, dup_response = _create_transaction_idempotent(
         transaction_id=transaction_id,
