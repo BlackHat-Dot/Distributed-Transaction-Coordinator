@@ -1524,3 +1524,18 @@ body {
   margin-bottom: 16px;
 }
 
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinning {
+  display: inline-block;
+  animation: spin 0.75s linear infinite;
+}
+
+

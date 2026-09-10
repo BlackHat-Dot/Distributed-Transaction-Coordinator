@@ -79,6 +79,7 @@ const DOM = {
   toastContainer: document.getElementById("toast-container"),
   healthIndicator: document.getElementById("health-indicator"),
   healthText: document.getElementById("health-text"),
+  btnRefreshSeats: document.getElementById("btn-refresh-seats"),
   btnRestock: document.getElementById("btn-restock"),
 
   // User Auth Elements
@@ -847,22 +848,15 @@ document.addEventListener("DOMContentLoaded", () => {
   restoreHoldFromStorage();
   initEventListeners();
   loadCatalog(true);
-  startDifferentialPolling();
   setupBeaconUnloadHandler();
-
-  // Immediate seat refresh when user switches back to this tab
-  document.addEventListener("visibilitychange", async () => {
-    if (!document.hidden) {
-      const res = await fetchJson(`${CONFIG.inventoryUrl}/seats/`);
-      if (res.ok && Array.isArray(res.data)) {
-        reconcileSeatStates(res.data);
-        updateInventoryStats();
-      }
-    }
-  });
 });
 
 function initEventListeners() {
+  // Manual Refresh Seats Button (User-controlled seat refresh)
+  if (DOM.btnRefreshSeats) {
+    DOM.btnRefreshSeats.addEventListener("click", refreshSeatsManual);
+  }
+
   // Reset Venue Seats Button
   if (DOM.btnRestock) {
     DOM.btnRestock.addEventListener("click", resetVenueSeats);
@@ -1984,19 +1978,53 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
 }
 
 /* ==========================================================================
-   ZERO-JANK DIFFERENTIAL RECONCILIATION ENGINE
+   USER-TRIGGERED SEAT REFRESH & DIFFERENTIAL RECONCILIATION
    ========================================================================== */
 
-function startDifferentialPolling() {
-  if (STATE.pollTimer) clearInterval(STATE.pollTimer);
-  STATE.pollTimer = setInterval(async () => {
-    if (document.hidden) return;
+async function refreshSeatsManual() {
+  const btn = DOM.btnRefreshSeats || document.getElementById("btn-refresh-seats");
+  const icon = btn ? btn.querySelector(".refresh-icon") : null;
+  if (btn) btn.disabled = true;
+  if (icon) icon.classList.add("spinning");
+
+  try {
     const res = await fetchJson(`${CONFIG.inventoryUrl}/seats/`);
     if (res.ok && Array.isArray(res.data)) {
       reconcileSeatStates(res.data);
       updateInventoryStats();
+      showToast({
+        title: "Seats Refreshed",
+        message: "Latest seat availability loaded successfully.",
+        type: "success",
+        duration: 2500,
+      });
+    } else {
+      showToast({
+        title: "Refresh Failed",
+        message: (res.data && res.data.message) || "Could not fetch updated seat status.",
+        type: "danger",
+        duration: 3500,
+      });
     }
-  }, CONFIG.pollIntervalMs);
+  } catch (err) {
+    showToast({
+      title: "Network Error",
+      message: err.message || "Failed to reach Inventory Service.",
+      type: "danger",
+      duration: 3500,
+    });
+  } finally {
+    if (btn) btn.disabled = false;
+    if (icon) icon.classList.remove("spinning");
+  }
+}
+
+function startDifferentialPolling() {
+  // Automatic polling disabled: seats are refreshed on demand by user interaction.
+  if (STATE.pollTimer) {
+    clearInterval(STATE.pollTimer);
+    STATE.pollTimer = null;
+  }
 }
 
 /**
