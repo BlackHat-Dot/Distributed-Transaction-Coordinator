@@ -102,10 +102,12 @@ else:
             [origin.strip().rstrip("/") for origin in _cors_env.split(",") if origin.strip()]
         )
 
-    print(_cors_env)
+print(CORS_ALLOWED_ORIGINS)
 
 
 CORS_ALLOWED_ORIGINS = list(dict.fromkeys(CORS_ALLOWED_ORIGINS))
+
+print(CORS_ALLOWED_ORIGINS)
 
 CORS_EXPOSE_HEADERS = [
     "x-total-count",
