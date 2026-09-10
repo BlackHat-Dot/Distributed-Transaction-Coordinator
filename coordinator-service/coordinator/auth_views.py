@@ -239,21 +239,21 @@ def send_otp(request):
     lock_key = f"dtc:otp_locked:{email}"
     is_locked = False
     lock_ttl = 900
-    if client:
+    if client and not is_dev_mode:
         try:
             if client.exists(lock_key):
                 is_locked = True
                 lock_ttl = max(0, client.ttl(lock_key))
         except Exception:
             pass
-    if not is_locked:
+    if not is_locked and not is_dev_mode:
         try:
             if cache.get(lock_key):
                 is_locked = True
         except Exception:
             pass
 
-    if is_locked:
+    if is_locked and not is_dev_mode:
         return Response(
             {
                 "error": "Account is locked due to too many failed OTP attempts. Try again later.",
@@ -263,7 +263,7 @@ def send_otp(request):
             status=429,
         )
 
-    if client:
+    if client and not is_dev_mode:
         try:
             if client.exists(session_key):
                 return Response({"error": "Account already in use on another device."}, status=403)
@@ -275,14 +275,11 @@ def send_otp(request):
                     cached_otp = client.get(f"dtc:otp:{email}")
                     resp_data = {
                         "success": True,
-                        "message": f"[LOCAL DEV] Active verification code: {cached_otp}" if is_dev_mode else "Verification code was recently sent.",
+                        "message": "Verification code was recently sent.",
                         "email": email,
                         "actor_id": _generate_actor_id(email),
                         "cooldown_remaining": ttl,
                     }
-                    if is_dev_mode and cached_otp:
-                        resp_data["otp"] = cached_otp
-                        resp_data["is_local"] = True
                     return Response(resp_data, status=200)
                 
             if client.exists(daily_block_key):
@@ -335,9 +332,9 @@ def send_otp(request):
     if not is_dev_mode and not is_testing:
         threading.Thread(target=_dispatch_otp_email, args=(email, otp_code), daemon=True).start()
     else:
-        print(f"[Local Auth] Simulated OTP generated for {email}: {otp_code} (No external email sent)")
+        print(f"[Local Auth] Simulated OTP generated for {email}: {otp_code} (Infinite dev resends enabled)")
 
-    if client:
+    if client and not is_dev_mode:
         try:
             client.setex(f"dtc:otp_cooldown:{email}", 30, "1")
         except Exception:
@@ -347,13 +344,14 @@ def send_otp(request):
 
     resp_data = {
         "success": True,
-        "message": f"[LOCAL DEV] Verification code: {otp_code}" if is_dev_mode else f"Verification code sent to {email}",
+        "message": f"[LOCAL DEV] Verification code: {otp_code} (Infinite resends enabled)" if is_dev_mode else f"Verification code sent to {email}",
         "email": email,
         "user_email": email,
         "user_id": user_id,
         "actor_id": user_id,
         "expires_in_seconds": 300,
-        "chances_remaining": chances_remaining,
+        "cooldown_remaining": 0 if is_dev_mode else 30,
+        "chances_remaining": "∞" if is_dev_mode else chances_remaining,
     }
     if is_dev_mode:
         resp_data["otp"] = otp_code
@@ -379,26 +377,27 @@ def verify_otp(request):
     lock_key = f"dtc:otp_locked:{email}"
     fail_key = f"dtc:otp_fail_count:{email}"
 
+    is_dev_mode = bool(getattr(settings, "DEBUG", False)) or os.getenv("DTC_DEV_AUTH_MODE", "").lower() in ("true", "1")
     client = _get_redis_client()
 
     # Check if currently locked out
     is_locked = False
     lock_ttl = 900
-    if client:
+    if client and not is_dev_mode:
         try:
             if client.exists(lock_key):
                 is_locked = True
                 lock_ttl = max(0, client.ttl(lock_key))
         except Exception:
             pass
-    if not is_locked:
+    if not is_locked and not is_dev_mode:
         try:
             if cache.get(lock_key):
                 is_locked = True
         except Exception:
             pass
 
-    if is_locked:
+    if is_locked and not is_dev_mode:
         return Response(
             {
                 "error": "Account is temporarily locked due to 5 failed attempts. Please try again in 15 minutes.",
@@ -438,8 +437,8 @@ def verify_otp(request):
             except Exception:
                 fail_count = 1
 
-        if fail_count >= 5:
-            # Lock out for 15 minutes (900 seconds)
+        if fail_count >= 5 and not is_dev_mode:
+            # Lock out for 15 minutes (900 seconds) in production
             if client:
                 try:
                     client.setex(lock_key, 900, "locked")

@@ -2828,11 +2828,22 @@ function renderMainAuthStep(step) {
 }
 
 function startMainOtpCountdown(seconds = 30) {
-  let remaining = seconds;
   const timerText = document.getElementById("otp-timer-text");
   const btnResend = document.getElementById("btn-resend-otp");
   const countdown = document.getElementById("otp-countdown");
 
+  if (isLocal) {
+    // LOCAL DEV: Infinite immediate resends with no countdown wait
+    if (timerText) timerText.classList.add("hidden");
+    if (btnResend) {
+      btnResend.classList.remove("hidden");
+      btnResend.disabled = false;
+      btnResend.textContent = "Resend Code ↺ (Infinite Dev Mode)";
+    }
+    return;
+  }
+
+  let remaining = seconds;
   if (timerText) timerText.classList.remove("hidden");
   if (btnResend) btnResend.classList.add("hidden");
   if (countdown) countdown.textContent = `${remaining}s`;
@@ -2965,12 +2976,14 @@ async function handleMainSendOtp() {
       renderMainAuthStep(2);
       startMainOtpCountdown(res.data.cooldown_remaining || 30);
 
-      const chancesText = res.data.chances_remaining !== undefined ? `\n(You have ${res.data.chances_remaining} attempts remaining)` : "";
+      const chancesText = (isLocal || res.data.chances_remaining === "∞")
+        ? "\n(Local Dev: Infinite Resends Available)"
+        : (res.data.chances_remaining !== undefined ? `\n(You have ${res.data.chances_remaining} attempts remaining)` : "");
 
       if (isLocal && res.data.otp) {
         // LOCAL DEVELOPMENT ONLY: Display badge & auto-fill code
         if (targetEmail) {
-          targetEmail.innerHTML = `${res.data.email}<br><span style="display:inline-block;margin-top:8px;padding:6px 12px;background:rgba(56,189,248,0.15);border:1px dashed #38bdf8;border-radius:6px;font-size:0.95rem;color:#38bdf8;font-weight:600;">Local Dev OTP: <strong style="letter-spacing:3px;font-size:1.15rem;color:#ffffff;text-shadow:0 0 8px #38bdf8;">${res.data.otp}</strong></span>`;
+          targetEmail.innerHTML = `${res.data.email}<br><span style="display:inline-block;margin-top:8px;padding:6px 12px;background:rgba(56,189,248,0.15);border:1px dashed #38bdf8;border-radius:6px;font-size:0.95rem;color:#38bdf8;font-weight:600;">Local Dev OTP: <strong style="letter-spacing:3px;font-size:1.15rem;color:#ffffff;text-shadow:0 0 8px #38bdf8;">${res.data.otp}</strong> <span style="font-size:0.8rem;color:#a5f3fc;">(Infinite Resend Mode)</span></span>`;
         }
         if (otpInput) {
           otpInput.value = res.data.otp;
