@@ -66,9 +66,8 @@ CORS_ALLOW_CREDENTIALS = True
 _cors_env = os.getenv("CORS_ALLOWED_ORIGINS")
 if _cors_env:
     CORS_ALLOWED_ORIGINS = [origin.strip() for origin in _cors_env.split(",") if origin.strip()]
-else:
+elif DEBUG or IS_TESTING:
     CORS_ALLOWED_ORIGINS = [
-        "null",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:8000",
@@ -78,10 +77,10 @@ else:
         "http://localhost:8002",
         "http://127.0.0.1:8002",
     ]
+else:
+    CORS_ALLOWED_ORIGINS = []
 
 CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^http://localhost(:\d+)?$",
-    r"^http://127\.0\.0\.1(:\d+)?$",
     r"^https://.*\.railway\.app$",
     r"^https://.*\.up\.railway\.app$",
     r"^https://.*\.vercel\.app$",
@@ -89,6 +88,11 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.pages\.dev$",
     r"^https://.*\.github\.io$",
 ]
+if DEBUG or IS_TESTING:
+    CORS_ALLOWED_ORIGIN_REGEXES += [
+        r"^http://localhost(:\d+)?$",
+        r"^http://127\.0\.0\.1(:\d+)?$",
+    ]
 CORS_EXPOSE_HEADERS = [
     "x-total-count",
     "x-overall-total",
