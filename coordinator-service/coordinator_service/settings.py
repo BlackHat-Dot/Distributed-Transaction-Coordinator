@@ -79,19 +79,6 @@ CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = []
 
-# 1. Read explicitly configured origins from Railway environment variable
-_cors_env = os.getenv("CORS_ALLOWED_ORIGINS")
-if _cors_env:
-    CORS_ALLOWED_ORIGINS.extend(
-        [origin.strip().rstrip("/") for origin in _cors_env.split(",") if origin.strip()]
-    )
-
-# 2. Automatically include this service's own Railway public domain if injected by Railway
-_railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
-if _railway_domain:
-    CORS_ALLOWED_ORIGINS.append(f"https://{_railway_domain.strip().rstrip('/')}")
-
-# 3. Localhost & development fallbacks only
 if DEBUG or IS_TESTING:
     CORS_ALLOWED_ORIGINS.extend([
         "http://localhost:3000",
@@ -110,7 +97,13 @@ if DEBUG or IS_TESTING:
 else:
     CORS_ALLOWED_ORIGIN_REGEXES = []
 
-# Deduplicate preserving order
+    _cors_env = os.getenv("CORS_ALLOWED_ORIGINS")
+    if _cors_env:
+        CORS_ALLOWED_ORIGINS.extend(
+            [origin.strip().rstrip("/") for origin in _cors_env.split(",") if origin.strip()]
+        )
+
+
 CORS_ALLOWED_ORIGINS = list(dict.fromkeys(CORS_ALLOWED_ORIGINS))
 
 CORS_EXPOSE_HEADERS = [
