@@ -25,9 +25,6 @@ elif not (DEBUG or IS_TESTING) and SECRET_KEY.startswith("django-insecure"):
         "You must configure a strong, random SECRET_KEY for production."
     )
 
-# Force sync if running tests OR if FORCE_SYNC env var is set to true
-TESTING_SYNC_MODE = IS_TESTING or os.getenv("FORCE_SYNC", "false").lower() in ("true", "1", "t")
-
 raw_allowed_hosts = os.getenv("ALLOWED_HOSTS")
 if raw_allowed_hosts:
     ALLOWED_HOSTS = [host.strip() for host in raw_allowed_hosts.split(",") if host.strip()]
@@ -194,20 +191,7 @@ else:
     }
 
 
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
-]
+AUTH_PASSWORD_VALIDATORS = []
 
 
 LANGUAGE_CODE = 'en-us'
@@ -231,32 +215,6 @@ STORAGES = {
     },
 }
 
-
-# Email Configuration (Gmail SMTP with console fallback for local development)
-EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "").strip()
-# Automatically sanitize internal spaces from Google App Passwords (e.g. 'xxxx xxxx xxxx xxxx' -> 'xxxxxxxxxxxxxxxx')
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "").strip().replace(" ", "")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "noreply@dtc.local")
-EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", 10))
-
-if not (DEBUG or IS_TESTING) and EMAIL_HOST_USER and not EMAIL_HOST_PASSWORD:
-    raise RuntimeError(
-        "CRITICAL SECURITY ERROR: EMAIL_HOST_USER is configured but EMAIL_HOST_PASSWORD is missing in production (DEBUG=False)!"
-    )
-
-if EMAIL_PORT == 465:
-    EMAIL_USE_SSL = True
-    EMAIL_USE_TLS = False
-else:
-    EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() in ("true", "1", "t")
-    EMAIL_USE_SSL = False
-
-if EMAIL_HOST_USER and EMAIL_HOST_PASSWORD:
-    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-else:
-    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 CELERY_BROKER_URL = os.getenv(
     "REDIS_URL",

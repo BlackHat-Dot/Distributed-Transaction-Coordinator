@@ -2,14 +2,8 @@ from pathlib import Path
 
 import os
 import sys
-from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-
-# Load .env file from service directory or repository root
-load_dotenv(BASE_DIR / ".env")
-load_dotenv(BASE_DIR.parent / ".env")
-load_dotenv()
 
 DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "t")
 IS_TESTING = 'test' in sys.argv
@@ -209,20 +203,7 @@ CELERY_BROKER_URL = os.getenv(
 
 
 
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
-]
+AUTH_PASSWORD_VALIDATORS = []
 
 
 
