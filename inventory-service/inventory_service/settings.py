@@ -102,6 +102,8 @@ else:
             [origin.strip().rstrip("/") for origin in _cors_env.split(",") if origin.strip()]
         )
 
+    print(_cors_env)
+
 
 CORS_ALLOWED_ORIGINS = list(dict.fromkeys(CORS_ALLOWED_ORIGINS))
 
