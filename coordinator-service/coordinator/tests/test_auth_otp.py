@@ -152,20 +152,20 @@ class LocalDevAuthNumbModeTests(TestCase):
         self.assertTrue(bool(success_resp.data.get("token")))
 
     @patch("coordinator.auth_views._is_dev_auth_mode", return_value=True)
-    def test_local_dev_jwt_token_expires_in_10_seconds(self, mock_is_dev):
+    def test_local_dev_jwt_token_expires_in_30_minutes(self, mock_is_dev):
         from coordinator.auth_views import verify_jwt
         send_resp = self.client.post("/auth/send-otp/", {"email": self.email}, format="json")
         otp = send_resp.data.get("otp")
 
         ver_resp = self.client.post("/auth/verify-otp/", {"email": self.email, "otp": otp}, format="json")
         self.assertEqual(ver_resp.status_code, 200)
-        self.assertEqual(ver_resp.data.get("expires_in"), 10)
+        self.assertEqual(ver_resp.data.get("expires_in"), 1800)
         token = ver_resp.data.get("token")
 
         payload, err = verify_jwt(token)
         self.assertIsNone(err)
         self.assertIsNotNone(payload)
-        self.assertEqual(payload["exp"] - payload["iat"], 10)
+        self.assertEqual(payload["exp"] - payload["iat"], 1800)
 
     @patch("coordinator.views.settings.DEBUG", False)
     @patch("coordinator.views.settings.IS_TESTING", False)
