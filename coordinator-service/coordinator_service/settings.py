@@ -77,11 +77,23 @@ MIDDLEWARE = [
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = True
 
+CORS_ALLOWED_ORIGINS = []
+
+# 1. Read explicitly configured origins from Railway environment variable
 _cors_env = os.getenv("CORS_ALLOWED_ORIGINS")
 if _cors_env:
-    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in _cors_env.split(",") if origin.strip()]
-elif DEBUG or IS_TESTING:
-    CORS_ALLOWED_ORIGINS = [
+    CORS_ALLOWED_ORIGINS.extend(
+        [origin.strip().rstrip("/") for origin in _cors_env.split(",") if origin.strip()]
+    )
+
+# 2. Automatically include this service's own Railway public domain if injected by Railway
+_railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+if _railway_domain:
+    CORS_ALLOWED_ORIGINS.append(f"https://{_railway_domain.strip().rstrip('/')}")
+
+# 3. Localhost & development fallbacks only
+if DEBUG or IS_TESTING:
+    CORS_ALLOWED_ORIGINS.extend([
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:8000",
@@ -90,23 +102,17 @@ elif DEBUG or IS_TESTING:
         "http://127.0.0.1:8001",
         "http://localhost:8002",
         "http://127.0.0.1:8002",
-    ]
-else:
-    CORS_ALLOWED_ORIGINS = []
-
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^https://.*\.railway\.app$",
-    r"^https://.*\.up\.railway\.app$",
-    r"^https://.*\.vercel\.app$",
-    r"^https://.*\.netlify\.app$",
-    r"^https://.*\.pages\.dev$",
-    r"^https://.*\.github\.io$",
-]
-if DEBUG or IS_TESTING:
-    CORS_ALLOWED_ORIGIN_REGEXES += [
+    ])
+    CORS_ALLOWED_ORIGIN_REGEXES = [
         r"^http://localhost(:\d+)?$",
         r"^http://127\.0\.0\.1(:\d+)?$",
     ]
+else:
+    CORS_ALLOWED_ORIGIN_REGEXES = []
+
+# Deduplicate preserving order
+CORS_ALLOWED_ORIGINS = list(dict.fromkeys(CORS_ALLOWED_ORIGINS))
+
 CORS_EXPOSE_HEADERS = [
     "x-total-count",
     "x-overall-total",
@@ -134,12 +140,11 @@ CORS_ALLOW_HEADERS = [
     "x-user-email",
 ]
 
-CSRF_TRUSTED_ORIGINS = [
-    origin.strip() for origin in os.getenv(
-        "CSRF_TRUSTED_ORIGINS",
-        "https://*.railway.app,https://*.up.railway.app,https://*.vercel.app,https://*.netlify.app,https://*.pages.dev,https://*.github.io,http://localhost:3000,http://127.0.0.1:3000"
-    ).split(",") if origin.strip()
-]
+_csrf_env = os.getenv("CSRF_TRUSTED_ORIGINS")
+if _csrf_env:
+    CSRF_TRUSTED_ORIGINS = [origin.strip().rstrip("/") for origin in _csrf_env.split(",") if origin.strip()]
+else:
+    CSRF_TRUSTED_ORIGINS = list(CORS_ALLOWED_ORIGINS)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 ROOT_URLCONF = 'coordinator_service.urls'
