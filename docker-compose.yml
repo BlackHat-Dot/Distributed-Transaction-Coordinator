@@ -47,6 +47,7 @@ services:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
       SECRET_KEY: ${SECRET_KEY:-django-insecure-inventory-secret}
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-dtc-internal-coordinator-secret-key-2026}
+      MAX_ACTOR_HOLDS: ${MAX_ACTOR_HOLDS:-10}
     ports:
       - "8000:8000"
     depends_on:
@@ -109,6 +110,9 @@ services:
       SECRET_KEY: ${SECRET_KEY:-django-insecure-coordinator-secret}
       REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-5}
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-dtc-internal-coordinator-secret-key-2026}
+      RECOVERY_THRESHOLD_SECONDS: ${RECOVERY_THRESHOLD_SECONDS:-60}
+      RECOVERY_MIN_THRESHOLD_SECONDS: ${RECOVERY_MIN_THRESHOLD_SECONDS:-30}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
     ports:
       - "8002:8002"
     depends_on:
