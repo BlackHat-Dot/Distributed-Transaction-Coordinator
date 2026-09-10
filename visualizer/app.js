@@ -309,7 +309,6 @@ const DOM = {
   recSagasSwept: document.getElementById("rec-sagas-swept"),
   recOrphansRecovered: document.getElementById("rec-orphans-recovered"),
   recRedisLock: document.getElementById("rec-redis-lock"),
-  btnTriggerSweep: document.getElementById("btn-trigger-sweep"),
 
   badgeTotalTx: document.getElementById("badge-total-tx"),
   filterTabs: document.querySelectorAll(".filter-tab"),
@@ -1588,7 +1587,7 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
   showToast({
     icon: "⦿",
     title: "Process Crash Simulated",
-    message: `Coordinator process crashed mid-flight! Transaction ${txId.substring(0,8)}... is orphaned in database. Awaiting natural 90s Celery Beat sweep (or click 'Trigger Immediate Sweep' below)!`,
+    message: `Coordinator process crashed mid-flight! Transaction ${txId.substring(0,8)}... is orphaned in database. Awaiting natural 90s Celery Beat sweep!`,
     type: "race",
     duration: 8000,
   });
@@ -1833,90 +1832,6 @@ async function triggerRecoverySweepAnimation() {
   // Stage 5: Coordinator -> Inventory & Payment Services (Probe Ground Truth)
   animatePacketAlongPath({ route: "coord-inv", type: "purple", durationMs: 420, destinationNodeId: "node-box-inv" });
   animatePacketAlongPath({ route: "coord-pay", type: "purple", durationMs: 420, destinationNodeId: "node-box-pay" });
-}
-
-DOM.btnTriggerSweep.addEventListener("click", async () => {
-  if (!checkLiveAuthGate("trigger manual background recovery sweep")) return;
-
-  STATE.stats.sagasSwept += 1;
-  DOM.recSagasSwept.textContent = STATE.stats.sagasSwept;
-  localStorage.setItem("dtc_stat_swept", STATE.stats.sagasSwept);
-
-  triggerRecoverySweepAnimation();
-
-  let recoveredSummary = "Swept non-terminal states older than lease threshold.";
-  if (STATE.isSimulatedMode) {
-    let swept = 0;
-    const now = new Date().toISOString();
-    STATE.transactions.forEach(tx => {
-      if (tx.status === "STARTED") {
-        tx.status = "TIMEOUT";
-        tx.failure_reason = "Nothing reserved or charged (coordinator crashed before reservation) → Marked TIMEOUT";
-        tx.events = [
-          { seq: 1, from_status: "STARTED", to_status: "TIMEOUT", actor: "recovery", http_status_code: 200, http_payload: { message: "Swept by Celery Beat: nothing reserved or charged, marked TIMEOUT" }, created_at: now },
-        ];
-        tx.updated_at = now;
-        swept++;
-      }
-    });
-    if (swept > 0) {
-      STATE.stats.orphansRecovered += swept;
-      if (DOM.recOrphansRecovered) DOM.recOrphansRecovered.textContent = STATE.stats.orphansRecovered;
-      localStorage.setItem("dtc_stat_orphans", STATE.stats.orphansRecovered);
-    }
-    fetchTransactionsFeed();
-    if (STATE.activeTxId) {
-      inspectTransaction(STATE.activeTxId, true);
-    }
-    recoveredSummary = swept > 0 ? `Simulated sweep recovered ${swept} orphaned transaction(s) to TIMEOUT.` : "No stale records found to sweep.";
-  } else {
-    try {
-      const sweepRes = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/recovery/sweep/`, {
-        method: "POST",
-        body: JSON.stringify({ threshold_seconds: 0 }),
-      });
-      if (sweepRes.ok) {
-        fetchTransactionsFeed();
-        if (STATE.activeTxId) {
-          inspectTransaction(STATE.activeTxId, true);
-        }
-        recoveredSummary = sweepRes.data && sweepRes.data.output ? sweepRes.data.output : "Live sweep completed across PostgreSQL & Redis.";
-      }
-      fetchRecoveryStatus();
-    } catch (e) {
-      recoveredSummary = `Sweep network error: ${e.message}`;
-    }
-  }
-
-  showToast({
-    icon: "⏱️",
-    title: "Celery Beat Recovery Sweep Executed",
-    message: `Acquired Redis mutex lock via atomic Lua script → ${recoveredSummary}`,
-    type: "purple",
-    duration: 6500,
-  });
-
-  setTimeout(() => {
-    DOM.topoCoordLease.textContent = "READY";
-    DOM.recRedisLock.innerHTML = `<span class="badge badge-success">IDLE / READY</span>`;
-    if (DOM.topoWorkerStatus) {
-      DOM.topoWorkerStatus.textContent = "IDLE";
-      DOM.topoWorkerStatus.setAttribute("class", "text-success font-mono");
-    }
-  }, 2500);
-});
-
-const btnSweepInfo = document.getElementById("btn-sweep-info");
-if (btnSweepInfo) {
-  btnSweepInfo.addEventListener("click", () => {
-    showToast({
-      icon: "✦︎",
-      title: "Immediate Sweep Mode (threshold = 0s)",
-      message: "Note: Clicking 'Trigger Immediate Sweep' runs with threshold_seconds = 0 to bypass the standard 30-second stale lease timeout for immediate demo verification.",
-      type: "purple",
-      duration: 7000,
-    });
-  });
 }
 
 const btnExecInfo = document.getElementById("btn-exec-info");
