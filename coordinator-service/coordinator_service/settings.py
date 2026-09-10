@@ -50,28 +50,28 @@ elif not (DEBUG or IS_TESTING) and INTERNAL_SERVICE_KEY == "dtc-internal-coordin
     )
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'corsheaders',
-    "rest_framework",
-    "coordinator"
+    'django.contrib.admin', # standard
+    'django.contrib.auth', # standard
+    'django.contrib.contenttypes', # standard
+    'django.contrib.sessions', # standard
+    'django.contrib.messages', # standard
+    'django.contrib.staticfiles', # standard
+    'corsheaders', # added
+    "rest_framework", # added
+    "coordinator" # added
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
-    'coordinator.middleware.CorrelationIdMiddleware',
-    'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'corsheaders.middleware.CorsMiddleware', # added
+    'coordinator.middleware.CorrelationIdMiddleware', # added
+    'whitenoise.middleware.WhiteNoiseMiddleware', # added
+    'django.middleware.security.SecurityMiddleware', # standard
+    'django.contrib.sessions.middleware.SessionMiddleware', # standard
+    'django.middleware.common.CommonMiddleware', # standard
+    'django.middleware.csrf.CsrfViewMiddleware', # standard
+    'django.contrib.auth.middleware.AuthenticationMiddleware', # standard
+    'django.contrib.messages.middleware.MessageMiddleware', # standard
+    'django.middleware.clickjacking.XFrameOptionsMiddleware', # standard
 ]
 
 CORS_ALLOW_ALL_ORIGINS = False
