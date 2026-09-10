@@ -89,9 +89,7 @@ def _validate_reserve_input(data):
 
     return seat_ids, tid, None
 
-INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv(
-    "INTERNAL_SERVICE_KEY", "dtc-internal-coordinator-secret-key-2026"
-)
+INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 
 
 def _verify_internal_service_key(request, allow_client=False):

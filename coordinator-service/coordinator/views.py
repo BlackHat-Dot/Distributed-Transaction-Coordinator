@@ -30,9 +30,7 @@ PAYMENT_CHARGE_URL = f"{PAYMENT_BASE_URL}/payments/charge/"
 PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
 PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "5"))
-INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv(
-    "INTERNAL_SERVICE_KEY", "dtc-internal-coordinator-secret-key-2026"
-)
+INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 
 
 def _transport_status(exc, timeout_status, conn_status):

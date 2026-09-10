@@ -46,6 +46,7 @@ services:
       DEBUG: ${DEBUG:-True}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
       SECRET_KEY: ${SECRET_KEY:-django-insecure-inventory-secret}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-dtc-internal-coordinator-secret-key-2026}
     ports:
       - "8000:8000"
     depends_on:
@@ -107,6 +108,7 @@ services:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
       SECRET_KEY: ${SECRET_KEY:-django-insecure-coordinator-secret}
       REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-5}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-dtc-internal-coordinator-secret-key-2026}
     ports:
       - "8002:8002"
     depends_on:

@@ -16,7 +16,7 @@ INVENTORY_CHECK_URL = f"{INVENTORY_BASE_URL}/reserve/check/"
 INVENTORY_CONFIRM_URL = f"{INVENTORY_BASE_URL}/seats/confirm/"
 INVENTORY_RELEASE_URL = f"{INVENTORY_BASE_URL}/seats/release/"
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "5"))
-INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "dtc-internal-coordinator-secret-key-2026")
+INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 
 
 PAYMENT_CHARGED = "CHARGED"
