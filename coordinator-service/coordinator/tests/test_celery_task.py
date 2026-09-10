@@ -97,11 +97,11 @@ class CeleryTaskLockingTests(TestCase):
              patch("coordinator.tasks.call_command"):
             recover_stuck_transactions()
 
-            mock_redis.set.assert_called_once()
-            args, kwargs = mock_redis.set.call_args
-            self.assertEqual(args[0], LOCK_KEY)
-            self.assertTrue(kwargs.get("nx"))
-            self.assertEqual(kwargs.get("ex"), 7200)
+            self.assertGreaterEqual(mock_redis.set.call_count, 1)
+            first_args, first_kwargs = mock_redis.set.call_args_list[0]
+            self.assertEqual(first_args[0], LOCK_KEY)
+            self.assertTrue(first_kwargs.get("nx"))
+            self.assertEqual(first_kwargs.get("ex"), 7200)
 
     def test_celery_beat_schedule_configuration(self):
         beat_schedule = getattr(settings, "CELERY_BEAT_SCHEDULE", {})

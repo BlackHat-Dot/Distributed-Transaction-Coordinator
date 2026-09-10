@@ -1,6 +1,7 @@
 import requests
 from datetime import timedelta
 from django.utils import timezone
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from coordinator.models import Transaction, SagaEvent
 from coordinator.saga_log import _set_status_with_event

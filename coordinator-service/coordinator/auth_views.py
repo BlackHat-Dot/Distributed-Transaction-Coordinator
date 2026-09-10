@@ -45,6 +45,13 @@ def _get_redis_client():
         return None
 
 
+def _is_dev_auth_mode():
+    is_testing = bool(getattr(settings, "IS_TESTING", False)) or ("test" in sys.argv)
+    if is_testing:
+        return False
+    return bool(getattr(settings, "DEBUG", False)) or os.getenv("DTC_DEV_AUTH_MODE", "").lower() in ("true", "1")
+
+
 def _normalize_email(email_str):
     if not email_str:
         return ""
@@ -225,105 +232,118 @@ def send_otp(request):
     except ValidationError:
         return Response({"error": "Invalid email address format"}, status=400)
 
-    # Server-side controlled dev auth mode — strictly never determined from request headers
-    is_dev_mode = bool(getattr(settings, "DEBUG", False)) or os.getenv("DTC_DEV_AUTH_MODE", "").lower() in ("true", "1")
-
+    is_dev_mode = _is_dev_auth_mode()
     client = _get_redis_client()
-    session_key = f"dtc:session:{email}"
-    daily_block_key = f"dtc:otp_daily_blocked:{email}"
-    session_block_key = f"dtc:otp_session_blocked:{email}"
-    daily_attempts_key = f"dtc:otp_daily_attempts:{email}"
-    session_attempts_key = f"dtc:otp_session_attempts:{email}"
     chances_remaining = 3
 
-    lock_key = f"dtc:otp_locked:{email}"
-    is_locked = False
-    lock_ttl = 900
-    if client and not is_dev_mode:
-        try:
-            if client.exists(lock_key):
-                is_locked = True
-                lock_ttl = max(0, client.ttl(lock_key))
-        except Exception:
-            pass
-    if not is_locked and not is_dev_mode:
-        try:
-            if cache.get(lock_key):
-                is_locked = True
-        except Exception:
-            pass
+    # In production/testing: enforce account lockout, single-session check, cooldown, and daily/session limits
+    if not is_dev_mode:
+        lock_key = f"dtc:otp_locked:{email}"
+        session_key = f"dtc:session:{email}"
+        daily_block_key = f"dtc:otp_daily_blocked:{email}"
+        session_block_key = f"dtc:otp_session_blocked:{email}"
+        daily_attempts_key = f"dtc:otp_daily_attempts:{email}"
+        session_attempts_key = f"dtc:otp_session_attempts:{email}"
+        cooldown_key = f"dtc:otp_cooldown:{email}"
 
-    if is_locked and not is_dev_mode:
-        return Response(
-            {
-                "error": "Account is locked due to too many failed OTP attempts. Try again later.",
-                "code": "ACCOUNT_LOCKED",
-                "lockout_remaining": lock_ttl,
-            },
-            status=429,
-        )
+        is_locked = False
+        lock_ttl = 900
+        if client:
+            try:
+                if client.exists(lock_key):
+                    is_locked = True
+                    lock_ttl = max(0, client.ttl(lock_key))
+            except Exception:
+                pass
+        if not is_locked:
+            try:
+                if cache.get(lock_key):
+                    is_locked = True
+            except Exception:
+                pass
 
-    if client and not is_dev_mode:
-        try:
-            if client.exists(session_key):
-                return Response({"error": "Account already in use on another device."}, status=403)
-                
-            cooldown_key = f"dtc:otp_cooldown:{email}"
-            if client.exists(cooldown_key):
-                ttl = client.ttl(cooldown_key)
-                if ttl > 0:
-                    cached_otp = client.get(f"dtc:otp:{email}")
-                    resp_data = {
-                        "success": True,
-                        "message": "Verification code was recently sent.",
-                        "email": email,
-                        "actor_id": _generate_actor_id(email),
-                        "cooldown_remaining": ttl,
-                    }
-                    return Response(resp_data, status=200)
-                
-            if client.exists(daily_block_key):
-                return Response({"error": "Too many login requests. Wait 12 hours before you login."}, status=429)
-                
-            if client.exists(session_block_key):
-                return Response({"error": "Session resend request limit reached. You can resend the OTP after 10 minutes."}, status=429)
+        if is_locked:
+            return Response(
+                {
+                    "error": "Account is locked due to too many failed OTP attempts. Try again later.",
+                    "code": "ACCOUNT_LOCKED",
+                    "lockout_remaining": lock_ttl,
+                },
+                status=429,
+            )
 
-            daily_attempts = client.incr(daily_attempts_key)
-            if daily_attempts == 1:
-                client.expire(daily_attempts_key, 86400)
-            
-            session_attempts = client.incr(session_attempts_key)
-            if session_attempts == 1:
-                client.expire(session_attempts_key, 86400)
-            
-            if daily_attempts > 10:
-                client.setex(daily_block_key, 43200, "blocked")
-                client.delete(daily_attempts_key)
-                client.delete(session_attempts_key)
-                return Response({"error": "Too many login requests. Wait 12 hours before you login."}, status=429)
-                
-            if session_attempts > 3:
-                client.setex(session_block_key, 600, "blocked")
-                client.delete(session_attempts_key)
-                return Response({"error": "Session resend request limit reached. You can resend the OTP after 10 minutes."}, status=429)
-                
-            chances_remaining = max(0, min(3 - session_attempts, 10 - daily_attempts))
-        except Exception:
-            pass
+        if client:
+            try:
+                if client.exists(session_key):
+                    return Response({"error": "Account already in use on another device."}, status=403)
+
+                if client.exists(cooldown_key):
+                    ttl = client.ttl(cooldown_key)
+                    if ttl > 0:
+                        cached_otp = client.get(f"dtc:otp:{email}")
+                        resp_data = {
+                            "success": True,
+                            "message": "Verification code was recently sent.",
+                            "email": email,
+                            "actor_id": _generate_actor_id(email),
+                            "cooldown_remaining": ttl,
+                        }
+                        return Response(resp_data, status=200)
+
+                if client.exists(daily_block_key):
+                    return Response({"error": "Too many login requests. Wait 12 hours before you login."}, status=429)
+
+                if client.exists(session_block_key):
+                    return Response({"error": "Session resend request limit reached. You can resend the OTP after 10 minutes."}, status=429)
+
+                daily_attempts = client.incr(daily_attempts_key)
+                if daily_attempts == 1:
+                    client.expire(daily_attempts_key, 86400)
+
+                session_attempts = client.incr(session_attempts_key)
+                if session_attempts == 1:
+                    client.expire(session_attempts_key, 86400)
+
+                if daily_attempts > 10:
+                    client.setex(daily_block_key, 43200, "blocked")
+                    client.delete(daily_attempts_key)
+                    client.delete(session_attempts_key)
+                    return Response({"error": "Too many login requests. Wait 12 hours before you login."}, status=429)
+
+                if session_attempts > 3:
+                    client.setex(session_block_key, 600, "blocked")
+                    client.delete(session_attempts_key)
+                    return Response({"error": "Session resend request limit reached. You can resend the OTP after 10 minutes."}, status=429)
+
+                chances_remaining = max(0, min(3 - session_attempts, 10 - daily_attempts))
+            except Exception:
+                pass
 
     otp_code = f"{secrets.randbelow(900000) + 100000}"
     cache_key = f"dtc:otp:{email}"
 
-    client = _get_redis_client()
     if client:
         try:
             client.setex(cache_key, 300, otp_code)
+            # In local dev mode, clear any residual limit/fail/lock keys so Redis limits stay numb
+            if is_dev_mode:
+                for leftover_k in [
+                    f"dtc:otp_locked:{email}",
+                    f"dtc:otp_fail_count:{email}",
+                    f"dtc:otp_cooldown:{email}",
+                    f"dtc:otp_daily_blocked:{email}",
+                    f"dtc:otp_session_blocked:{email}",
+                ]:
+                    client.delete(leftover_k)
         except Exception:
             pass
 
     # Redundant memory backup in case Redis is rebooting
     try:
         cache.set(cache_key, otp_code, timeout=300)
+        if is_dev_mode:
+            cache.delete(f"dtc:otp_locked:{email}")
+            cache.delete(f"dtc:otp_fail_count:{email}")
     except Exception:
         pass
 
@@ -377,35 +397,36 @@ def verify_otp(request):
     lock_key = f"dtc:otp_locked:{email}"
     fail_key = f"dtc:otp_fail_count:{email}"
 
-    is_dev_mode = bool(getattr(settings, "DEBUG", False)) or os.getenv("DTC_DEV_AUTH_MODE", "").lower() in ("true", "1")
+    is_dev_mode = _is_dev_auth_mode()
     client = _get_redis_client()
 
-    # Check if currently locked out
-    is_locked = False
-    lock_ttl = 900
-    if client and not is_dev_mode:
-        try:
-            if client.exists(lock_key):
-                is_locked = True
-                lock_ttl = max(0, client.ttl(lock_key))
-        except Exception:
-            pass
-    if not is_locked and not is_dev_mode:
-        try:
-            if cache.get(lock_key):
-                is_locked = True
-        except Exception:
-            pass
+    # Check if currently locked out (only enforced in production / test mode)
+    if not is_dev_mode:
+        is_locked = False
+        lock_ttl = 900
+        if client:
+            try:
+                if client.exists(lock_key):
+                    is_locked = True
+                    lock_ttl = max(0, client.ttl(lock_key))
+            except Exception:
+                pass
+        if not is_locked:
+            try:
+                if cache.get(lock_key):
+                    is_locked = True
+            except Exception:
+                pass
 
-    if is_locked and not is_dev_mode:
-        return Response(
-            {
-                "error": "Account is temporarily locked due to 5 failed attempts. Please try again in 15 minutes.",
-                "code": "ACCOUNT_LOCKED",
-                "lockout_remaining": lock_ttl,
-            },
-            status=429,
-        )
+        if is_locked:
+            return Response(
+                {
+                    "error": "Account is temporarily locked due to 5 failed attempts. Please try again in 15 minutes.",
+                    "code": "ACCOUNT_LOCKED",
+                    "lockout_remaining": lock_ttl,
+                },
+                status=429,
+            )
 
     stored_otp = None
     if client:
@@ -421,6 +442,18 @@ def verify_otp(request):
             pass
 
     if not stored_otp or str(stored_otp).strip() != submitted_otp:
+        # In local dev mode: failure tracking in Redis is completely NUMB
+        if is_dev_mode:
+            return Response(
+                {
+                    "error": "Invalid or expired verification code. (Infinite attempts allowed in local dev)",
+                    "code": "INVALID_OTP",
+                    "attempts_remaining": "∞",
+                },
+                status=400,
+            )
+
+        # In production / test mode: track failure count and lock out after 5 failures
         fail_count = None
         if client:
             try:
@@ -437,7 +470,7 @@ def verify_otp(request):
             except Exception:
                 fail_count = 1
 
-        if fail_count >= 5 and not is_dev_mode:
+        if fail_count >= 5:
             # Lock out for 15 minutes (900 seconds) in production
             if client:
                 try:
@@ -488,8 +521,8 @@ def verify_otp(request):
     user_id = _generate_actor_id(email)
     jwt_token = _create_jwt(user_id=user_id, email=email, expires_in=1800)
 
-    # Register active session
-    if client:
+    # Register active session in Redis (only in production)
+    if client and not is_dev_mode:
         try:
             client.setex(f"dtc:session:{email}", 30, "active")
         except Exception:
@@ -532,7 +565,7 @@ def heartbeat(request):
         return Response({"error": "Unauthorized"}, status=401)
     
     email = actor_info.get("email")
-    if email:
+    if email and not _is_dev_auth_mode():
         client = _get_redis_client()
         if client:
             try:
