@@ -725,7 +725,8 @@ function handleLogout() {
    INITIALIZATION & BOOTSTRAP
    ========================================================================== */
 
-// Session Heartbeat
+// Session Heartbeat (runs every 3s locally to immediately reflect 10s JWT expiry)
+const heartbeatInterval = isLocal ? 3000 : 15000;
 setInterval(() => {
   const token = localStorage.getItem("dtc_auth_token");
   if (token) {
@@ -738,7 +739,7 @@ setInterval(() => {
       }
     }).catch(() => {});
   }
-}, 15000);
+}, heartbeatInterval);
 
 // Tab Close Session Cleanup
 window.addEventListener("beforeunload", () => {

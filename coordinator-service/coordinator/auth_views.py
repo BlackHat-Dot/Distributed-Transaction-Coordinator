@@ -64,10 +64,12 @@ def _generate_actor_id(email):
     return f"usr_{sha}"
 
 
-def _create_jwt(user_id, email, expires_in=1800, actor_id=None):
+def _create_jwt(user_id, email, expires_in=None, actor_id=None):
     header = {"alg": "HS256", "typ": "JWT"}
     now = int(time.time())
     uid = user_id or actor_id
+    if expires_in is None:
+        expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "10" if _is_dev_auth_mode() else "1800"))
     payload = {
         "user_id": uid,
         "user_email": email,
@@ -519,7 +521,8 @@ def verify_otp(request):
         pass
 
     user_id = _generate_actor_id(email)
-    jwt_token = _create_jwt(user_id=user_id, email=email, expires_in=1800)
+    jwt_expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "10" if is_dev_mode else "1800"))
+    jwt_token = _create_jwt(user_id=user_id, email=email, expires_in=jwt_expires_in)
 
     # Register active session in Redis (only in production)
     if client and not is_dev_mode:
@@ -536,7 +539,7 @@ def verify_otp(request):
         "user_email": email,
         "actor_id": user_id,
         "email": email,
-        "expires_in": 1800
+        "expires_in": jwt_expires_in
     }, status=200)
 
 
