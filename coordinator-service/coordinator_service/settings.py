@@ -255,7 +255,7 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 90.0,
     },
 }
-
+print(CORS_ALLOWED_ORIGINS)
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,

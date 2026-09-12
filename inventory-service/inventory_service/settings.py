@@ -79,16 +79,6 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = []
 
 if DEBUG or IS_TESTING:
-    CORS_ALLOWED_ORIGINS.extend([
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        "http://localhost:8001",
-        "http://127.0.0.1:8001",
-        "http://localhost:8002",
-        "http://127.0.0.1:8002",
-    ])
     CORS_ALLOWED_ORIGIN_REGEXES = [
         r"^http://localhost(:\d+)?$",
         r"^http://127\.0\.0\.1(:\d+)?$",
@@ -102,24 +92,10 @@ else:
             [origin.strip().rstrip("/") for origin in _cors_env.split(",") if origin.strip()]
         )
 
-print(CORS_ALLOWED_ORIGINS)
-
 
 CORS_ALLOWED_ORIGINS = list(dict.fromkeys(CORS_ALLOWED_ORIGINS))
 
-print(CORS_ALLOWED_ORIGINS)
 
-CORS_EXPOSE_HEADERS = [
-    "x-total-count",
-    "x-overall-total",
-    "x-page-limit",
-    "x-page-offset",
-    "x-correlation-id",
-    "x-actor-id",
-    "x-user-id",
-    "x-user-email",
-    "content-type",
-]
 CORS_ALLOW_HEADERS = [
     "accept",
     "accept-encoding",
@@ -135,6 +111,19 @@ CORS_ALLOW_HEADERS = [
     "x-user-id",
     "x-user-email",
 ]
+
+CORS_EXPOSE_HEADERS = [
+    "x-total-count",
+    "x-overall-total",
+    "x-page-limit",
+    "x-page-offset",
+    "x-correlation-id",
+    "x-actor-id",
+    "x-user-id",
+    "x-user-email",
+    "content-type",
+]
+
 
 _csrf_env = os.getenv("CSRF_TRUSTED_ORIGINS")
 if _csrf_env:
@@ -247,12 +236,6 @@ STORAGES = {
     },
 }
 
-
-MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
-    },
-}
 
 LOGGING = {
     "version": 1,

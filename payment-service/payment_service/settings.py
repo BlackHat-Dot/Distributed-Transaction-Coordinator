@@ -223,11 +223,6 @@ STORAGES = {
     },
 }
 
-MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
-    },
-}
 
 LOGGING = {
     "version": 1,
