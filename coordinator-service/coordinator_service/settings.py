@@ -95,18 +95,8 @@ else:
 
 
 CORS_ALLOWED_ORIGINS = list(dict.fromkeys(CORS_ALLOWED_ORIGINS))
+# removes duplicate origins
 
-CORS_EXPOSE_HEADERS = [
-    "x-total-count",
-    "x-overall-total",
-    "x-page-limit",
-    "x-page-offset",
-    "x-correlation-id",
-    "x-actor-id",
-    "x-user-id",
-    "x-user-email",
-    "content-type",
-]
 CORS_ALLOW_HEADERS = [
     "accept",
     "accept-encoding",
@@ -122,15 +112,35 @@ CORS_ALLOW_HEADERS = [
     "x-user-id",
     "x-user-email",
 ]
+# allows frontend to send this headers
+
+CORS_EXPOSE_HEADERS = [
+    "x-total-count",
+    "x-overall-total",
+    "x-page-limit",
+    "x-page-offset",
+    "x-correlation-id",
+    "x-actor-id",
+    "x-user-id",
+    "x-user-email",
+    "content-type",
+]
+# allows frontend to read these listed from response headers
+
 
 _csrf_env = os.getenv("CSRF_TRUSTED_ORIGINS")
 if _csrf_env:
     CSRF_TRUSTED_ORIGINS = [origin.strip().rstrip("/") for origin in _csrf_env.split(",") if origin.strip()]
 else:
     CSRF_TRUSTED_ORIGINS = list(CORS_ALLOWED_ORIGINS)
+
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# Railway/Reverse-proxy terminates SSL (HTTPS) and forwards internal traffic to Django over HTTP.
+# This setting tells Django to trust the 'X-Forwarded-Proto: https' header so it knows the 
+# original user connection was secure (preventing CSRF mismatches and redirect loops).
 
 ROOT_URLCONF = 'coordinator_service.urls'
+# tells django "Whenever an HTTP request arrives, open the file at coordinator_service/urls.py to find out where to send it."
 
 TEMPLATES = [
     {
