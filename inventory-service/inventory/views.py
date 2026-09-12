@@ -38,6 +38,29 @@ def event_list(request):
 
 @api_view(["GET"])
 def seat_list(request):
+    # ── Option C: Piggyback Sweep ──────────────────────────────────────────────
+    # Every time the seat map is loaded, immediately release any expired holds
+    # in PostgreSQL so the DB always reflects truth for the requesting user.
+    now = timezone.now()
+    expired_ids = list(
+        Seat.objects.filter(
+            status=Seat.Status.HELD,
+            held_until__lt=now,
+        ).values_list("id", flat=True)
+    )
+    if expired_ids:
+        Reservation.objects.filter(
+            seat_id__in=expired_ids,
+            status=Reservation.Status.RESERVED,
+        ).update(status=Reservation.Status.RELEASED)
+        Seat.objects.filter(id__in=expired_ids).update(
+            status=Seat.Status.AVAILABLE,
+            held_until=None,
+            held_by_transaction_id=None,
+            user_id=None,
+            user_email=None,
+        )
+    # ── End Piggyback Sweep ────────────────────────────────────────────────────
 
     if Seat.objects.count() == 0:
         event = Event.objects.first()
@@ -58,6 +81,7 @@ def seat_list(request):
     seats = Seat.objects.all().select_related("event").order_by("id")
     serializer = SeatSerializer(seats, many=True)
     return Response(serializer.data)
+
 
 def _validate_uuid(val):
     try:

@@ -207,9 +207,19 @@ CELERY_BROKER_URL = os.getenv(
     )
 )
 
+CELERY_RESULT_BACKEND = CELERY_BROKER_URL
+CELERY_TASK_TRACK_STARTED = True
 
-
-
+# ── Option A: Background Celery Beat Sweeper ───────────────────────────────────
+# Runs every 60 seconds to update expired HELD seats → AVAILABLE in PostgreSQL.
+# Guarantees DB accuracy even during idle periods with no traffic.
+CELERY_BEAT_SCHEDULE = {
+    "sweep_expired_holds_every_60_seconds": {
+        "task": "inventory.tasks.sweep_expired_holds_task",
+        "schedule": 60.0,
+    },
+}
+# ── End Option A ───────────────────────────────────────────────────────────────
 AUTH_PASSWORD_VALIDATORS = []
 
 

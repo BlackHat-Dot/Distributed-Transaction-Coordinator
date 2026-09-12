@@ -67,10 +67,59 @@ echo "[Inventory] Collecting static files..."
 mkdir -p staticfiles
 python manage.py collectstatic --noinput
 
-PORT="${PORT:-8000}"
+APP_DIR="$(pwd)"
+export PORT="${PORT:-8000}"
+
+echo "[Inventory] Generating supervisord.conf for PORT=$PORT in $APP_DIR..."
+cat > /tmp/supervisord.conf << SUPEOF
+[supervisord]
+nodaemon=true
+logfile=/dev/stdout
+logfile_maxbytes=0
+loglevel=info
+pidfile=/tmp/supervisord.pid
+
+[program:gunicorn]
+command=gunicorn inventory_service.wsgi:application --bind 0.0.0.0:${PORT} --workers 4 --threads 4 --worker-class gthread --timeout 30
+directory=${APP_DIR}
+environment=PYTHONPATH="${APP_DIR}"
+autostart=true
+autorestart=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+
+[program:celery_worker]
+command=celery -A inventory_service worker -l info --concurrency=2
+directory=${APP_DIR}
+environment=PYTHONPATH="${APP_DIR}"
+autostart=true
+autorestart=true
+startsecs=5
+startretries=3
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+
+[program:celery_beat]
+command=celery -A inventory_service beat -l info
+directory=${APP_DIR}
+environment=PYTHONPATH="${APP_DIR}"
+autostart=true
+autorestart=true
+startsecs=5
+startretries=3
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+SUPEOF
+
 if [ $# -eq 0 ]; then
-  echo "[Inventory] Starting Gunicorn on 0.0.0.0:$PORT..."
-  exec gunicorn inventory_service.wsgi:application --bind "0.0.0.0:$PORT" --workers 4 --threads 4 --worker-class gthread --timeout 30
+  echo "[Inventory] Starting supervisord (gunicorn + celery worker + celery beat)..."
+  exec supervisord -c /tmp/supervisord.conf
 else
   echo "[Inventory] Starting custom command: $@"
   exec "$@"
