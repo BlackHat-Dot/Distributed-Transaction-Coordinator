@@ -77,23 +77,23 @@ def _get_client_ip(request):
     return request.META.get("REMOTE_ADDR", "0.0.0.0")
 
 
-def _email_slug(email):
+def _email_hash(email):
     """Short hash of email used in Redis keys (avoids storing raw emails in key names)."""
     return hashlib.sha256(email.encode("utf-8")).hexdigest()[:20]
 
 
 def _ip_block_key(ip, email):
-    return f"dtc:ip_block:{ip}:{_email_slug(email)}"
+    return f"dtc:ip_block:{ip}:{_email_hash(email)}"
 
 
 def _ip_fail_key(ip, email):
     """Counts wrong OTP submissions from this IP for this email."""
-    return f"dtc:ip_fail:{ip}:{_email_slug(email)}"
+    return f"dtc:ip_fail:{ip}:{_email_hash(email)}"
 
 
 def _ip_abandon_key(ip, email):
     """Counts OTP sends from this IP for this email with no successful verify."""
-    return f"dtc:ip_abandon:{ip}:{_email_slug(email)}"
+    return f"dtc:ip_abandon:{ip}:{_email_hash(email)}"
 
 
 def _create_jwt(user_id, email, expires_in=None, actor_id=None):
