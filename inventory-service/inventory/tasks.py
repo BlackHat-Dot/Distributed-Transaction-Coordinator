@@ -13,5 +13,5 @@ def sweep_expired_holds_task():
         logger.info("inventory sweep_expired_holds_task run completed.")
         return "completed"
     except Exception as exc:
-        logger.error("inventory sweep_expired_holds_task failed: %s", exc)
+        logger.error("inventory sweep_expired_holds_task failed: %s", exc, exc_info=True)
         return "failed"
