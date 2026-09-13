@@ -639,7 +639,7 @@ async function handleSendOtp() {
 
       const chancesText = (isLocal || res.data.chances_remaining === "∞")
         ? "\n(Local Dev: Infinite Resends Available)"
-        : (res.data.chances_remaining !== undefined ? `\n(You have ${res.data.chances_remaining} attempts remaining)` : "");
+        : (res.data.chances_remaining !== undefined ? `\n(${10 - res.data.chances_remaining}/10 daily requests used — ${res.data.chances_remaining} remaining today)` : "");
 
       if (isLocal && res.data.otp) {
         // LOCAL DEVELOPMENT ONLY: Display badge & auto-fill code

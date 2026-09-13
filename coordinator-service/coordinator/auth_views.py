@@ -236,18 +236,16 @@ def send_otp(request):
 
     is_dev_mode = _is_dev_auth_mode()
     client = _get_redis_client()
-    chances_remaining = 3
+    chances_remaining = 10
 
-    # In production/testing: enforce account lockout, single-session check, cooldown, and daily/session limits
+    # In production/testing: enforce account lockout, cooldown, and daily limit only
     if not is_dev_mode:
-        lock_key = f"dtc:otp_locked:{email}"
-        session_key = f"dtc:session:{email}"
+        lock_key        = f"dtc:otp_locked:{email}"
         daily_block_key = f"dtc:otp_daily_blocked:{email}"
-        session_block_key = f"dtc:otp_session_blocked:{email}"
-        daily_attempts_key = f"dtc:otp_daily_attempts:{email}"
-        session_attempts_key = f"dtc:otp_session_attempts:{email}"
-        cooldown_key = f"dtc:otp_cooldown:{email}"
+        daily_key       = f"dtc:otp_daily:{email}"
+        cooldown_key    = f"dtc:otp_cooldown:{email}"
 
+        # --- Account lockout check (from failed OTP verifications) ---
         is_locked = False
         lock_ttl = 900
         if client:
@@ -276,48 +274,47 @@ def send_otp(request):
 
         if client:
             try:
-                if client.exists(session_key):
-                    return Response({"error": "Account already in use on another device."}, status=403)
-
+                # --- Cooldown: prevent re-send within 30 seconds ---
                 if client.exists(cooldown_key):
                     ttl = client.ttl(cooldown_key)
                     if ttl > 0:
-                        cached_otp = client.get(f"dtc:otp:{email}")
-                        resp_data = {
+                        return Response({
                             "success": True,
                             "message": "Verification code was recently sent.",
                             "email": email,
                             "actor_id": _generate_actor_id(email),
                             "cooldown_remaining": ttl,
-                        }
-                        return Response(resp_data, status=200)
+                            "chances_remaining": max(0, 10 - int(client.get(daily_key) or 0)),
+                        }, status=200)
 
+                # --- Hard daily block (set after limit is crossed) ---
                 if client.exists(daily_block_key):
-                    return Response({"error": "Too many login requests. Wait 12 hours before you login."}, status=429)
+                    return Response(
+                        {"error": "Daily OTP limit reached. You can request a new code tomorrow.", "code": "DAILY_LIMIT_REACHED"},
+                        status=429,
+                    )
 
-                if client.exists(session_block_key):
-                    return Response({"error": "Session resend request limit reached. You can resend the OTP after 10 minutes."}, status=429)
+                # --- Increment today's counter (expires at midnight via TTL) ---
+                daily_count = client.incr(daily_key)
+                if daily_count == 1:
+                    # Calculate seconds until midnight (start of next day)
+                    import datetime
+                    now_dt = datetime.datetime.now()
+                    midnight = (now_dt + datetime.timedelta(days=1)).replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
+                    seconds_until_midnight = int((midnight - now_dt).total_seconds())
+                    client.expire(daily_key, seconds_until_midnight)
 
-                daily_attempts = client.incr(daily_attempts_key)
-                if daily_attempts == 1:
-                    client.expire(daily_attempts_key, 86400)
+                if daily_count > 10:
+                    client.setex(daily_block_key, 86400, "blocked")
+                    client.delete(daily_key)
+                    return Response(
+                        {"error": "Daily OTP limit reached. You can request a new code tomorrow.", "code": "DAILY_LIMIT_REACHED"},
+                        status=429,
+                    )
 
-                session_attempts = client.incr(session_attempts_key)
-                if session_attempts == 1:
-                    client.expire(session_attempts_key, 86400)
-
-                if daily_attempts > 10:
-                    client.setex(daily_block_key, 43200, "blocked")
-                    client.delete(daily_attempts_key)
-                    client.delete(session_attempts_key)
-                    return Response({"error": "Too many login requests. Wait 12 hours before you login."}, status=429)
-
-                if session_attempts > 3:
-                    client.setex(session_block_key, 600, "blocked")
-                    client.delete(session_attempts_key)
-                    return Response({"error": "Session resend request limit reached. You can resend the OTP after 10 minutes."}, status=429)
-
-                chances_remaining = max(0, min(3 - session_attempts, 10 - daily_attempts))
+                chances_remaining = max(0, 10 - int(daily_count))
             except Exception:
                 pass
 
@@ -334,7 +331,7 @@ def send_otp(request):
                     f"dtc:otp_fail_count:{email}",
                     f"dtc:otp_cooldown:{email}",
                     f"dtc:otp_daily_blocked:{email}",
-                    f"dtc:otp_session_blocked:{email}",
+                    f"dtc:otp_daily:{email}",
                 ]:
                     client.delete(leftover_k)
         except Exception:
