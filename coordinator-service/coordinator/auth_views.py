@@ -64,6 +64,38 @@ def _generate_actor_id(email):
     return f"usr_{sha}"
 
 
+def _get_client_ip(request):
+    """
+    Extracts the real client IP address.
+    Handles reverse proxies (Railway, Nginx, Cloudflare) via X-Forwarded-For.
+    """
+    xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    if xff:
+        # X-Forwarded-For: <client>, <proxy1>, <proxy2>
+        # The leftmost entry is the actual client.
+        return xff.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "0.0.0.0")
+
+
+def _email_slug(email):
+    """Short hash of email used in Redis keys (avoids storing raw emails in key names)."""
+    return hashlib.sha256(email.encode("utf-8")).hexdigest()[:20]
+
+
+def _ip_block_key(ip, email):
+    return f"dtc:ip_block:{ip}:{_email_slug(email)}"
+
+
+def _ip_fail_key(ip, email):
+    """Counts wrong OTP submissions from this IP for this email."""
+    return f"dtc:ip_fail:{ip}:{_email_slug(email)}"
+
+
+def _ip_abandon_key(ip, email):
+    """Counts OTP sends from this IP for this email with no successful verify."""
+    return f"dtc:ip_abandon:{ip}:{_email_slug(email)}"
+
+
 def _create_jwt(user_id, email, expires_in=None, actor_id=None):
     header = {"alg": "HS256", "typ": "JWT"}
     now = int(time.time())
@@ -238,42 +270,29 @@ def send_otp(request):
     client = _get_redis_client()
     chances_remaining = 10
 
-    # In production/testing: enforce account lockout, cooldown, and daily limit only
+    # In production/testing: enforce IP+email block, cooldown, abandonment tracking, and daily limit
     if not is_dev_mode:
-        lock_key        = f"dtc:otp_locked:{email}"
+        client_ip       = _get_client_ip(request)
         daily_block_key = f"dtc:otp_daily_blocked:{email}"
         daily_key       = f"dtc:otp_daily:{email}"
         cooldown_key    = f"dtc:otp_cooldown:{email}"
-
-        # --- Account lockout check (from failed OTP verifications) ---
-        is_locked = False
-        lock_ttl = 900
-        if client:
-            try:
-                if client.exists(lock_key):
-                    is_locked = True
-                    lock_ttl = max(0, client.ttl(lock_key))
-            except Exception:
-                pass
-        if not is_locked:
-            try:
-                if cache.get(lock_key):
-                    is_locked = True
-            except Exception:
-                pass
-
-        if is_locked:
-            return Response(
-                {
-                    "error": "Account is locked due to too many failed OTP attempts. Try again later.",
-                    "code": "ACCOUNT_LOCKED",
-                    "lockout_remaining": lock_ttl,
-                },
-                status=429,
-            )
+        block_key       = _ip_block_key(client_ip, email)
+        abandon_key     = _ip_abandon_key(client_ip, email)
 
         if client:
             try:
+                # --- IP+email block check (wrong OTPs or abandonment abuse) ---
+                if client.exists(block_key):
+                    ttl = max(0, client.ttl(block_key))
+                    return Response(
+                        {
+                            "error": "Your network has been temporarily blocked from requesting codes for this email due to repeated abuse. Try again in 24 hours.",
+                            "code": "IP_EMAIL_BLOCKED",
+                            "retry_after": ttl,
+                        },
+                        status=429,
+                    )
+
                 # --- Cooldown: prevent re-send within 30 seconds ---
                 if client.exists(cooldown_key):
                     ttl = client.ttl(cooldown_key)
@@ -294,17 +313,33 @@ def send_otp(request):
                         status=429,
                     )
 
+                # --- Abandonment tracking: send without verify ---
+                # Each OTP send increments the abandon counter.
+                # A successful verify resets it. 5+ unverified sends = 24h IP+email block.
+                abandon_count = client.incr(abandon_key)
+                if abandon_count == 1:
+                    client.expire(abandon_key, 7200)  # 2-hour rolling window
+                if abandon_count > 5:
+                    client.setex(block_key, 86400, "abandon")
+                    client.delete(abandon_key)
+                    return Response(
+                        {
+                            "error": "Too many OTP requests without completing verification. Your network is blocked for 24 hours.",
+                            "code": "IP_EMAIL_BLOCKED",
+                            "retry_after": 86400,
+                        },
+                        status=429,
+                    )
+
                 # --- Increment today's counter (expires at midnight via TTL) ---
                 daily_count = client.incr(daily_key)
                 if daily_count == 1:
-                    # Calculate seconds until midnight (start of next day)
                     import datetime
                     now_dt = datetime.datetime.now()
                     midnight = (now_dt + datetime.timedelta(days=1)).replace(
                         hour=0, minute=0, second=0, microsecond=0
                     )
-                    seconds_until_midnight = int((midnight - now_dt).total_seconds())
-                    client.expire(daily_key, seconds_until_midnight)
+                    client.expire(daily_key, int((midnight - now_dt).total_seconds()))
 
                 if daily_count > 10:
                     client.setex(daily_block_key, 86400, "blocked")
@@ -324,14 +359,11 @@ def send_otp(request):
     if client:
         try:
             client.setex(cache_key, 300, otp_code)
-            # In local dev mode, clear any residual limit/fail/lock keys so Redis limits stay numb
             if is_dev_mode:
                 for leftover_k in [
-                    f"dtc:otp_locked:{email}",
-                    f"dtc:otp_fail_count:{email}",
-                    f"dtc:otp_cooldown:{email}",
                     f"dtc:otp_daily_blocked:{email}",
                     f"dtc:otp_daily:{email}",
+                    f"dtc:otp_cooldown:{email}",
                 ]:
                     client.delete(leftover_k)
         except Exception:
@@ -340,9 +372,6 @@ def send_otp(request):
     # Redundant memory backup in case Redis is rebooting
     try:
         cache.set(cache_key, otp_code, timeout=300)
-        if is_dev_mode:
-            cache.delete(f"dtc:otp_locked:{email}")
-            cache.delete(f"dtc:otp_fail_count:{email}")
     except Exception:
         pass
 
@@ -383,7 +412,7 @@ def send_otp(request):
 def verify_otp(request):
     """
     Phase 2: Compares submitted OTP against Redis value, deletes Redis key on match (single-use),
-    and issues a 30-minute JWT token with user_id.
+    and issues a JWT token. Wrong OTPs are tracked per IP+email — 5 failures triggers a 24h block.
     """
     email_raw = request.data.get("email") or request.data.get("email_address")
     submitted_otp = str(request.data.get("otp", "")).strip()
@@ -393,39 +422,27 @@ def verify_otp(request):
 
     email = _normalize_email(email_raw)
     cache_key = f"dtc:otp:{email}"
-    lock_key = f"dtc:otp_locked:{email}"
-    fail_key = f"dtc:otp_fail_count:{email}"
 
     is_dev_mode = _is_dev_auth_mode()
     client = _get_redis_client()
 
-    # Check if currently locked out (only enforced in production / test mode)
-    if not is_dev_mode:
-        is_locked = False
-        lock_ttl = 900
-        if client:
-            try:
-                if client.exists(lock_key):
-                    is_locked = True
-                    lock_ttl = max(0, client.ttl(lock_key))
-            except Exception:
-                pass
-        if not is_locked:
-            try:
-                if cache.get(lock_key):
-                    is_locked = True
-            except Exception:
-                pass
-
-        if is_locked:
-            return Response(
-                {
-                    "error": "Account is temporarily locked due to 5 failed attempts. Please try again in 15 minutes.",
-                    "code": "ACCOUNT_LOCKED",
-                    "lockout_remaining": lock_ttl,
-                },
-                status=429,
-            )
+    # In production: check IP+email block before allowing verify attempt
+    if not is_dev_mode and client:
+        client_ip = _get_client_ip(request)
+        block_key = _ip_block_key(client_ip, email)
+        try:
+            if client.exists(block_key):
+                ttl = max(0, client.ttl(block_key))
+                return Response(
+                    {
+                        "error": "Your network has been temporarily blocked from accessing this email. Try again in 24 hours.",
+                        "code": "IP_EMAIL_BLOCKED",
+                        "retry_after": ttl,
+                    },
+                    status=429,
+                )
+        except Exception:
+            pass
 
     stored_otp = None
     if client:
@@ -441,7 +458,7 @@ def verify_otp(request):
             pass
 
     if not stored_otp or str(stored_otp).strip() != submitted_otp:
-        # In local dev mode: failure tracking in Redis is completely NUMB
+        # Dev mode: unlimited attempts, no tracking
         if is_dev_mode:
             return Response(
                 {
@@ -452,68 +469,53 @@ def verify_otp(request):
                 status=400,
             )
 
-        # In production / test mode: track failure count and lock out after 5 failures
-        fail_count = None
+        # Production: track wrong attempts per IP+email — 5 strikes = 24h block
         if client:
             try:
+                client_ip = _get_client_ip(request)
+                fail_key = _ip_fail_key(client_ip, email)
                 fail_count = client.incr(fail_key)
                 if fail_count == 1:
-                    client.expire(fail_key, 900)
-            except Exception:
-                fail_count = None
-
-        if fail_count is None:
-            try:
-                fail_count = (cache.get(fail_key) or 0) + 1
-                cache.set(fail_key, fail_count, timeout=900)
-            except Exception:
-                fail_count = 1
-
-        if fail_count >= 5:
-            # Lock out for 15 minutes (900 seconds) in production
-            if client:
-                try:
-                    client.setex(lock_key, 900, "locked")
-                    client.delete(cache_key)
+                    client.expire(fail_key, 86400)  # 24-hour window
+                if fail_count >= 5:
+                    block_key = _ip_block_key(client_ip, email)
+                    client.setex(block_key, 86400, "otp_fail")
                     client.delete(fail_key)
-                except Exception:
-                    pass
-            try:
-                cache.set(lock_key, "locked", timeout=900)
-                cache.delete(cache_key)
-                cache.delete(fail_key)
+                    client.delete(cache_key)
+                    return Response(
+                        {
+                            "error": "Your network has been blocked from accessing this email for 24 hours due to too many failed attempts.",
+                            "code": "IP_EMAIL_BLOCKED",
+                            "retry_after": 86400,
+                        },
+                        status=429,
+                    )
+                strikes_left = max(0, 5 - int(fail_count))
+                return Response(
+                    {
+                        "error": f"Invalid or expired verification code. {strikes_left} attempt(s) remaining before your network is blocked.",
+                        "code": "INVALID_OTP",
+                        "attempts_remaining": strikes_left,
+                    },
+                    status=400,
+                )
             except Exception:
                 pass
 
-            return Response(
-                {
-                    "error": "Too many failed attempts. Account is locked for 15 minutes.",
-                    "code": "ACCOUNT_LOCKED",
-                    "lockout_remaining": 900,
-                },
-                status=429,
-            )
+        return Response({"error": "Invalid or expired verification code.", "code": "INVALID_OTP"}, status=400)
 
-        attempts_remaining = max(0, 5 - fail_count)
-        return Response(
-            {
-                "error": f"Invalid or expired verification code. {attempts_remaining} attempt(s) remaining.",
-                "code": "INVALID_OTP",
-                "attempts_remaining": attempts_remaining,
-            },
-            status=400,
-        )
-
-    # Delete key on success (single-use + reset failures)
+    # ── OTP matched: success path ─────────────────────────────────────────────
     if client:
         try:
+            client_ip = _get_client_ip(request)
+            # Clear OTP, fail counter, and abandon counter — clean slate on success
             client.delete(cache_key)
-            client.delete(fail_key)
+            client.delete(_ip_fail_key(client_ip, email))
+            client.delete(_ip_abandon_key(client_ip, email))
         except Exception:
             pass
     try:
         cache.delete(cache_key)
-        cache.delete(fail_key)
     except Exception:
         pass
 
@@ -521,7 +523,6 @@ def verify_otp(request):
     jwt_expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "1800"))
     jwt_token = _create_jwt(user_id=user_id, email=email, expires_in=jwt_expires_in)
 
-    # Register active session in Redis (only in production)
     if client and not is_dev_mode:
         try:
             client.setex(f"dtc:session:{email}", 30, "active")
@@ -538,6 +539,7 @@ def verify_otp(request):
         "email": email,
         "expires_in": jwt_expires_in
     }, status=200)
+
 
 
 @api_view(["GET"])
