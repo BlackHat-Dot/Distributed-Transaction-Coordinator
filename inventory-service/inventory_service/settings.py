@@ -208,7 +208,6 @@ CELERY_BROKER_URL = os.getenv(
 )
 
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
-CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_IGNORE_RESULT = True
 
 # ── Option A: Background Celery Beat Sweeper ───────────────────────────────────
