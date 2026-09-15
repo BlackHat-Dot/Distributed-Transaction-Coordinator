@@ -280,14 +280,14 @@ def send_otp(request):
     if not is_dev_mode:
         client_ip       = _get_client_ip(request)
         daily_block_key = f"dtc:otp_daily_blocked:{email}" # counts total otp sent
-        daily_key       = f"dtc:otp_daily:{email}" # 
+        daily_key       = f"dtc:otp_daily:{email}"
         cooldown_key    = f"dtc:otp_cooldown:{email}"
         block_key       = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
         abandon_key     = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
 
         if client:
             try:
-                # --- IP+email block check (wrong OTPs or abandonment abuse) ---
+                # IP+email block check (wrong OTPs or abandonment abuse)
                 if client.exists(block_key):
                     ttl = max(0, client.ttl(block_key))
                     return Response(
@@ -299,7 +299,7 @@ def send_otp(request):
                         status=429,
                     )
 
-                # --- Cooldown: prevent re-send within 30 seconds ---
+                # Cooldown: prevent re-send within 30 seconds
                 if client.exists(cooldown_key):
                     ttl = client.ttl(cooldown_key)
                     if ttl > 0:
@@ -312,22 +312,25 @@ def send_otp(request):
                             "chances_remaining": max(0, 10 - int(client.get(daily_key) or 0)),
                         }, status=200)
 
-                # --- Hard daily block (set after limit is crossed) ---
+                # Hard daily block (set after limit is crossed)
                 if client.exists(daily_block_key):
                     return Response(
                         {"error": "Daily OTP limit reached. You can request a new code tomorrow.", "code": "DAILY_LIMIT_REACHED"},
                         status=429,
                     )
 
-                # --- Abandonment tracking: send without verify ---
+                # Abandonment tracking: send without verify
                 # Each OTP send increments the abandon counter.
                 # A successful verify resets it. 5+ unverified sends = 24h IP+email block.
-                abandon_count = client.incr(abandon_key)
+                abandon_count = client.incr(abandon_key) # atomic
+
                 if abandon_count == 1:
                     client.expire(abandon_key, 7200)  # 2-hour rolling window
+
                 if abandon_count > 5:
                     client.setex(block_key, 86400, "abandon")
                     client.delete(abandon_key)
+
                     return Response(
                         {
                             "error": "Too many OTP requests without completing verification. Your network is blocked for 24 hours.",
@@ -337,15 +340,22 @@ def send_otp(request):
                         status=429,
                     )
 
-                # --- Increment today's counter (expires at midnight via TTL) ---
-                daily_count = client.incr(daily_key)
+                # Increment today's counter (expires at midnight via TTL)
+                daily_count = client.incr(daily_key) # "key created"
+
                 if daily_count == 1:
-                    import datetime
-                    now_dt = datetime.datetime.now()
+                    from datetime import datetime
+
+                    now_dt = datetime.now() # 2026-09-15 17:32:16
+
+                    # Adds 1 day (24 hours) to move to tomorrow (eg., 2026-09-16 17:32:16)
+                    # .replace(...) wipes out the hours, minutes, and seconds, setting them to zero (eg., 2026-09-16 00:00:00 "Midnight")
                     midnight = (now_dt + datetime.timedelta(days=1)).replace(
                         hour=0, minute=0, second=0, microsecond=0
                     )
-                    client.expire(daily_key, int((midnight - now_dt).total_seconds()))
+
+                    # .total_seconds() : convert the calculated interval time to seconds
+                    client.expire(daily_key, int((midnight - now_dt).total_seconds())) # "expiry added"
 
                 if daily_count > 10:
                     client.setex(daily_block_key, 86400, "blocked")
@@ -359,6 +369,9 @@ def send_otp(request):
             except Exception:
                 pass
 
+    # sometimes randbelow produce less than 6 digits, so adding those kind of value with '100000' will make it 6 digit
+    # eg., 45 + 100000 = 100045
+    # randbelow (1 - 899999) not 900000 itself.
     otp_code = f"{secrets.randbelow(900000) + 100000}"
     cache_key = f"dtc:otp:{email}"
 
@@ -377,12 +390,14 @@ def send_otp(request):
 
     # Redundant memory backup in case Redis is rebooting
     try:
+        # stored inside Django Process RAM
         cache.set(cache_key, otp_code, timeout=300)
     except Exception:
         pass
 
     # Only dispatch real email if NOT running in development or test mode
     is_testing = bool(getattr(settings, "IS_TESTING", False)) or ('test' in sys.argv)
+    
     if not is_dev_mode and not is_testing:
         threading.Thread(target=_dispatch_otp_email, args=(email, otp_code), daemon=True).start()
     else:
