@@ -21,6 +21,7 @@ _redis_last_check = 0
 _redis_is_available = False
 _redis_client_instance = None
 
+is_testing = bool(getattr(settings, "IS_TESTING", False)) or ('test' in sys.argv)
 
 def _get_redis_client():
     global _redis_last_check, _redis_is_available, _redis_client_instance
@@ -53,15 +54,13 @@ def _get_redis_client():
         _redis_client_instance = client
         return client
 
-    except Exception:
+    except Exception:           
         _redis_is_available = False
         _redis_client_instance = None
         return None
 
 
 def _is_dev_auth_mode():
-    is_testing = bool(getattr(settings, "IS_TESTING", False)) or ("test" in sys.argv)
-
     if is_testing:
         return False
     
@@ -116,6 +115,8 @@ def _create_jwt(user_id, email, expires_in=None, actor_id=None):
         "iat": now,
         "exp": now + expires_in
     }
+
+    """A JSON Web Token (JWT) is just a single string made of 3 parts separated by dots (.)"""
 
     def b64url(data_bytes):
         return base64.urlsafe_b64encode(data_bytes).rstrip(b"=").decode("utf-8")
@@ -285,19 +286,35 @@ def send_otp(request):
         block_key       = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
         abandon_key     = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
 
+        # IP+email block check (wrong OTPs or abandonment abuse)
+        is_blocked = False
+        ttl = 86400
         if client:
             try:
-                # IP+email block check (wrong OTPs or abandonment abuse)
                 if client.exists(block_key):
+                    is_blocked = True
                     ttl = max(0, client.ttl(block_key))
-                    return Response(
-                        {
-                            "error": "Your network has been temporarily blocked from requesting codes for this email due to repeated abuse. Try again in 24 hours.",
-                            "code": "IP_EMAIL_BLOCKED",
-                            "retry_after": ttl,
-                        },
-                        status=429,
-                    )
+            except Exception:
+                pass
+        if not is_blocked:
+            try:
+                if cache.get(block_key):
+                    is_blocked = True
+            except Exception:
+                pass
+
+        if is_blocked:
+            return Response(
+                {
+                    "error": "Your network has been temporarily blocked from requesting codes for this email due to repeated abuse. Try again in 24 hours.",
+                    "code": "IP_EMAIL_BLOCKED",
+                    "retry_after": ttl,
+                },
+                status=429,
+            )
+
+        if client:
+            try:
 
                 # Cooldown: prevent re-send within 30 seconds
                 if client.exists(cooldown_key):
@@ -380,9 +397,9 @@ def send_otp(request):
             client.setex(cache_key, 300, otp_code)
             if is_dev_mode:
                 for leftover_k in [
-                    f"dtc:otp_daily_blocked:{email}",
-                    f"dtc:otp_daily:{email}",
-                    f"dtc:otp_cooldown:{email}",
+                    daily_block_key,
+                    daily_key ,
+                    cooldown_key,
                 ]:
                     client.delete(leftover_k)
         except Exception:
@@ -396,8 +413,7 @@ def send_otp(request):
         pass
 
     # Only dispatch real email if NOT running in development or test mode
-    is_testing = bool(getattr(settings, "IS_TESTING", False)) or ('test' in sys.argv)
-    
+
     if not is_dev_mode and not is_testing:
         threading.Thread(target=_dispatch_otp_email, args=(email, otp_code), daemon=True).start()
     else:
@@ -405,7 +421,7 @@ def send_otp(request):
 
     if client and not is_dev_mode:
         try:
-            client.setex(f"dtc:otp_cooldown:{email}", 30, "1")
+            client.setex(cooldown_key, 30, "1")
         except Exception:
             pass
 
@@ -447,23 +463,37 @@ def verify_otp(request):
     is_dev_mode = _is_dev_auth_mode()
     client = _get_redis_client()
 
+    client_ip = _get_client_ip(request)
+    block_key = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
+    fail_key = f"dtc:ip_fail:{client_ip}:{_email_hash(email)}"
+
     # In production: check IP+email block before allowing verify attempt
-    if not is_dev_mode and client:
-        client_ip = _get_client_ip(request)
-        block_key = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
-        try:
-            if client.exists(block_key):
-                ttl = max(0, client.ttl(block_key))
-                return Response(
-                    {
-                        "error": "Your network has been temporarily blocked from accessing this email. Try again in 24 hours.",
-                        "code": "IP_EMAIL_BLOCKED",
-                        "retry_after": ttl,
-                    },
-                    status=429,
-                )
-        except Exception:
-            pass
+    if not is_dev_mode:
+        is_blocked = False
+        ttl = 86400
+        if client:
+            try:
+                if client.exists(block_key):
+                    is_blocked = True
+                    ttl = max(0, client.ttl(block_key))
+            except Exception:
+                pass
+        if not is_blocked:
+            try:
+                if cache.get(block_key):
+                    is_blocked = True
+            except Exception:
+                pass
+
+        if is_blocked:
+            return Response(
+                {
+                    "error": "Your network has been temporarily blocked from accessing this email. Try again in 24 hours.",
+                    "code": "IP_EMAIL_BLOCKED",
+                    "retry_after": ttl,
+                },
+                status=429,
+            )
 
     stored_otp = None
     if client:
@@ -491,52 +521,69 @@ def verify_otp(request):
             )
 
         # Production: track wrong attempts per IP+email — 5 strikes = 24h block
+        fail_count = None
         if client:
             try:
-                client_ip = _get_client_ip(request)
-                fail_key = f"dtc:ip_fail:{client_ip}:{_email_hash(email)}"
                 fail_count = client.incr(fail_key)
                 if fail_count == 1:
                     client.expire(fail_key, 86400)  # 24-hour window
-                if fail_count >= 5:
-                    block_key = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
+            except Exception:
+                fail_count = None
+
+        if fail_count is None:
+            try:
+                fail_count = (cache.get(fail_key) or 0) + 1
+                cache.set(fail_key, fail_count, timeout=86400)
+            except Exception:
+                fail_count = 1
+
+        if fail_count >= 5:
+            if client:
+                try:
                     client.setex(block_key, 86400, "otp_fail")
                     client.delete(fail_key)
                     client.delete(cache_key)
-                    return Response(
-                        {
-                            "error": "Your network has been blocked from accessing this email for 24 hours due to too many failed attempts.",
-                            "code": "IP_EMAIL_BLOCKED",
-                            "retry_after": 86400,
-                        },
-                        status=429,
-                    )
-                strikes_left = max(0, 5 - int(fail_count))
-                return Response(
-                    {
-                        "error": f"Invalid or expired verification code. {strikes_left} attempt(s) remaining before your network is blocked.",
-                        "code": "INVALID_OTP",
-                        "attempts_remaining": strikes_left,
-                    },
-                    status=400,
-                )
+                except Exception:
+                    pass
+            try:
+                cache.set(block_key, "otp_fail", timeout=86400)
+                cache.delete(fail_key)
+                cache.delete(cache_key)
             except Exception:
                 pass
 
-        return Response({"error": "Invalid or expired verification code.", "code": "INVALID_OTP"}, status=400)
+            return Response(
+                {
+                    "error": "Your network has been blocked from accessing this email for 24 hours due to too many failed attempts.",
+                    "code": "IP_EMAIL_BLOCKED",
+                    "retry_after": 86400,
+                },
+                status=429,
+            )
 
-    # ── OTP matched: success path ─────────────────────────────────────────────
+        strikes_left = max(0, 5 - int(fail_count))
+        return Response(
+            {
+                "error": f"Invalid or expired verification code. {strikes_left} attempt(s) remaining before your network is blocked.",
+                "code": "INVALID_OTP",
+                "attempts_remaining": strikes_left,
+            },
+            status=400,
+        )
+
+    # OTP matched: success path
     if client:
         try:
-            client_ip = _get_client_ip(request)
-            # Clear OTP, fail counter, and abandon counter — clean slate on success
+            # Clear OTP, fail counter, and abandon counter; clean slate on success
             client.delete(cache_key)
-            client.delete(f"dtc:ip_fail:{client_ip}:{_email_hash(email)}")
+            client.delete(fail_key)
             client.delete(f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}")
         except Exception:
             pass
     try:
         cache.delete(cache_key)
+        cache.delete(fail_key)
+        cache.delete(f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}")
     except Exception:
         pass
 

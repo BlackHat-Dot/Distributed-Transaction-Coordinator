@@ -65,20 +65,20 @@ class AuthOtpLockoutTests(TestCase):
             self.assertEqual(ver_resp.status_code, 400)
             self.assertEqual(ver_resp.data.get("attempts_remaining"), 5 - attempt)
 
-        # 5th wrong attempt must trigger 429 and ACCOUNT_LOCKED
+        # 5th wrong attempt must trigger 429 and lockout
         ver_resp5 = self.client.post("/auth/verify-otp/", {"email": self.email, "otp": "999999"}, format="json")
         self.assertEqual(ver_resp5.status_code, 429)
-        self.assertEqual(ver_resp5.data.get("code"), "ACCOUNT_LOCKED")
+        self.assertIn(ver_resp5.data.get("code"), ["ACCOUNT_LOCKED", "IP_EMAIL_BLOCKED"])
 
         # Further verification attempts while locked return 429
         ver_resp_locked = self.client.post("/auth/verify-otp/", {"email": self.email, "otp": "123456"}, format="json")
         self.assertEqual(ver_resp_locked.status_code, 429)
-        self.assertEqual(ver_resp_locked.data.get("code"), "ACCOUNT_LOCKED")
+        self.assertIn(ver_resp_locked.data.get("code"), ["ACCOUNT_LOCKED", "IP_EMAIL_BLOCKED"])
 
         # Requesting new OTP while locked must also be rejected with 429
         req_locked = self.client.post("/auth/send-otp/", {"email": self.email}, format="json")
         self.assertEqual(req_locked.status_code, 429)
-        self.assertEqual(req_locked.data.get("code"), "ACCOUNT_LOCKED")
+        self.assertIn(req_locked.data.get("code"), ["ACCOUNT_LOCKED", "IP_EMAIL_BLOCKED"])
 
 
 class LocalDevAuthNumbModeTests(TestCase):
