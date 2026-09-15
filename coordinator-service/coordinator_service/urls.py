@@ -1,7 +1,6 @@
 from django.contrib import admin
 from django.urls import path
 from coordinator.views import (
-    create_transaction,
     retry_compensation,
     get_transaction,
     list_transactions,
