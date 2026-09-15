@@ -53,8 +53,6 @@ def _is_dev_auth_mode():
 
 
 def _normalize_email(email_str):
-    if not email_str:
-        return ""
     return str(email_str).strip().lower()
 
 
