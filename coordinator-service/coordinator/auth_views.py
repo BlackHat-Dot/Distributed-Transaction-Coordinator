@@ -102,20 +102,6 @@ def _email_hash(email):
     return hashlib.sha256(email.encode("utf-8")).hexdigest()[:20]
 
 
-def _ip_block_key(ip, email):
-    return f"dtc:ip_block:{ip}:{_email_hash(email)}"
-
-
-def _ip_fail_key(ip, email):
-    """Counts wrong OTP submissions from this IP for this email."""
-    return f"dtc:ip_fail:{ip}:{_email_hash(email)}"
-
-
-def _ip_abandon_key(ip, email):
-    """Counts OTP sends from this IP for this email with no successful verify."""
-    return f"dtc:ip_abandon:{ip}:{_email_hash(email)}"
-
-
 def _create_jwt(user_id, email, expires_in=None, actor_id=None):
     header = {"alg": "HS256", "typ": "JWT"}
     now = int(time.time())
@@ -296,8 +282,8 @@ def send_otp(request):
         daily_block_key = f"dtc:otp_daily_blocked:{email}" # counts total otp sent
         daily_key       = f"dtc:otp_daily:{email}" # 
         cooldown_key    = f"dtc:otp_cooldown:{email}"
-        block_key       = _ip_block_key(client_ip, email)
-        abandon_key     = _ip_abandon_key(client_ip, email)
+        block_key       = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
+        abandon_key     = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
 
         if client:
             try:
@@ -449,7 +435,7 @@ def verify_otp(request):
     # In production: check IP+email block before allowing verify attempt
     if not is_dev_mode and client:
         client_ip = _get_client_ip(request)
-        block_key = _ip_block_key(client_ip, email)
+        block_key = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
         try:
             if client.exists(block_key):
                 ttl = max(0, client.ttl(block_key))
@@ -493,12 +479,12 @@ def verify_otp(request):
         if client:
             try:
                 client_ip = _get_client_ip(request)
-                fail_key = _ip_fail_key(client_ip, email)
+                fail_key = f"dtc:ip_fail:{client_ip}:{_email_hash(email)}"
                 fail_count = client.incr(fail_key)
                 if fail_count == 1:
                     client.expire(fail_key, 86400)  # 24-hour window
                 if fail_count >= 5:
-                    block_key = _ip_block_key(client_ip, email)
+                    block_key = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
                     client.setex(block_key, 86400, "otp_fail")
                     client.delete(fail_key)
                     client.delete(cache_key)
@@ -530,8 +516,8 @@ def verify_otp(request):
             client_ip = _get_client_ip(request)
             # Clear OTP, fail counter, and abandon counter — clean slate on success
             client.delete(cache_key)
-            client.delete(_ip_fail_key(client_ip, email))
-            client.delete(_ip_abandon_key(client_ip, email))
+            client.delete(f"dtc:ip_fail:{client_ip}:{_email_hash(email)}")
+            client.delete(f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}")
         except Exception:
             pass
     try:
