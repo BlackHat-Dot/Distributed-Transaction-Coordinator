@@ -24,21 +24,35 @@ _redis_client_instance = None
 
 def _get_redis_client():
     global _redis_last_check, _redis_is_available, _redis_client_instance
+
+    # Use time.monotonic() instead of time.time() for interval/cooldown calculations.
+    # Monotonic is immune to system wall-clock shifts (e.g. NTP syncs, leap seconds, 
+    # or manual clock adjustments), guaranteeing the timer never jumps backward.
     now = time.monotonic()
+
     if _redis_client_instance is not None and _redis_is_available:
         return _redis_client_instance
+    
     if now - _redis_last_check < 5.0 and not _redis_is_available:
         return None
+    
     _redis_last_check = now
     broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+
     try:
+        # socket_connect_timeout = 0.5(500ms); max time allowed to establish the TCP network connection.
+        # socket_timeout = 0.5(500ms); max time allowed to wait for redis to reply to a command
         client = redis.Redis.from_url(
-            broker_url, decode_responses=True, socket_connect_timeout=0.05, socket_timeout=0.05
+            broker_url, decode_responses=True, socket_connect_timeout=0.5, socket_timeout=0.5
         )
+
+        # If connection is successful then redis will reply 'PONG'
         client.ping()
+        
         _redis_is_available = True
         _redis_client_instance = client
         return client
+
     except Exception:
         _redis_is_available = False
         _redis_client_instance = None
@@ -47,8 +61,10 @@ def _get_redis_client():
 
 def _is_dev_auth_mode():
     is_testing = bool(getattr(settings, "IS_TESTING", False)) or ("test" in sys.argv)
+
     if is_testing:
         return False
+    
     return bool(getattr(settings, "DEBUG", False)) or os.getenv("DTC_DEV_AUTH_MODE", "").lower() in ("true", "1")
 
 
@@ -63,15 +79,21 @@ def _generate_actor_id(email):
 
 
 def _get_client_ip(request):
-    """
-    Extracts the real client IP address.
-    Handles reverse proxies (Railway, Nginx, Cloudflare) via X-Forwarded-For.
-    """
+    # Django prefixes all HTTP headers with "HTTP_" and replaces dashes with underscores.
+    # So "X-Forwarded-For" becomes "HTTP_X_FORWARDED_FOR".
     xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    
+    # If the request came through a proxy (e.g., Railway / Cloudflare):
     if xff:
-        # X-Forwarded-For: <client>, <proxy1>, <proxy2>
-        # The leftmost entry is the actual client.
+        # Example: "203.0.113.19, 10.0.0.5"
+        # .split(",")[0] -> grabs the first element: "203.0.113.19"
+        # .strip()       -> cleans any extra whitespace
         return xff.split(",")[0].strip()
+    
+    # Fallback (Localhost / Direct Connection):
+    # If you are running locally without a proxy, X-Forwarded-For won't exist.
+    # Fall back to standard REMOTE_ADDR (e.g. "127.0.0.1"), or "0.0.0.0" if missing.
+    # REMOTE_ADDR holds the IP of the immediate machine that directly connected to this server
     return request.META.get("REMOTE_ADDR", "0.0.0.0")
 
 
@@ -271,8 +293,8 @@ def send_otp(request):
     # In production/testing: enforce IP+email block, cooldown, abandonment tracking, and daily limit
     if not is_dev_mode:
         client_ip       = _get_client_ip(request)
-        daily_block_key = f"dtc:otp_daily_blocked:{email}"
-        daily_key       = f"dtc:otp_daily:{email}"
+        daily_block_key = f"dtc:otp_daily_blocked:{email}" # counts total otp sent
+        daily_key       = f"dtc:otp_daily:{email}" # 
         cooldown_key    = f"dtc:otp_cooldown:{email}"
         block_key       = _ip_block_key(client_ip, email)
         abandon_key     = _ip_abandon_key(client_ip, email)

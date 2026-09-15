@@ -241,9 +241,12 @@ CELERY_BROKER_URL = os.getenv(
     )
 )
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
+
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
+
+CELERY_TASK_IGNORE_RESULT = True
 
 CELERY_TIMEZONE = "Asia/Kolkata"
 
@@ -255,7 +258,7 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 90.0,
     },
 }
-print(CORS_ALLOWED_ORIGINS)
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
