@@ -24,7 +24,7 @@ _redis_client_instance = None
 
 def _get_redis_client():
     global _redis_last_check, _redis_is_available, _redis_client_instance
-    now = time.time()
+    now = time.monotonic()
     if _redis_client_instance is not None and _redis_is_available:
         return _redis_client_instance
     if now - _redis_last_check < 5.0 and not _redis_is_available:
