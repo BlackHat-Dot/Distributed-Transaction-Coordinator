@@ -45,6 +45,8 @@ class Transaction(models.Model):
         default=0,
     )
 
+    # auto_now_add : Value inserted at record creation and persist without a change
+    # auto_now : Value inserted at record creation and changed if record is updated
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -77,8 +79,13 @@ class SagaEvent(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        # Inner configuration class that provides database-level options and metadata for this Django model.
+
         unique_together = [("transaction", "seq")]
+        # Enforces a composite UNIQUE database constraint: within a single transaction, no two events can have the same sequence number ('seq').
+
         ordering = ["transaction", "seq"]
+        # Sets the default query sort order (SQL: ORDER BY transaction_id ASC, seq ASC), ensuring events are always retrieved in chronological sequence.
 
     def __str__(self):
         return (
