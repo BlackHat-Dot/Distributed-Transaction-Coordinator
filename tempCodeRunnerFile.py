@@ -1,1 +1,0 @@
-print(otp_code)

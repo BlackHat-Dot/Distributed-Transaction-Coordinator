@@ -47,6 +47,7 @@ def health_check(request):
 def transactions_endpoint(request):
     if request.method == "GET":
         return _handle_list_transactions(request)
+    # POST
     return _handle_create_transaction(request)
 
 
@@ -270,18 +271,38 @@ def recovery_status(request):
 # Internal handlers that authenticate, parse, and validate incoming requests.
 # ==============================================================================
 
+def _request_payload_verify(request):
+
+    required_fields = [
+        "amount",
+        "held_by_user_email",
+        "held_by_user_id",
+        "quantity",
+        "seat_ids",
+        "seat_numbers",
+        "transaction_id",
+        "user_email",
+        "user_id"
+    ]
+
+    for field in required_fields:
+        if not request.data.get(field):
+            return None, Response({"Field_missing": f"{field} is required"}, status=400)
+
+    return True, None
+
 def _handle_create_transaction(request):
+    payload_legit, invalid = _request_payload_verify(request)
+    if invalid:
+        return invalid
+
     transaction_id, error_response = _parse_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response
 
     seat_ids = request.data.get("seat_ids")
-    if not seat_ids and request.data.get("seat_id"):
-        seat_ids = [request.data.get("seat_id")]
-    if not seat_ids and request.data.get("product_id"):
-        seat_ids = [request.data.get("product_id")]
-        
     seat_numbers = request.data.get("seat_numbers", "")
+
     quantity = request.data.get("quantity", len(seat_ids) if seat_ids else 1)
     amount = request.data.get("amount", 500)
 
@@ -1044,9 +1065,6 @@ def _create_transaction_idempotent(
 
 
 def _parse_transaction_id(raw_tid):
-    if raw_tid is None:
-        return str(uuid.uuid4()), None
-    
     try: 
         return str(uuid.UUID(raw_tid)), None
     except (ValueError, AttributeError):
