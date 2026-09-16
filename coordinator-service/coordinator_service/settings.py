@@ -108,7 +108,6 @@ CORS_ALLOW_HEADERS = [
     "x-csrftoken",
     "x-requested-with",
     "x-correlation-id",
-    "x-actor-id",
     "x-user-id",
     "x-user-email",
 ]
@@ -120,7 +119,6 @@ CORS_EXPOSE_HEADERS = [
     "x-page-limit",
     "x-page-offset",
     "x-correlation-id",
-    "x-actor-id",
     "x-user-id",
     "x-user-email",
     "content-type",

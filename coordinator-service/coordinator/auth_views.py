@@ -102,6 +102,8 @@ def _email_hash(email):
 
 
 def _create_jwt(user_id, email, expires_in=None, actor_id=None):
+    """A JSON Web Token (JWT) is just a single string made of 3 parts separated by dots (.)"""
+
     header = {"alg": "HS256", "typ": "JWT"}
     now = int(time.time())
     uid = user_id or actor_id
@@ -116,7 +118,6 @@ def _create_jwt(user_id, email, expires_in=None, actor_id=None):
         "exp": now + expires_in
     }
 
-    """A JSON Web Token (JWT) is just a single string made of 3 parts separated by dots (.)"""
 
     def b64url(data_bytes):
         # 1. base64: Translates any messy sequence of bytes into a clean, universally safe alphabet of 64 printable ASCII characters.
@@ -138,10 +139,13 @@ def _create_jwt(user_id, email, expires_in=None, actor_id=None):
     # Convert the server's private secret key to bytes
     secret = settings.SECRET_KEY.encode("utf-8")
 
-
+    # hmac.new(secret, signing_input, hashlib.sha256) -> Creates a HMAC object
+    # .digest() -> Actually extracts 32 raw bytes from the object
     sig = hmac.new(secret, signing_input, hashlib.sha256).digest()
-    sig_str = b64url(sig)
+    sig_str = b64url(sig) # Convert signature bytes to a URL-safe Base64 string
 
+
+    # JWT token
     return f"{h_str}.{p_str}.{sig_str}"
 
 
@@ -162,15 +166,20 @@ def verify_jwt(token):
         rem = len(s) % 4
         if rem > 0:
             s += "=" * (4 - rem)
-        return base64.urlsafe_b64decode(s.encode("utf-8"))
+
+        # .encode("utf-8") turns the Base64 scrambled text into bytes.
+        return base64.urlsafe_b64decode(s.encode("utf-8")) # Base64 String (b'eyJ1c2Vy...') -> Raw bytes (b'{"user_id":"123"}')
 
     try:
         actual_sig = b64url_decode(sig_str)
+
+        # avoided using '!=' because it exits on the first mismatched byte,
+        # leaking timing information. hmac.compare_digest compares in constant time.
         if not hmac.compare_digest(actual_sig, expected_sig):
             return None, "Invalid token signature"
 
-        payload_json = b64url_decode(p_str).decode("utf-8")
-        payload = json.loads(payload_json)
+        payload_json = b64url_decode(p_str).decode("utf-8") # .decode("utf-8") -> JSON string '{"user_id":"123"}'
+        payload = json.loads(payload_json) # json.loads(): '{"user_id":"123"}' -> {"user_id": "123"}
 
         if "exp" in payload and payload["exp"] < int(time.time()):
             return None, "Token has expired"
