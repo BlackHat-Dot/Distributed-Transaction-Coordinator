@@ -709,6 +709,23 @@ def get_me(request):
 def heartbeat(request):
     """
     Extends the TTL of the user's active session in Redis and cache.
+
+    WHY SESSION_SUPERSEDED EXISTS (The "Sleeping Laptop / Zombie Token" Scenario):
+    Although send_otp and verify_otp block concurrent logins when an active session
+    key exists (CONCURRENT_LOGIN_BLOCKED), two valid JWTs can still exist concurrently:
+      1. Device A logs in, gets a JWT valid for 30 minutes, and sets a 30s session TTL.
+      2. Device A sleeps (closes laptop lid / loses Wi-Fi). Its heartbeats stop.
+      3. After 30 seconds, dtc:session:{email} in Redis expires and vanishes.
+         (Note: Device A's JWT is still mathematically valid for ~29 more minutes).
+      4. Device B now attempts login. Because the Redis key has expired, Device B passes
+         the single-device guard at send_otp/verify_otp, gets a new JWT (sid_B), and sets
+         dtc:session:{email} = sid_B.
+      5. Device A wakes up / reconnects to Wi-Fi. Its browser immediately fires heartbeat
+         with its still-valid JWT (sid_A).
+      6. Without this check, Device A would blindly overwrite dtc:session:{email} = sid_A,
+         stealing the session back or causing the two devices to fight.
+      7. With this check, Device A detects active_sid (sid_B) != token_sid (sid_A), gets
+         401 SESSION_SUPERSEDED, and is logged out, protecting Device B's active session.
     """
     user_info = get_user_from_request(request)
     if not user_info or not user_info.get("is_authenticated"):
@@ -724,9 +741,11 @@ def heartbeat(request):
 
     if client:
         try:
+            # Fetch from Redis the session ID of whoever is supposed to be the active device
             raw_val = client.get(session_key)
             if raw_val:
                 active_sid = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else raw_val
+                
                 if token_sid and active_sid and active_sid != token_sid:
                     return Response({
                         "error": "Session superseded by another login.",
