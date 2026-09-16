@@ -248,10 +248,13 @@ CELERY_TASK_IGNORE_RESULT = True
 
 CELERY_TIMEZONE = "Asia/Kolkata"
 
+CELERY_TASK_DEFAULT_QUEUE = "coordinator_queue"
+
 CELERY_BEAT_SCHEDULE = {
     "recover_stuck_transactions_every_90_seconds": {
         "task": "coordinator.tasks.recover_stuck_transactions",
         "schedule": 90.0,
+        "options": {"queue": "coordinator_queue"},
     },
 }
 

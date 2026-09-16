@@ -673,6 +673,13 @@ async function handleSendOtp() {
           duration: 8000,
         });
       }
+    } else if (res.status === 409 || (res.data && res.data.code === "CONCURRENT_LOGIN_BLOCKED")) {
+      showToast({
+        title: "Device Already Active",
+        message: (res.data && res.data.message) || "Another device is currently logged in with this email. Please sign out from that device first or wait for the session to expire.",
+        type: "warning",
+        duration: 9000,
+      });
     } else if (res.status === 429) {
       showToast({
         title: "Account Blocked",
@@ -732,6 +739,13 @@ async function handleVerifyOtp() {
       });
 
       renderAuthStep(3);
+    } else if (res.status === 409 || (res.data && res.data.code === "CONCURRENT_LOGIN_BLOCKED")) {
+      showToast({
+        title: "Device Already Active",
+        message: (res.data && res.data.message) || "Another device is currently logged in with this email. Please sign out from that device first or wait for the session to expire.",
+        type: "warning",
+        duration: 9000,
+      });
     } else {
       showToast({
         title: "Verification Failed",
@@ -747,7 +761,7 @@ async function handleVerifyOtp() {
   }
 }
 
-function handleLogout() {
+function handleLogout(opts = {}) {
   const token = localStorage.getItem("dtc_auth_token");
   if (token) {
     fetch(`${CONFIG.coordinatorUrl}/auth/logout/`, {
@@ -775,7 +789,23 @@ function handleLogout() {
     updateBottomPayBar();
   }
 
-  // Clear active hold state if user was holding seats
+  // Release active hold on inventory service immediately if user was holding seats
+  const holdDataRaw = localStorage.getItem("dtc_hold_data");
+  let holdData = STATE.myHold;
+  if (!holdData && holdDataRaw) {
+    try { holdData = JSON.parse(holdDataRaw); } catch(e) {}
+  }
+  if (holdData && (holdData.seatIds || holdData.seatId) && holdData.txId) {
+    const targetIds = holdData.seatIds || [holdData.seatId];
+    fetch(`${CONFIG.inventoryUrl}/seats/release/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transaction_id: holdData.txId, seat_ids: targetIds }),
+      keepalive: true,
+    }).catch(() => {});
+    targetIds.forEach(id => applySeatTileDOMState(id, "AVAILABLE"));
+  }
+
   if (STATE.myHold) {
     if (STATE.myHold.timerInterval) clearInterval(STATE.myHold.timerInterval);
     STATE.myHold = null;
@@ -783,12 +813,14 @@ function handleLogout() {
     hideHoldTimer();
     updateCheckoutSummary();
     updateMatrixHoldState();
+    loadCatalog(false);
   }
 
   showToast({
-    title: "Signed Out",
-    message: "Identity detached. Live seat reservations will require signing in again.",
-    type: "info",
+    title: opts.title || "Signed Out",
+    message: opts.message || "Identity detached. Live seat reservations will require signing in again.",
+    type: opts.type || "info",
+    duration: 6000,
   });
 
   // Prompt the user to sign back in
@@ -813,16 +845,45 @@ setInterval(() => {
     fetch(`${CONFIG.coordinatorUrl}/auth/heartbeat/`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}` }
-    }).then(res => {
+    }).then(async res => {
       if (res.status === 401 || res.status === 403) {
-        handleLogout(); // Auto-logout if session expired
+        let isSuperseded = false;
+        try {
+          const errData = await res.json();
+          if (errData && errData.code === "SESSION_SUPERSEDED") isSuperseded = true;
+        } catch(e) {}
+        handleLogout({
+          title: isSuperseded ? "Signed Out on Another Device" : "Session Expired",
+          message: isSuperseded
+            ? "Your account was logged into on another device. You have been signed out on this device."
+            : "Your session has expired. Please sign in again.",
+          type: "warning"
+        });
       }
     }).catch(() => {});
   }
 }, heartbeatInterval);
 
-// Tab Close Session Cleanup
-window.addEventListener("beforeunload", () => {
+// Tab Close / Browser Exit Cleanup (Releases Held Seats & Session Immediately)
+function handleTabExitCleanup() {
+  // 1. Release active hold on Inventory Service immediately via keepalive
+  const holdDataRaw = localStorage.getItem("dtc_hold_data");
+  let holdData = STATE.myHold;
+  if (!holdData && holdDataRaw) {
+    try { holdData = JSON.parse(holdDataRaw); } catch(e) {}
+  }
+  if (holdData && (holdData.seatIds || holdData.seatId) && holdData.txId) {
+    const targetIds = holdData.seatIds || [holdData.seatId];
+    fetch(`${CONFIG.inventoryUrl}/seats/release/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transaction_id: holdData.txId, seat_ids: targetIds }),
+      keepalive: true
+    }).catch(() => {});
+    localStorage.removeItem("dtc_hold_data");
+  }
+
+  // 2. Clear coordinator session
   const token = localStorage.getItem("dtc_auth_token");
   if (token) {
     fetch(`${CONFIG.coordinatorUrl}/auth/logout/`, {
@@ -831,7 +892,10 @@ window.addEventListener("beforeunload", () => {
       keepalive: true
     }).catch(() => {});
   }
-});
+}
+
+window.addEventListener("beforeunload", handleTabExitCleanup);
+window.addEventListener("pagehide", handleTabExitCleanup);
 
 document.addEventListener("DOMContentLoaded", () => {
   if (STATE.user && STATE.user.token && isTokenExpired(STATE.user.token)) {

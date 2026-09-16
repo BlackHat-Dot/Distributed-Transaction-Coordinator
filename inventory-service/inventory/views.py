@@ -37,30 +37,59 @@ def event_list(request):
     serializer = EventSerializer(events, many=True)
     return Response(serializer.data)
 
-@api_view(["GET"])
-def seat_list(request):
-    # ── Option C: Piggyback Sweep ──────────────────────────────────────────────
-    # Every time the seat map is loaded, immediately release any expired holds
-    # in PostgreSQL so the DB always reflects truth for the requesting user.
+def reclaim_expired_holds():
+    """
+    Reclaims seats that are expired by time (held_until < now) OR abandoned by user
+    (user exited browser/website, causing their Redis heartbeat session dtc:session:{email} to expire).
+    """
     now = timezone.now()
-    expired_ids = list(
-        Seat.objects.filter(
-            status=Seat.Status.HELD,
-            held_until__lt=now,
-        ).values_list("id", flat=True)
-    )
-    if expired_ids:
-        Reservation.objects.filter(
+    held_seats = list(Seat.objects.filter(status=Seat.Status.HELD))
+    if not held_seats:
+        return 0, 0
+
+    expired_ids = set()
+    redis_client = get_redis_client()
+
+    for seat in held_seats:
+        # 1. Time-based expiry (10m hold elapsed)
+        if seat.held_until and seat.held_until < now:
+            expired_ids.add(seat.id)
+            continue
+
+        # 2. Presence-based expiry (dead-man's switch: user exited browser / logged out)
+        if seat.user_email and seat.user_email != "anonymous@dtc.io" and redis_client:
+            try:
+                if not redis_client.exists(f"dtc:session:{seat.user_email}"):
+                    expired_ids.add(seat.id)
+            except Exception:
+                pass
+
+    if not expired_ids:
+        return 0, 0
+
+    with transaction.atomic():
+        released = Reservation.objects.filter(
             seat_id__in=expired_ids,
             status=Reservation.Status.RESERVED,
         ).update(status=Reservation.Status.RELEASED)
-        Seat.objects.filter(id__in=expired_ids).update(
+
+        reclaimed = Seat.objects.filter(id__in=expired_ids).update(
             status=Seat.Status.AVAILABLE,
             held_until=None,
             held_by_transaction_id=None,
             user_id=None,
             user_email=None,
         )
+
+    return reclaimed, released
+
+
+@api_view(["GET"])
+def seat_list(request):
+    # ── Option C: Piggyback Sweep ──────────────────────────────────────────────
+    # Every time the seat map is loaded, immediately release any expired or abandoned holds
+    # in PostgreSQL so the DB always reflects truth for the requesting user.
+    reclaim_expired_holds()
     # ── End Piggyback Sweep ────────────────────────────────────────────────────
 
     if Seat.objects.count() == 0:
@@ -432,33 +461,10 @@ def reset_seats(request):
 @api_view(["POST"])
 def sweep_expired_holds(request):
     """
-    Sweeps expired seat holds and marks them as AVAILABLE.
+    Sweeps expired and abandoned seat holds and marks them as AVAILABLE.
     Pure background management / maintenance endpoint.
     """
-    now = timezone.now()
-    with transaction.atomic():
-        expired_seats = list(
-            Seat.objects.select_for_update().filter(
-                status=Seat.Status.HELD,
-                held_until__lt=now,
-            )
-        )
-        reclaimed_count = len(expired_seats)
-        if reclaimed_count > 0:
-            expired_seat_ids = [s.id for s in expired_seats]
-            Reservation.objects.filter(
-                seat_id__in=expired_seat_ids,
-                status=Reservation.Status.RESERVED,
-            ).update(status=Reservation.Status.RELEASED)
-
-            Seat.objects.filter(id__in=expired_seat_ids).update(
-                status=Seat.Status.AVAILABLE,
-                held_until=None,
-                held_by_transaction_id=None,
-                user_id=None,
-                user_email=None,
-            )
-
+    reclaimed_count, _ = reclaim_expired_holds()
     return Response({
         "message": f"Swept {reclaimed_count} expired seat hold(s).",
         "reclaimed_count": reclaimed_count,

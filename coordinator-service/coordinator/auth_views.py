@@ -7,6 +7,7 @@ import secrets
 import sys
 import threading
 import time
+import uuid
 import redis
 import resend
 from django.conf import settings
@@ -101,7 +102,7 @@ def _email_hash(email):
     return hashlib.sha256(email.encode("utf-8")).hexdigest()[:20]
 
 
-def _create_jwt(user_id, email, expires_in=None):
+def _create_jwt(user_id, email, session_id=None, expires_in=None):
     """A JSON Web Token (JWT) is just a single string made of 3 parts separated by dots (.)"""
 
     header = {"alg": "HS256", "typ": "JWT"}
@@ -116,6 +117,8 @@ def _create_jwt(user_id, email, expires_in=None):
         "iat": now,
         "exp": now + expires_in
     }
+    if session_id:
+        payload["sid"] = session_id
 
 
     def b64url(data_bytes):
@@ -159,9 +162,11 @@ def verify_jwt(token):
     h_str, p_str, sig_str = parts
     signing_input = f"{h_str}.{p_str}".encode("utf-8")
     secret = settings.SECRET_KEY.encode("utf-8")
+
     expected_sig = hmac.new(secret, signing_input, hashlib.sha256).digest()
 
     def b64url_decode(s):
+        # Base64 strings must have a length divisible by 4; restore any stripped '=' padding
         rem = len(s) % 4
         if rem > 0:
             s += "=" * (4 - rem)
@@ -204,10 +209,12 @@ def get_user_from_request(request):
         if payload:
             uid = payload.get("user_id")
             uemail = payload.get("user_email") or payload.get("email")
+            sid = payload.get("sid")
             return {
                 "user_id": uid,
                 "user_email": uemail,
                 "email": uemail,
+                "sid": sid,
                 "is_authenticated": True
             }
 
@@ -293,6 +300,32 @@ def send_otp(request):
     is_dev_mode = _is_dev_auth_mode()
     client = _get_redis_client()
     chances_remaining = 10
+
+    # Single-Device Guard: Reject new login attempts if an active session already exists for this email
+    session_key = f"dtc:session:{email}"
+    session_active = False
+    if client:
+        try:
+            if client.exists(session_key):
+                session_active = True
+        except Exception:
+            pass
+    if not session_active:
+        try:
+            if cache.get(session_key):
+                session_active = True
+        except Exception:
+            pass
+
+    if session_active:
+        return Response(
+            {
+                "error": "Another device is currently logged in with this email.",
+                "code": "CONCURRENT_LOGIN_BLOCKED",
+                "message": "Another device is currently logged in with this email. Please sign out from that device first or wait for the session to expire.",
+            },
+            status=409,
+        )
 
     # In production/testing: enforce IP+email block, cooldown, abandonment tracking, and daily limit
     if not is_dev_mode:
@@ -479,6 +512,32 @@ def verify_otp(request):
     is_dev_mode = _is_dev_auth_mode()
     client = _get_redis_client()
 
+    # Single-Device Guard: Reject verification if an active session already exists for this email
+    session_key = f"dtc:session:{email}"
+    session_active = False
+    if client:
+        try:
+            if client.exists(session_key):
+                session_active = True
+        except Exception:
+            pass
+    if not session_active:
+        try:
+            if cache.get(session_key):
+                session_active = True
+        except Exception:
+            pass
+
+    if session_active:
+        return Response(
+            {
+                "error": "Another device is currently logged in with this email.",
+                "code": "CONCURRENT_LOGIN_BLOCKED",
+                "message": "Another device is currently logged in with this email. Please sign out from that device first or wait for the session to expire.",
+            },
+            status=409,
+        )
+
     client_ip = _get_client_ip(request)
     block_key = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
     fail_key = f"dtc:ip_fail:{client_ip}:{_email_hash(email)}"
@@ -603,15 +662,20 @@ def verify_otp(request):
     except Exception:
         pass
 
-    user_id = _generate_user_id(email)
-    jwt_expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "1800"))
-    jwt_token = _create_jwt(user_id=user_id, email=email, expires_in=jwt_expires_in)
-
-    if client and not is_dev_mode:
+    session_id = uuid.uuid4().hex
+    if client:
         try:
-            client.setex(f"dtc:session:{email}", 30, "active")
+            client.setex(session_key, 30, session_id)
         except Exception:
             pass
+    try:
+        cache.set(session_key, session_id, timeout=30)
+    except Exception:
+        pass
+
+    user_id = _generate_user_id(email)
+    jwt_expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "1800"))
+    jwt_token = _create_jwt(user_id=user_id, email=email, session_id=session_id, expires_in=jwt_expires_in)
 
     return Response({
         "success": True,
@@ -632,6 +696,7 @@ def get_me(request):
     """
     user_info = get_user_from_request(request)
     if not user_info:
+        # Returned None
         return Response({"authenticated": False, "user": None}, status=401)
 
     return Response({
@@ -643,20 +708,44 @@ def get_me(request):
 @api_view(["POST"])
 def heartbeat(request):
     """
-    Extends the TTL of the user's active session in Redis.
+    Extends the TTL of the user's active session in Redis and cache.
     """
     user_info = get_user_from_request(request)
     if not user_info or not user_info.get("is_authenticated"):
         return Response({"error": "Unauthorized"}, status=401)
     
     email = user_info.get("email")
-    if email and not _is_dev_auth_mode():
-        client = _get_redis_client()
-        if client:
-            try:
-                client.setex(f"dtc:session:{email}", 30, "active")
-            except Exception:
-                pass
+    if not email:
+        return Response({"error": "Missing email"}, status=400)
+
+    token_sid = user_info.get("sid")
+    session_key = f"dtc:session:{email}"
+    client = _get_redis_client()
+
+    if client:
+        try:
+            raw_val = client.get(session_key)
+            if raw_val:
+                active_sid = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else raw_val
+                if token_sid and active_sid and active_sid != token_sid:
+                    return Response({
+                        "error": "Session superseded by another login.",
+                        "code": "SESSION_SUPERSEDED"
+                    }, status=401)
+            client.setex(session_key, 30, token_sid or "active")
+        except Exception:
+            pass
+
+    try:
+        cache_sid = cache.get(session_key)
+        if cache_sid and token_sid and cache_sid != token_sid:
+            return Response({
+                "error": "Session superseded by another login.",
+                "code": "SESSION_SUPERSEDED"
+            }, status=401)
+        cache.set(session_key, token_sid or cache_sid or "active", timeout=30)
+    except Exception:
+        pass
                 
     return Response({"status": "alive"}, status=200)
 
@@ -664,16 +753,21 @@ def heartbeat(request):
 @api_view(["POST"])
 def logout(request):
     """
-    Deletes the user's active session in Redis.
+    Deletes the user's active session in Redis and cache.
     """
     user_info = get_user_from_request(request)
     if user_info and user_info.get("email"):
         email = user_info.get("email")
+        session_key = f"dtc:session:{email}"
         client = _get_redis_client()
         if client:
             try:
-                client.delete(f"dtc:session:{email}")
+                client.delete(session_key)
             except Exception:
                 pass
+        try:
+            cache.delete(session_key)
+        except Exception:
+            pass
                 
     return Response({"status": "logged_out"}, status=200)

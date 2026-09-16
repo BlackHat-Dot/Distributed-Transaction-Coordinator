@@ -2840,9 +2840,22 @@ function setupMainAuthEventListeners() {
       fetch(`${CONFIG.coordinatorUrl}/auth/heartbeat/`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
-      }).then(res => {
+      }).then(async res => {
         if (res.status === 401 || res.status === 403) {
+          let isSuperseded = false;
+          try {
+            const errData = await res.json();
+            if (errData && errData.code === "SESSION_SUPERSEDED") isSuperseded = true;
+          } catch(e) {}
           if (btnLogout) btnLogout.click(); // Auto-logout if session expired
+          if (isSuperseded) {
+            showToast({
+              title: "Signed Out on Another Device",
+              message: "Your account was logged into on another device. You have been signed out on this device.",
+              type: "warning",
+              duration: 9000,
+            });
+          }
         }
       }).catch(() => {});
     }
@@ -2927,6 +2940,13 @@ async function handleMainSendOtp() {
           duration: 8000,
         });
       }
+    } else if (res.status === 409 || (res.data && res.data.code === "CONCURRENT_LOGIN_BLOCKED")) {
+      showToast({
+        title: "Device Already Active",
+        message: (res.data && res.data.message) || "Another device is currently logged in with this email. Please sign out from that device first or wait for the session to expire.",
+        type: "warning",
+        duration: 9000,
+      });
     } else if (res.status === 429) {
       showToast({
         title: "Account Blocked",
@@ -2989,6 +3009,13 @@ async function handleMainVerifyOtp() {
 
       renderMainAuthStep(3);
       fetchTransactionsFeed();
+    } else if (res.status === 409 || (res.data && res.data.code === "CONCURRENT_LOGIN_BLOCKED")) {
+      showToast({
+        title: "Device Already Active",
+        message: (res.data && res.data.message) || "Another device is currently logged in with this email. Please sign out from that device first or wait for the session to expire.",
+        type: "warning",
+        duration: 9000,
+      });
     } else {
       showToast({
         title: "Verification Failed",

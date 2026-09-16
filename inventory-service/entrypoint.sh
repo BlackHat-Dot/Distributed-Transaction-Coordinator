@@ -91,7 +91,7 @@ stderr_logfile=/dev/stderr
 stderr_logfile_maxbytes=0
 
 [program:celery_worker]
-command=celery -A inventory_service worker -l info --concurrency=2
+command=celery -A inventory_service worker -l info --concurrency=2 -Q inventory_queue
 directory=${APP_DIR}
 environment=PYTHONPATH="${APP_DIR}"
 autostart=true
