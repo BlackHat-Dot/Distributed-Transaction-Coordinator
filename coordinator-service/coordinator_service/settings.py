@@ -258,6 +258,24 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
+
+"""
+
+"format": "%(asctime)s [%(levelname)s] [correlation_id=%(correlation_id)s] %(name)s: %(message)s
+
+Above string is formatted like : % record.__dict__
+Source code:
+
+    def _format(self, record):
+        if defaults := self._defaults:
+            values = defaults | record.__dict__
+        else:
+            values = record.__dict__
+        return self._fmt % values
+
+"""
+
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
