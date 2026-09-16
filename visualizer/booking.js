@@ -246,12 +246,14 @@ function saveHoldToStorage(hold) {
 function clearHoldFromStorage() {
   try {
     localStorage.removeItem(HOLD_STORAGE_KEY);
+    localStorage.removeItem("dtc_active_seat_hold");
+    localStorage.removeItem("dtc_hold_data");
   } catch (e) {}
 }
 
 function restoreHoldFromStorage() {
   try {
-    const raw = localStorage.getItem(HOLD_STORAGE_KEY);
+    const raw = localStorage.getItem(HOLD_STORAGE_KEY) || localStorage.getItem("dtc_hold_data");
     if (!raw) return;
     const data = JSON.parse(raw);
     if (!data || !data.seatId || !data.heldUntil) {
@@ -273,9 +275,9 @@ function restoreHoldFromStorage() {
       timerInterval: null,
     };
 
-    startHoldTimer(data.heldUntil);
-    updateCheckoutSummary();
-    updateMatrixHoldState();
+    // Note: Do NOT call startHoldTimer here. loadCatalog() verifies with the database in <100ms.
+    // If the seat is genuinely still held by this user, loadCatalog() starts the timer and updates the UI.
+    // If the seat was swept or released on exit, loadCatalog() clears STATE.myHold and keeps the timer hidden.
   } catch (e) {
     clearHoldFromStorage();
   }
@@ -790,7 +792,7 @@ function handleLogout(opts = {}) {
   }
 
   // Release active hold on inventory service immediately if user was holding seats
-  const holdDataRaw = localStorage.getItem("dtc_hold_data");
+  const holdDataRaw = localStorage.getItem(HOLD_STORAGE_KEY) || localStorage.getItem("dtc_hold_data");
   let holdData = STATE.myHold;
   if (!holdData && holdDataRaw) {
     try { holdData = JSON.parse(holdDataRaw); } catch(e) {}
@@ -809,12 +811,12 @@ function handleLogout(opts = {}) {
   if (STATE.myHold) {
     if (STATE.myHold.timerInterval) clearInterval(STATE.myHold.timerInterval);
     STATE.myHold = null;
-    clearHoldFromStorage();
-    hideHoldTimer();
-    updateCheckoutSummary();
-    updateMatrixHoldState();
-    loadCatalog(false);
   }
+  clearHoldFromStorage();
+  hideHoldTimer();
+  updateCheckoutSummary();
+  updateMatrixHoldState();
+  loadCatalog(false);
 
   showToast({
     title: opts.title || "Signed Out",
@@ -867,7 +869,7 @@ setInterval(() => {
 // Tab Close / Browser Exit Cleanup (Releases Held Seats & Session Immediately)
 function handleTabExitCleanup() {
   // 1. Release active hold on Inventory Service immediately via keepalive
-  const holdDataRaw = localStorage.getItem("dtc_hold_data");
+  const holdDataRaw = localStorage.getItem(HOLD_STORAGE_KEY) || localStorage.getItem("dtc_hold_data");
   let holdData = STATE.myHold;
   if (!holdData && holdDataRaw) {
     try { holdData = JSON.parse(holdDataRaw); } catch(e) {}
@@ -880,8 +882,8 @@ function handleTabExitCleanup() {
       body: JSON.stringify({ transaction_id: holdData.txId, seat_ids: targetIds }),
       keepalive: true
     }).catch(() => {});
-    localStorage.removeItem("dtc_hold_data");
   }
+  clearHoldFromStorage();
 
   // 2. Clear coordinator session
   const token = localStorage.getItem("dtc_auth_token");
@@ -1101,7 +1103,7 @@ async function loadCatalog(isInitial = false) {
 
     if (ownerSeatIds.length > 0) {
       const currentIds = STATE.myHold && STATE.myHold.seatIds ? STATE.myHold.seatIds : [];
-      if (!STATE.myHold || currentIds.length !== ownerSeatIds.length) {
+      if (!STATE.myHold || currentIds.length !== ownerSeatIds.length || STATE.myHold.txId !== ownerTxId) {
         STATE.myHold = {
           seatId: ownerSeatIds[0],
           seatIds: ownerSeatIds,
@@ -1111,9 +1113,23 @@ async function loadCatalog(isInitial = false) {
           timerInterval: STATE.myHold ? STATE.myHold.timerInterval : null
         };
         saveHoldToStorage(STATE.myHold);
-        if (!STATE.myHold || !STATE.myHold.timerInterval) startHoldTimer(ownerHeldUntil);
-        updateCheckoutSummary();
       }
+      if (!STATE.myHold.timerInterval) {
+        startHoldTimer(ownerHeldUntil);
+      }
+      updateCheckoutSummary();
+      updateMatrixHoldState();
+    } else {
+      // Database ground truth: User has ZERO active holds.
+      // Clean up any stale local hold object, clear storage, and ensure timer is hidden.
+      if (STATE.myHold) {
+        if (STATE.myHold.timerInterval) clearInterval(STATE.myHold.timerInterval);
+        STATE.myHold = null;
+      }
+      clearHoldFromStorage();
+      hideHoldTimer();
+      updateCheckoutSummary();
+      updateMatrixHoldState();
     }
 
     if (isInitial || !DOM.seatMatrix || DOM.seatMatrix.children.length === 0) {
@@ -1663,8 +1679,10 @@ function setupBeaconUnloadHandler() {
    ========================================================================== */
 
 function startHoldTimer(heldUntilIso) {
+  if (!DOM.holdTimerCard) DOM.holdTimerCard = document.getElementById("hold-timer-card");
   if (!DOM.holdTimerCard) return;
   DOM.holdTimerCard.classList.remove("hidden");
+  DOM.holdTimerCard.style.display = "";
 
   if (STATE.myHold && STATE.myHold.timerInterval) clearInterval(STATE.myHold.timerInterval);
 
@@ -1697,7 +1715,11 @@ function startHoldTimer(heldUntilIso) {
 }
 
 function hideHoldTimer() {
-  if (DOM.holdTimerCard) DOM.holdTimerCard.classList.add("hidden");
+  if (!DOM.holdTimerCard) DOM.holdTimerCard = document.getElementById("hold-timer-card");
+  if (DOM.holdTimerCard) {
+    DOM.holdTimerCard.classList.add("hidden");
+    DOM.holdTimerCard.style.display = "none";
+  }
 }
 
 function handleHoldAutoExpired() {
