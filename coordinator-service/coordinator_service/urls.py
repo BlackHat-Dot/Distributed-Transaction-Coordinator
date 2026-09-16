@@ -22,11 +22,13 @@ from coordinator.auth_views import (
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('health/', health_check),
+
     path('auth/send-otp/', send_otp),
     path('auth/verify-otp/', verify_otp),
     path('auth/me/', get_me),
     path('auth/heartbeat/', heartbeat),
     path('auth/logout/', logout),
+    
     path("transactions/", transactions_endpoint),
     path("transactions/<uuid:transaction_id>/retry-compensation/",
          retry_compensation),
