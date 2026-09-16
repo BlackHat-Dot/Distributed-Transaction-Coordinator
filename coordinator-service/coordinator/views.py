@@ -12,7 +12,7 @@ from django.db import IntegrityError, transaction
 from .models import Transaction, SagaEvent
 from .saga_log import _set_status_with_event
 from .middleware import get_correlation_id
-from coordinator.auth_views import get_actor_from_request
+from coordinator.auth_views import get_user_from_request
 
 
 @api_view(["GET"])
@@ -80,8 +80,8 @@ def _create_transaction_idempotent(
         )
 
 
-def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, actor_id=None, user_id=None, user_email=None, held_by_user_id=None, held_by_user_email=None):
-    uid = user_id or held_by_user_id or actor_id or "usr_demo_user"
+def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=None, user_email=None, held_by_user_id=None, held_by_user_email=None):
+    uid = user_id or held_by_user_id or "usr_demo_user"
     uemail = user_email or held_by_user_email or "demo@dtc.io"
     headers = {
         "X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id),
@@ -89,7 +89,6 @@ def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, actor_id=N
     }
     if uid:
         headers["X-User-ID"] = str(uid)
-        headers["X-Actor-ID"] = str(uid)
     if uemail:
         headers["X-User-Email"] = str(uemail)
     try:
@@ -102,7 +101,6 @@ def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, actor_id=N
                 "user_email": uemail,
                 "held_by_user_id": uid,
                 "held_by_user_email": uemail,
-                "actor_id": uid,
             },
             headers=headers,
             timeout=REQUEST_TIMEOUT,
@@ -385,7 +383,6 @@ def _charge_payment(
     headers = {"X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id)}
     if uid:
         headers["X-User-ID"] = str(uid)
-        headers["X-Actor-ID"] = str(uid)
     if uemail:
         headers["X-User-Email"] = str(uemail)
 
@@ -472,7 +469,7 @@ def _run_saga_pipeline(
     fail_compensation=False,
     correlation_id=None,
     actor=SagaEvent.ACTOR_REQUEST,
-    actor_id=None,
+
     user_id=None,
     user_email=None,
     held_by_user_id=None,
@@ -480,14 +477,13 @@ def _run_saga_pipeline(
 ):
     correlation_id = correlation_id or str(transaction_id)
     seat_ids = seat_ids or [1]
-    uid = user_id or held_by_user_id or actor_id or "usr_demo_user"
+    uid = user_id or held_by_user_id or "usr_demo_user"
     uemail = user_email or held_by_user_email or "demo@dtc.io"
 
     response, reserve_error = _reserve_inventory(
         transaction_id,
         seat_ids,
         correlation_id=correlation_id,
-        actor_id=uid,
         user_id=uid,
         user_email=uemail,
         held_by_user_id=uid,
@@ -592,7 +588,7 @@ def _handle_create_transaction(request):
     is_testing = getattr(settings, "IS_TESTING", False) or 'test' in sys.argv
     is_dev = getattr(settings, "DEBUG", False)
 
-    actor_info = get_actor_from_request(request)
+    user_info = get_user_from_request(request)
     has_internal_key = bool(
         request.headers.get("X-Internal-Service-Key")
         and request.headers.get("X-Internal-Service-Key") == INTERNAL_SERVICE_KEY
@@ -602,14 +598,13 @@ def _handle_create_transaction(request):
         and request.headers.get("X-Staff-Key") == os.getenv("STAFF_API_KEY", "dtc-internal-staff-secret")
     )
 
-    if actor_info and actor_info.get("is_authenticated"):
-        user_id = actor_info.get("user_id") or actor_info.get("actor_id")
-        user_email = actor_info.get("user_email") or actor_info.get("email")
+    if user_info and user_info.get("is_authenticated"):
+        user_id = user_info.get("user_id")
+        user_email = user_info.get("user_email") or user_info.get("email")
     elif has_internal_key or has_staff_key:
         user_id = (
             request.data.get("user_id")
             or request.data.get("held_by_user_id")
-            or request.data.get("actor_id")
             or request.headers.get("X-User-ID")
             or "usr_internal"
         )
@@ -624,9 +619,7 @@ def _handle_create_transaction(request):
         user_id = (
             request.data.get("user_id")
             or request.data.get("held_by_user_id")
-            or request.data.get("actor_id")
             or request.headers.get("X-User-ID")
-            or request.headers.get("X-Actor-ID")
             or "usr_demo_user"
         )
         user_email = (
@@ -677,7 +670,6 @@ def _handle_create_transaction(request):
                 amount=amount,
                 fail_compensation=fail_compensation,
                 correlation_id=correlation_id,
-                actor_id=user_id,
                 user_id=user_id,
                 user_email=user_email,
                 held_by_user_id=user_id,
@@ -709,7 +701,6 @@ def _handle_create_transaction(request):
         fail_compensation=fail_compensation,
         correlation_id=correlation_id,
         actor=SagaEvent.ACTOR_REQUEST,
-        actor_id=user_id,
         user_id=user_id,
         user_email=user_email,
         held_by_user_id=user_id,
@@ -738,7 +729,6 @@ def _serialize_transaction(txn):
         "user_email": txn.user_email,
         "held_by_user_id": txn.user_id,
         "held_by_user_email": txn.user_email,
-        "actor_id": txn.user_id,
         "status": txn.status,
         "is_terminal": txn.status in terminal_statuses,
         "seat_ids": txn.seat_ids,
@@ -850,14 +840,14 @@ def retry_compensation(request, transaction_id):
 def _get_requester_identity(request):
     """
     Extracts authenticated user identity, staff status, and authentication flag.
-    Supports JWT Bearer token via get_actor_from_request, Django request.user,
+    Supports JWT Bearer token via get_user_from_request, Django request.user,
     and internal staff key.
     """
     from django.conf import settings
     is_testing = getattr(settings, "IS_TESTING", False) or 'test' in sys.argv
     is_dev = getattr(settings, "DEBUG", False)
 
-    actor_info = get_actor_from_request(request)
+    user_info = get_user_from_request(request)
     is_staff = False
     auth_user_id = None
     is_authenticated = False
@@ -866,10 +856,10 @@ def _get_requester_identity(request):
         is_authenticated = True
         is_staff = getattr(request.user, "is_staff", False)
         auth_user_id = str(request.user.id) if hasattr(request.user, "id") else request.user.get_username()
-    elif actor_info and actor_info.get("is_authenticated"):
+    elif user_info and user_info.get("is_authenticated"):
         is_authenticated = True
-        is_staff = bool(actor_info.get("is_staff")) or actor_info.get("email", "").endswith("@dtc.admin")
-        auth_user_id = actor_info.get("user_id")
+        is_staff = bool(user_info.get("is_staff")) or user_info.get("email", "").endswith("@dtc.admin")
+        auth_user_id = user_info.get("user_id")
     elif request.headers.get("X-Staff-Key") and request.headers.get("X-Staff-Key") == os.getenv("STAFF_API_KEY", "dtc-internal-staff-secret"):
         is_authenticated = True
         is_staff = True
@@ -883,8 +873,7 @@ def _get_requester_identity(request):
         is_authenticated = True
         auth_user_id = (
             request.headers.get("X-User-ID")
-            or request.headers.get("X-Actor-ID")
-            or (actor_info.get("user_id") if actor_info else None)
+            or (user_info.get("user_id") if user_info else None)
             or "usr_demo_user"
         )
         is_staff = True

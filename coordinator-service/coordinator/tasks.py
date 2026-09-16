@@ -58,9 +58,9 @@ def recover_stuck_transactions():
 
 
 @shared_task(name="coordinator.tasks.execute_saga_task")
-def execute_saga_task(transaction_id, seat_ids=None, amount=500, fail_compensation=False, correlation_id=None, actor_id=None, user_id=None, user_email=None, held_by_user_id=None, held_by_user_email=None):
+def execute_saga_task(transaction_id, seat_ids=None, amount=500, fail_compensation=False, correlation_id=None, user_id=None, user_email=None, held_by_user_id=None, held_by_user_email=None):
     from coordinator.views import _run_saga_pipeline
-    uid = user_id or held_by_user_id or actor_id or "usr_demo_user"
+    uid = user_id or held_by_user_id  or "usr_demo_user"
     uemail = user_email or held_by_user_email or "demo@dtc.io"
     logger.info("Executing async saga task for transaction_id=%s [correlation_id=%s, user_id=%s, user_email=%s]", transaction_id, correlation_id, uid, uemail)
     try:
@@ -76,7 +76,6 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, fail_compensati
         fail_compensation=fail_compensation,
         correlation_id=correlation_id,
         actor="request",
-        actor_id=uid,
         user_id=uid,
         user_email=uemail,
         held_by_user_id=uid,

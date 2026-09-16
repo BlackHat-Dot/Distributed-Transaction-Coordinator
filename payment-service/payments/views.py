@@ -80,9 +80,7 @@ def charge_payment(request):
     user_id = (
         request.data.get("user_id")
         or request.data.get("held_by_user_id")
-        or request.data.get("actor_id")
         or request.headers.get("X-User-ID")
-        or request.headers.get("X-Actor-ID")
         or "usr_anonymous"
     )
     user_email = (

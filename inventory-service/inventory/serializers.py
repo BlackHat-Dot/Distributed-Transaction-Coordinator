@@ -32,7 +32,6 @@ class SeatSerializer(serializers.ModelSerializer):
         # Backwards compatibility aliases
         rep["held_by_user_id"] = rep.get("user_id")
         rep["held_by_user_email"] = rep.get("user_email")
-        rep["held_by_actor_id"] = rep.get("user_id")
         return rep
 
 
@@ -62,5 +61,4 @@ class ReservationSerializer(serializers.ModelSerializer):
         rep = super().to_representation(instance)
         rep["held_by_user_id"] = rep.get("user_id")
         rep["held_by_user_email"] = rep.get("user_email")
-        rep["held_by_actor_id"] = rep.get("user_id")
         return rep

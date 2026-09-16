@@ -14,7 +14,8 @@ import redis
 from .models import Event, Seat, Reservation
 from .serializers import EventSerializer, SeatSerializer, ReservationSerializer
 
-MAX_ACTOR_HOLDS = int(os.getenv("MAX_ACTOR_HOLDS", "10"))
+MAX_USER_HOLDS = int(os.getenv("MAX_USER_HOLDS", os.getenv("MAX_ACTOR_HOLDS", "10")))
+MAX_ACTOR_HOLDS = MAX_USER_HOLDS
 
 def get_redis_client():
     broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://localhost:6379/0")
@@ -123,7 +124,7 @@ def _verify_internal_service_key(request, allow_client=False):
     can only be called by internal services (e.g. coordinator) presenting
     the shared secret.
     If allow_client=True (e.g. reserve_seat or user hold cancel), calls without
-    the header are permitted (subject to actor quota and validation), but invalid
+    the header are permitted (subject to user quota and validation), but invalid
     keys are always rejected with 403.
     """
     key = request.headers.get("X-Internal-Service-Key")
@@ -165,8 +166,8 @@ def reserve_seat(request):
     is_dev = getattr(settings, "DEBUG", False)
 
     raw_user_id = (
-        request.data.get("user_id") or request.data.get("held_by_user_id") or request.data.get("actor_id")
-        or request.headers.get("X-User-ID") or request.headers.get("X-Actor-ID")
+        request.data.get("user_id") or request.data.get("held_by_user_id")
+        or request.headers.get("X-User-ID")
     )
     raw_user_email = (
         request.data.get("user_email") or request.data.get("held_by_user_email") or request.data.get("email")
@@ -194,39 +195,39 @@ def reserve_seat(request):
 
             now = timezone.now()
 
-            # Enforce MAX_ACTOR_HOLDS (D-5)
-            max_actor_holds = getattr(settings, "MAX_ACTOR_HOLDS", MAX_ACTOR_HOLDS)
-            if len(seats) > max_actor_holds:
+            # Enforce MAX_USER_HOLDS (D-5)
+            max_user_holds = getattr(settings, "MAX_USER_HOLDS", getattr(settings, "MAX_ACTOR_HOLDS", MAX_USER_HOLDS))
+            if len(seats) > max_user_holds:
                 return Response(
                     {
-                        "error": f"Requested seats count ({len(seats)}) exceeds maximum allowed active holds ({max_actor_holds}).",
+                        "error": f"Requested seats count ({len(seats)}) exceeds maximum allowed active holds ({max_user_holds}).",
                         "code": "MAX_HOLDS_EXCEEDED",
                         "active_holds": 0,
-                        "max_holds": max_actor_holds,
+                        "max_holds": max_user_holds,
                         "transaction_id": str(transaction_id),
                     },
                     status=429,
                 )
 
-            actor_filter = Q()
+            user_filter = Q()
             if user_id and user_id != "usr_anonymous":
-                actor_filter |= Q(user_id=user_id)
+                user_filter |= Q(user_id=user_id)
             if user_email and user_email != "anonymous@dtc.io":
-                actor_filter |= Q(user_email=user_email)
+                user_filter |= Q(user_email=user_email)
 
-            if actor_filter:
+            if user_filter:
                 active_holds = Seat.objects.filter(
-                    actor_filter,
+                    user_filter,
                     status=Seat.Status.HELD,
                     held_until__gt=now,
                 ).exclude(held_by_transaction_id=transaction_id).count()
-                if active_holds + len(seats) > max_actor_holds:
+                if active_holds + len(seats) > max_user_holds:
                     return Response(
                         {
-                            "error": f"Actor exceeds maximum allowed active holds ({max_actor_holds}).",
+                            "error": f"User exceeds maximum allowed active holds ({max_user_holds}).",
                             "code": "MAX_HOLDS_EXCEEDED",
                             "active_holds": active_holds,
-                            "max_holds": max_actor_holds,
+                            "max_holds": max_user_holds,
                             "transaction_id": str(transaction_id),
                         },
                         status=429,

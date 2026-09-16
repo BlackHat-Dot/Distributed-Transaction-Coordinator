@@ -71,7 +71,7 @@ def _normalize_email(email_str):
     return str(email_str).strip().lower()
 
 
-def _generate_actor_id(email):
+def _generate_user_id(email):
     norm = _normalize_email(email)
     sha = hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
     return f"usr_{sha}"
@@ -101,18 +101,17 @@ def _email_hash(email):
     return hashlib.sha256(email.encode("utf-8")).hexdigest()[:20]
 
 
-def _create_jwt(user_id, email, expires_in=None, actor_id=None):
+def _create_jwt(user_id, email, expires_in=None):
     """A JSON Web Token (JWT) is just a single string made of 3 parts separated by dots (.)"""
 
     header = {"alg": "HS256", "typ": "JWT"}
     now = int(time.time())
-    uid = user_id or actor_id
+    uid = user_id
     if expires_in is None:
         expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "1800"))
     payload = {
         "user_id": uid,
         "user_email": email,
-        "actor_id": uid,
         "email": email,
         "iat": now,
         "exp": now + expires_in
@@ -189,9 +188,9 @@ def verify_jwt(token):
         return None, str(e)
 
 
-def get_actor_from_request(request):
+def get_user_from_request(request):
     """
-    Extracts authenticated user/actor identity from Authorization header or request payload.
+    Extracts authenticated user identity from Authorization header or request payload.
     """
     auth_header = request.headers.get("Authorization", "")
     token = None
@@ -203,22 +202,19 @@ def get_actor_from_request(request):
     if token:
         payload, err = verify_jwt(token)
         if payload:
-            uid = payload.get("user_id") or payload.get("actor_id")
+            uid = payload.get("user_id")
             uemail = payload.get("user_email") or payload.get("email")
             return {
                 "user_id": uid,
                 "user_email": uemail,
-                "actor_id": uid,
                 "email": uemail,
                 "is_authenticated": True
             }
 
-    # Fallback to direct X-User-ID / X-Actor-ID header or payload
+    # Fallback to direct X-User-ID
     user_id = (
         request.headers.get("X-User-ID")
-        or request.headers.get("X-Actor-ID")
         or request.data.get("user_id")
-        or request.data.get("actor_id")
     )
     user_email = (
         request.headers.get("X-User-Email")
@@ -229,7 +225,6 @@ def get_actor_from_request(request):
         return {
             "user_id": str(user_id),
             "user_email": user_email or str(user_id),
-            "actor_id": str(user_id),
             "email": user_email or str(user_id),
             "is_authenticated": False
         }
@@ -346,7 +341,7 @@ def send_otp(request):
                             "success": True,
                             "message": "Verification code was recently sent.",
                             "email": email,
-                            "actor_id": _generate_actor_id(email),
+                            "user_id": _generate_user_id(email),
                             "cooldown_remaining": ttl,
                             "chances_remaining": max(0, 10 - int(client.get(daily_key) or 0)),
                         }, status=200)
@@ -447,7 +442,7 @@ def send_otp(request):
         except Exception:
             pass
 
-    user_id = _generate_actor_id(email)
+    user_id = _generate_user_id(email)
 
     resp_data = {
         "success": True,
@@ -455,7 +450,6 @@ def send_otp(request):
         "email": email,
         "user_email": email,
         "user_id": user_id,
-        "actor_id": user_id,
         "expires_in_seconds": 300,
         "cooldown_remaining": 0 if is_dev_mode else 30,
         "chances_remaining": "∞" if is_dev_mode else chances_remaining,
@@ -609,7 +603,7 @@ def verify_otp(request):
     except Exception:
         pass
 
-    user_id = _generate_actor_id(email)
+    user_id = _generate_user_id(email)
     jwt_expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "1800"))
     jwt_token = _create_jwt(user_id=user_id, email=email, expires_in=jwt_expires_in)
 
@@ -625,7 +619,6 @@ def verify_otp(request):
         "token": jwt_token,
         "user_id": user_id,
         "user_email": email,
-        "actor_id": user_id,
         "email": email,
         "expires_in": jwt_expires_in
     }, status=200)
@@ -635,15 +628,15 @@ def verify_otp(request):
 @api_view(["GET"])
 def get_me(request):
     """
-    Phase 3: Returns current authenticated actor identity from JWT footprint.
+    Phase 3: Returns current authenticated user identity from JWT footprint.
     """
-    actor_info = get_actor_from_request(request)
-    if not actor_info:
-        return Response({"authenticated": False, "actor": None}, status=401)
+    user_info = get_user_from_request(request)
+    if not user_info:
+        return Response({"authenticated": False, "user": None}, status=401)
 
     return Response({
         "authenticated": True,
-        "actor": actor_info
+        "user": user_info
     }, status=200)
 
 
@@ -652,11 +645,11 @@ def heartbeat(request):
     """
     Extends the TTL of the user's active session in Redis.
     """
-    actor_info = get_actor_from_request(request)
-    if not actor_info or not actor_info.get("is_authenticated"):
+    user_info = get_user_from_request(request)
+    if not user_info or not user_info.get("is_authenticated"):
         return Response({"error": "Unauthorized"}, status=401)
     
-    email = actor_info.get("email")
+    email = user_info.get("email")
     if email and not _is_dev_auth_mode():
         client = _get_redis_client()
         if client:
@@ -673,9 +666,9 @@ def logout(request):
     """
     Deletes the user's active session in Redis.
     """
-    actor_info = get_actor_from_request(request)
-    if actor_info and actor_info.get("email"):
-        email = actor_info.get("email")
+    user_info = get_user_from_request(request)
+    if user_info and user_info.get("email"):
+        email = user_info.get("email")
         client = _get_redis_client()
         if client:
             try:

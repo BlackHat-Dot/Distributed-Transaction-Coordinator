@@ -52,8 +52,7 @@ const STATE = {
   user: {
     email: localStorage.getItem("dtc_user_email") || null,
     token: localStorage.getItem("dtc_auth_token") || null,
-    userId: localStorage.getItem("dtc_user_id") || localStorage.getItem("dtc_actor_id") || null,
-    actorId: localStorage.getItem("dtc_user_id") || localStorage.getItem("dtc_actor_id") || null,
+    userId: localStorage.getItem("dtc_user_id") || null,
   },
 
   // In-flight action set: Set of seat IDs currently undergoing reserve/release API requests
@@ -105,7 +104,7 @@ const DOM = {
   btnVerifyOtp: document.getElementById("btn-verify-otp"),
   verifyOtpBtnText: document.getElementById("verify-otp-btn-text"),
   profileEmailDisplay: document.getElementById("profile-email-display"),
-  profileActorId: document.getElementById("profile-actor-id"),
+  profileUserId: document.getElementById("profile-user-id") || document.getElementById("profile-actor-id"),
   btnCloseAuthDone: document.getElementById("btn-close-auth-done"),
   btnLogout: document.getElementById("btn-logout"),
 
@@ -237,7 +236,7 @@ function saveHoldToStorage(hold) {
       seatNumbers: hold.seatNumbers || "",
       txId: hold.txId,
       heldUntil: hold.heldUntil,
-      userId: (STATE.user && (STATE.user.userId || STATE.user.actorId)) || null,
+      userId: (STATE.user && STATE.user.userId) || null,
       userEmail: (STATE.user && STATE.user.email) || null,
     };
     localStorage.setItem(HOLD_STORAGE_KEY, JSON.stringify(data));
@@ -352,10 +351,8 @@ async function fetchJson(url, options = {}, timeoutMs = 8000) {
         headers["Authorization"] = `Bearer ${STATE.user.token}`;
       }
     }
-    if (STATE.user && (STATE.user.userId || STATE.user.actorId)) {
-      const uid = STATE.user.userId || STATE.user.actorId;
-      headers["X-User-ID"] = uid;
-      headers["X-Actor-ID"] = uid;
+    if (STATE.user && STATE.user.userId) {
+      headers["X-User-ID"] = STATE.user.userId;
     }
     if (STATE.user && STATE.user.email) {
       headers["X-User-Email"] = STATE.user.email;
@@ -481,9 +478,9 @@ let otpCountdownTimer = null;
 function updateAuthWidgetUI() {
   const token = localStorage.getItem("dtc_auth_token");
   const email = localStorage.getItem("dtc_user_email");
-  const userId = localStorage.getItem("dtc_user_id") || localStorage.getItem("dtc_actor_id");
+  const userId = localStorage.getItem("dtc_user_id");
 
-  STATE.user = { token, email, userId, actorId: userId };
+  STATE.user = { token, email, userId };
 
   if (token && email) {
     if (DOM.userEmailLabel) DOM.userEmailLabel.textContent = email;
@@ -549,8 +546,8 @@ function renderAuthStep(step) {
     if (DOM.profileEmailDisplay && STATE.user) {
       DOM.profileEmailDisplay.textContent = STATE.user.email;
     }
-    if (DOM.profileActorId && STATE.user) {
-      DOM.profileActorId.textContent = STATE.user.userId || STATE.user.actorId || `usr_${STATE.user.email}`;
+    if (DOM.profileUserId && STATE.user) {
+      DOM.profileUserId.textContent = STATE.user.userId || `usr_${STATE.user.email}`;
     }
   }
 }
@@ -717,15 +714,14 @@ async function handleVerifyOtp() {
     });
 
     if (res.ok && res.data.success) {
-      const { token, user_id, user_email, actor_id, email: resEmail } = res.data;
-      const finalUserId = user_id || actor_id;
+      const { token, user_id, user_email, email: resEmail } = res.data;
+      const finalUserId = user_id;
       const finalEmail = user_email || resEmail || email;
       localStorage.setItem("dtc_auth_token", token);
       localStorage.setItem("dtc_user_email", finalEmail);
       localStorage.setItem("dtc_user_id", finalUserId);
-      localStorage.setItem("dtc_actor_id", finalUserId);
 
-      STATE.user = { token, email: finalEmail, userId: finalUserId, actorId: finalUserId };
+      STATE.user = { token, email: finalEmail, userId: finalUserId };
       updateAuthWidgetUI();
 
       showToast({
@@ -762,9 +758,8 @@ function handleLogout() {
   localStorage.removeItem("dtc_auth_token");
   localStorage.removeItem("dtc_user_email");
   localStorage.removeItem("dtc_user_id");
-  localStorage.removeItem("dtc_actor_id");
 
-  STATE.user = { token: null, email: null, userId: null, actorId: null };
+  STATE.user = { token: null, email: null, userId: null };
   updateAuthWidgetUI();
   closeAuthModal();
 
@@ -1020,11 +1015,12 @@ async function loadCatalog(isInitial = false) {
     seatsRes.data.forEach(seat => {
       STATE.seatsMap.set(seat.id, seat);
       
-      if (STATE.user && (STATE.user.email || STATE.user.actorId)) {
+      if (STATE.user && (STATE.user.email || STATE.user.userId)) {
         if (seat.status === "HELD") {
           const isOwner = (seat.user_email && STATE.user.email && seat.user_email === STATE.user.email) || 
-                          (seat.user_id && STATE.user.actorId && seat.user_id === STATE.user.actorId) ||
+                          (seat.user_id && STATE.user.userId && seat.user_id === STATE.user.userId) ||
                           (seat.held_by_user_email && STATE.user.email && seat.held_by_user_email === STATE.user.email) ||
+                          (seat.held_by_user_id && STATE.user.userId && seat.held_by_user_id === STATE.user.userId) ||
                           (STATE.myHold && seat.held_by_transaction_id === STATE.myHold.txId);
           if (isOwner) {
             if (!ownerTxId) ownerTxId = seat.held_by_transaction_id;
@@ -1202,8 +1198,9 @@ async function handleSeatTileClick(seatId) {
     // Check if it belongs to current user but wasn't reconstructed yet
     const isOwner = STATE.user && (
       (seat.user_email && STATE.user.email && seat.user_email === STATE.user.email) || 
-      (seat.user_id && STATE.user.actorId && seat.user_id === STATE.user.actorId) ||
-      (seat.held_by_user_email && STATE.user.email && seat.held_by_user_email === STATE.user.email)
+      (seat.user_id && STATE.user.userId && seat.user_id === STATE.user.userId) ||
+      (seat.held_by_user_email && STATE.user.email && seat.held_by_user_email === STATE.user.email) ||
+      (seat.held_by_user_id && STATE.user.userId && seat.held_by_user_id === STATE.user.userId)
     );
 
     if (isOwner && !isMyHold) {
@@ -1392,7 +1389,7 @@ async function handleBottomPaySubmit() {
   updateMatrixHoldState();
 
   try {
-    const uid = STATE.user ? (STATE.user.userId || STATE.user.actorId) : undefined;
+    const uid = STATE.user ? STATE.user.userId : undefined;
     const res = await fetchJson(`${CONFIG.inventoryUrl}/seats/reserve/`, {
       method: "POST",
       body: JSON.stringify({
@@ -1400,7 +1397,6 @@ async function handleBottomPaySubmit() {
         transaction_id: holdTxId,
         user_id: uid,
         user_email: STATE.user ? STATE.user.email : undefined,
-        actor_id: uid,
       }),
     });
 
@@ -1431,7 +1427,7 @@ async function handleBottomPaySubmit() {
             s.held_by_transaction_id = holdTxId;
             s.held_until = heldUntil;
             s.user_email = STATE.user ? STATE.user.email : undefined;
-            s.user_id = STATE.user ? (STATE.user.userId || STATE.user.actorId) : undefined;
+            s.user_id = STATE.user ? STATE.user.userId : undefined;
         }
       });
 
@@ -1753,7 +1749,7 @@ async function initiateSagaCheckout() {
   // Open Saga Orchestration Stepper Modal
   openSagaModal(firstSeat, selectedAmount);
 
-  const uid = STATE.user ? (STATE.user.userId || STATE.user.actorId) : undefined;
+  const uid = STATE.user ? STATE.user.userId : undefined;
   const uemail = STATE.user ? STATE.user.email : undefined;
 
   // POST to Coordinator — synchronous execution on Railway (returns 200 directly)
@@ -1769,7 +1765,6 @@ async function initiateSagaCheckout() {
       user_email: uemail,
       held_by_user_id: uid,
       held_by_user_email: uemail,
-      actor_id: uid,
     }),
   });
 
@@ -2011,8 +2006,8 @@ function reconcileSeatStates(newSeats) {
     const isUserHold = STATE.myHold && (STATE.myHold.seatIds || [STATE.myHold.seatId]).includes(seatId) &&
                        (newSeat.held_by_transaction_id === STATE.myHold.txId ||
                         newSeat.status === "HELD" ||
-                        (STATE.user && newSeat.held_by_user_id === (STATE.user.userId || STATE.user.actorId)) ||
-                        (STATE.user && newSeat.user_id === (STATE.user.userId || STATE.user.actorId)));
+                        (STATE.user && newSeat.held_by_user_id === STATE.user.userId) ||
+                        (STATE.user && newSeat.user_id === STATE.user.userId));
 
     const isDrafted = STATE.draftSeatIds && STATE.draftSeatIds.includes(seatId);
 
