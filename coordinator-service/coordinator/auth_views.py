@@ -119,13 +119,26 @@ def _create_jwt(user_id, email, expires_in=None, actor_id=None):
     """A JSON Web Token (JWT) is just a single string made of 3 parts separated by dots (.)"""
 
     def b64url(data_bytes):
+        # 1. base64: Translates any messy sequence of bytes into a clean, universally safe alphabet of 64 printable ASCII characters.
+        # 2. urlsafe_b64encode: Replaces '+' and '/' with '-' and '_' for URL safety
+        # 3. rstrip(b"="): Strips trailing '=' padding required by JWT standard
+        # 4. decode("utf-8"): Converts resulting bytes to a standard Python string
         return base64.urlsafe_b64encode(data_bytes).rstrip(b"=").decode("utf-8")
 
+    # json.dumps() does: Converts the Python dictionary into a JSON string.
+    # By default, json.dumps() inserts spaces after commas and colons: '{"alg": "HS256", "typ": "JWT"}' (31 characters)
+    # By specifying separators=(",", ":"), all unnecessary whitespace is stripped: '{"alg":"HS256","typ":"JWT"}' (27 characters)
+    # Serialize header/payload dict into compact JSON bytes and encode as unpadded URL-safe Base64
     h_str = b64url(json.dumps(header, separators=(",", ":")).encode("utf-8"))
     p_str = b64url(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+
+    # Join the Base64-encoded header and payload strings with a dot, then convert to bytes for signing
     signing_input = f"{h_str}.{p_str}".encode("utf-8")
 
+    # Convert the server's private secret key to bytes
     secret = settings.SECRET_KEY.encode("utf-8")
+
+
     sig = hmac.new(secret, signing_input, hashlib.sha256).digest()
     sig_str = b64url(sig)
 
