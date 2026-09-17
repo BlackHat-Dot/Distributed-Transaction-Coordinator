@@ -40,6 +40,7 @@ INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.get
 
 @api_view(["GET"])
 def health_check(request):
+    # Runs every 15 seconds
     return Response({"status": "healthy", "service": "coordinator"})
 
 
@@ -48,11 +49,6 @@ def transactions_endpoint(request):
     if request.method == "GET":
         return _handle_list_transactions(request)
     # POST
-    return _handle_create_transaction(request)
-
-
-@api_view(["POST"])
-def create_transaction(request):
     return _handle_create_transaction(request)
 
 
@@ -310,6 +306,11 @@ def _handle_create_transaction(request):
     correlation_id = getattr(request, "correlation_id", None) or str(transaction_id)
 
     from django.conf import settings
+
+    # How 'test' in sys.argv works :
+    # When you run commands in your terminal. Python puts the words into sys.argv
+    # Eg., python manage.py runserver ; sys.argv = ['manage.py', 'runserver']
+    # python manage.py test ; sys.argv = ['manage.py', 'test']
     is_testing = getattr(settings, "IS_TESTING", False) or 'test' in sys.argv
     is_dev = getattr(settings, "DEBUG", False)
 
@@ -994,6 +995,11 @@ def _get_requester_identity(request):
     and internal staff key.
     """
     from django.conf import settings
+
+    # How 'test' in sys.argv works :
+    # When you run commands in your terminal. Python puts the words into sys.argv
+    # Eg., python manage.py runserver ; sys.argv = ['manage.py', 'runserver']
+    # python manage.py test ; sys.argv = ['manage.py', 'test']
     is_testing = getattr(settings, "IS_TESTING", False) or 'test' in sys.argv
     is_dev = getattr(settings, "DEBUG", False)
 
@@ -1001,6 +1007,8 @@ def _get_requester_identity(request):
     is_staff = False
     auth_user_id = None
     is_authenticated = False
+
+    print(request.user)
 
     if request.user and request.user.is_authenticated:
         is_authenticated = True

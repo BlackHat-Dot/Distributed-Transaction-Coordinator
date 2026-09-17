@@ -6,6 +6,11 @@ import sys
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "t")
+
+# How 'test' in sys.argv works :
+# When you run commands in your terminal. Python puts the words into sys.argv
+# Eg., python manage.py runserver ; sys.argv = ['manage.py', 'runserver']
+# python manage.py test ; sys.argv = ['manage.py', 'test']
 IS_TESTING = 'test' in sys.argv
 
 # Pattern B: Safe fallback in Development/Testing, Fail-Fast in Production
