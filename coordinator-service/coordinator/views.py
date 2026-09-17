@@ -1008,7 +1008,7 @@ def _get_requester_identity(request):
     auth_user_id = None
     is_authenticated = False
 
-    print(request.user)
+    print(user_info.get("is_authenticated"))
 
     if request.user and request.user.is_authenticated:
         is_authenticated = True
