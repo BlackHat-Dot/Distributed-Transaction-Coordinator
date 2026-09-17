@@ -1835,32 +1835,32 @@ async function initiateSagaCheckout() {
   // Open Saga Orchestration Stepper Modal
   openSagaModal(firstSeat, selectedAmount);
 
-  const uid = STATE.user ? STATE.user.userId : undefined;
-  const uemail = STATE.user ? STATE.user.email : undefined;
+  const simulateParam = selectedAmount === "9999" ? "?simulate_payment_decline=true" : "";
+  const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/${simulateParam}`;
 
   // POST to Coordinator — synchronous execution on Railway (returns 200 directly)
-  const res = await fetchJson(`${CONFIG.coordinatorUrl}/transactions/`, {
+  // Identity is securely transmitted via Authorization Bearer JWT header in fetchJson
+  // Server generates transaction_id and calculates amount based on seat selection
+  const res = await fetchJson(endpointUrl, {
     method: "POST",
     body: JSON.stringify({
-      transaction_id: txId,
       seat_ids: seatIds,
       seat_numbers: STATE.myHold.seatNumbers || firstSeat.seat_number,
-      quantity: seatIds.length,
-      amount: parseInt(selectedAmount, 10),
-      user_id: uid,
-      user_email: uemail,
-      held_by_user_id: uid,
-      held_by_user_email: uemail,
     }),
   });
+
+  const finalTxId = (res.data && res.data.transaction_id) || txId;
+  if (STATE.myHold) {
+    STATE.myHold.txId = finalTxId;
+  }
 
   if (res.ok && res.data && res.data.status) {
     if (res.status === 202) {
       // Async: Celery picked it up — start polling
-      pollSagaStatus(txId, selectedAmount);
+      pollSagaStatus(finalTxId, selectedAmount);
     } else {
       // Sync: Coordinator returned final result immediately (200)
-      handleSagaTerminalState(res.data.status, txId, selectedAmount);
+      handleSagaTerminalState(res.data.status, finalTxId, selectedAmount);
     }
   } else {
     if (res.status === 401 || (res.data && res.data.code === "AUTHENTICATION_REQUIRED")) {

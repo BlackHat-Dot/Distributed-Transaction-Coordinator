@@ -15,7 +15,9 @@ class AuthOtpLockoutTests(TestCase):
         cache.clear()
         if self.redis_client:
             try:
-                for key in self.redis_client.keys(f"dtc:*{self.email}*"):
+                from coordinator.auth_views import _email_hash
+                h = _email_hash(self.email)
+                for key in list(self.redis_client.keys(f"dtc:*{self.email}*")) + list(self.redis_client.keys(f"dtc:*{h}*")):
                     self.redis_client.delete(key)
             except Exception:
                 pass
@@ -24,7 +26,9 @@ class AuthOtpLockoutTests(TestCase):
         cache.clear()
         if self.redis_client:
             try:
-                for key in self.redis_client.keys(f"dtc:*{self.email}*"):
+                from coordinator.auth_views import _email_hash
+                h = _email_hash(self.email)
+                for key in list(self.redis_client.keys(f"dtc:*{self.email}*")) + list(self.redis_client.keys(f"dtc:*{h}*")):
                     self.redis_client.delete(key)
             except Exception:
                 pass
@@ -172,8 +176,7 @@ class LocalDevAuthNumbModeTests(TestCase):
     def test_production_rejects_unauthenticated_transaction(self):
         import sys
         with patch.object(sys, "argv", ["gunicorn"]):
-            tx_id = str(uuid.uuid4())
-            resp = self.client.post("/transactions/", {"transaction_id": tx_id, "seat_ids": [1]}, format="json")
+            resp = self.client.post("/transactions/", {"seat_ids": [1]}, format="json")
             self.assertEqual(resp.status_code, 401)
             self.assertEqual(resp.data.get("code"), "AUTHENTICATION_REQUIRED")
 
@@ -184,15 +187,15 @@ class LocalDevAuthNumbModeTests(TestCase):
         with patch.object(sys, "argv", ["gunicorn"]):
             from coordinator.auth_views import _create_jwt
             token = _create_jwt("usr_real_fan", "fan@test.io")
-            tx_id = str(uuid.uuid4())
             with patch("coordinator.tasks.execute_saga_task.delay"):
                 resp = self.client.post(
                     "/transactions/",
-                    {"transaction_id": tx_id, "seat_ids": [1]},
+                    {"seat_ids": [43]},
                     HTTP_AUTHORIZATION=f"Bearer {token}",
                     format="json"
                 )
                 self.assertIn(resp.status_code, [200, 202])
                 self.assertEqual(resp.data.get("user_id"), "usr_real_fan")
                 self.assertEqual(resp.data.get("user_email"), "fan@test.io")
+                self.assertIsNotNone(resp.data.get("transaction_id"))
 

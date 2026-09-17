@@ -270,6 +270,20 @@ def reserve_seat(request):
             for seat in seats:
                 if seat.held_by_transaction_id and str(seat.held_by_transaction_id) == str(transaction_id):
                     continue
+
+                # Allow transitioning hold if seat is already held by this same authenticated user
+                is_same_user_hold = (
+                    seat.status == Seat.Status.HELD
+                    and seat.held_until
+                    and seat.held_until > now
+                    and (
+                        (user_id and user_id != "usr_anonymous" and seat.user_id == user_id)
+                        or (user_email and user_email != "anonymous@dtc.io" and seat.user_email == user_email)
+                    )
+                )
+                if is_same_user_hold:
+                    continue
+
                 is_available = (seat.status == Seat.Status.AVAILABLE) or (seat.status == Seat.Status.HELD and seat.held_until and seat.held_until < now)
                 if not is_available:
                     return Response({"error": f"Seat {seat.row}{seat.seat_number} is already booked or held", "code": "SEAT_UNAVAILABLE", "transaction_id": str(transaction_id)}, status=409)

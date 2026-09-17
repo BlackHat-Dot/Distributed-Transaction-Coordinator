@@ -1257,10 +1257,7 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
   const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
     method: "POST",
     body: JSON.stringify({
-      seat_id: nextSeatId,
-      quantity: 1,
-      amount: 500,
-      ...getActiveUserPayload(),
+      seat_ids: [nextSeatId],
     }),
   });
   const latencyMs = Math.round(performance.now() - t0);
@@ -1336,13 +1333,10 @@ DOM.btnDemoFail.addEventListener("click", async () => {
 
   const nextSeatId = await getNextAvailableSeatId();
   const t0 = performance.now();
-  const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
+  const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/?simulate_payment_decline=true`, {
     method: "POST",
     body: JSON.stringify({
-      seat_id: nextSeatId,
-      quantity: 1,
-      amount: 9999,
-      ...getActiveUserPayload(),
+      seat_ids: [nextSeatId],
     }),
   });
   const latencyMs = Math.round(performance.now() - t0);
@@ -1505,18 +1499,16 @@ DOM.btnDemoRace.addEventListener("click", async () => {
     fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
       method: "POST",
       body: JSON.stringify({
-        transaction_id: sharedTxId,
-        seat_id: targetSeatId,
-        quantity: 1,
-        amount: 500,
-        ...getActiveUserPayload(),
+        seat_ids: [targetSeatId],
       }),
     })
   );
 
-  await Promise.all(promises);
-
-  window.selectTransaction(sharedTxId);
+  const results = await Promise.all(promises);
+  const firstSuccess = results.find(r => r.data && r.data.transaction_id);
+  if (firstSuccess) {
+    window.selectTransaction(firstSuccess.data.transaction_id);
+  }
   fetchTransactionsFeed();
   DOM.topoCoordState.textContent = "IDLE";
 });
@@ -1558,21 +1550,17 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
 
   triggerCrashedNode("coord");
 
-  let txId = crypto.randomUUID();
+  let txId = null;
   const targetSeatId = await getNextAvailableSeatId();
 
   if (STATE.isSimulatedMode) {
-    createSimulatedTransaction("STARTED", txId);
+    createSimulatedTransaction("STARTED", crypto.randomUUID());
   } else {
     const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
       method: "POST",
       body: JSON.stringify({
-        transaction_id: txId,
-        seat_id: targetSeatId,
-        quantity: 1,
-        amount: 500,
+        seat_ids: [targetSeatId],
         coordinator: true,
-        ...getActiveUserPayload(),
       }),
     });
     if (res.data && res.data.transaction_id) {
@@ -1697,10 +1685,7 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   if (!checkLiveAuthGate("dispatch custom live distributed transactions")) return;
 
   const payload = {
-    seat_id: seatId,
-    quantity: 1,
-    amount: amount,
-    ...getActiveUserPayload(),
+    seat_ids: [seatId],
   };
 
   if (customId) payload.transaction_id = customId;
@@ -3090,14 +3075,11 @@ DOM.btnDemoCompFail.addEventListener("click", async () => {
   });
 
   try {
-    const res = await fetchJson(`${CONFIG.coordinatorUrl}/transactions/`, {
+    const res = await fetchJson(`${CONFIG.coordinatorUrl}/transactions/?simulate_payment_decline=true`, {
       method: "POST",
       body: JSON.stringify({
-        seat_id: 34,
-        quantity: 1,
-        amount: 9999.00,
+        seat_ids: [34],
         fail_compensation: true,
-        ...getActiveUserPayload(),
       })
     });
     if (!res.ok) throw new Error(res.error || "Failed");

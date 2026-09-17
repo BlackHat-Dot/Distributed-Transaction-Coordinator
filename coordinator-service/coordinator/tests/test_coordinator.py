@@ -397,3 +397,80 @@ class Batch3RefundCompensationTests(TestCase):
         txn = Transaction.objects.get(transaction_id=tid)
         self.assertEqual(txn.status, Transaction.Status.COMPENSATION_FAILED)
 
+
+class StrictPayloadValidationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_client_supplied_transaction_id_rejected(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(
+            "/transactions/?sync=true",
+            {"transaction_id": tid, "seat_ids": [1]},
+            HTTP_X_ENFORCE_STRICT_PAYLOAD="true",
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("code"), "INVALID_FIELDS")
+        self.assertIn("transaction_id", resp.data.get("invalid_fields", []))
+        self.assertIn("transaction_id", resp.data.get("error", ""))
+
+    def test_client_supplied_amount_rejected(self):
+        resp = self.client.post(
+            "/transactions/?sync=true",
+            {"amount": 500, "seat_ids": [1]},
+            HTTP_X_ENFORCE_STRICT_PAYLOAD="true",
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("code"), "INVALID_FIELDS")
+        self.assertIn("amount", resp.data.get("invalid_fields", []))
+        self.assertIn("amount", resp.data.get("error", ""))
+
+    def test_client_supplied_identity_and_quantity_fields_rejected(self):
+        resp = self.client.post(
+            "/transactions/?sync=true",
+            {
+                "user_id": "usr_hacker",
+                "user_email": "hacker@evil.com",
+                "quantity": 1,
+                "seat_ids": [1],
+            },
+            HTTP_X_ENFORCE_STRICT_PAYLOAD="true",
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("code"), "INVALID_FIELDS")
+        for field in ["user_id", "user_email", "quantity"]:
+            self.assertIn(field, resp.data.get("invalid_fields", []))
+
+    def test_arbitrary_extra_fields_rejected_with_explicit_prompt(self):
+        resp = self.client.post(
+            "/transactions/?sync=true",
+            {"custom_discount": 100, "seat_ids": [1]},
+            HTTP_X_ENFORCE_STRICT_PAYLOAD="true",
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("code"), "INVALID_FIELDS")
+        self.assertIn("custom_discount", resp.data.get("invalid_fields", []))
+        self.assertIn("custom_discount", resp.data.get("error", ""))
+
+    def test_valid_payload_generates_backend_uuid_and_succeeds(self):
+        with _mock_saga_ok():
+            resp = self.client.post(
+                "/transactions/?sync=true",
+                {"seat_ids": [1], "seat_numbers": "A1"},
+                HTTP_X_ENFORCE_STRICT_PAYLOAD="true",
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data.get("status"), Transaction.Status.COMPLETED)
+        generated_id = resp.data.get("transaction_id")
+        self.assertIsNotNone(generated_id)
+        # Verify it is a valid UUID
+        uuid.UUID(str(generated_id))
+        # Verify row was created with server-generated ID
+        self.assertTrue(Transaction.objects.filter(transaction_id=generated_id).exists())
+
+
