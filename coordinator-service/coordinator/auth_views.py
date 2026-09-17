@@ -117,7 +117,6 @@ def _create_jwt(user_id, email, session_id=None, expires_in=None):
     payload = {
         "user_id": uid,
         "user_email": email,
-        "email": email,
         "iat": now,
         "exp": now + expires_in
     }
@@ -201,18 +200,16 @@ def get_user_from_request(request):
     """
     Extracts authenticated user identity from Authorization header or request payload.
     """
-    auth_header = request.headers.get("Authorization", "")
+    auth_header = request.headers.get("Authorization", "") # fallback "" given for grazeful stop
     token = None
     if auth_header.startswith("Bearer "):
-        token = auth_header.split(" ")[1].strip()
-    elif "token" in request.data:
-        token = request.data.get("token")
+        token = auth_header.split(" ")[1].strip() # index 1 holds the JWT Token
 
     if token:
         payload, err = verify_jwt(token)
         if payload:
             uid = payload.get("user_id")
-            uemail = payload.get("user_email") or payload.get("email")
+            uemail = payload.get("user_email")
             sid = payload.get("sid")
             return {
                 "user_id": uid,
@@ -222,16 +219,10 @@ def get_user_from_request(request):
                 "is_authenticated": True
             }
 
-    # Fallback to direct X-User-ID
-    user_id = (
-        request.headers.get("X-User-ID")
-        or request.data.get("user_id")
-    )
-    user_email = (
-        request.headers.get("X-User-Email")
-        or request.data.get("user_email")
-        or request.data.get("email")
-    )
+    # Fallback to direct X-User-ID / X-User-Email headers (used for service-to-service / test calls)
+    user_id = request.headers.get("X-User-ID")
+    user_email = request.headers.get("X-User-Email")
+
     if user_id:
         return {
             "user_id": str(user_id),

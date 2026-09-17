@@ -376,18 +376,27 @@ def _request_payload_verify(request):
         return None, Response({"error": "Request body must be a valid JSON object"}, status=400)
 
     from django.conf import settings
+
     is_testing = getattr(settings, "IS_TESTING", False) or ('test' in sys.argv)
     is_dev = getattr(settings, "DEBUG", False)
 
     allowed_fields = {"seat_ids", "seat_id", "seat_numbers"}
+
     if is_dev or is_testing:
         allowed_fields.update({"fail_compensation", "coordinator"})
 
     # In automated test suite runs (manage.py test), permit legacy test cases to pass pre-set IDs/amounts
     # unless strict payload verification is explicitly requested via header X-Enforce-Strict-Payload
     if is_testing and not request.headers.get("X-Enforce-Strict-Payload"):
+        # set union; final value => 
+        # {
+        #   "seat_ids", "seat_id", "seat_numbers",
+        #   "transaction_id", "amount", "product_id", "quantity", "user_id", "user_email"
+        # }
         legacy_allowed = allowed_fields | {"transaction_id", "amount", "product_id", "quantity", "user_id", "user_email"}
+
         legacy_invalid = [k for k in request.data.keys() if k not in legacy_allowed]
+
         if legacy_invalid:
             return None, Response(
                 {
@@ -400,6 +409,7 @@ def _request_payload_verify(request):
         return True, None
 
     invalid_fields = [k for k in request.data.keys() if k not in allowed_fields]
+
     if invalid_fields:
         return None, Response(
             {
@@ -413,9 +423,8 @@ def _request_payload_verify(request):
     # Validate that at least one seat identifier is present
     has_seats = (
         request.data.get("seat_ids")
-        or request.data.get("seat_id")
-        or request.data.get("seat_numbers")
     )
+
     if not has_seats:
         return None, Response(
             {
@@ -434,11 +443,17 @@ def _handle_create_transaction(request):
         return invalid
 
     from django.conf import settings
+
+    # How 'test' in sys.argv works :
+    # When you run commands in your terminal. Python puts the words into sys.argv
+    # Eg., python manage.py runserver ; sys.argv = ['manage.py', 'runserver']
+    # python manage.py test ; sys.argv = ['manage.py', 'test']
     is_testing = getattr(settings, "IS_TESTING", False) or 'test' in sys.argv
+
     is_dev = getattr(settings, "DEBUG", False)
 
     # 1. Authenticate Request
-    user_info = get_user_from_request(request)
+    user_info = get_user_from_request(request) # JWT based extraction
     has_internal_key = bool(
         request.headers.get("X-Internal-Service-Key")
         and request.headers.get("X-Internal-Service-Key") == INTERNAL_SERVICE_KEY
@@ -452,33 +467,19 @@ def _handle_create_transaction(request):
         user_id = user_info.get("user_id")
         user_email = user_info.get("user_email") or user_info.get("email")
     elif has_internal_key or has_staff_key:
-        user_id = (
-            request.data.get("user_id")
-            or request.data.get("held_by_user_id")
-            or request.headers.get("X-User-ID")
-            or "usr_internal"
-        )
-        user_email = (
-            request.data.get("user_email")
-            or request.data.get("held_by_user_email")
-            or request.data.get("email")
-            or request.headers.get("X-User-Email")
-            or "internal@dtc.io"
-        )
+        user_id = request.headers.get("X-User-ID") or "usr_internal"
+        user_email = request.headers.get("X-User-Email") or "internal@dtc.io"
     elif is_testing or is_dev:
         user_id = (
-            request.data.get("user_id")
-            or request.data.get("held_by_user_id")
-            or request.headers.get("X-User-ID")
+            request.headers.get("X-User-ID")
+            or request.data.get("user_id")
             or "usr_demo_user"
-        )
+        ) if is_testing else (request.headers.get("X-User-ID") or "usr_demo_user")
         user_email = (
-            request.data.get("user_email")
-            or request.data.get("held_by_user_email")
-            or request.data.get("email")
-            or request.headers.get("X-User-Email")
+            request.headers.get("X-User-Email")
+            or request.data.get("user_email")
             or "demo@dtc.io"
-        )
+        ) if is_testing else (request.headers.get("X-User-Email") or "demo@dtc.io")
     else:
         # In production (DEBUG=False): NEVER fall back to demo@dtc.io! Reject unauthenticated requests!
         return Response(
