@@ -1,4 +1,4 @@
-from django.contrib import admin
+from django.conf import settings
 from django.urls import path
 from coordinator.views import (
     retry_compensation,
@@ -20,7 +20,6 @@ from coordinator.auth_views import (
 
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
     path('health/', health_check),
 
     path('auth/send-otp/', send_otp),
@@ -39,3 +38,8 @@ urlpatterns = [
     path("recovery/sweep/", trigger_recovery_sweep),
     path("recovery/status/", recovery_status),
 ]
+
+# Only mount /admin/ in local development mode (DEBUG=True)
+if settings.DEBUG:
+    from django.contrib import admin
+    urlpatterns.insert(0, path('admin/', admin.site.urls))

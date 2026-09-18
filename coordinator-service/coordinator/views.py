@@ -101,6 +101,7 @@ def list_transaction_events(request, transaction_id):
 
 @api_view(["POST"])
 def retry_compensation(request, transaction_id):
+    # Public reach blocked
     authenticated = get_user_from_request()
 
     if not authenticated:

@@ -54,14 +54,16 @@ if Seat.objects.count() == 0:
     print('  -> Seeded 30 Seats across Rows A, B, and C.')
 " 2>/dev/null || true
 
-echo "[Inventory] Ensuring default admin superuser exists..."
-python manage.py shell -c "
+if [ "${DEBUG,,}" = "true" ] || [ "$DEBUG" = "1" ]; then
+  echo "[Inventory] Ensuring default admin superuser exists (Development)..."
+  python manage.py shell -c "
 from django.contrib.auth import get_user_model
 User = get_user_model()
 if not User.objects.filter(username='admin').exists():
     User.objects.create_superuser('admin', 'admin@example.com', 'admin')
     print('  -> Created default admin superuser (username: admin, pass: admin)')
 " 2>/dev/null || true
+fi
 
 echo "[Inventory] Collecting static files..."
 mkdir -p staticfiles

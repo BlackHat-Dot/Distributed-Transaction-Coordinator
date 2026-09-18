@@ -1,12 +1,17 @@
-from django.contrib import admin
+from django.conf import settings
 from django.urls import path
 from payments.views import charge_payment, payment_check, refund_payment, health_check
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
     path('health/', health_check),
     path("payments/charge/", charge_payment),
     path('payments/check/', payment_check),
     path('payments/refund/', refund_payment),
 ]
+
+# Only mount /admin/ in local development mode (DEBUG=True)
+if settings.DEBUG:
+    from django.contrib import admin
+    urlpatterns.insert(0, path('admin/', admin.site.urls))
+
 

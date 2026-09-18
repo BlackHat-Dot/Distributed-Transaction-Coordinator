@@ -1,4 +1,4 @@
-from django.contrib import admin
+from django.conf import settings
 from django.urls import path
 from inventory.views import (
     event_list,
@@ -13,7 +13,6 @@ from inventory.views import (
 )
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
     path('events/', event_list),
     path('seats/', seat_list),
     path('seats/reserve/', reserve_seat),
@@ -25,3 +24,8 @@ urlpatterns = [
     path('reserve/check/', check_reservation),
     path('health/', health_check),
 ]
+
+# Only mount /admin/ in local development mode (DEBUG=True)
+if settings.DEBUG:
+    from django.contrib import admin
+    urlpatterns.insert(0, path('admin/', admin.site.urls))
