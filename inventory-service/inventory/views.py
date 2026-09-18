@@ -192,11 +192,7 @@ def reserve_seat(request):
         and request.headers.get("X-Internal-Service-Key") == INTERNAL_SERVICE_KEY
     )
 
-    # How 'test' in sys.argv works :
-    # When you run commands in your terminal. Python puts the words into sys.argv
-    # Eg., python manage.py runserver ; sys.argv = ['manage.py', 'runserver']
-    # python manage.py test ; sys.argv = ['manage.py', 'test']
-    is_testing = getattr(settings, "IS_TESTING", False) or 'test' in sys.argv
+    is_testing = bool(getattr(settings, "IS_TESTING", False))
     is_dev = getattr(settings, "DEBUG", False)
 
     raw_user_id = (

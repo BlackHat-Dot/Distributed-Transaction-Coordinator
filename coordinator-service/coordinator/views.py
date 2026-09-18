@@ -279,8 +279,7 @@ def _resolve_seat_pricing(seat_ids=None, seat_numbers=None):
     Resolves official seat pricing and details from the Inventory Service DB.
     Returns: (total_amount, resolved_seat_ids, resolved_seat_numbers, error_response)
     """
-    from django.conf import settings
-    is_testing = getattr(settings, "IS_TESTING", False) or ('test' in sys.argv)
+    is_testing = bool(getattr(settings, "IS_TESTING", False))
 
     # 1. Parse and normalize requested seat_ids
     req_ids = set()
@@ -383,7 +382,7 @@ def _request_payload_verify(request):
 
     from django.conf import settings
 
-    is_testing = getattr(settings, "IS_TESTING", False) or ('test' in sys.argv)
+    is_testing = bool(getattr(settings, "IS_TESTING", False))
     is_dev = getattr(settings, "DEBUG", False)
 
     allowed_fields = {"seat_ids", "seat_id", "seat_numbers"}
@@ -450,11 +449,7 @@ def _handle_create_transaction(request):
 
     from django.conf import settings
 
-    # How 'test' in sys.argv works :
-    # When you run commands in your terminal. Python puts the words into sys.argv
-    # Eg., python manage.py runserver ; sys.argv = ['manage.py', 'runserver']
-    # python manage.py test ; sys.argv = ['manage.py', 'test']
-    is_testing = getattr(settings, "IS_TESTING", False) or 'test' in sys.argv
+    is_testing = bool(getattr(settings, "IS_TESTING", False))
 
     is_dev = getattr(settings, "DEBUG", False)
 
@@ -1192,7 +1187,7 @@ def _get_requester_identity(request):
         return True, uid, getattr(request.user, "is_staff", False)
 
     # 4. Automated Test Runner Environment
-    is_testing = getattr(settings, "IS_TESTING", False) or ('test' in sys.argv)
+    is_testing = bool(getattr(settings, "IS_TESTING", False))
     if is_testing:
         test_uid = request.headers.get("X-User-ID") or "usr_demo_user"
         return True, test_uid, True

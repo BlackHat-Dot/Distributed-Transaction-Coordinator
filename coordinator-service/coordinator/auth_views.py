@@ -22,11 +22,7 @@ _redis_last_check = 0
 _redis_is_available = False
 _redis_client_instance = None
 
-# How 'test' in sys.argv works :
-# When you run commands in your terminal. Python puts the words into sys.argv
-# Eg., python manage.py runserver ; sys.argv = ['manage.py', 'runserver']
-# python manage.py test ; sys.argv = ['manage.py', 'test']
-is_testing = bool(getattr(settings, "IS_TESTING", False)) or ('test' in sys.argv)
+is_testing = bool(getattr(settings, "IS_TESTING", False))
 
 def _get_redis_client():
     global _redis_last_check, _redis_is_available, _redis_client_instance
