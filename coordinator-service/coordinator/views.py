@@ -101,6 +101,11 @@ def list_transaction_events(request, transaction_id):
 
 @api_view(["POST"])
 def retry_compensation(request, transaction_id):
+    authenticated = get_user_from_request()
+
+    if not authenticated:
+        return Response({"Status":"Not Authenticated"})
+    
     txn = Transaction.objects.exclude(
         status=Transaction.Status.COMPLETED
     ).filter(

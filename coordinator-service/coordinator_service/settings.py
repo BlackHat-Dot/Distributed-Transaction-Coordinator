@@ -54,6 +54,24 @@ elif not (DEBUG or IS_TESTING) and INTERNAL_SERVICE_KEY == "dtc-internal-coordin
         "You must configure a strong, unique INTERNAL_SERVICE_KEY for production."
     )
 
+# coordinator_service/settings.py
+
+if DEBUG:
+    # Allow interactive Browsable API in local development
+    REST_FRAMEWORK = {
+        'DEFAULT_RENDERER_CLASSES': [
+            'rest_framework.renderers.JSONRenderer',
+            'rest_framework.renderers.BrowsableAPIRenderer',
+        ]
+    }
+else:
+    # In production: Pure JSON only! No HTML forms or documentation UI
+    REST_FRAMEWORK = {
+        'DEFAULT_RENDERER_CLASSES': [
+            'rest_framework.renderers.JSONRenderer',
+        ]
+    }
+
 INSTALLED_APPS = [
     'django.contrib.admin', # standard
     'django.contrib.auth', # standard
