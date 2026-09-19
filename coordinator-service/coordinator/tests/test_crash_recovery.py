@@ -24,6 +24,13 @@ class SimulatedProcessDeath(BaseException):
     pass
 
 
+def _seat_pricing_response():
+    mock = MagicMock()
+    mock.status_code = 200
+    mock.json.return_value = [{"id": 1, "price": 500, "row": "A", "seat_number": "1"}]
+    return mock
+
+
 class CrashRecoveryTests(TransactionTestCase):
 
     def setUp(self):
@@ -31,9 +38,6 @@ class CrashRecoveryTests(TransactionTestCase):
         self.client = APIClient()
 
     def test_crash_during_payment_processing_downstream_charged_rolls_forward(self):
-
-        tid = str(uuid.uuid4())
-
         def mock_post_first_life(url, *args, **kwargs):
             if "reserve" in url:
                 mock = MagicMock()
@@ -44,19 +48,20 @@ class CrashRecoveryTests(TransactionTestCase):
                 raise SimulatedProcessDeath("Coordinator process killed mid-charge")
             raise ValueError(f"Unexpected POST url: {url}")
 
-        with patch("coordinator.views.requests.post", side_effect=mock_post_first_life):
+        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()), \
+             patch("coordinator.views.requests.post", side_effect=mock_post_first_life):
             with self.assertRaises(SimulatedProcessDeath):
                 self.client.post(
                     CREATE_URL,
-                    {"transaction_id": tid, "seat_ids": [1], "quantity": 1, "amount": 500},
+                    {"seat_ids": [1]},
                     format="json",
                 )
 
-        txn = Transaction.objects.get(transaction_id=tid)
+        txn = Transaction.objects.latest("created_at")
         self.assertEqual(txn.status, Transaction.Status.PAYMENT_PROCESSING)
 
         past_time = timezone.now() - timedelta(minutes=10)
-        Transaction.objects.filter(transaction_id=tid).update(updated_at=past_time)
+        Transaction.objects.filter(transaction_id=txn.transaction_id).update(updated_at=past_time)
         
         def mock_get_recovery(url, *args, **kwargs):
             if "payments/check" in url:
@@ -72,11 +77,9 @@ class CrashRecoveryTests(TransactionTestCase):
              patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", return_value=mock_post_recovery):
             call_command("recovery_stuck_transactions")
 
-
         txn.refresh_from_db()
         self.assertEqual(txn.status, Transaction.Status.COMPLETED)
 
-        
         events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
         self.assertEqual(len(events), 4)
 
@@ -103,9 +106,6 @@ class CrashRecoveryTests(TransactionTestCase):
         self.assertEqual(events[3].http_payload, {"status": "CHARGED"})
 
     def test_crash_during_payment_processing_downstream_not_charged_compensates(self):
-    
-        tid = str(uuid.uuid4())
-
         def mock_post_first_life(url, *args, **kwargs):
             if "reserve" in url:
                 mock = MagicMock()
@@ -116,20 +116,20 @@ class CrashRecoveryTests(TransactionTestCase):
                 raise SimulatedProcessDeath("Coordinator process killed before charge")
             raise ValueError(f"Unexpected POST url: {url}")
 
-       
-        with patch("coordinator.views.requests.post", side_effect=mock_post_first_life):
+        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()), \
+             patch("coordinator.views.requests.post", side_effect=mock_post_first_life):
             with self.assertRaises(SimulatedProcessDeath):
                 self.client.post(
                     CREATE_URL,
-                    {"transaction_id": tid, "seat_ids": [1], "quantity": 1, "amount": 500},
+                    {"seat_ids": [1]},
                     format="json",
                 )
 
-        txn = Transaction.objects.get(transaction_id=tid)
+        txn = Transaction.objects.latest("created_at")
         self.assertEqual(txn.status, Transaction.Status.PAYMENT_PROCESSING)
 
         past_time = timezone.now() - timedelta(minutes=10)
-        Transaction.objects.filter(transaction_id=tid).update(updated_at=past_time)
+        Transaction.objects.filter(transaction_id=txn.transaction_id).update(updated_at=past_time)
 
         inventory_released = [False]
 
@@ -316,5 +316,3 @@ class CrashRecoveryTests(TransactionTestCase):
 
         txn = Transaction.objects.get(transaction_id=tid)
         self.assertEqual(txn.status, Transaction.Status.COMPENSATION_FAILED)
-
-

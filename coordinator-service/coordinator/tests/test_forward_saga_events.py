@@ -10,13 +10,21 @@ from rest_framework.test import APIClient
 from coordinator.models import Transaction, SagaEvent
 
 
+def _seat_pricing_response():
+    mock = MagicMock()
+    mock.status_code = 200
+    mock.json.return_value = [
+        {"id": 1, "price": 500, "row": "A", "seat_number": "1"},
+        {"id": 99, "price": 500, "row": "B", "seat_number": "99"},
+    ]
+    return mock
+
+
 class ForwardSagaEventTests(TransactionTestCase):
     def setUp(self):
         self.client = APIClient()
 
     def test_happy_path_produces_ordered_saga_events(self):
-        tid = str(uuid.uuid4())
-
         def mock_post(url, *args, **kwargs):
             mock = MagicMock()
             if "reserve" in url:
@@ -30,7 +38,6 @@ class ForwardSagaEventTests(TransactionTestCase):
             if "charge" in url:
                 mock.status_code = 200
                 mock.json.return_value = {
-                    "transaction_id": tid,
                     "amount": "500.00",
                     "status": "CHARGED",
                 }
@@ -45,14 +52,17 @@ class ForwardSagaEventTests(TransactionTestCase):
                 return mock
             raise ValueError(f"Unexpected POST url: {url}")
 
-        with patch("coordinator.views.requests.post", side_effect=mock_post):
-            resp = self.client.post("/transactions/?sync=true",
-                {"transaction_id": tid, "seat_ids": [1], "quantity": 1, "amount": 500},
+        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()), \
+             patch("coordinator.views.requests.post", side_effect=mock_post):
+            resp = self.client.post(
+                "/transactions/?sync=true",
+                {"seat_ids": [1]},
                 format="json",
             )
 
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["status"], Transaction.Status.COMPLETED)
+        tid = resp.data["transaction_id"]
 
         events_resp = self.client.get(f"/transactions/{tid}/events/")
         self.assertEqual(events_resp.status_code, 200)
@@ -79,8 +89,6 @@ class ForwardSagaEventTests(TransactionTestCase):
         self.assertEqual(events[2]["http_status_code"], 200)
 
     def test_payment_decline_forward_compensation_produces_complete_event_trail(self):
-        tid = str(uuid.uuid4())
-
         def mock_post(url, *args, **kwargs):
             mock = MagicMock()
             if "reserve" in url:
@@ -91,24 +99,26 @@ class ForwardSagaEventTests(TransactionTestCase):
                 mock.status_code = 422
                 mock.json.return_value = {
                     "error": "Payment declined",
-                    "transaction_id": tid,
                     "status": "NOT_CHARGED",
                 }
                 return mock
             if "release" in url:
                 mock.status_code = 200
-                mock.json.return_value = {"message": "Seat released", "transaction_id": tid}
+                mock.json.return_value = {"message": "Seat released"}
                 return mock
             raise ValueError(f"Unexpected POST url: {url}")
 
-        with patch("coordinator.views.requests.post", side_effect=mock_post):
-            resp = self.client.post("/transactions/?sync=true",
-                {"transaction_id": tid, "seat_ids": [1], "amount": 9999},
+        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()), \
+             patch("coordinator.views.requests.post", side_effect=mock_post):
+            resp = self.client.post(
+                "/transactions/?sync=true",
+                {"seat_ids": [1]},
                 format="json",
             )
 
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.data["status"], Transaction.Status.COMPENSATED)
+        tid = resp.data["transaction_id"]
 
         events_resp = self.client.get(f"/transactions/{tid}/events/")
         self.assertEqual(events_resp.status_code, 200)
@@ -138,8 +148,6 @@ class ForwardSagaEventTests(TransactionTestCase):
         self.assertEqual(events[3]["http_status_code"], 200)
 
     def test_payment_succeeded_but_seat_hold_expired_triggers_compensation(self):
-        tid = str(uuid.uuid4())
-
         def mock_post(url, *args, **kwargs):
             mock = MagicMock()
             if "reserve" in url:
@@ -148,7 +156,7 @@ class ForwardSagaEventTests(TransactionTestCase):
                 return mock
             if "charge" in url:
                 mock.status_code = 200
-                mock.json.return_value = {"status": "CHARGED", "transaction_id": tid}
+                mock.json.return_value = {"status": "CHARGED"}
                 return mock
             if "confirm" in url:
                 mock.status_code = 409
@@ -163,25 +171,26 @@ class ForwardSagaEventTests(TransactionTestCase):
                 return mock
             if "refund" in url:
                 mock.status_code = 200
-                mock.json.return_value = {"status": "REFUNDED", "transaction_id": tid}
+                mock.json.return_value = {"status": "REFUNDED"}
                 return mock
             raise ValueError(f"Unexpected POST url: {url}")
 
-        with patch("coordinator.views.requests.post", side_effect=mock_post):
-            resp = self.client.post("/transactions/?sync=true",
-                {"transaction_id": tid, "seat_ids": [1], "amount": 500},
+        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()), \
+             patch("coordinator.views.requests.post", side_effect=mock_post):
+            resp = self.client.post(
+                "/transactions/?sync=true",
+                {"seat_ids": [1]},
                 format="json",
             )
 
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.data["status"], Transaction.Status.COMPENSATED)
+        tid = resp.data["transaction_id"]
 
         txn = Transaction.objects.get(transaction_id=tid)
         self.assertEqual(txn.status, Transaction.Status.COMPENSATED)
 
     def test_inventory_reserve_failure_produces_event(self):
-        tid = str(uuid.uuid4())
-
         def mock_post(url, *args, **kwargs):
             mock = MagicMock()
             if "reserve" in url:
@@ -190,14 +199,17 @@ class ForwardSagaEventTests(TransactionTestCase):
                 return mock
             raise ValueError(f"Unexpected POST url: {url}")
 
-        with patch("coordinator.views.requests.post", side_effect=mock_post):
-            resp = self.client.post("/transactions/?sync=true",
-                {"transaction_id": tid, "seat_ids": [99], "amount": 500},
+        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()), \
+             patch("coordinator.views.requests.post", side_effect=mock_post):
+            resp = self.client.post(
+                "/transactions/?sync=true",
+                {"seat_ids": [99]},
                 format="json",
             )
 
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.data["error"], Transaction.Status.INVENTORY_RESERVE_FAILED)
+        tid = resp.data["transaction_id"]
 
         events_resp = self.client.get(f"/transactions/{tid}/events/")
         events = events_resp.data["events"]

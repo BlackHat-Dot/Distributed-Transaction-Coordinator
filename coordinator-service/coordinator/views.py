@@ -102,10 +102,10 @@ def list_transaction_events(request, transaction_id):
 @api_view(["POST"])
 def retry_compensation(request, transaction_id):
     # Public reach blocked
-    authenticated = get_user_from_request()
+    is_authenticated, user_id, is_staff = _get_requester_identity(request)
 
-    if not authenticated:
-        return Response({"Status":"Not Authenticated"})
+    if not is_authenticated:
+        return Response({"Status": "Not Authenticated"}, status=401)
     
     txn = Transaction.objects.exclude(
         status=Transaction.Status.COMPLETED
@@ -321,15 +321,14 @@ def _resolve_seat_pricing(seat_ids=None, seat_numbers=None):
         if resp.status_code == 200:
             seats_list = resp.json()
     except Exception as e:
-        if not is_testing:
-            return None, None, None, Response(
-                {
-                    "error": "Could not connect to Inventory Service to verify seat pricing.",
-                    "code": "INVENTORY_UNAVAILABLE",
-                    "detail": str(e),
-                },
-                status=503,
-            )
+        return None, None, None, Response(
+            {
+                "error": "Could not connect to Inventory Service to verify seat pricing.",
+                "code": "INVENTORY_UNAVAILABLE",
+                "detail": str(e),
+            },
+            status=503,
+        )
 
     if seats_list and isinstance(seats_list, list):
         matched_seats = []
@@ -353,7 +352,7 @@ def _resolve_seat_pricing(seat_ids=None, seat_numbers=None):
             resolved_seat_ids = [s["id"] for s in matched_seats]
             resolved_seat_numbers = ", ".join(f"{s.get('row', '')}{s.get('seat_number', '')}" for s in matched_seats)
             return total_amount, resolved_seat_ids, resolved_seat_numbers, None
-        elif not is_testing:
+        else:
             return None, None, None, Response(
                 {
                     "error": "One or more requested seats could not be found in inventory.",
@@ -362,10 +361,13 @@ def _resolve_seat_pricing(seat_ids=None, seat_numbers=None):
                 status=404,
             )
 
-    # Fallback for test runner environments when inventory service is mocked or not running
-    fallback_ids = list(req_ids) if req_ids else [1]
-    fallback_numbers = ", ".join(str(s) for s in (req_labels or fallback_ids))
-    return Decimal("500.00") * len(fallback_ids), fallback_ids, fallback_numbers, None
+    return None, None, None, Response(
+        {
+            "error": "Could not retrieve seat catalog from Inventory Service.",
+            "code": "INVENTORY_UNAVAILABLE",
+        },
+        status=503,
+    )
 
 
 def _request_payload_verify(request):
@@ -387,31 +389,8 @@ def _request_payload_verify(request):
 
     allowed_fields = {"seat_ids", "seat_id", "seat_numbers"}
 
-    if is_dev or is_testing:
+    if is_dev:
         allowed_fields.update({"fail_compensation", "coordinator"})
-
-    # In automated test suite runs (manage.py test), permit legacy test cases to pass pre-set IDs/amounts
-    # unless strict payload verification is explicitly requested via header X-Enforce-Strict-Payload
-    if is_testing and not request.headers.get("X-Enforce-Strict-Payload"):
-        # set union; final value => 
-        # {
-        #   "seat_ids", "seat_id", "seat_numbers",
-        #   "transaction_id", "amount", "product_id", "quantity", "user_id", "user_email"
-        # }
-        legacy_allowed = allowed_fields | {"transaction_id", "amount", "product_id", "quantity", "user_id", "user_email"}
-
-        legacy_invalid = [k for k in request.data.keys() if k not in legacy_allowed]
-
-        if legacy_invalid:
-            return None, Response(
-                {
-                    "error": f"Invalid field(s) in payload: {', '.join(sorted(legacy_invalid))}. These fields cannot be supplied by the client.",
-                    "code": "INVALID_FIELDS",
-                    "invalid_fields": sorted(list(legacy_invalid)),
-                },
-                status=400,
-            )
-        return True, None
 
     invalid_fields = [k for k in request.data.keys() if k not in allowed_fields]
 
@@ -439,7 +418,7 @@ def _request_payload_verify(request):
             status=400,
         )
 
-    return True, None
+    return True, None # Satisfied (for Production)
 
 
 def _handle_create_transaction(request):
@@ -449,38 +428,55 @@ def _handle_create_transaction(request):
 
     from django.conf import settings
 
+    # DEBUG (True) : what source code (Django) does
+    #   1. Gives rich yellow traceback screen (django.views.debug)
+    #   Django calls its internal technical_500_response() function. It inspects the entire Python call stack and builds that famous yellow web page containing:
+    #       - The exact file and line number that crashed
+    #       - The values of every local variable at every step in the stack trace
+    #       - All HTTP headers, cookies, and environment settings
+    #   2. Recording every SQL query in RAM
+
+    # IS_TESTING (True) : Only current project uses it
+    #   1. Whenever test cases executed with (python manage.py test) this varaible becomes True because of 'test' in sys.argv statement.
+
     is_testing = bool(getattr(settings, "IS_TESTING", False))
 
     is_dev = getattr(settings, "DEBUG", False)
 
-    # 1. Authenticate Request
+    # Authenticate Request
     user_info = get_user_from_request(request) # JWT based extraction
-    has_internal_key = bool(
-        request.headers.get("X-Internal-Service-Key")
-        and request.headers.get("X-Internal-Service-Key") == INTERNAL_SERVICE_KEY
-    )
+
+
+    # X-Staff-Key is not automatically attached, admin/Staff use curl to attach it.
+
+    #   curl -X POST https://your-coordinator.railway.app/transactions/ 
+    #   \
+    #       -H "X-Staff-Key: Staff Key" \
+    #       -H "Content-Type: application/json" \
+    #       -d '{"seat_ids": [5]}'
+
+    # Why it even needed?
+    # If a admin or staff wants to book seats in a bulk (either for personal or user concern resolve)
+    # they can attach the X-Staff-Key and they are allowed to book without email and nor jwt is recevied.
+    # also resetting the seats reqires the same key
     has_staff_key = bool(
         request.headers.get("X-Staff-Key")
-        and request.headers.get("X-Staff-Key") == os.getenv("STAFF_API_KEY", "dtc-internal-staff-secret")
+        and request.headers.get("X-Staff-Key") == os.getenv("STAFF_API_KEY")
     )
-
+    
+    # If the person has a JWT
     if user_info and user_info.get("is_authenticated"):
         user_id = user_info.get("user_id")
-        user_email = user_info.get("user_email") or user_info.get("email")
-    elif has_internal_key or has_staff_key:
-        user_id = request.headers.get("X-User-ID") or "usr_internal"
-        user_email = request.headers.get("X-User-Email") or "internal@dtc.io"
+        user_email = user_info.get("user_email")
+
+    # If the person has a Staff API Key
+    elif has_staff_key:
+        user_id = request.headers.get("X-User-ID") or os.getenv("STAFF_USER_ID")
+        user_email = request.headers.get("X-User-Email") or os.getenv("STAFF_EMAIL_ID")
+
     elif is_testing or is_dev:
-        user_id = (
-            request.headers.get("X-User-ID")
-            or request.data.get("user_id")
-            or "usr_demo_user"
-        ) if is_testing else (request.headers.get("X-User-ID") or "usr_demo_user")
-        user_email = (
-            request.headers.get("X-User-Email")
-            or request.data.get("user_email")
-            or "demo@dtc.io"
-        ) if is_testing else (request.headers.get("X-User-Email") or "demo@dtc.io")
+        user_id = request.headers.get("X-User-ID") or "usr_demo_user"
+        user_email = request.headers.get("X-User-Email") or "demo@dtc.io"
     else:
         # In production (DEBUG=False): NEVER fall back to demo@dtc.io! Reject unauthenticated requests!
         return Response(
@@ -492,32 +488,19 @@ def _handle_create_transaction(request):
         )
 
     # 2. Transaction ID: Server generates UUIDv4 for each transaction
-    # (Allow client-supplied ID only in legacy test runner environment)
-    if is_testing and request.data.get("transaction_id") and not request.headers.get("X-Enforce-Strict-Payload"):
-        transaction_id, error_response = _parse_transaction_id(request.data.get("transaction_id"))
-        if error_response:
-            return error_response
-    else:
-        transaction_id = str(uuid.uuid4())
+    transaction_id = str(uuid.uuid4())
 
     # 3. Resolve Seats and Server-Side Pricing from Database
     raw_seat_ids = request.data.get("seat_ids") or request.data.get("seat_id")
     raw_seat_numbers = request.data.get("seat_numbers")
 
-    # In legacy test cases where amount was specifically injected:
-    if is_testing and request.data.get("amount") is not None and not request.headers.get("X-Enforce-Strict-Payload"):
-        amount = Decimal(str(request.data.get("amount")))
-        seat_ids = raw_seat_ids if isinstance(raw_seat_ids, list) else ([raw_seat_ids] if raw_seat_ids else [1])
-        seat_numbers = str(raw_seat_numbers or "")
-        quantity = len(seat_ids)
-    else:
-        amount, seat_ids, seat_numbers, price_error = _resolve_seat_pricing(
-            seat_ids=raw_seat_ids,
-            seat_numbers=raw_seat_numbers,
-        )
-        if price_error:
-            return price_error
-        quantity = len(seat_ids)
+    amount, seat_ids, seat_numbers, price_error = _resolve_seat_pricing(
+        seat_ids=raw_seat_ids,
+        seat_numbers=raw_seat_numbers,
+    )
+    if price_error:
+        return price_error
+    quantity = len(seat_ids)
 
     # Simulation flag for payment decline (Dev / Visualizer Demo)
     simulate_decline = (
@@ -1237,15 +1220,6 @@ def _create_transaction_idempotent(
             },
             status=200,
         )
-
-
-def _parse_transaction_id(raw_tid):
-    if raw_tid is None:
-        return str(uuid.uuid4()), None
-    try: 
-        return str(uuid.UUID(str(raw_tid))), None
-    except (ValueError, AttributeError, TypeError):
-        return None, Response({"error": "transaction_id must be a valid UUID"}, status=400)
 
 
 def _serialize_transaction(txn):

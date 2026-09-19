@@ -1,6 +1,6 @@
 import sys
 import uuid
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from django.test import TestCase
 from django.core.cache import cache
 from rest_framework.test import APIClient
@@ -187,7 +187,11 @@ class LocalDevAuthNumbModeTests(TestCase):
         with patch.object(sys, "argv", ["gunicorn"]):
             from coordinator.auth_views import _create_jwt
             token = _create_jwt("usr_real_fan", "fan@test.io")
-            with patch("coordinator.tasks.execute_saga_task.delay"):
+            mock_seats = MagicMock()
+            mock_seats.status_code = 200
+            mock_seats.json.return_value = [{"id": 43, "price": 500, "row": "D", "seat_number": "43"}]
+            with patch("coordinator.views.requests.get", return_value=mock_seats), \
+                 patch("coordinator.tasks.execute_saga_task.delay"):
                 resp = self.client.post(
                     "/transactions/",
                     {"seat_ids": [43]},

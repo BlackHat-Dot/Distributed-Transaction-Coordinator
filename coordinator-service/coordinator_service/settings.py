@@ -40,7 +40,14 @@ else:
         "CRITICAL SECURITY ERROR: ALLOWED_HOSTS environment variable is not set in production (DEBUG=False)!"
     )
 
+
+# Why it even needed?
+# confirm_seat turns a held seat into a permanently BOOKED seat.
+# If this key didn't exist, anyone who discovered the inventory URL could call /seats/confirm/ directly 
+# and steal seats without ever paying money!
 INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY")
+
+
 if not INTERNAL_SERVICE_KEY:
     if DEBUG or IS_TESTING:
         INTERNAL_SERVICE_KEY = "dtc-internal-coordinator-secret-key-2026"
@@ -87,7 +94,6 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware', # added
     'coordinator.middleware.CorrelationIdMiddleware', # added
-    'whitenoise.middleware.WhiteNoiseMiddleware', # added
     'django.middleware.security.SecurityMiddleware', # standard
     'django.contrib.sessions.middleware.SessionMiddleware', # standard
     'django.middleware.common.CommonMiddleware', # standard
@@ -241,14 +247,6 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 os.makedirs(STATIC_ROOT, exist_ok=True)
-STORAGES = {
-    "default": {
-        "BACKEND": "django.core.files.storage.FileSystemStorage",
-    },
-    "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
-    },
-}
 
 
 CELERY_BROKER_URL = os.getenv(

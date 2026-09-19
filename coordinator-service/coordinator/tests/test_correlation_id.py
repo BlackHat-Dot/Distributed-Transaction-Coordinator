@@ -43,8 +43,7 @@ class CorrelationIdOutboundPropagationTests(TransactionTestCase):
         self.client = APIClient()
 
     def test_forward_saga_propagates_correlation_id_in_outbound_requests(self):
-        tid = str(uuid.uuid4())
-        custom_cid = f"trace-{tid}"
+        custom_cid = f"trace-{uuid.uuid4()}"
         captured_headers = []
 
         def mock_post(url, *args, **kwargs):
@@ -54,14 +53,20 @@ class CorrelationIdOutboundPropagationTests(TransactionTestCase):
             if "reserve" in url:
                 mock.json.return_value = {"message": "Seat reserved", "seat_ids": [1]}
             elif "charge" in url:
-                mock.json.return_value = {"status": "CHARGED", "transaction_id": tid}
+                mock.json.return_value = {"status": "CHARGED"}
             elif "confirm" in url:
                 mock.json.return_value = {"message": "Seat confirmed", "seat_ids": [1]}
             return mock
 
-        with patch("coordinator.views.requests.post", side_effect=mock_post):
-            resp = self.client.post("/transactions/?sync=true",
-                {"transaction_id": tid, "seat_ids": [1], "amount": 500},
+        mock_get = MagicMock()
+        mock_get.status_code = 200
+        mock_get.json.return_value = [{"id": 1, "price": 500, "row": "A", "seat_number": "1"}]
+
+        with patch("coordinator.views.requests.get", return_value=mock_get), \
+             patch("coordinator.views.requests.post", side_effect=mock_post):
+            resp = self.client.post(
+                "/transactions/?sync=true",
+                {"seat_ids": [1]},
                 format="json",
                 HTTP_X_CORRELATION_ID=custom_cid,
             )

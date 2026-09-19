@@ -10,6 +10,13 @@ from coordinator.models import Transaction, SagaEvent
 from coordinator.tasks import execute_saga_task
 
 
+def _seat_pricing_response():
+    mock = MagicMock()
+    mock.status_code = 200
+    mock.json.return_value = [{"id": 1, "price": 500, "row": "A", "seat_number": "1"}]
+    return mock
+
+
 class NonBlockingSagaTaskTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -17,15 +24,16 @@ class NonBlockingSagaTaskTests(TestCase):
     @override_settings(CELERY_TASK_ALWAYS_EAGER=False)
     @patch("coordinator.tasks.execute_saga_task.delay")
     def test_post_transactions_returns_202_accepted_and_dispatches_task(self, mock_delay):
-        tid = str(uuid.uuid4())
-        resp = self.client.post(
-            "/transactions/?async=true",
-            {"transaction_id": tid, "seat_ids": [1], "quantity": 1, "amount": 500},
-            format="json",
-        )
+        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()):
+            resp = self.client.post(
+                "/transactions/?async=true",
+                {"seat_ids": [1]},
+                format="json",
+            )
         self.assertEqual(resp.status_code, 202)
         self.assertEqual(resp.data["status"], "PENDING")
-        self.assertEqual(resp.data["transaction_id"], tid)
+        tid = resp.data["transaction_id"]
+        self.assertIsNotNone(tid)
         self.assertEqual(resp.get("Location"), f"/transactions/{tid}/")
 
         txn = Transaction.objects.get(transaction_id=tid)
@@ -98,8 +106,6 @@ class NonBlockingSagaTaskTests(TestCase):
         self.assertEqual(events[2].to_status, "COMPLETED")
 
     def test_sync_param_override_returns_synchronous_response(self):
-        tid = str(uuid.uuid4())
-
         def mock_post(url, *args, **kwargs):
             mock = MagicMock()
             if "reserve" in url:
@@ -108,7 +114,7 @@ class NonBlockingSagaTaskTests(TestCase):
                 return mock
             if "charge" in url:
                 mock.status_code = 200
-                mock.json.return_value = {"transaction_id": tid, "amount": "500.00", "status": "CHARGED"}
+                mock.json.return_value = {"amount": "500.00", "status": "CHARGED"}
                 return mock
             if "confirm" in url:
                 mock.status_code = 200
@@ -116,11 +122,15 @@ class NonBlockingSagaTaskTests(TestCase):
                 return mock
             raise ValueError(f"Unexpected POST: {url}")
 
-        with patch("coordinator.views.requests.post", side_effect=mock_post):
+        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()), \
+             patch("coordinator.views.requests.post", side_effect=mock_post):
             resp = self.client.post(
                 "/transactions/?sync=true",
-                {"transaction_id": tid, "seat_ids": [1], "quantity": 1, "amount": 500},
+                {"seat_ids": [1]},
                 format="json",
             )
             self.assertEqual(resp.status_code, 200)
             self.assertEqual(resp.data["status"], Transaction.Status.COMPLETED)
+            tid = resp.data["transaction_id"]
+            txn = Transaction.objects.get(transaction_id=tid)
+            self.assertEqual(txn.status, Transaction.Status.COMPLETED)

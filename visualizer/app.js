@@ -2543,12 +2543,6 @@ const TECH_STACK_CONFIG = [
     icon: "network"
   },
   {
-    name: "WhiteNoise",
-    category: "Static Asset Middleware",
-    desc: "Embedded production static asset serving with gzip compression and cache headers.",
-    icon: "package"
-  },
-  {
     name: "django-cors-headers",
     category: "Security Middleware",
     desc: "Cross-Origin Resource Sharing (CORS) header configuration for visualizer frontend.",

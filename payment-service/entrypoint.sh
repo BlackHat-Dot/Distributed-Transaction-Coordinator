@@ -50,10 +50,6 @@ if not User.objects.filter(username='admin').exists():
 " 2>/dev/null || true
 fi
 
-echo "[Payment] Collecting static files..."
-mkdir -p staticfiles
-python manage.py collectstatic --noinput
-
 PORT="${PORT:-8001}"
 if [ $# -eq 0 ]; then
   echo "[Payment] Starting Gunicorn on 0.0.0.0:$PORT..."

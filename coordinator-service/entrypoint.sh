@@ -50,10 +50,6 @@ if not User.objects.filter(username='admin').exists():
 " 2>/dev/null || true
 fi
 
-echo "[Coordinator] Collecting static files..."
-mkdir -p staticfiles
-python manage.py collectstatic --noinput
-
 APP_DIR="$(pwd)"
 export PORT="${PORT:-8002}"
 
