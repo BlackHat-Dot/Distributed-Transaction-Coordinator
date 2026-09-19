@@ -600,7 +600,7 @@ def _handle_list_transactions(request):
     except (ValueError, TypeError):
         limit = 10
 
-    if page_param is not None:
+    if page_param:
         try:
             page = max(1, int(page_param))
             offset = (page - 1) * limit

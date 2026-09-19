@@ -107,7 +107,7 @@ def charge_payment(request):
         )
 
     existing = Payment.objects.filter(transaction_id=transaction_uuid).first()
-    if existing is not None:
+    if existing:
         return _payment_response(existing)
 
     try:
@@ -133,7 +133,7 @@ def payment_check(request):
         return error_response
 
     payment = Payment.objects.filter(transaction_id=transaction_uuid).first()
-    if payment is not None:
+    if payment:
         return Response({
             "transaction_id": str(payment.transaction_id),
             "user_id": payment.user_id,

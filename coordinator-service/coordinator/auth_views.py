@@ -32,7 +32,7 @@ def _get_redis_client():
     # or manual clock adjustments), guaranteeing the timer never jumps backward.
     now = time.monotonic()
 
-    if _redis_client_instance is not None and _redis_is_available:
+    if _redis_client_instance and _redis_is_available:
         return _redis_client_instance
     
     if now - _redis_last_check < 5.0 and not _redis_is_available:
