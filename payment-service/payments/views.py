@@ -31,7 +31,7 @@ def _require_transaction_id(raw_value):
         return None, Response({"error": "transaction_id is required"}, status=400)
 
     transaction_uuid = _validate_uuid(raw_value)
-    if transaction_uuid is None:
+    if not transaction_uuid:
         return None, Response({"error": "transaction_id must be a valid UUID"}, status=400)
 
     return transaction_uuid, None
@@ -153,7 +153,7 @@ def refund_payment(request):
         return error_response
 
     payment = Payment.objects.filter(transaction_id=transaction_uuid).first()
-    if payment is None:
+    if not payment:
         return Response(
             {
                 "error": "Payment not found",

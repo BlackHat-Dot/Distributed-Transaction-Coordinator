@@ -18,17 +18,17 @@ def ping_health():
 
 
 def submit_async_transaction(tx_index):
-    tid = str(uuid.uuid4())
     seat_id = (tx_index % 30) + 1
-    amount = 500
     start = time.perf_counter()
     res = session.post(
         f"{COORDINATOR_URL}/transactions/",
-        json={"transaction_id": tid, "seat_id": seat_id, "amount": amount},
+        json={"seat_ids": [seat_id]},
         timeout=10,
     )
     elapsed_ms = (time.perf_counter() - start) * 1000
-    return res.status_code, elapsed_ms, tid, res.json()
+    resp_data = res.json() if res.status_code in (200, 202) else {}
+    tid = resp_data.get("transaction_id")
+    return res.status_code, elapsed_ms, tid, resp_data
 
 
 def run_load_test(concurrent_txns=20, concurrent_health_pings=20):

@@ -92,24 +92,96 @@ def seat_list(request):
     reclaim_expired_holds()
     # ── End Piggyback Sweep ────────────────────────────────────────────────────
 
+
+    # Will be deleted once project reaches real theater owners. 
     if Seat.objects.count() == 0:
         event = Event.objects.first()
+
         if not event:
             event = Event.objects.create(
                 name='Coldplay: Music of the Spheres World Tour',
                 venue='Grand Arena Stadium',
                 starts_at=timezone.now() + timedelta(days=14)
             )
+
         seats_to_create = []
+
         for r, price in [('A', 750.00), ('B', 500.00), ('C', 350.00)]:
             for num in range(1, 11):
                 seats_to_create.append(
                     Seat(event=event, row=r, seat_number=str(num), price=price, status=Seat.Status.AVAILABLE)
                 )
+
         Seat.objects.bulk_create(seats_to_create)
 
+    # N+1 query problem solved by select_related — all seats + events in 1 SQL query.
     seats = Seat.objects.all().select_related("event").order_by("id")
+
+    # Convert returned QuerySet containing Python Seat model instances to JSON format
+    # By definition: Objects -> JSON
     serializer = SeatSerializer(seats, many=True)
+    return Response(serializer.data) # JSON string is sent over the internet
+
+
+INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
+
+
+def _verify_internal_service_key(request, allow_client=False):
+    """
+    Ensures internal state-mutating endpoints (confirm, release-booked)
+    can only be called by internal services (e.g. coordinator) presenting
+    the shared secret.
+    If allow_client=True (e.g. reserve_seat or user hold cancel), calls without
+    the header are permitted (subject to user quota and validation), but invalid
+    keys are always rejected with 403.
+    """
+    key = request.headers.get("X-Internal-Service-Key")
+    if key is not None:
+        if key != INTERNAL_SERVICE_KEY:
+            return Response(
+                {"error": "Forbidden: invalid internal service key."},
+                status=403,
+            )
+        return None
+
+    if allow_client or getattr(settings, "IS_TESTING", False):
+        return None
+
+    if not settings.DEBUG:
+        return Response(
+            {"error": "Forbidden: missing internal service key."},
+            status=403,
+        )
+
+    return None
+
+
+@api_view(["POST"])
+def seat_pricing(request):
+    """
+    Returns seat objects for the requested seat_ids.
+    Accepts: POST {"seat_ids": [1, 2, 3]}
+    Returns: JSON array of matching Seat objects.
+    Called exclusively by Coordinator to resolve server-side pricing before booking.
+    """
+    auth_err = _verify_internal_service_key(request)
+    if auth_err:
+        return auth_err
+
+    seat_ids = request.data.get("seat_ids")
+
+    if not seat_ids or not isinstance(seat_ids, list):
+        return Response({"error": "seat_ids is required and must be a list"}, status=400)
+
+    try:
+        target_ids = [int(x) for x in seat_ids]
+    except (ValueError, TypeError):
+        return Response({"error": "seat_ids must be a list of integers"}, status=400)
+
+    seats = Seat.objects.filter(id__in=target_ids).select_related("event").order_by("id")
+
+    serializer = SeatSerializer(seats, many=True)
+    
     return Response(serializer.data)
 
 
@@ -143,38 +215,6 @@ def _validate_reserve_input(data):
         return None, None, Response({"error": "transaction_id must be a valid UUID"}, status=400)
 
     return seat_ids, tid, None
-
-INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
-
-
-def _verify_internal_service_key(request, allow_client=False):
-    """
-    Ensures internal state-mutating endpoints (confirm, release-booked)
-    can only be called by internal services (e.g. coordinator) presenting
-    the shared secret.
-    If allow_client=True (e.g. reserve_seat or user hold cancel), calls without
-    the header are permitted (subject to user quota and validation), but invalid
-    keys are always rejected with 403.
-    """
-    key = request.headers.get("X-Internal-Service-Key")
-    if key is not None:
-        if key != INTERNAL_SERVICE_KEY:
-            return Response(
-                {"error": "Forbidden: invalid internal service key."},
-                status=403,
-            )
-        return None
-
-    if allow_client or getattr(settings, "IS_TESTING", False):
-        return None
-
-    if not settings.DEBUG:
-        return Response(
-            {"error": "Forbidden: missing internal service key."},
-            status=403,
-        )
-
-    return None
 
 
 @api_view(["POST"])

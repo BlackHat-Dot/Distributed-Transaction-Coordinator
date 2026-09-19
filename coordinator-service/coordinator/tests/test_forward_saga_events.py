@@ -27,6 +27,10 @@ class ForwardSagaEventTests(TransactionTestCase):
     def test_happy_path_produces_ordered_saga_events(self):
         def mock_post(url, *args, **kwargs):
             mock = MagicMock()
+            if "pricing" in url:
+                mock.status_code = 200
+                mock.json.return_value = [{"id": 1, "price": 500, "row": "A", "seat_number": "1"}]
+                return mock
             if "reserve" in url:
                 mock.status_code = 200
                 mock.json.return_value = {
@@ -52,8 +56,7 @@ class ForwardSagaEventTests(TransactionTestCase):
                 return mock
             raise ValueError(f"Unexpected POST url: {url}")
 
-        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()), \
-             patch("coordinator.views.requests.post", side_effect=mock_post):
+        with patch("coordinator.views.requests.post", side_effect=mock_post):
             resp = self.client.post(
                 "/transactions/?sync=true",
                 {"seat_ids": [1]},
@@ -91,6 +94,10 @@ class ForwardSagaEventTests(TransactionTestCase):
     def test_payment_decline_forward_compensation_produces_complete_event_trail(self):
         def mock_post(url, *args, **kwargs):
             mock = MagicMock()
+            if "pricing" in url:
+                mock.status_code = 200
+                mock.json.return_value = [{"id": 1, "price": 500, "row": "A", "seat_number": "1"}]
+                return mock
             if "reserve" in url:
                 mock.status_code = 200
                 mock.json.return_value = {"message": "Seat reserved", "seat_ids": [1]}
@@ -108,8 +115,7 @@ class ForwardSagaEventTests(TransactionTestCase):
                 return mock
             raise ValueError(f"Unexpected POST url: {url}")
 
-        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()), \
-             patch("coordinator.views.requests.post", side_effect=mock_post):
+        with patch("coordinator.views.requests.post", side_effect=mock_post):
             resp = self.client.post(
                 "/transactions/?sync=true",
                 {"seat_ids": [1]},
@@ -150,6 +156,10 @@ class ForwardSagaEventTests(TransactionTestCase):
     def test_payment_succeeded_but_seat_hold_expired_triggers_compensation(self):
         def mock_post(url, *args, **kwargs):
             mock = MagicMock()
+            if "pricing" in url:
+                mock.status_code = 200
+                mock.json.return_value = [{"id": 1, "price": 500, "row": "A", "seat_number": "1"}]
+                return mock
             if "reserve" in url:
                 mock.status_code = 200
                 mock.json.return_value = {"message": "Seat reserved", "seat_ids": [1]}
@@ -175,8 +185,7 @@ class ForwardSagaEventTests(TransactionTestCase):
                 return mock
             raise ValueError(f"Unexpected POST url: {url}")
 
-        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()), \
-             patch("coordinator.views.requests.post", side_effect=mock_post):
+        with patch("coordinator.views.requests.post", side_effect=mock_post):
             resp = self.client.post(
                 "/transactions/?sync=true",
                 {"seat_ids": [1]},
@@ -193,14 +202,17 @@ class ForwardSagaEventTests(TransactionTestCase):
     def test_inventory_reserve_failure_produces_event(self):
         def mock_post(url, *args, **kwargs):
             mock = MagicMock()
+            if "pricing" in url:
+                mock.status_code = 200
+                mock.json.return_value = [{"id": 99, "price": 500, "row": "B", "seat_number": "99"}]
+                return mock
             if "reserve" in url:
                 mock.status_code = 409
                 mock.json.return_value = {"error": "Seat is currently held by another user"}
                 return mock
             raise ValueError(f"Unexpected POST url: {url}")
 
-        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()), \
-             patch("coordinator.views.requests.post", side_effect=mock_post):
+        with patch("coordinator.views.requests.post", side_effect=mock_post):
             resp = self.client.post(
                 "/transactions/?sync=true",
                 {"seat_ids": [99]},

@@ -69,6 +69,43 @@ class EventAndSeatListTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(len(resp.data), 2)
 
+    def test_pricing_endpoint_returns_requested_seats(self):
+        resp = self.client.post("/seats/pricing/", {"seat_ids": [self.seat1.id]}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.data), 1)
+        self.assertEqual(resp.data[0]["id"], self.seat1.id)
+
+    def test_pricing_endpoint_returns_multiple_seats(self):
+        resp = self.client.post("/seats/pricing/", {"seat_ids": [self.seat1.id, self.seat2.id]}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.data), 2)
+
+    def test_pricing_endpoint_missing_seat_ids_returns_400(self):
+        resp = self.client.post("/seats/pricing/", {}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("error", resp.data)
+
+    def test_pricing_endpoint_with_valid_internal_key_succeeds(self):
+        from django.conf import settings
+        resp = self.client.post(
+            "/seats/pricing/",
+            {"seat_ids": [self.seat1.id]},
+            HTTP_X_INTERNAL_SERVICE_KEY=settings.INTERNAL_SERVICE_KEY,
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.data), 1)
+
+    def test_pricing_endpoint_with_invalid_internal_key_returns_403(self):
+        resp = self.client.post(
+            "/seats/pricing/",
+            {"seat_ids": [self.seat1.id]},
+            HTTP_X_INTERNAL_SERVICE_KEY="invalid-secret-key",
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn("Forbidden", resp.data.get("error", ""))
+
 
 class ReserveValidationTests(TestCase):
     def setUp(self):

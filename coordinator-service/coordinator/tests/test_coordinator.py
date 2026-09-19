@@ -47,20 +47,34 @@ def _mock_saga_ok():
 class _SagaOkPatch:
     def __enter__(self):
         self._post_patcher = patch("coordinator.views.requests.post")
-        self._get_patcher = patch("coordinator.views.requests.get")
         self.post_mock = self._post_patcher.start()
-        self.get_mock = self._get_patcher.start()
-        self.get_mock.return_value = _seat_pricing_response()
-        self.post_mock.side_effect = [
-            _reserve_ok_response(),
-            _charged_response(),
-            _confirm_ok_response(),
-        ]
-        return self.post_mock, self.get_mock
+        self.post_mock.side_effect = _dispatch_post
+        return self.post_mock, None
 
     def __exit__(self, *args):
         self._post_patcher.stop()
-        self._get_patcher.stop()
+
+
+def _dispatch_post(url, *args, **kwargs):
+    """Routes POST calls by URL for coordinator tests."""
+    mock = MagicMock()
+    if "pricing" in url:
+        mock.status_code = 200
+        mock.json.return_value = [{"id": 1, "price": 500, "row": "A", "seat_number": "1"}]
+        return mock
+    if "reserve" in url:
+        mock.status_code = 200
+        mock.json.return_value = {"message": "Seat reserved", "seat_ids": [1]}
+        return mock
+    if "charge" in url:
+        mock.status_code = 200
+        mock.json.return_value = {"status": "CHARGED"}
+        return mock
+    if "confirm" in url:
+        mock.status_code = 200
+        mock.json.return_value = {"message": "Seat confirmed", "seat_ids": [1], "status": "BOOKED"}
+        return mock
+    raise ValueError(f"Unexpected POST url in _dispatch_post: {url}")
 
 
 class TransactionIdGenerationTests(TestCase):
@@ -76,7 +90,7 @@ class TransactionIdGenerationTests(TestCase):
         tid = resp.data["transaction_id"]
         uuid.UUID(str(tid))
         self.assertEqual(Transaction.objects.count(), 1)
-        self.assertEqual(post_mock.call_count, 3)
+        self.assertEqual(post_mock.call_count, 4)  # pricing + reserve + charge + confirm
 
 
 class SequentialDuplicateTests(TestCase):
@@ -206,6 +220,10 @@ class Batch3RefundCompensationTests(TestCase):
         def mock_post(url, *args, **kwargs):
             captured_calls.append(url)
             mock = MagicMock()
+            if "pricing" in url:
+                mock.status_code = 200
+                mock.json.return_value = [{"id": 1, "price": 500, "row": "A", "seat_number": "1"}]
+                return mock
             if "reserve" in url:
                 mock.status_code = 200
                 mock.json.return_value = {"message": "Reserved", "seat_ids": [1]}
@@ -228,8 +246,7 @@ class Batch3RefundCompensationTests(TestCase):
                 return mock
             raise ValueError(f"Unexpected URL: {url}")
 
-        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()), \
-             patch("coordinator.views.requests.post", side_effect=mock_post):
+        with patch("coordinator.views.requests.post", side_effect=mock_post):
             resp = self.client.post("/transactions/?sync=true", {"seat_ids": [1]}, format="json")
 
         self.assertEqual(resp.status_code, 400)
@@ -244,6 +261,10 @@ class Batch3RefundCompensationTests(TestCase):
     def test_compensation_when_refund_fails_transitions_to_compensation_failed(self):
         def mock_post(url, *args, **kwargs):
             mock = MagicMock()
+            if "pricing" in url:
+                mock.status_code = 200
+                mock.json.return_value = [{"id": 1, "price": 500, "row": "A", "seat_number": "1"}]
+                return mock
             if "reserve" in url:
                 mock.status_code = 200
                 mock.json.return_value = {"message": "Reserved", "seat_ids": [1]}
@@ -266,8 +287,7 @@ class Batch3RefundCompensationTests(TestCase):
                 return mock
             raise ValueError(f"Unexpected URL: {url}")
 
-        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()), \
-             patch("coordinator.views.requests.post", side_effect=mock_post):
+        with patch("coordinator.views.requests.post", side_effect=mock_post):
             resp = self.client.post("/transactions/?sync=true", {"seat_ids": [1]}, format="json")
 
         self.assertEqual(resp.status_code, 500)

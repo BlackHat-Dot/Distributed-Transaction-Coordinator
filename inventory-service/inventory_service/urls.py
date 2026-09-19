@@ -3,6 +3,7 @@ from django.urls import path
 from inventory.views import (
     event_list,
     seat_list,
+    seat_pricing,
     reserve_seat,
     confirm_seat,
     release_seat,
@@ -15,6 +16,7 @@ from inventory.views import (
 urlpatterns = [
     path('events/', event_list),
     path('seats/', seat_list),
+    path('seats/pricing/', seat_pricing),
     path('seats/reserve/', reserve_seat),
     path('seats/confirm/', confirm_seat),
     path('seats/release/', release_seat),

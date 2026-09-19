@@ -39,6 +39,11 @@ class CrashRecoveryTests(TransactionTestCase):
 
     def test_crash_during_payment_processing_downstream_charged_rolls_forward(self):
         def mock_post_first_life(url, *args, **kwargs):
+            if "pricing" in url:
+                mock = MagicMock()
+                mock.status_code = 200
+                mock.json.return_value = [{"id": 1, "price": 500, "row": "A", "seat_number": "1"}]
+                return mock
             if "reserve" in url:
                 mock = MagicMock()
                 mock.status_code = 200
@@ -48,8 +53,7 @@ class CrashRecoveryTests(TransactionTestCase):
                 raise SimulatedProcessDeath("Coordinator process killed mid-charge")
             raise ValueError(f"Unexpected POST url: {url}")
 
-        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()), \
-             patch("coordinator.views.requests.post", side_effect=mock_post_first_life):
+        with patch("coordinator.views.requests.post", side_effect=mock_post_first_life):
             with self.assertRaises(SimulatedProcessDeath):
                 self.client.post(
                     CREATE_URL,
@@ -107,6 +111,11 @@ class CrashRecoveryTests(TransactionTestCase):
 
     def test_crash_during_payment_processing_downstream_not_charged_compensates(self):
         def mock_post_first_life(url, *args, **kwargs):
+            if "pricing" in url:
+                mock = MagicMock()
+                mock.status_code = 200
+                mock.json.return_value = [{"id": 1, "price": 500, "row": "A", "seat_number": "1"}]
+                return mock
             if "reserve" in url:
                 mock = MagicMock()
                 mock.status_code = 200
@@ -116,8 +125,7 @@ class CrashRecoveryTests(TransactionTestCase):
                 raise SimulatedProcessDeath("Coordinator process killed before charge")
             raise ValueError(f"Unexpected POST url: {url}")
 
-        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()), \
-             patch("coordinator.views.requests.post", side_effect=mock_post_first_life):
+        with patch("coordinator.views.requests.post", side_effect=mock_post_first_life):
             with self.assertRaises(SimulatedProcessDeath):
                 self.client.post(
                     CREATE_URL,

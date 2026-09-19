@@ -19,7 +19,7 @@ from coordinator.auth_views import get_user_from_request
 # ==============================================================================
 # SECTION 1: CONFIGURATION & SERVICE ENDPOINTS
 # URLs, timeouts, and authentication keys used to communicate with peer services.
-# ==============================================================================
+# ==============================================================================>
 
 INVENTORY_BASE_URL = os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000").rstrip("/")
 PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rstrip("/")
@@ -27,6 +27,7 @@ PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rst
 INVENTORY_RESERVE_URL = f"{INVENTORY_BASE_URL}/seats/reserve/"
 INVENTORY_CONFIRM_URL = f"{INVENTORY_BASE_URL}/seats/confirm/"
 INVENTORY_RELEASE_URL = f"{INVENTORY_BASE_URL}/seats/release/"
+INVENTORY_PRICING_URL = f"{INVENTORY_BASE_URL}/seats/pricing/"
 PAYMENT_CHARGE_URL = f"{PAYMENT_BASE_URL}/payments/charge/"
 PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
 PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
@@ -274,15 +275,16 @@ def recovery_status(request):
 # Internal handlers that authenticate, parse, and validate incoming requests.
 # ==============================================================================
 
-def _resolve_seat_pricing(seat_ids=None, seat_numbers=None):
+def _resolve_seat_pricing(seat_ids=None, correlation_id=None):
     """
     Resolves official seat pricing and details from the Inventory Service DB.
+    Matches seats strictly by seat_ids and constructs human-readable seat numbers
+    from the retrieved inventory seat records.
     Returns: (total_amount, resolved_seat_ids, resolved_seat_numbers, error_response)
     """
-    is_testing = bool(getattr(settings, "IS_TESTING", False))
-
     # 1. Parse and normalize requested seat_ids
-    req_ids = set()
+    req_ids = set() # duplicate handling
+
     if seat_ids:
         if isinstance(seat_ids, (list, tuple)):
             for s in seat_ids:
@@ -296,30 +298,64 @@ def _resolve_seat_pricing(seat_ids=None, seat_numbers=None):
             except (ValueError, TypeError):
                 pass
 
-    # 2. Parse and normalize requested seat_numbers (e.g. ["A1", "A2"] or "A1, A2")
-    req_labels = set()
-    if seat_numbers:
-        if isinstance(seat_numbers, (list, tuple)):
-            for sn in seat_numbers:
-                cleaned = str(sn).strip().upper().replace(" ", "")
-                if cleaned:
-                    req_labels.add(cleaned)
-        else:
-            raw_str = str(seat_numbers)
-            for part in raw_str.replace("-", ",").replace("ROW", "").replace("SEATS", "").split(","):
-                cleaned = part.strip().upper().replace(" ", "")
-                if cleaned:
-                    req_labels.add(cleaned)
+    if not req_ids:
+        return None, None, None, Response(
+            {
+                "error": "seat_ids or seat_id is required and must contain valid seat IDs.",
+                "code": "SEATS_REQUIRED",
+            },
+            status=400,
+        )
 
-    # 3. Query Inventory Service for seat catalog
+    # 2. Query Inventory Service for seat pricing — POST with JSON body {"seat_ids": [1, 2]}
     headers = {
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+        "X-Correlation-ID": correlation_id or get_correlation_id(),
     }
+
     seats_list = None
+    """
+    [
+        {
+            "id": 1,
+            "event": 1,
+            "row": "A",
+            "seat_number": "1",
+            "price": "750.00",
+            "status": "AVAILABLE",
+            "held_until": None,
+            "held_by_transaction_id": None,
+            "user_id": None,
+            "user_email": None,
+            "held_by_user_id": None,
+            "held_by_user_email": None,
+        },
+        {
+            "id": 2,
+            "event": 1,
+            "row": "A",
+            "seat_number": "2",
+            "price": "750.00",
+            "status": "AVAILABLE",
+            "held_until": None,
+            "held_by_transaction_id": None,
+            "user_id": None,
+            "user_email": None,
+            "held_by_user_id": None,
+            "held_by_user_email": None,
+        }
+    ]
+    """
+
     try:
-        resp = requests.get(f"{INVENTORY_BASE_URL}/seats/", headers=headers, timeout=REQUEST_TIMEOUT)
+        resp = requests.post(
+            INVENTORY_PRICING_URL,
+            json={"seat_ids": list(req_ids)},
+            headers=headers,
+            timeout=REQUEST_TIMEOUT,
+        )
         if resp.status_code == 200:
-            seats_list = resp.json()
+            seats_list = resp.json() # Deserializer : Converts JSON string -> Python object (list of dicts)
     except Exception as e:
         return None, None, None, Response(
             {
@@ -331,26 +367,12 @@ def _resolve_seat_pricing(seat_ids=None, seat_numbers=None):
         )
 
     if seats_list and isinstance(seats_list, list):
-        matched_seats = []
-        for s in seats_list:
-            s_id = s.get("id")
-            s_row = str(s.get("row", "")).strip().upper()
-            s_num = str(s.get("seat_number", "")).strip().upper()
-            s_label = f"{s_row}{s_num}"
 
-            match = False
-            if req_ids and s_id in req_ids:
-                match = True
-            elif req_labels and (s_label in req_labels or s_num in req_labels):
-                match = True
+        if len(seats_list) == len(req_ids):
+            total_amount = sum(Decimal(str(s.get("price", 500))) for s in seats_list)
+            resolved_seat_ids = [s["id"] for s in seats_list]
+            resolved_seat_numbers = ", ".join(f"{s.get('row', '')}{s.get('seat_number', '')}" for s in seats_list)
 
-            if match:
-                matched_seats.append(s)
-
-        if matched_seats:
-            total_amount = sum(Decimal(str(s.get("price", 500))) for s in matched_seats)
-            resolved_seat_ids = [s["id"] for s in matched_seats]
-            resolved_seat_numbers = ", ".join(f"{s.get('row', '')}{s.get('seat_number', '')}" for s in matched_seats)
             return total_amount, resolved_seat_ids, resolved_seat_numbers, None
         else:
             return None, None, None, Response(
@@ -379,12 +401,11 @@ def _request_payload_verify(request):
         'held_by_user_email', 'quantity', or any unrecognized fields.
       - If any disallowed or extra fields are sent, returns HTTP 400 Bad Request prompting the client.
     """
-    if request.data is None or not isinstance(request.data, dict):
+    if not isinstance(request.data, dict):
         return None, Response({"error": "Request body must be a valid JSON object"}, status=400)
 
     from django.conf import settings
 
-    is_testing = bool(getattr(settings, "IS_TESTING", False))
     is_dev = getattr(settings, "DEBUG", False)
 
     allowed_fields = {"seat_ids", "seat_id", "seat_numbers"}
@@ -404,15 +425,13 @@ def _request_payload_verify(request):
             status=400,
         )
 
-    # Validate that at least one seat identifier is present
-    has_seats = (
-        request.data.get("seat_ids")
-    )
+    # Validate seat identifier is present
+    has_seats = request.data.get("seat_ids")
 
     if not has_seats:
         return None, Response(
             {
-                "error": "seat_ids or seat_numbers is required and must not be empty.",
+                "error": "seat_ids is required and must not be empty.",
                 "code": "SEATS_REQUIRED",
             },
             status=400,
@@ -464,12 +483,12 @@ def _handle_create_transaction(request):
         and request.headers.get("X-Staff-Key") == os.getenv("STAFF_API_KEY")
     )
     
-    # If the person has a JWT
+    # If the person is JWT verified
     if user_info and user_info.get("is_authenticated"):
         user_id = user_info.get("user_id")
         user_email = user_info.get("user_email")
 
-    # If the person has a Staff API Key
+    # If 'Staff API Key' used
     elif has_staff_key:
         user_id = request.headers.get("X-User-ID") or os.getenv("STAFF_USER_ID")
         user_email = request.headers.get("X-User-Email") or os.getenv("STAFF_EMAIL_ID")
@@ -477,6 +496,7 @@ def _handle_create_transaction(request):
     elif is_testing or is_dev:
         user_id = request.headers.get("X-User-ID") or "usr_demo_user"
         user_email = request.headers.get("X-User-Email") or "demo@dtc.io"
+
     else:
         # In production (DEBUG=False): NEVER fall back to demo@dtc.io! Reject unauthenticated requests!
         return Response(
@@ -491,15 +511,16 @@ def _handle_create_transaction(request):
     transaction_id = str(uuid.uuid4())
 
     # 3. Resolve Seats and Server-Side Pricing from Database
-    raw_seat_ids = request.data.get("seat_ids") or request.data.get("seat_id")
-    raw_seat_numbers = request.data.get("seat_numbers")
+    raw_seat_ids = request.data.get("seat_ids")
 
     amount, seat_ids, seat_numbers, price_error = _resolve_seat_pricing(
         seat_ids=raw_seat_ids,
-        seat_numbers=raw_seat_numbers,
+        correlation_id=getattr(request, "correlation_id", None),
     )
+
     if price_error:
         return price_error
+    
     quantity = len(seat_ids)
 
     # Simulation flag for payment decline (Dev / Visualizer Demo)
@@ -656,7 +677,12 @@ def _run_saga_pipeline(
     held_by_user_email=None,
 ):
     correlation_id = correlation_id or str(transaction_id)
-    seat_ids = seat_ids or [1]
+    if not seat_ids:
+        txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+        if txn and txn.seat_ids:
+            seat_ids = txn.seat_ids
+        else:
+            seat_ids = []
     uid = user_id or held_by_user_id or "usr_demo_user"
     uemail = user_email or held_by_user_email or "demo@dtc.io"
 
@@ -914,7 +940,7 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
     if payment_data.get("status") == "CHARGED":
         confirm_resp, confirm_err = _confirm_inventory(transaction_id, seat_ids=seat_ids, correlation_id=correlation_id)
 
-        if confirm_resp is not None and confirm_resp.status_code == 200:
+        if confirm_resp and confirm_resp.status_code == 200:
             confirm_json = None
             try:
                 confirm_json = confirm_resp.json()
@@ -1109,7 +1135,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             "payment_response": payment_data,
             "compensation_response": resp_json,
         })
-        if refund_data is not None:
+        if refund_data:
             data["refund_response"] = refund_data
         return Response(data, status=400)
 

@@ -24,7 +24,10 @@ class NonBlockingSagaTaskTests(TestCase):
     @override_settings(CELERY_TASK_ALWAYS_EAGER=False)
     @patch("coordinator.tasks.execute_saga_task.delay")
     def test_post_transactions_returns_202_accepted_and_dispatches_task(self, mock_delay):
-        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()):
+        mock_post = MagicMock()
+        mock_post.status_code = 200
+        mock_post.json.return_value = [{"id": 1, "price": 500, "row": "A", "seat_number": "1"}]
+        with patch("coordinator.views.requests.post", return_value=mock_post):
             resp = self.client.post(
                 "/transactions/?async=true",
                 {"seat_ids": [1]},
@@ -108,6 +111,10 @@ class NonBlockingSagaTaskTests(TestCase):
     def test_sync_param_override_returns_synchronous_response(self):
         def mock_post(url, *args, **kwargs):
             mock = MagicMock()
+            if "pricing" in url:
+                mock.status_code = 200
+                mock.json.return_value = [{"id": 1, "price": 500, "row": "A", "seat_number": "1"}]
+                return mock
             if "reserve" in url:
                 mock.status_code = 200
                 mock.json.return_value = {"message": "Seat reserved", "seat_ids": [1]}
@@ -122,8 +129,7 @@ class NonBlockingSagaTaskTests(TestCase):
                 return mock
             raise ValueError(f"Unexpected POST: {url}")
 
-        with patch("coordinator.views.requests.get", return_value=_seat_pricing_response()), \
-             patch("coordinator.views.requests.post", side_effect=mock_post):
+        with patch("coordinator.views.requests.post", side_effect=mock_post):
             resp = self.client.post(
                 "/transactions/?sync=true",
                 {"seat_ids": [1]},

@@ -50,7 +50,9 @@ class CorrelationIdOutboundPropagationTests(TransactionTestCase):
             captured_headers.append((url, kwargs.get("headers", {})))
             mock = MagicMock()
             mock.status_code = 200
-            if "reserve" in url:
+            if "pricing" in url:
+                mock.json.return_value = [{"id": 1, "price": 500, "row": "A", "seat_number": "1"}]
+            elif "reserve" in url:
                 mock.json.return_value = {"message": "Seat reserved", "seat_ids": [1]}
             elif "charge" in url:
                 mock.json.return_value = {"status": "CHARGED"}
@@ -58,12 +60,7 @@ class CorrelationIdOutboundPropagationTests(TransactionTestCase):
                 mock.json.return_value = {"message": "Seat confirmed", "seat_ids": [1]}
             return mock
 
-        mock_get = MagicMock()
-        mock_get.status_code = 200
-        mock_get.json.return_value = [{"id": 1, "price": 500, "row": "A", "seat_number": "1"}]
-
-        with patch("coordinator.views.requests.get", return_value=mock_get), \
-             patch("coordinator.views.requests.post", side_effect=mock_post):
+        with patch("coordinator.views.requests.post", side_effect=mock_post):
             resp = self.client.post(
                 "/transactions/?sync=true",
                 {"seat_ids": [1]},
@@ -73,7 +70,7 @@ class CorrelationIdOutboundPropagationTests(TransactionTestCase):
 
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get("X-Correlation-ID"), custom_cid)
-        self.assertEqual(len(captured_headers), 3)
+        self.assertEqual(len(captured_headers), 4)  # pricing + reserve + charge + confirm
 
         for url, headers in captured_headers:
             self.assertEqual(
