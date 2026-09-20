@@ -16,11 +16,15 @@ class CorrelationIdMiddlewareTests(TestCase):
     def setUp(self):
         self.client = APIClient()
 
-    def test_incoming_correlation_id_is_returned_in_response_header(self):
-        cid = "test-corr-id-" + str(uuid.uuid4())
-        resp = self.client.get("/health/", HTTP_X_CORRELATION_ID=cid)
+    def test_incoming_client_correlation_id_is_ignored_and_server_generates_fresh_uuid(self):
+        client_cid = "test-corr-id-" + str(uuid.uuid4())
+        resp = self.client.get("/health/", HTTP_X_CORRELATION_ID=client_cid)
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.get("X-Correlation-ID"), cid)
+        server_cid = resp.get("X-Correlation-ID")
+        self.assertTrue(server_cid)
+        self.assertNotEqual(server_cid, client_cid)
+        parsed = uuid.UUID(server_cid)
+        self.assertEqual(parsed.version, 4)
 
     def test_missing_correlation_id_uses_transaction_id_or_generates_uuid(self):
         resp = self.client.get("/health/")
@@ -43,7 +47,6 @@ class CorrelationIdOutboundPropagationTests(TransactionTestCase):
         self.client = APIClient()
 
     def test_forward_saga_propagates_correlation_id_in_outbound_requests(self):
-        custom_cid = f"trace-{uuid.uuid4()}"
         captured_headers = []
 
         def mock_post(url, *args, **kwargs):
@@ -65,17 +68,17 @@ class CorrelationIdOutboundPropagationTests(TransactionTestCase):
                 "/transactions/?sync=true",
                 {"seat_ids": [1]},
                 format="json",
-                HTTP_X_CORRELATION_ID=custom_cid,
             )
 
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.get("X-Correlation-ID"), custom_cid)
+        server_cid = resp.get("X-Correlation-ID")
+        self.assertTrue(server_cid)
         self.assertEqual(len(captured_headers), 4)  # pricing + reserve + charge + confirm
 
         for url, headers in captured_headers:
             self.assertEqual(
                 headers.get("X-Correlation-ID"),
-                custom_cid,
+                server_cid,
                 f"Missing or mismatched X-Correlation-ID for outbound call to {url}",
             )
 

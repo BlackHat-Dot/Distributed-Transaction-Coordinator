@@ -75,16 +75,8 @@ def charge_payment(request):
     if error_response:
         return error_response
 
-    user_id = (
-        request.data.get("user_id")
-        or request.headers.get("X-User-ID")
-        or "usr_anonymous"
-    )
-    user_email = (
-        request.data.get("user_email")
-        or request.headers.get("X-User-Email")
-        or "anonymous@dtc.io"
-    )
+    user_id = request.data.get("user_id") or request.headers.get("X-User-ID") or None
+    user_email = request.data.get("user_email") or request.headers.get("X-User-Email") or None
 
     if amount == TESTING_FAILURE_AMOUNT:
         return Response(

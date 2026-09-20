@@ -507,11 +507,11 @@ def _handle_create_transaction(request):
         user_email = request.headers.get("X-User-Email") or os.getenv("STAFF_EMAIL_ID")
 
     elif is_testing or is_dev:
-        user_id = request.headers.get("X-User-ID") or "usr_demo_user"
-        user_email = request.headers.get("X-User-Email") or "demo@dtc.io"
+        user_id = request.headers.get("X-User-ID") or None
+        user_email = request.headers.get("X-User-Email") or None
 
     else:
-        # In production (DEBUG=False): NEVER fall back to demo@dtc.io! Reject unauthenticated requests!
+        # In production (DEBUG=False): Reject unauthenticated requests!
         return Response(
             {
                 "error": "Authentication required. Your session has expired or you are not signed in. Please sign in to book seats.",
@@ -544,9 +544,12 @@ def _handle_create_transaction(request):
             or request.headers.get("X-Simulate-Payment-Decline") == "true"
         )
     )
+
+    # Test flag
     if simulate_decline:
         amount = Decimal("9999")
 
+    # Test flag
     fail_compensation = request.data.get("fail_compensation", False) if request.data else False
     correlation_id = _get_active_correlation_id(getattr(request, "correlation_id", None))
 
@@ -566,12 +569,42 @@ def _handle_create_transaction(request):
     if request.data.get("coordinator"):
         return Response({"detail": "Intentional crash"})
 
+    # If needed sync response
     is_sync = request.query_params.get("sync") == "true"
     
     if not is_sync:
         # Try async via Celery (supervisord keeps worker alive alongside gunicorn)
         try:
             from .tasks import execute_saga_task
+
+            """
+            CELERY '.delay(...)' vs DIRECT IN-THREAD EXECUTION: ARCHITECTURAL BREAKDOWN
+
+            1. WHAT '.delay(...)' DOES:
+               - Shortcut for 'execute_saga_task.apply_async(args=..., kwargs=...)'.
+               - Instead of running Python code immediately, Celery packages the task name and 
+                 parameters into a JSON message and pushes it to Redis (CELERY_BROKER_URL).
+               - Returns immediately in ~1-2ms without waiting for downstream microservices(Inventory, Payment, ..).
+               - The web server responds instantly with HTTP 202 Accepted + poll_url, freeing 
+                 Gunicorn/Django web workers to handle thousands of concurrent incoming requests.
+               - An independent background Celery worker daemon ('celery -A coordinator_service worker')
+                 pops the task from Redis, executes the full Saga pipeline (Inventory -> Payment -> Confirm),
+                 and records the final state (COMPLETED / COMPENSATED) in PostgreSQL.
+               - The frontend/client polls 'GET /transactions/<id>/' until the background task finishes.
+
+            2. WHAT HAPPENS WITHOUT '.delay(...)' (Direct function call):
+               - Bypasses Celery, Redis, and background workers entirely.
+               - Runs synchronously inside the active web server process/thread that handled the HTTP request.
+               - THREAD BLOCKING: The Gunicorn worker freezes waiting for 3 consecutive network hops:
+                   * Reserve seats (/seats/reserve/):  ~50ms
+                   * Charge payment (/payments/charge/): ~200ms
+                   * Confirm seats (/seats/confirm/):   ~50ms
+                   Total latency: 300ms - 1500ms+ instead of 2ms.
+               - WORKER STARVATION: In production with 4 web workers, capacity drops from ~2000 req/s 
+                 down to ~8 req/s. Concurrent users quickly get connection drops or 504 Gateway Timeouts.
+               - CLIENT TIMEOUTS: If Payment or Inventory has a slow network spike, browser/Nginx 
+                 timeouts sever the connection before completion, risking orphaned states.
+            """
             execute_saga_task.delay(
                 str(transaction_id),
                 seat_ids=seat_ids,
@@ -685,8 +718,8 @@ def _run_saga_pipeline(
             seat_ids = txn.seat_ids
         else:
             seat_ids = []
-    uid = user_id or "usr_demo_user"
-    uemail = user_email or "demo@dtc.io"
+    uid = user_id
+    uemail = user_email
 
     response, reserve_error = _reserve_inventory(
         transaction_id,
@@ -776,16 +809,13 @@ def _run_saga_pipeline(
 # ==============================================================================
 
 def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=None, user_email=None):
-    uid = user_id or "usr_demo_user"
-    uemail = user_email or "demo@dtc.io"
+    uid = user_id
+    uemail = user_email
     headers = {
         "X-Correlation-ID": _get_active_correlation_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
-    if uid:
-        headers["X-User-ID"] = str(uid)
-    if uemail:
-        headers["X-User-Email"] = str(uemail)
+
     try:
         response = requests.post(
             INVENTORY_RESERVE_URL,
@@ -824,14 +854,10 @@ def _charge_payment(
     user_id=None,
     user_email=None,
 ):
-    uid = user_id or "usr_demo_user"
-    uemail = user_email or "demo@dtc.io"
+    uid = user_id
+    uemail = user_email
 
     headers = {"X-Correlation-ID": _get_active_correlation_id(correlation_id)}
-    if uid:
-        headers["X-User-ID"] = str(uid)
-    if uemail:
-        headers["X-User-Email"] = str(uemail)
 
     try:
         payment_response = requests.post(
@@ -1184,7 +1210,7 @@ def _get_requester_identity(request):
     # 3. Automated Test Runner Environment
     is_testing = bool(getattr(settings, "IS_TESTING", False))
     if is_testing:
-        test_uid = request.headers.get("X-User-ID") or "usr_demo_user"
+        test_uid = request.headers.get("X-User-ID") or "system_test"
         return True, test_uid, True
 
     # 4. Local Development Mode (DEBUG=True)
@@ -1193,7 +1219,7 @@ def _get_requester_identity(request):
         dev_uid = (
             request.headers.get("X-User-ID")
             or (user_info.get("user_id") if user_info else None)
-            or "usr_demo_user"
+            or "system_dev"
         )
         return True, dev_uid, True
 

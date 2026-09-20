@@ -1,3 +1,4 @@
+import hashlib
 import os
 import sys
 import uuid
@@ -56,7 +57,7 @@ def reclaim_expired_holds():
             continue
 
         # 2. Presence-based expiry (dead-man's switch: user exited browser / logged out)
-        if seat.user_email and seat.user_email != "anonymous@dtc.io" and redis_client:
+        if seat.user_email and redis_client:
             try:
                 if not redis_client.exists(f"dtc:session:{seat.user_email}"):
                     expired_ids.add(seat.id)
@@ -224,6 +225,7 @@ def reserve_seat(request):
         return auth_err
 
     seat_ids, transaction_id, error_response = _validate_reserve_input(request.data)
+
     if error_response:
         return error_response
 
@@ -235,11 +237,16 @@ def reserve_seat(request):
     is_testing = bool(getattr(settings, "IS_TESTING", False))
     is_dev = getattr(settings, "DEBUG", False)
 
-    raw_user_id = request.data.get("user_id") or request.headers.get("X-User-ID")
-    raw_user_email = request.data.get("user_email") or request.headers.get("X-User-Email")
+    raw_user_id = request.data.get("user_id")
+    raw_user_email = request.data.get("user_email")
+
+    if not raw_user_id and raw_user_email:
+        norm_email = str(raw_user_email).strip().lower()
+        sha = hashlib.sha256(norm_email.encode("utf-8")).hexdigest()[:16]
+        raw_user_id = f"usr_{sha}"
 
     if not (is_dev or is_testing or has_internal_key):
-        if not raw_user_id or raw_user_id in ("usr_anonymous", "usr_demo_user"):
+        if not raw_user_id:
             return Response(
                 {
                     "error": "Authentication required. Your session has expired or you are not signed in. Please sign in to hold seats.",
@@ -248,12 +255,13 @@ def reserve_seat(request):
                 status=401,
             )
 
-    user_id = raw_user_id or "usr_anonymous"
-    user_email = raw_user_email or "anonymous@dtc.io"
+    user_id = raw_user_id or None  
+    user_email = raw_user_email or None
 
     try:
         with transaction.atomic():
             seats = list(Seat.objects.select_for_update().filter(id__in=seat_ids).order_by('id'))
+
             if len(seats) != len(seat_ids):
                 return Response({"error": "One or more seats not found", "transaction_id": str(transaction_id)}, status=404)
 
@@ -273,18 +281,14 @@ def reserve_seat(request):
                     status=429,
                 )
 
-            user_filter = Q()
-            if user_id and user_id != "usr_anonymous":
-                user_filter |= Q(user_id=user_id)
-            if user_email and user_email != "anonymous@dtc.io":
-                user_filter |= Q(user_email=user_email)
-
-            if user_filter:
+            if user_id:
+                # Exclude objects which is held by current transaction id.
                 active_holds = Seat.objects.filter(
-                    user_filter,
+                    user_id=user_id,
                     status=Seat.Status.HELD,
                     held_until__gt=now,
                 ).exclude(held_by_transaction_id=transaction_id).count()
+
                 if active_holds + len(seats) > max_user_holds:
                     return Response(
                         {
@@ -306,15 +310,14 @@ def reserve_seat(request):
                     seat.status == Seat.Status.HELD
                     and seat.held_until
                     and seat.held_until > now
-                    and (
-                        (user_id and user_id != "usr_anonymous" and seat.user_id == user_id)
-                        or (user_email and user_email != "anonymous@dtc.io" and seat.user_email == user_email)
-                    )
+                    and user_id
+                    and seat.user_id == user_id
                 )
                 if is_same_user_hold:
                     continue
 
                 is_available = (seat.status == Seat.Status.AVAILABLE) or (seat.status == Seat.Status.HELD and seat.held_until and seat.held_until < now)
+                
                 if not is_available:
                     return Response({"error": f"Seat {seat.row}{seat.seat_number} is already booked or held", "code": "SEAT_UNAVAILABLE", "transaction_id": str(transaction_id)}, status=409)
 

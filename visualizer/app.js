@@ -1192,14 +1192,6 @@ function checkLiveAuthGate(actionName = "execute live distributed scenarios") {
   return true;
 }
 
-function getActiveUserPayload() {
-  const uid = localStorage.getItem("dtc_user_id") || "usr_demo_user";
-  const uemail = localStorage.getItem("dtc_user_email") || "demo@dtc.io";
-  return {
-    user_id: uid,
-    user_email: uemail,
-  };
-}
 
 DOM.btnDemoHappy.addEventListener("click", async () => {
   if (!checkLiveAuthGate("dispatch the Happy Path Live Saga")) return;
