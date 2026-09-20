@@ -1085,8 +1085,6 @@ async function loadCatalog(isInitial = false) {
         if (seat.status === "HELD") {
           const isOwner = (seat.user_email && STATE.user.email && seat.user_email === STATE.user.email) || 
                           (seat.user_id && STATE.user.userId && seat.user_id === STATE.user.userId) ||
-                          (seat.held_by_user_email && STATE.user.email && seat.held_by_user_email === STATE.user.email) ||
-                          (seat.held_by_user_id && STATE.user.userId && seat.held_by_user_id === STATE.user.userId) ||
                           (STATE.myHold && seat.held_by_transaction_id === STATE.myHold.txId);
           if (isOwner) {
             if (!ownerTxId) ownerTxId = seat.held_by_transaction_id;
@@ -1278,9 +1276,7 @@ async function handleSeatTileClick(seatId) {
     // Check if it belongs to current user but wasn't reconstructed yet
     const isOwner = STATE.user && (
       (seat.user_email && STATE.user.email && seat.user_email === STATE.user.email) || 
-      (seat.user_id && STATE.user.userId && seat.user_id === STATE.user.userId) ||
-      (seat.held_by_user_email && STATE.user.email && seat.held_by_user_email === STATE.user.email) ||
-      (seat.held_by_user_id && STATE.user.userId && seat.held_by_user_id === STATE.user.userId)
+      (seat.user_id && STATE.user.userId && seat.user_id === STATE.user.userId)
     );
 
     if (isOwner && !isMyHold) {
@@ -2092,7 +2088,6 @@ function reconcileSeatStates(newSeats) {
     const isUserHold = STATE.myHold && (STATE.myHold.seatIds || [STATE.myHold.seatId]).includes(seatId) &&
                        (newSeat.held_by_transaction_id === STATE.myHold.txId ||
                         newSeat.status === "HELD" ||
-                        (STATE.user && newSeat.held_by_user_id === STATE.user.userId) ||
                         (STATE.user && newSeat.user_id === STATE.user.userId));
 
     const isDrafted = STATE.draftSeatIds && STATE.draftSeatIds.includes(seatId);

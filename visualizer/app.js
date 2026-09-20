@@ -101,16 +101,14 @@ const SCENARIO_DESCRIPTIONS = {
     desc: "Demonstrates a severe edge case where a payment fails, triggering a rollback (compensation) to release the seat. However, the release process is intentionally sabotaged to return a 500 Error. The Saga gets stuck in COMPENSATION_FAILED, triggering the Celery auto-recovery sweeper.",
     payload: `POST http://127.0.0.1:8002/transactions/
 {
-  "seat_id": 34,
-  "quantity": 1,
-  "amount": 9999.00,
+  "seat_ids": [34],
   "fail_compensation": true
 }`,
     steps: [
       "Coordinator inserts Transaction(status=STARTED) and dispatches POST /seats/reserve/ to Inventory.",
       "Inventory reserves the seat successfully.",
       "Coordinator dispatches POST /payments/charge/ with amount=9999.00.",
-      "Payment service rejects the charge (simulating Insufficient Funds) and returns 402 Payment Required.",
+      "Payment service rejects the charge (simulating Insufficient Funds) and returns 422 Payment Declined.",
       "Coordinator begins Compensation phase to rollback.",
       "Coordinator dispatches POST /seats/release/ to Inventory.",
       "Inventory intentionally throws a 500 Error (Release Failure).",
@@ -125,20 +123,18 @@ const SCENARIO_DESCRIPTIONS = {
     title: "Happy Path Saga",
     badge: "3-Phase Forward Orchestration",
     badgeClass: "badge-success",
-    desc: "Executes a standard forward distributed transaction where all participating microservices succeed. The Coordinator sequentially drives stock reservation and payment capture without spanning database transactions.",
+    desc: "Executes a standard forward distributed transaction where all participating microservices succeed. The Coordinator sequentially drives seat reservation, payment capture, and hold confirmation without spanning database transactions.",
     payload: `POST http://127.0.0.1:8002/transactions/
 {
-  "seat_id": 1,
-  "quantity": 1,
-  "amount": 500
+  "seat_ids": [1]
 }`,
     steps: [
-      "Client dispatches POST /transactions/ to Coordinator.",
+      "Client dispatches POST /transactions/ to Coordinator with seat_ids.",
       "Coordinator inserts Transaction(status=STARTED) and dispatches POST /seats/reserve/ to Inventory (:8000).",
-      "Inventory acquires row lock via SELECT FOR UPDATE, decrements stock, inserts Reservation(status=RESERVED), and returns 200 OK.",
+      "Inventory acquires row lock via SELECT FOR UPDATE, creates Reservation(status=RESERVED), and returns 200 OK.",
       "Coordinator transitions to PAYMENT_PROCESSING and dispatches POST /payments/charge/ to Payment (:8001).",
       "Payment inserts Payment(status=CHARGED) and returns 200 OK.",
-      "Coordinator transitions to COMPLETED and responds HTTP 200 to Client."
+      "Coordinator confirms seats (POST /seats/confirm/), transitions to COMPLETED, and responds HTTP 200 to Client."
     ],
     defenses: "ACID isolation per microservice database. Coordinator drives the saga through explicit SagaEvent audit transitions. Idempotent record creation eliminates duplicate requests.",
     outcome: "Status: COMPLETED (HTTP 200 OK)"
@@ -148,17 +144,15 @@ const SCENARIO_DESCRIPTIONS = {
     title: "Payment Decline & Auto-Compensate",
     badge: "Backward Compensating Rollback",
     badgeClass: "badge-amber",
-    desc: "Demonstrates automated compensating recovery when downstream payment declines. Because distributed transactions cannot use global database rollbacks, the Coordinator executes an inverse compensating action to restore reserved stock.",
-    payload: `POST http://127.0.0.1:8002/transactions/
+    desc: "Demonstrates automated compensating recovery when downstream payment declines. Because distributed transactions cannot use global database rollbacks, the Coordinator executes an inverse compensating action to restore reserved seats.",
+    payload: `POST http://127.0.0.1:8002/transactions/?simulate_payment_decline=true
 {
-  "seat_id": 1,
-  "quantity": 1,
-  "amount": 9999
+  "seat_ids": [1]
 }
-// Note: Amount 9999 triggers intentional 422 decline in Payment Service`,
+// Note: simulate_payment_decline triggers intentional 422 decline in Payment Service`,
     steps: [
-      "Client dispatches transaction with amount $9,999 to Coordinator.",
-      "Coordinator reserves inventory stock successfully (STARTED → INVENTORY_RESERVED).",
+      "Client dispatches transaction with simulate_payment_decline flag to Coordinator.",
+      "Coordinator reserves seat in Inventory successfully (STARTED → INVENTORY_RESERVED).",
       "Coordinator attempts payment charge (POST /payments/charge/).",
       "Payment service declines charge with HTTP 422 ('Payment declined / Testing failure amount').",
       "Coordinator catches decline, transitions to COMPENSATING, and dispatches POST /seats/release/ to Inventory.",
@@ -173,46 +167,40 @@ const SCENARIO_DESCRIPTIONS = {
     title: "5x Concurrent Race Attack",
     badge: "PostgreSQL Relational Concurrency Defense",
     badgeClass: "badge-rose",
-    desc: "Simulates a high-concurrency client retry storm or double-click attack. Five identical requests with the exact same client-supplied UUID hit the Coordinator at the exact same millisecond.",
+    desc: "Simulates a high-concurrency client retry storm or double-click attack. Multiple concurrent requests hit the Coordinator at the exact same millisecond attempting to book the same seat.",
     payload: `5x Concurrent Requests (Promise.all):
 POST http://127.0.0.1:8002/transactions/
 {
-  "transaction_id": "8f3b2c14-59e2-4a71-9df0-e2b34a91c002",
-  "seat_id": 1,
-  "quantity": 1,
-  "amount": 500
+  "seat_ids": [1]
 }`,
     steps: [
-      "Client fires 5 concurrent asynchronous HTTP POST requests with an identical UUID.",
-      "5 worker threads simultaneously attempt INSERT INTO coordinator_transaction.",
-      "Thread 1 succeeds in inserting the row and proceeds to drive the saga to completion.",
-      "Threads 2, 3, 4, and 5 violate PostgreSQL's PRIMARY KEY / UNIQUE(transaction_id) constraint.",
-      "PostgreSQL aborts the 4 duplicate insert transactions with IntegrityError (SQL 23505).",
-      "Coordinator catches IntegrityError, immediately short-circuits, and prevents duplicate downstream calls to Inventory or Payment."
+      "Client fires 5 concurrent asynchronous HTTP POST requests for the same venue seat.",
+      "Coordinator processes requests concurrently against Inventory.",
+      "Thread 1 secures exclusive row lock on Seat under SELECT FOR UPDATE and creates reservation.",
+      "Threads 2-5 encounter seat already held and fail with HTTP 409 Conflict.",
+      "PostgreSQL locks prevent double-booking with mathematical certainty.",
+      "Coordinator records all outcomes cleanly in the audit log."
     ],
-    defenses: "Relational UNIQUE constraint + Compare-And-Insert atomic blocks. Zero reliance on transient in-memory Redis TTL keys which risk cache expiration bugs.",
-    outcome: "Exactly 1 saga commits COMPLETED. 4 duplicate requests safely defended."
+    defenses: "Relational row locks (SELECT FOR UPDATE) + PostgreSQL ACID transactions. Zero reliance on fragile in-memory Redis locks.",
+    outcome: "Exactly 1 saga commits COMPLETED. Concurrent attempts safely defended."
   },
   crash: {
     icon: "⦿",
     title: "Process Crash Simulation",
     badge: "Celery Beat & Dual-Path Reconciler",
     badgeClass: "badge-purple",
-    desc: "Simulates a catastrophic coordinator process death, server crash, or OOM kill mid-flight right after reserving stock. The transaction is left orphaned in PAYMENT_PROCESSING with unreleased stock.",
+    desc: "Simulates a catastrophic coordinator process death, server crash, or OOM kill mid-flight right after reserving seat hold. The transaction is left orphaned in PAYMENT_PROCESSING with unreleased seats.",
     payload: `POST http://127.0.0.1:8002/transactions/
 {
-  "transaction_id": "<UUID>",
-  "seat_id": 1,
-  "quantity": 1,
-  "amount": 500,
+  "seat_ids": [1],
   "coordinator": true
 }
 // Note: 'coordinator': true kills process mid-flight`,
     steps: [
-      "Coordinator reserves stock in Inventory (:8000), transitions status to PAYMENT_PROCESSING.",
+      "Coordinator reserves seat in Inventory (:8000), transitions status to PAYMENT_PROCESSING.",
       "Coordinator process terminates abruptly before dispatching HTTP call to Payment Service.",
       "Transaction remains orphaned in PostgreSQL with status=PAYMENT_PROCESSING.",
-      "Celery Beat background worker sweeps stale non-terminal records older than 5 minutes.",
+      "Celery Beat background worker sweeps stale non-terminal records older than recovery threshold.",
       "Worker claims transaction into RECOVERY_IN_PROGRESS using Redis mutex lock (Lua script).",
       "Worker probes ground-truth Payment endpoint (GET /payments/check/); receives status=NOT_CHARGED.",
       "Worker dispatches compensating release to Inventory and marks transaction COMPENSATED."
@@ -225,23 +213,17 @@ POST http://127.0.0.1:8002/transactions/
     title: "Custom Payload Dispatcher",
     badge: "Interactive Edge-Case Tester",
     badgeClass: "badge-blue",
-    desc: "Allows interactive configuration of custom transaction parameters to test edge cases, inventory rejections, process crashes, and failed compensation.",
+    desc: "Allows interactive configuration of custom transaction parameters to test edge cases, seat conflicts, process crashes, and failed compensation.",
     payload: `POST http://127.0.0.1:8002/transactions/
 {
-  "transaction_id": "<Optional Custom UUID>",
-  "seat_id": <Custom Number>,
-  "quantity": <Custom Number: 0, 1, 9999>,
-  "amount": <Custom Number>,
-  "fail_compensation": <true|false>,
-  "coordinator": <true|false>
+  "seat_ids": [<Target Seat ID>]
 }`,
     steps: [
-      "User submits customized payload from the expandable form.",
+      "User selects target venue seat and execution mode (Sync/Async).",
       "Client packet animates to Coordinator.",
-      "Coordinator evaluates parameters and dispatches to Inventory.",
-      "If quantity <= 0 or out of stock: Inventory returns 400; Coordinator marks INVENTORY_RESERVE_FAILED and halts.",
-      "If amount == 9999: Payment declines and triggers backward compensation.",
-      "If coordinator == true: Simulates process crash and triggers recovery sweep."
+      "Coordinator evaluates seat pricing from authoritative Inventory catalog.",
+      "If seat is already booked or held: Inventory returns 409 Conflict; Coordinator halts.",
+      "Coordinator drives reservation, payment charge, and confirmation to completion."
     ],
     defenses: "Input boundary validation + Dynamic saga path branching + Explicit backend error message extraction.",
     outcome: "Dynamic outcome based on selected parameters."
@@ -1094,19 +1076,20 @@ async function inspectTransaction(txId, autoScroll = false) {
     if (DOM.fmetaUserId) DOM.fmetaUserId.textContent = txData.user_id || "N/A";
     if (DOM.fmetaUserEmail) DOM.fmetaUserEmail.textContent = txData.user_email || "N/A";
     DOM.fmetaStatusBadge.textContent = txData.status;
-    DOM.fmetaStatusBadge.className = `badge ${getStatusBadgeClass(txData.status)}`;
-    DOM.fmetaProd.textContent = `Seat #${txData.seat_id || 1} (Qty: 1)`;
+    const seatsLabel = txData.seat_numbers || (Array.isArray(txData.seat_ids) && txData.seat_ids.length > 0 ? txData.seat_ids.map(id => `#${id}`).join(", ") : (txData.seat_id ? `Seat #${txData.seat_id}` : "Seat #1"));
+    const qty = txData.quantity || (Array.isArray(txData.seat_ids) ? txData.seat_ids.length : 1);
+    DOM.fmetaProd.textContent = `${seatsLabel} (Qty: ${qty})`;
     DOM.fmetaAmt.textContent = `$${txData.amount || 500}`;
 
     const isFailureState = txData.status.includes("FAILED") || txData.status.includes("TIMEOUT") || txData.status === "COMPENSATED";
     if (isFailureState) {
       let failureReason = "Non-terminal or compensated state detected";
       if (txData.status === "INVENTORY_RESERVE_FAILED") {
-        failureReason = txData.failure_reason || "Inventory reservation rejected (zero quantity, out of stock, or invalid product ID)";
+        failureReason = txData.failure_reason || "Inventory reservation rejected (seat already held, booked, or unavailable)";
       } else if (txData.status === "COMPENSATED") {
-        failureReason = txData.failure_reason || "Payment declined / failed → Stock auto-released via compensating action";
+        failureReason = txData.failure_reason || "Payment declined / failed → Seat hold auto-released via compensating rollback";
       } else if (txData.status === "COMPENSATION_FAILED") {
-        failureReason = txData.failure_reason || "Compensating stock release rejected by Inventory Service";
+        failureReason = txData.failure_reason || "Compensating seat release rejected by Inventory Service";
       }
 
       DOM.fmetaFailureBanner.classList.remove("hidden");
@@ -1215,8 +1198,6 @@ function getActiveUserPayload() {
   return {
     user_id: uid,
     user_email: uemail,
-    held_by_user_id: uid,
-    held_by_user_email: uemail,
   };
 }
 
@@ -1651,7 +1632,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   const seatId = parseInt(document.getElementById("cust-seat-id").value, 10) || 31;
   const amount = parseFloat(document.getElementById("cust-amount").value) || 500;
   const execMode = document.getElementById("cust-exec-mode")?.value || "async";
-  const customId = document.getElementById("cust-tx-id").value.trim();
 
   STATE.stats.dispatchedCount++;
   DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
@@ -1687,8 +1667,6 @@ DOM.formCustomTx.addEventListener("submit", async (e) => {
   const payload = {
     seat_ids: [seatId],
   };
-
-  if (customId) payload.transaction_id = customId;
 
   if (execMode === "async") {
     DOM.topoCoordState.textContent = "ASYNC DISPATCH";
@@ -1862,24 +1840,24 @@ function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null, 
   let events = [];
   if (finalStatus === "COMPLETED") {
     events = [
-      { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVED", actor: "request", http_status_code: 200, http_payload: { message: "Reserved 1 units" }, created_at: now },
+      { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVED", actor: "request", http_status_code: 200, http_payload: { message: "Held seat(s) [1]" }, created_at: now },
       { seq: 2, from_status: "INVENTORY_RESERVED", to_status: "PAYMENT_PROCESSING", actor: "request", http_status_code: null, http_payload: null, created_at: now },
       { seq: 3, from_status: "PAYMENT_PROCESSING", to_status: "COMPLETED", actor: "request", http_status_code: 200, http_payload: { status: "CHARGED" }, created_at: now },
     ];
   } else if (finalStatus === "COMPENSATED") {
     events = [
-      { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVED", actor: "request", http_status_code: 200, http_payload: { message: "Reserved" }, created_at: now },
+      { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVED", actor: "request", http_status_code: 200, http_payload: { message: "Held seat(s) [1]" }, created_at: now },
       { seq: 2, from_status: "INVENTORY_RESERVED", to_status: "PAYMENT_PROCESSING", actor: "request", http_status_code: null, http_payload: null, created_at: now },
       { seq: 3, from_status: "PAYMENT_PROCESSING", to_status: "COMPENSATING", actor: "request", http_status_code: 400, http_payload: { error: "Insufficient funds" }, created_at: now },
-      { seq: 4, from_status: "COMPENSATING", to_status: "COMPENSATED", actor: "request", http_status_code: 200, http_payload: { message: "Inventory released" }, created_at: now },
+      { seq: 4, from_status: "COMPENSATING", to_status: "COMPENSATED", actor: "request", http_status_code: 200, http_payload: { message: "Seat hold released" }, created_at: now },
     ];
   } else if (finalStatus === "INVENTORY_RESERVE_FAILED") {
     events = [
-      { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVE_FAILED", actor: "request", http_status_code: 400, http_payload: { error: failureReason || "Quantity must be greater than 0" }, created_at: now },
+      { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVE_FAILED", actor: "request", http_status_code: 400, http_payload: { error: failureReason || "Seat already reserved or unavailable" }, created_at: now },
     ];
   } else if (finalStatus === "RECOVERY_IN_PROGRESS") {
     events = [
-      { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVED", actor: "request", http_status_code: 200, http_payload: { message: "Reserved" }, created_at: now },
+      { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVED", actor: "request", http_status_code: 200, http_payload: { message: "Held seat(s) [1]" }, created_at: now },
       { seq: 2, from_status: "INVENTORY_RESERVED", to_status: "PAYMENT_PROCESSING", actor: "request", http_status_code: null, http_payload: null, created_at: now },
       { seq: 3, from_status: "PAYMENT_PROCESSING", to_status: "RECOVERY_IN_PROGRESS", actor: "recovery", http_status_code: null, http_payload: { probe: "/payments/check/" }, created_at: now },
     ];
@@ -1888,8 +1866,9 @@ function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null, 
   const newTx = {
     transaction_id: txId,
     status: finalStatus,
-    seat_id: 1,
-    quantity: finalStatus === "INVENTORY_RESERVE_FAILED" ? 0 : 1,
+    seat_ids: [1],
+    seat_numbers: ["A1"],
+    quantity: 1,
     amount: finalStatus === "COMPENSATED" ? 9999 : 500,
     failure_reason: failureReason,
     created_at: now,

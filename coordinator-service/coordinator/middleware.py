@@ -1,5 +1,4 @@
 import contextvars
-import json
 import logging
 import uuid
 
@@ -25,23 +24,7 @@ class CorrelationIdMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        correlation_id = request.META.get("HTTP_X_CORRELATION_ID")
-
-        if not correlation_id:
-            correlation_id = request.GET.get("transaction_id")
-
-        if not correlation_id and request.body:
-            try:
-                data = json.loads(request.body.decode("utf-8"))
-                if isinstance(data, dict):
-                    correlation_id = data.get("transaction_id")
-            except Exception:
-                pass
-
-        if not correlation_id:
-            correlation_id = str(uuid.uuid4())
-        else:
-            correlation_id = str(correlation_id)
+        correlation_id = request.META.get("HTTP_X_CORRELATION_ID") or str(uuid.uuid4())
 
         token = set_correlation_id(correlation_id)
 

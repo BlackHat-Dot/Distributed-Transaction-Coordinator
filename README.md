@@ -12,10 +12,10 @@ In a traditional monolithic application with a single relational database, ensur
 ```python
 # Monolith: Single ACID transaction
 with transaction.atomic():
-    inventory.reserve(product_id, quantity)  # Step 1
+    seats.reserve(seat_ids, user_id)         # Step 1
     payment.charge(user_id, amount)          # Step 2
     order.create(order_id)                   # Step 3
-    # If payment fails, database rollback restores inventory automatically.
+    # If payment fails, database rollback restores seat availability automatically.
 ```
 
 In a microservices architecture, this is **impossible**:
@@ -30,7 +30,7 @@ A **Saga** is an architectural pattern that coordinates distributed transactions
 
 Instead of one global distributed lock (such as Two-Phase Commit / 2PC, which is notoriously slow, brittle, and introduces tight availability coupling), each step commits locally. If a subsequent step fails, the Saga executes **compensating transactions** (forward undo actions) to reverse previous successes:
 
-$$\text{Action: Reserve Inventory} \longrightarrow \text{Action: Charge Payment (FAILS)} \longrightarrow \text{Compensate: Release Inventory}$$
+$$\text{Action: Reserve Seats} \longrightarrow \text{Action: Charge Payment (FAILS)} \longrightarrow \text{Compensate: Release Seats}$$
 
 ---
 
@@ -51,8 +51,10 @@ $$\text{Action: Reserve Inventory} \longrightarrow \text{Action: Charge Payment 
                   │   - Celery Beat Crash-Recovery Worker            │
                   └──────────────┬────────────────────┬──────────────┘
                                  │                    │
-        HTTP POST /products/reserve/          HTTP POST /payments/charge/
-        HTTP POST /products/release/          HTTP GET  /payments/check/
+        HTTP POST /seats/pricing/             HTTP POST /payments/charge/
+        HTTP POST /seats/reserve/             HTTP GET  /payments/check/
+        HTTP POST /seats/confirm/             │
+        HTTP POST /seats/release/             │
         HTTP GET  /reserve/check/             │
                                  │                    ▼
                                  │       ┌───────────────────────────┐
@@ -190,10 +192,10 @@ celery -A coordinator_service beat -l info
 ### 6. Execute a Test Transaction
 
 ```bash
-# Run a successful transaction (Quantity 1, Amount 500)
+# Run a successful transaction (Seat ID 1)
 curl -X POST http://127.0.0.1:8002/transactions/ \
   -H "Content-Type: application/json" \
-  -d '{"product_id": 1, "quantity": 1, "amount": 500}'
+  -d '{"seat_ids": [1]}'
 
 # Inspect the append-only Saga Event Log
 curl http://127.0.0.1:8002/transactions/<TRANSACTION_ID>/events/
@@ -202,8 +204,10 @@ curl http://127.0.0.1:8002/transactions/<TRANSACTION_ID>/events/
 ### 7. Run the Full Test Suite
 
 ```bash
-cd coordinator-service
-python manage.py test coordinator --keepdb
+# Run test suites across all 3 services
+python coordinator-service/manage.py test coordinator --keepdb
+python inventory-service/manage.py test inventory --keepdb
+python payment-service/manage.py test payments --keepdb
 ```
 
 ---
@@ -218,23 +222,25 @@ Client               Coordinator             Inventory (:8000)        Payment (:
   │── POST /transactions/─>                         │                        │
   │   (ID Generated)      │                         │                        │
   │   status: STARTED     │                         │                        │
-  │                       │── POST /products/reserve/─>                      │
-  │                       │<── 200 OK (Reserved)────│                        │
+  │                       │── POST /seats/reserve/──>                        │
+  │                       │<── 200 OK (Held)────────│                        │
   │   status: INVENTORY_RESERVED                    │                        │
   │   status: PAYMENT_PROCESSING                    │                        │
   │                       │                                                  │
   │                       │── POST /payments/charge/────────────────────────>│
   │                       │<── 200 OK (Charged)──────────────────────────────│
+  │                       │── POST /seats/confirm/──>                        │
+  │                       │<── 200 OK (Booked)──────│                        │
   │   status: COMPLETED   │                                                  │
   │<── 200 OK (Completed)─│
 ```
 
-1. **Client Request:** Calls `POST /transactions/` on Coordinator (`create_transaction` in `coordinator/views.py`).
+1. **Client Request:** Calls `POST /transactions/` on Coordinator (`_handle_create_transaction` in `coordinator/views.py`) with `{"seat_ids": [1]}`.
 2. **Idempotent Record Creation:** `_create_transaction_idempotent()` atomically inserts a `Transaction` row with `status=STARTED`.
-3. **Inventory Reservation:** Coordinator sends `POST /products/reserve/` (`reserve_product` in `inventory/views.py`). Inventory locks the product row via `SELECT FOR UPDATE`, decrements stock, creates `Reservation(status=RESERVED)`, and returns HTTP 200.
+3. **Inventory Hold:** Coordinator sends `POST /seats/reserve/` (`reserve_seat` in `inventory/views.py`). Inventory locks the seat row via `SELECT FOR UPDATE`, sets `status=HELD` with ephemeral expiration, creates `Reservation(status=RESERVED)`, and returns HTTP 200.
 4. **State Transition:** Coordinator transitions `STARTED` $\to$ `INVENTORY_RESERVED` $\to$ `PAYMENT_PROCESSING`.
 5. **Payment Charge:** Coordinator sends `POST /payments/charge/` (`charge_payment` in `payments/views.py`). Payment service inserts `Payment(status=CHARGED)` and returns HTTP 200.
-6. **Completion:** Coordinator transitions `PAYMENT_PROCESSING` $\to$ `COMPLETED` and returns the serialized transaction to the client.
+6. **Seat Confirmation & Completion:** Coordinator sends `POST /seats/confirm/` (`confirm_seat` in `inventory/views.py`), setting `status=BOOKED`. Coordinator transitions `PAYMENT_PROCESSING` $\to$ `COMPLETED` and returns the serialized transaction to the client.
 
 ---
 
@@ -245,24 +251,24 @@ Client               Coordinator             Inventory (:8000)        Payment (:
   │                       │                         │                        │
   │── POST /transactions/─>                         │                        │
   │   status: STARTED     │                         │                        │
-  │                       │── POST /products/reserve/─>                      │
-  │                       │<── 200 OK (Reserved)────│                        │
+  │                       │── POST /seats/reserve/──>                        │
+  │                       │<── 200 OK (Held)────────│                        │
   │   status: PAYMENT_PROCESSING                    │                        │
   │                       │── POST /payments/charge/────────────────────────>│
-  │                       │<── 400 Declined / 500 Error──────────────────────│
+  │                       │<── 422 Declined / Error──────────────────────────│
   │   status: COMPENSATING│                                                  │
-  │                       │── POST /products/release/─>                      │
-  │                       │<── 200 OK (Restored)────│                        │
+  │                       │── POST /seats/release/──>                        │
+  │                       │<── 200 OK (Released)────│                        │
   │   status: COMPENSATED │
-  │<── 400/500 Error──────│
+  │<── 400/422 Error──────│
 ```
 
-1. **Payment Fails:** Payment service returns non-200 or connection error.
-2. **Compensation Trigger:** `_charge_payment()` invokes `_compensate()`.
+1. **Payment Fails:** Payment service returns non-200 or decline status (e.g. 422).
+2. **Compensation Trigger:** `_finalize_payment_outcome()` invokes `_compensate()`.
 3. **Transition to Compensating:** Coordinator sets `status=COMPENSATING`.
-4. **Inventory Release:** Coordinator dispatches `POST /products/release/` (`release_product` in `inventory/views.py`).
-5. **Stock Restored:** Inventory locks the `Reservation` row via `SELECT FOR UPDATE`, checks that status is `RESERVED`, restores `product.stock += quantity`, sets `Reservation.status=RELEASED`, and returns HTTP 200.
-6. **Compensated State:** Coordinator transitions `COMPENSATING` $\to$ `COMPENSATED`.
+4. **Seat Release:** Coordinator dispatches `POST /seats/release/` (`release_seat` in `inventory/views.py`).
+5. **Seat Availability Restored:** Inventory locks the `Reservation` row via `SELECT FOR UPDATE`, sets `Reservation.status=RELEASED`, resets `Seat.status=AVAILABLE` with `held_by_transaction_id=None`, and returns HTTP 200.
+6. **Compensated State:** Coordinator transitions `COMPENSATING` $\to$ `COMPENSATED` and returns the rollback outcome.
 
 ---
 
@@ -373,31 +379,42 @@ Client               Coordinator             Inventory (:8000)        Payment (:
 
 ## 9. Test Suite Overview
 
-The test suite covers unit logic, DB constraints, multi-threaded concurrency races, and crash recovery.
+The test suite covers unit logic, database constraints, multi-threaded concurrency races, distributed crash recovery, idempotent replay, and security guards across all three microservices.
 
-### Test Breakdown (33 Tests in Coordinator Service)
+### Test Breakdown (145 Tests Total)
 
-| Module | Test Class | Tests | What It Proves |
+| Service | Test Module / Focus | Tests | What It Proves |
 |---|---|:---:|---|
-| `test_saga_log.py` | `SagaEventModelConstraintTests` | 4 | DB uniqueness on `(transaction, seq)`, endpoint formatting. |
-| `test_saga_log.py` | `SetStatusWithEventHappyPathTests` | 2 | Atomic status updates, monotonic `seq` increments. |
-| `test_saga_log.py` | `SetStatusWithEventCasMissTests` | 3 | CAS rejection on mismatched preconditions. |
-| `test_saga_log.py` | `SetStatusWithEventConcurrencyTests` | 1 | Multi-threaded lock contention: exactly 1 winner, zero sequence collisions. |
-| `test_retry_compensation_race.py` | `RetryCompensationRaceNewCodeTests` | 1 | Live thread race resolution in `retry_compensation`. |
-| `test_retry_compensation_race.py` | `RetryCompensationRaceOldCodeTests` | 1 | Verifies old code lack of audit trail. |
-| `test_recovery_race.py` | `RecoveryAndRetryCompensationRaceTests` | 1 | Inter-process race between recovery sweep and client retry. |
-| `test_recovery_race.py` | `RecoveryClaimTests` | 5 | Event creation in `_claim()`, concurrent claims, `COMPENSATING` & `COMPENSATION_FAILED` recovery sweeps. |
-| `test_crash_recovery.py` | `CrashRecoveryTests` | 2 | Genuine process death simulation during `PAYMENT_PROCESSING` covering both downstream payment outcomes. |
-| `tests.py` | Core Coordinator Tests | 13 | Idempotent transaction creation, terminal state guards, sequential duplicate prevention. |
+| **Coordinator** | `test_coordinator.py` | 14 | Idempotent transaction creation, terminal state guards, strict payload allowlist rejection. |
+| **Coordinator** | `test_saga_log.py` | 10 | DB uniqueness on `(transaction, seq)`, monotonic increments, atomic CAS status updates under lock contention. |
+| **Coordinator** | `test_correlation_id.py` | 3 | End-to-end `X-Correlation-ID` header preservation and propagation across all downstream HTTP calls. |
+| **Coordinator** | `test_crash_recovery.py` | 2 | Genuine process crash recovery during `PAYMENT_PROCESSING` covering forward completion and compensating rollback. |
+| **Coordinator** | `test_forward_saga_events.py` | 8 | Complete forward and rollback SagaEvent append-only audit trail verification. |
+| **Coordinator** | `test_nonblocking_saga.py` | 2 | Asynchronous 202 Accepted worker dispatch vs. synchronous 200 OK execution pipelines. |
+| **Coordinator** | `test_recovery_race.py` | 6 | Concurrent claims, `COMPENSATING` and `COMPENSATION_FAILED` recovery sweeps, recovery vs live client retry races. |
+| **Coordinator** | `test_retry_compensation_race.py` | 2 | Thread race resolution and CAS guards during live client compensation retries. |
+| **Coordinator** | `test_auth_otp.py` & `test_single_device_auth.py` | 21 | Passwordless OTP lifecycle, single-device session invalidation, JWT token verification. |
+| **Coordinator** | `test_celery_task.py` | 2 | Celery distributed Redis mutex locking and task invocation. |
+| **Inventory** | `test_inventory.py` | 45 | Row locking (`SELECT FOR UPDATE`), seat hold expiration, `POST /seats/pricing/`, quota limits, internal key security. |
+| **Inventory** | `test_session_hold_clearance.py` | 2 | Presence-based hold abandonment (dead-man's switch) when user session disconnects. |
+| **Payment** | `test_payments.py` | 28 | Idempotent charge capture, simulated decline thresholds, payment status verification, refunds, correlation ID. |
 
-### Running the Tests
+### Running the Full Test Suite
 
 ```bash
-cd coordinator-service
-python manage.py test coordinator --keepdb
+# Terminal 1 - Inventory Service
+python inventory-service/manage.py test inventory --noinput
+
+# Terminal 2 - Coordinator Service
+python coordinator-service/manage.py test coordinator --noinput
+
+# Terminal 3 - Payment Service
+python payment-service/manage.py test payments --noinput
 ```
 
 ```
-Ran 33 tests in 3.326s
-OK
+--- INVENTORY:   Ran 47 tests  -> OK
+--- COORDINATOR: Ran 70 tests  -> OK
+--- PAYMENT:     Ran 28 tests  -> OK
+Total: 145 tests passed (100% success)
 ```

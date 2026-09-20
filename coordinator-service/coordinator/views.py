@@ -16,6 +16,18 @@ from .middleware import get_correlation_id
 from coordinator.auth_views import get_user_from_request
 
 
+def _get_active_correlation_id(correlation_id=None):
+    """
+    Returns an active correlation ID, prioritizing:
+      1. Explicit correlation_id argument passed to helper
+      2. ContextVar correlation_id stored in current thread by CorrelationIdMiddleware
+      3. Newly generated UUIDv4 string
+    Observability tracing is strictly decoupled from domain entity transaction IDs.
+    """
+    return correlation_id or get_correlation_id() or str(uuid.uuid4())
+
+
+
 # ==============================================================================
 # SECTION 1: CONFIGURATION & SERVICE ENDPOINTS
 # URLs, timeouts, and authentication keys used to communicate with peer services.
@@ -129,7 +141,7 @@ def retry_compensation(request, transaction_id):
         })
 
     headers = {
-        "X-Correlation-ID": getattr(request, "correlation_id", None) or get_correlation_id() or str(transaction_id),
+        "X-Correlation-ID": _get_active_correlation_id(getattr(request, "correlation_id", None)),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
     try:
@@ -283,25 +295,19 @@ def _resolve_seat_pricing(seat_ids=None, correlation_id=None):
     Returns: (total_amount, resolved_seat_ids, resolved_seat_numbers, error_response)
     """
     # 1. Parse and normalize requested seat_ids
-    req_ids = set() # duplicate handling
+    req_ids = set()
 
-    if seat_ids:
-        if isinstance(seat_ids, (list, tuple)):
-            for s in seat_ids:
-                try:
-                    req_ids.add(int(s))
-                except (ValueError, TypeError):
-                    pass
-        else:
+    if seat_ids and isinstance(seat_ids, (list, tuple)):
+        for s in seat_ids:
             try:
-                req_ids.add(int(seat_ids))
+                req_ids.add(int(s))
             except (ValueError, TypeError):
                 pass
 
     if not req_ids:
         return None, None, None, Response(
             {
-                "error": "seat_ids or seat_id is required and must contain valid seat IDs.",
+                "error": "seat_ids is required and must contain valid seat IDs.",
                 "code": "SEATS_REQUIRED",
             },
             status=400,
@@ -310,7 +316,7 @@ def _resolve_seat_pricing(seat_ids=None, correlation_id=None):
     # 2. Query Inventory Service for seat pricing — POST with JSON body {"seat_ids": [1, 2]}
     headers = {
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
-        "X-Correlation-ID": correlation_id or get_correlation_id(),
+        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
     }
 
     seats_list = None
@@ -327,8 +333,6 @@ def _resolve_seat_pricing(seat_ids=None, correlation_id=None):
             "held_by_transaction_id": None,
             "user_id": None,
             "user_email": None,
-            "held_by_user_id": None,
-            "held_by_user_email": None,
         },
         {
             "id": 2,
@@ -341,8 +345,6 @@ def _resolve_seat_pricing(seat_ids=None, correlation_id=None):
             "held_by_transaction_id": None,
             "user_id": None,
             "user_email": None,
-            "held_by_user_id": None,
-            "held_by_user_email": None,
         }
     ]
     """
@@ -396,9 +398,9 @@ def _request_payload_verify(request):
     """
     Validates that incoming transaction creation requests provide required business data.
     Enforces strict allowlist of client fields:
-      - Only 'seat_ids', 'seat_id', and 'seat_numbers' are permitted from clients.
-      - Disallowed fields: 'transaction_id', 'amount', 'user_id', 'user_email', 'held_by_user_id',
-        'held_by_user_email', 'quantity', or any unrecognized fields.
+      - Only 'seat_ids' is permitted from clients.
+      - Disallowed fields: 'transaction_id', 'amount', 'user_id', 'user_email',
+        'seat_id', 'seat_numbers', 'quantity', or any unrecognized fields.
       - If any disallowed or extra fields are sent, returns HTTP 400 Bad Request prompting the client.
     """
     if not isinstance(request.data, dict):
@@ -408,7 +410,7 @@ def _request_payload_verify(request):
 
     is_dev = getattr(settings, "DEBUG", False)
 
-    allowed_fields = {"seat_ids", "seat_id", "seat_numbers"}
+    allowed_fields = {"seat_ids"}
 
     if is_dev:
         allowed_fields.update({"fail_compensation", "coordinator"})
@@ -426,13 +428,24 @@ def _request_payload_verify(request):
         )
 
     # Validate seat identifier is present
-    has_seats = request.data.get("seat_ids")
+    raw_seats = request.data.get("seat_ids")
 
-    if not has_seats:
+    if not raw_seats or not isinstance(raw_seats, list):
         return None, Response(
             {
-                "error": "seat_ids is required and must not be empty.",
+                "error": "seat_ids is required and must be a non-empty list of integers.",
                 "code": "SEATS_REQUIRED",
+            },
+            status=400,
+        )
+
+    try:
+        [int(s) for s in raw_seats]
+    except (ValueError, TypeError):
+        return None, Response(
+            {
+                "error": "seat_ids must be a list of integers.",
+                "code": "INVALID_SEAT_IDS",
             },
             status=400,
         )
@@ -518,7 +531,7 @@ def _handle_create_transaction(request):
         correlation_id=getattr(request, "correlation_id", None),
     )
 
-    if price_error:
+    if price_error: # On Response(...)
         return price_error
     
     quantity = len(seat_ids)
@@ -535,7 +548,7 @@ def _handle_create_transaction(request):
         amount = Decimal("9999")
 
     fail_compensation = request.data.get("fail_compensation", False) if request.data else False
-    correlation_id = getattr(request, "correlation_id", None) or str(transaction_id)
+    correlation_id = _get_active_correlation_id(getattr(request, "correlation_id", None))
 
     created, dup_response = _create_transaction_idempotent(
         transaction_id=transaction_id,
@@ -545,17 +558,14 @@ def _handle_create_transaction(request):
         quantity=quantity,
         user_id=user_id,
         user_email=user_email,
-        held_by_user_id=user_id,
-        held_by_user_email=user_email,
     )
     if not created:
         return dup_response
 
+    # Simulation flag for coordinator crash 
     if request.data.get("coordinator"):
         return Response({"detail": "Intentional crash"})
 
-    correlation_id = getattr(request, "correlation_id", None) or str(transaction_id)
-    
     is_sync = request.query_params.get("sync") == "true"
     
     if not is_sync:
@@ -570,16 +580,12 @@ def _handle_create_transaction(request):
                 correlation_id=correlation_id,
                 user_id=user_id,
                 user_email=user_email,
-                held_by_user_id=user_id,
-                held_by_user_email=user_email,
             )
             return Response(
                 {
                     "transaction_id": str(transaction_id),
                     "user_id": user_id,
                     "user_email": user_email,
-                    "held_by_user_id": user_id,
-                    "held_by_user_email": user_email,
                     "status": "PENDING",
                     "poll_url": f"/transactions/{transaction_id}/",
                     "message": "Saga dispatched to Celery worker",
@@ -601,8 +607,6 @@ def _handle_create_transaction(request):
         actor=SagaEvent.ACTOR_REQUEST,
         user_id=user_id,
         user_email=user_email,
-        held_by_user_id=user_id,
-        held_by_user_email=user_email,
     )
 
 
@@ -673,18 +677,16 @@ def _run_saga_pipeline(
 
     user_id=None,
     user_email=None,
-    held_by_user_id=None,
-    held_by_user_email=None,
 ):
-    correlation_id = correlation_id or str(transaction_id)
+    correlation_id = _get_active_correlation_id(correlation_id)
     if not seat_ids:
         txn = Transaction.objects.filter(transaction_id=transaction_id).first()
         if txn and txn.seat_ids:
             seat_ids = txn.seat_ids
         else:
             seat_ids = []
-    uid = user_id or held_by_user_id or "usr_demo_user"
-    uemail = user_email or held_by_user_email or "demo@dtc.io"
+    uid = user_id or "usr_demo_user"
+    uemail = user_email or "demo@dtc.io"
 
     response, reserve_error = _reserve_inventory(
         transaction_id,
@@ -692,8 +694,6 @@ def _run_saga_pipeline(
         correlation_id=correlation_id,
         user_id=uid,
         user_email=uemail,
-        held_by_user_id=uid,
-        held_by_user_email=uemail,
     )
     if reserve_error:
         return reserve_error
@@ -767,8 +767,6 @@ def _run_saga_pipeline(
         seat_ids=seat_ids,
         user_id=uid,
         user_email=uemail,
-        held_by_user_id=uid,
-        held_by_user_email=uemail,
     )
 
 
@@ -777,11 +775,11 @@ def _run_saga_pipeline(
 # Individual remote HTTP interactions with Inventory and Payment microservices.
 # ==============================================================================
 
-def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=None, user_email=None, held_by_user_id=None, held_by_user_email=None):
-    uid = user_id or held_by_user_id or "usr_demo_user"
-    uemail = user_email or held_by_user_email or "demo@dtc.io"
+def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=None, user_email=None):
+    uid = user_id or "usr_demo_user"
+    uemail = user_email or "demo@dtc.io"
     headers = {
-        "X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id),
+        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
     if uid:
@@ -796,8 +794,6 @@ def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=No
                 "transaction_id": str(transaction_id),
                 "user_id": uid,
                 "user_email": uemail,
-                "held_by_user_id": uid,
-                "held_by_user_email": uemail,
             },
             headers=headers,
             timeout=REQUEST_TIMEOUT,
@@ -827,13 +823,11 @@ def _charge_payment(
     seat_ids=None,
     user_id=None,
     user_email=None,
-    held_by_user_id=None,
-    held_by_user_email=None,
 ):
-    uid = user_id or held_by_user_id or "usr_demo_user"
-    uemail = user_email or held_by_user_email or "demo@dtc.io"
+    uid = user_id or "usr_demo_user"
+    uemail = user_email or "demo@dtc.io"
 
-    headers = {"X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id)}
+    headers = {"X-Correlation-ID": _get_active_correlation_id(correlation_id)}
     if uid:
         headers["X-User-ID"] = str(uid)
     if uemail:
@@ -847,8 +841,6 @@ def _charge_payment(
                 "amount": str(amount),
                 "user_id": uid,
                 "user_email": uemail,
-                "held_by_user_id": uid,
-                "held_by_user_email": uemail,
             },
             headers=headers,
             timeout=REQUEST_TIMEOUT,
@@ -921,7 +913,7 @@ def _confirm_inventory(transaction_id, seat_ids=None, correlation_id=None):
         if txn and txn.seat_ids:
             seat_ids = txn.seat_ids
     headers = {
-        "X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id),
+        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
     try:
@@ -1004,7 +996,7 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
 def _compensate(transaction_id, fail_compensation, payment_data, payment_status_code=None, correlation_id=None, seat_ids=None):
     release_transaction_id = "fail-release" if fail_compensation else str(transaction_id)
     headers = {
-        "X-Correlation-ID": correlation_id or get_correlation_id() or str(transaction_id),
+        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
 
@@ -1172,9 +1164,8 @@ def _get_requester_identity(request):
     Priority of Authentication:
       1. JWT Bearer Token (Primary mechanism for Visualizer & API clients)
       2. Service API Key (Machine-to-Machine / Admin scripts via X-Staff-Key)
-      3. Django Session User (Admins browsing via /admin/)
-      4. Test Runner Environment (Preserves test suite execution)
-      5. Local Development Fallback (DEBUG=True demo user)
+      3. Automated Test Runner Environment (Preserves test suite execution)
+      4. Local Development Fallback (DEBUG=True demo user)
     """
     from django.conf import settings
 
@@ -1190,18 +1181,13 @@ def _get_requester_identity(request):
     if request.headers.get("X-Staff-Key") and request.headers.get("X-Staff-Key") == staff_key:
         return True, "system_staff", True
 
-    # 3. Traditional Django Web Session (/admin/ portal)
-    if request.user and request.user.is_authenticated:
-        uid = str(request.user.id) if hasattr(request.user, "id") else request.user.get_username()
-        return True, uid, getattr(request.user, "is_staff", False)
-
-    # 4. Automated Test Runner Environment
+    # 3. Automated Test Runner Environment
     is_testing = bool(getattr(settings, "IS_TESTING", False))
     if is_testing:
         test_uid = request.headers.get("X-User-ID") or "usr_demo_user"
         return True, test_uid, True
 
-    # 5. Local Development Mode (DEBUG=True)
+    # 4. Local Development Mode (DEBUG=True)
     is_dev = getattr(settings, "DEBUG", False)
     if is_dev:
         dev_uid = (
@@ -1211,21 +1197,20 @@ def _get_requester_identity(request):
         )
         return True, dev_uid, True
 
-    # 6. Default: Unauthenticated
+    # 5. Default: Unauthenticated
     return False, None, False
 
 
 def _create_transaction_idempotent(
-    transaction_id, seat_ids=None, seat_numbers=None, amount=500, quantity=1, user_id=None, user_email=None, held_by_user_id=None, held_by_user_email=None
+    transaction_id, seat_ids=None, seat_numbers=None, amount=500, quantity=1, user_id=None, user_email=None
 ):
-    uid = user_id or held_by_user_id or "usr_demo_user"
-    uemail = user_email or held_by_user_email or "demo@dtc.io"
+
     try:
-        with transaction.atomic():
+        with transaction.atomic(): # Roll-back when error raised
             Transaction.objects.create(
                 transaction_id=transaction_id,
-                user_id=uid,
-                user_email=uemail,
+                user_id=user_id,
+                user_email=user_email,
                 status=Transaction.Status.STARTED,
                 seat_ids=seat_ids,
                 seat_numbers=seat_numbers,
@@ -1234,14 +1219,14 @@ def _create_transaction_idempotent(
             )
         return True, None
     except IntegrityError:
+        # This block only runs when the transaction id server created conflict with existing record's id
+        # but Collisions are mathematically impossible (2^122 possibilities)
         existing = Transaction.objects.get(transaction_id=transaction_id)
         return False, Response(
             {
                 "transaction_id": str(existing.transaction_id),
                 "user_id": existing.user_id,
                 "user_email": existing.user_email,
-                "held_by_user_id": existing.user_id,
-                "held_by_user_email": existing.user_email,
                 "status": existing.status,
             },
             status=200,
@@ -1267,8 +1252,6 @@ def _serialize_transaction(txn):
         "transaction_id": str(txn.transaction_id),
         "user_id": txn.user_id,
         "user_email": txn.user_email,
-        "held_by_user_id": txn.user_id,
-        "held_by_user_email": txn.user_email,
         "status": txn.status,
         "is_terminal": txn.status in terminal_statuses,
         "seat_ids": txn.seat_ids,

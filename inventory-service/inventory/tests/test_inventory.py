@@ -562,7 +562,7 @@ class MaxActorHoldsTests(TestCase):
 
     def test_single_request_exceeding_max_holds_rejected_with_429(self):
         tid = str(uuid.uuid4())
-        with self.settings(MAX_ACTOR_HOLDS=5):
+        with self.settings(MAX_USER_HOLDS=5, MAX_ACTOR_HOLDS=5):
             seat_ids = [s.id for s in self.seats[:6]]
             resp = self.client.post(
                 RESERVE_URL,
@@ -573,7 +573,7 @@ class MaxActorHoldsTests(TestCase):
             self.assertEqual(resp.data.get("code"), "MAX_HOLDS_EXCEEDED")
 
     def test_accumulated_holds_exceeding_max_holds_rejected_with_429(self):
-        with self.settings(MAX_ACTOR_HOLDS=3):
+        with self.settings(MAX_USER_HOLDS=3, MAX_ACTOR_HOLDS=3):
             # First reservation of 2 seats succeeds
             tid1 = str(uuid.uuid4())
             resp1 = self.client.post(

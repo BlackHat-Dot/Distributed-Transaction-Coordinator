@@ -14,8 +14,7 @@ import redis
 from .models import Event, Seat, Reservation
 from .serializers import EventSerializer, SeatSerializer, ReservationSerializer
 
-MAX_USER_HOLDS = int(os.getenv("MAX_USER_HOLDS", os.getenv("MAX_ACTOR_HOLDS", "10")))
-MAX_ACTOR_HOLDS = MAX_USER_HOLDS
+MAX_USER_HOLDS = int(os.getenv("MAX_USER_HOLDS", "10"))
 
 def get_redis_client():
     broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://localhost:6379/0")
@@ -196,10 +195,11 @@ def _validate_reserve_input(data):
         return None, None, Response({"message": "no input values"}, status=400)
 
     seat_ids = data.get("seat_ids")
-    if not seat_ids and data.get("seat_id"):
-        seat_ids = [data.get("seat_id")]
     if not seat_ids:
         return None, None, Response({"error": "seat_ids is required"}, status=400)
+
+    if not isinstance(seat_ids, (list, tuple)):
+        return None, None, Response({"error": "seat_ids must be a list of integers"}, status=400)
 
     try:
         seat_ids = [int(s) for s in seat_ids]
@@ -235,14 +235,8 @@ def reserve_seat(request):
     is_testing = bool(getattr(settings, "IS_TESTING", False))
     is_dev = getattr(settings, "DEBUG", False)
 
-    raw_user_id = (
-        request.data.get("user_id") or request.data.get("held_by_user_id")
-        or request.headers.get("X-User-ID")
-    )
-    raw_user_email = (
-        request.data.get("user_email") or request.data.get("held_by_user_email") or request.data.get("email")
-        or request.headers.get("X-User-Email")
-    )
+    raw_user_id = request.data.get("user_id") or request.headers.get("X-User-ID")
+    raw_user_email = request.data.get("user_email") or request.headers.get("X-User-Email")
 
     if not (is_dev or is_testing or has_internal_key):
         if not raw_user_id or raw_user_id in ("usr_anonymous", "usr_demo_user"):

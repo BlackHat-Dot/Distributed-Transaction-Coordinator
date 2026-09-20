@@ -23,7 +23,7 @@ def run_concurrency_race_test(target_seat_id=5):
         start = time.perf_counter()
         res = requests.post(
             f"{INVENTORY_URL}/seats/reserve/",
-            json={"seat_id": target_seat_id, "transaction_id": tx_id},
+            json={"seat_ids": [target_seat_id], "transaction_id": tx_id},
             timeout=5,
         )
         elapsed_ms = (time.perf_counter() - start) * 1000
@@ -60,7 +60,7 @@ def run_concurrency_race_test(target_seat_id=5):
     print(f"\n[Beacon Test] Simulating {winner[0]} closing tab / firing sendBeacon release...")
     beacon_res = requests.post(
         f"{INVENTORY_URL}/seats/release/",
-        json={"transaction_id": winner[4]},
+        json={"seat_ids": [target_seat_id], "transaction_id": winner[4]},
         timeout=5,
     )
     print(f"  -> Beacon Release Response: HTTP {beacon_res.status_code} | {beacon_res.json()}")

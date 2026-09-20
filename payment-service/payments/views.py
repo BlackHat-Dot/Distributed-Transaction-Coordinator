@@ -58,8 +58,6 @@ def _payment_response(payment, status=None):
             "transaction_id": str(payment.transaction_id),
             "user_id": payment.user_id,
             "user_email": payment.user_email,
-            "held_by_user_id": payment.user_id,
-            "held_by_user_email": payment.user_email,
             "amount": str(payment.amount),
             "status": payment.status,
         },
@@ -79,14 +77,11 @@ def charge_payment(request):
 
     user_id = (
         request.data.get("user_id")
-        or request.data.get("held_by_user_id")
         or request.headers.get("X-User-ID")
         or "usr_anonymous"
     )
     user_email = (
         request.data.get("user_email")
-        or request.data.get("held_by_user_email")
-        or request.data.get("email")
         or request.headers.get("X-User-Email")
         or "anonymous@dtc.io"
     )
@@ -98,8 +93,6 @@ def charge_payment(request):
                 "transaction_id": str(transaction_uuid),
                 "user_id": user_id,
                 "user_email": user_email,
-                "held_by_user_id": user_id,
-                "held_by_user_email": user_email,
                 "status": NOT_CHARGED,
                 "_testing": "Intentional failure for compensation testing",
             },
@@ -138,8 +131,6 @@ def payment_check(request):
             "transaction_id": str(payment.transaction_id),
             "user_id": payment.user_id,
             "user_email": payment.user_email,
-            "held_by_user_id": payment.user_id,
-            "held_by_user_email": payment.user_email,
             "status": payment.status
         })
 

@@ -239,8 +239,8 @@
               <input type="number" id="cust-amount" value="500" min="0" step="0.01" readonly style="background: rgba(255, 255, 255, 0.04); color: var(--text-secondary); cursor: not-allowed; border: 1px solid var(--border-subtle); padding: 7px 10px; border-radius: var(--radius-xs); font-family: var(--font-mono); font-size: 11.5px;" title="Price is strictly bound to the selected seat tier (VIP: $750, Premium: $500, Standard: $350) and cannot be manually modified.">
             </div>
             <div class="form-field">
-              <label>Transaction ID (Optional UUID):</label>
-              <input type="text" id="cust-tx-id" placeholder="Auto-generated if blank">
+              <label>Transaction ID [Server Enforced]:</label>
+              <input type="text" id="cust-tx-id" value="Server-assigned UUIDv4" readonly style="background: rgba(255, 255, 255, 0.04); color: var(--text-secondary); cursor: not-allowed; border: 1px solid var(--border-subtle); padding: 7px 10px; border-radius: var(--radius-xs); font-family: var(--font-mono); font-size: 11.5px;" title="Coordinator automatically generates and guarantees UUIDv4 server-side.">
             </div>
             <div class="form-field">
               <label>Execution Pipeline Mode:</label>
@@ -684,7 +684,7 @@
               <span id="fmeta-status-badge" class="badge badge-neutral">--</span>
             </div>
             <div class="fmeta-col">
-              <span class="fmeta-label">PRODUCT / QTY</span>
+              <span class="fmeta-label">SEATS / QTY</span>
               <span class="fmeta-val" id="fmeta-prod">--</span>
             </div>
             <div class="fmeta-col">

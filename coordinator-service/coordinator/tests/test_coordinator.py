@@ -356,7 +356,7 @@ class StrictPayloadValidationTests(TestCase):
         with _mock_saga_ok():
             resp = self.client.post(
                 "/transactions/?sync=true",
-                {"seat_ids": [1], "seat_numbers": "A1"},
+                {"seat_ids": [1]},
                 format="json",
             )
         self.assertEqual(resp.status_code, 200)
@@ -367,3 +367,15 @@ class StrictPayloadValidationTests(TestCase):
         uuid.UUID(str(generated_id))
         # Verify row was created with server-generated ID
         self.assertTrue(Transaction.objects.filter(transaction_id=generated_id).exists())
+
+    def test_legacy_seat_id_and_seat_numbers_rejected(self):
+        resp = self.client.post(
+            "/transactions/?sync=true",
+            {"seat_id": 1, "seat_numbers": "A1"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("code"), "INVALID_FIELDS")
+        self.assertIn("seat_id", resp.data.get("invalid_fields", []))
+        self.assertIn("seat_numbers", resp.data.get("invalid_fields", []))
+

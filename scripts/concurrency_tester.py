@@ -5,11 +5,11 @@ URL = "http://127.0.0.1:8000/seats/reserve/"
 
 requests_data = [
     {
-        "seat_id": 1,
+        "seat_ids": [1],
         "transaction_id": "11111111-1111-1111-1111-111111111113",
     },
     {
-        "seat_id": 1,
+        "seat_ids": [1],
         "transaction_id": "22222222-2222-2222-2222-222222222223",
     },
 ]
