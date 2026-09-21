@@ -1841,7 +1841,6 @@ async function initiateSagaCheckout() {
     method: "POST",
     body: JSON.stringify({
       seat_ids: seatIds,
-      seat_numbers: STATE.myHold.seatNumbers || firstSeat.seat_number,
     }),
   });
 

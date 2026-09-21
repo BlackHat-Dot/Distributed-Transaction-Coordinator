@@ -42,6 +42,7 @@ def reclaim_expired_holds():
     (user exited browser/website, causing their Redis heartbeat session dtc:session:{email} to expire).
     """
     now = timezone.now()
+
     held_seats = list(Seat.objects.filter(status=Seat.Status.HELD))
     if not held_seats:
         return 0, 0
@@ -70,7 +71,7 @@ def reclaim_expired_holds():
         released = Reservation.objects.filter(
             seat_id__in=expired_ids,
             status=Reservation.Status.RESERVED,
-        ).update(status=Reservation.Status.RELEASED)
+        ).update(status=Reservation.Status.RELEASED) # reclaimer
 
         reclaimed = Seat.objects.filter(id__in=expired_ids).update(
             status=Seat.Status.AVAILABLE,
@@ -85,11 +86,11 @@ def reclaim_expired_holds():
 
 @api_view(["GET"])
 def seat_list(request):
-    # ── Option C: Piggyback Sweep ──────────────────────────────────────────────
+    # Option C: Piggyback Sweep
     # Every time the seat map is loaded, immediately release any expired or abandoned holds
     # in PostgreSQL so the DB always reflects truth for the requesting user.
     reclaim_expired_holds()
-    # ── End Piggyback Sweep ────────────────────────────────────────────────────
+    # End Piggyback Sweep
 
 
     # Will be deleted once project reaches real theater owners. 
@@ -547,7 +548,7 @@ def reset_seats(request):
             user_id=None,
             user_email=None,
         )
-        
+
         Reservation.objects.all().delete() # must
 
     return Response({"message": "All seats reset to AVAILABLE."})
