@@ -371,7 +371,7 @@ def _resolve_seat_pricing(seat_ids=None, correlation_id=None):
     if seats_list and isinstance(seats_list, list):
 
         if len(seats_list) == len(req_ids):
-            total_amount = sum(Decimal(str(s.get("price", 500))) for s in seats_list)
+            total_amount = sum(Decimal(str(s.get("price"))) for s in seats_list)
             resolved_seat_ids = [s["id"] for s in seats_list]
             resolved_seat_numbers = ", ".join(f"{s.get('row', '')}{s.get('seat_number', '')}" for s in seats_list)
 
@@ -527,8 +527,8 @@ def _handle_create_transaction(request):
     raw_seat_ids = request.data.get("seat_ids")
 
     amount, seat_ids, seat_numbers, price_error = _resolve_seat_pricing(
-        seat_ids=raw_seat_ids,
-        correlation_id=getattr(request, "correlation_id", None),
+        seat_ids = raw_seat_ids,
+        correlation_id = request.correlation_id
     )
 
     if price_error: # On Response(...)
@@ -551,7 +551,10 @@ def _handle_create_transaction(request):
 
     # Test flag
     fail_compensation = request.data.get("fail_compensation", False) if request.data else False
-    correlation_id = _get_active_correlation_id(getattr(request, "correlation_id", None))
+    correlation_id = request.correlation_id
+
+    if not correlation_id:
+        raise RuntimeError("CorrelationIdMiddleware is missing or misconfigured.")
 
     created, dup_response = _create_transaction_idempotent(
         transaction_id=transaction_id,
@@ -703,7 +706,7 @@ def _handle_list_transactions(request):
 def _run_saga_pipeline(
     transaction_id,
     seat_ids=None,
-    amount=500,
+    amount=None,
     fail_compensation=False,
     correlation_id=None,
     actor=SagaEvent.ACTOR_REQUEST,
@@ -711,22 +714,14 @@ def _run_saga_pipeline(
     user_id=None,
     user_email=None,
 ):
-    correlation_id = _get_active_correlation_id(correlation_id)
-    if not seat_ids:
-        txn = Transaction.objects.filter(transaction_id=transaction_id).first()
-        if txn and txn.seat_ids:
-            seat_ids = txn.seat_ids
-        else:
-            seat_ids = []
-    uid = user_id
-    uemail = user_email
+
 
     response, reserve_error = _reserve_inventory(
         transaction_id,
         seat_ids,
         correlation_id=correlation_id,
-        user_id=uid,
-        user_email=uemail,
+        user_id=user_id,
+        user_email=user_email,
     )
     if reserve_error:
         return reserve_error
@@ -756,14 +751,28 @@ def _run_saga_pipeline(
         )
 
     resp_json = None
+
     try:
         resp_json = response.json()
+        """
+        Ex:
+        {
+          "message": "1 Seats reserved",
+          "seat_ids": [
+            55
+          ],
+          "held_until": "2026-09-02T07:21:32.111744Z",
+          "total_amount": "350.00",
+          "transaction_id": "e6420fe2-144c-4d17-88d8-e1528f227d8c"
+        }
+        """
     except Exception:
         pass
 
     if resp_json and "total_amount" in resp_json:
         try:
             from decimal import Decimal
+
             actual_amount = Decimal(str(resp_json["total_amount"]))
             # Preserve intentional payment failure simulation amount (9999) for compensation scenarios
             if str(amount).split(".")[0] != "9999":
@@ -777,16 +786,16 @@ def _run_saga_pipeline(
 
     _set_status_with_event(
         transaction_id,
-        Transaction.Status.INVENTORY_RESERVED,
-        expected_status=Transaction.Status.STARTED,
+        Transaction.Status.INVENTORY_RESERVED, # to
+        expected_status=Transaction.Status.STARTED, # from
         actor=actor,
         http_status_code=response.status_code,
         http_payload=resp_json,
     )
     _set_status_with_event(
         transaction_id,
-        Transaction.Status.PAYMENT_PROCESSING,
-        expected_status=Transaction.Status.INVENTORY_RESERVED,
+        Transaction.Status.PAYMENT_PROCESSING, # to 
+        expected_status=Transaction.Status.INVENTORY_RESERVED, # from
         actor=actor,
         http_status_code=None,
         http_payload=None,
@@ -798,8 +807,8 @@ def _run_saga_pipeline(
         fail_compensation,
         correlation_id=correlation_id,
         seat_ids=seat_ids,
-        user_id=uid,
-        user_email=uemail,
+        user_id=user_id,
+        user_email=user_email,
     )
 
 
@@ -809,10 +818,9 @@ def _run_saga_pipeline(
 # ==============================================================================
 
 def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=None, user_email=None):
-    uid = user_id
-    uemail = user_email
+
     headers = {
-        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
+        "X-Correlation-ID": correlation_id,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
 
@@ -822,8 +830,8 @@ def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=No
             json={
                 "seat_ids": seat_ids,
                 "transaction_id": str(transaction_id),
-                "user_id": uid,
-                "user_email": uemail,
+                "user_id": user_id,
+                "user_email": user_email,
             },
             headers=headers,
             timeout=REQUEST_TIMEOUT,
@@ -854,10 +862,8 @@ def _charge_payment(
     user_id=None,
     user_email=None,
 ):
-    uid = user_id
-    uemail = user_email
 
-    headers = {"X-Correlation-ID": _get_active_correlation_id(correlation_id)}
+    headers = {"X-Correlation-ID": correlation_id}
 
     try:
         payment_response = requests.post(
@@ -865,8 +871,8 @@ def _charge_payment(
             json={
                 "transaction_id": str(transaction_id),
                 "amount": str(amount),
-                "user_id": uid,
-                "user_email": uemail,
+                "user_id": user_id,
+                "user_email": user_email,
             },
             headers=headers,
             timeout=REQUEST_TIMEOUT,
@@ -878,8 +884,8 @@ def _charge_payment(
     
         _set_status_with_event(
             transaction_id,
-            uncertain_status,
-            expected_status=Transaction.Status.PAYMENT_PROCESSING,
+            uncertain_status, # to
+            expected_status=Transaction.Status.PAYMENT_PROCESSING, # from
             actor=SagaEvent.ACTOR_REQUEST,
             http_status_code=None,
             http_payload=None,
@@ -939,7 +945,7 @@ def _confirm_inventory(transaction_id, seat_ids=None, correlation_id=None):
         if txn and txn.seat_ids:
             seat_ids = txn.seat_ids
     headers = {
-        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
+        "X-Correlation-ID": correlation_id,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
     try:

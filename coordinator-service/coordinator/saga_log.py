@@ -24,23 +24,36 @@ def _set_status_with_event(
                 qs = qs.filter(status=expected_status)
 
         rows = list(qs.values("id", "status"))
+        """
+        rows = [
+            {
+                "id": 42,                        # Primary key (auto-increment integer)
+                "status": "PAYMENT_PROCESSING"   # Current status column value
+            }
+        ]
+        """
         if not rows:
             return False
 
-        txn_pk = rows[0]["id"]
-        from_status = rows[0]["status"]
+        txn_pk = rows[0]["id"] # 42
+        from_status = rows[0]["status"] # "PAYMENT_PROCESSING"
 
         Transaction.objects.filter(pk=txn_pk).update(
             status=to_status,
-            updated_at=timezone.now(),
         )
+
+    # filter(transaction_id=txn_pk): Filters the SagaEvent table to only include events belonging to this specific transaction.
+    # .aggregate(m=Max("seq")): Tells PostgreSQL to run an aggregate SQL query:
+    # like, SELECT MAX("seq") AS m FROM "coordinator_sagaevent" WHERE "transaction_id" = 42;
+    # SagaEvent.objects.filter(transaction_id=txn_pk).aggregate(m=Max("seq")) --> result_dict = {"m": 3} --> result_dict["m"]
+    # if the sagaevent record doesn't exist then None returned , None or 0 --> 0
 
         last_seq = (
             SagaEvent.objects.filter(transaction_id=txn_pk)
             .aggregate(m=Max("seq"))["m"]
             or 0
         )
-        next_seq = last_seq + 1
+        next_seq = last_seq + 1 # new/prev sequence +1 
 
         SagaEvent.objects.create(
             transaction_id=txn_pk,

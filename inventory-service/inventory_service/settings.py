@@ -39,6 +39,8 @@ else:
         "CRITICAL SECURITY ERROR: ALLOWED_HOSTS environment variable is not set in production (DEBUG=False)!"
     )
 
+MAX_USER_HOLDS = int(os.getenv("MAX_USER_HOLDS", "10"))
+
 INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY")
 if not INTERNAL_SERVICE_KEY:
     if DEBUG or IS_TESTING:

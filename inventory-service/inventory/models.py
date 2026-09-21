@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 
 
 class Event(models.Model):
@@ -57,6 +58,25 @@ class Seat(models.Model):
     class Meta:
         unique_together = [("event", "row", "seat_number")]
         ordering = ["event", "row", "seat_number"]
+
+    @property
+    def is_available(self):
+        return self.status == self.Status.AVAILABLE
+
+    @property
+    def is_held(self):
+        return self.status == self.Status.HELD
+
+    @property
+    def is_booked(self):
+        return self.status == self.Status.BOOKED
+
+    def is_expired(self, now=None):
+        if not self.held_until:
+            return False
+        if now is None:
+            now = timezone.now()
+        return self.held_until < now
 
     def __str__(self):
         return f"{self.event.name} - Row {self.row} Seat {self.seat_number} ({self.status})"

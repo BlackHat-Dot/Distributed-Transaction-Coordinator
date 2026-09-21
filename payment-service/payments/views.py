@@ -75,9 +75,10 @@ def charge_payment(request):
     if error_response:
         return error_response
 
-    user_id = request.data.get("user_id") or request.headers.get("X-User-ID") or None
-    user_email = request.data.get("user_email") or request.headers.get("X-User-Email") or None
+    user_id = request.data.get("user_id") or None
+    user_email = request.data.get("user_email") or None
 
+    # Payment decline flag
     if amount == TESTING_FAILURE_AMOUNT:
         return Response(
             {
@@ -123,7 +124,7 @@ def payment_check(request):
             "transaction_id": str(payment.transaction_id),
             "user_id": payment.user_id,
             "user_email": payment.user_email,
-            "status": payment.status
+            "status": payment.status # CHARGED
         })
 
     return Response({"transaction_id": str(transaction_uuid), "status": NOT_CHARGED})
