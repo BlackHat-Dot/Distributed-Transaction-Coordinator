@@ -1,5 +1,4 @@
 import os
-import sys
 import uuid
 import requests
 from decimal import Decimal, InvalidOperation
@@ -1209,7 +1208,7 @@ def _get_requester_identity(request):
         return True, user_info.get("user_id"), is_staff
 
     # 2. Machine-to-Machine: Internal Staff Secret Key
-    staff_key = os.getenv("STAFF_API_KEY", "dtc-internal-staff-secret")
+    staff_key = os.getenv("STAFF_API_KEY")
     if request.headers.get("X-Staff-Key") and request.headers.get("X-Staff-Key") == staff_key:
         return True, "system_staff", True
 

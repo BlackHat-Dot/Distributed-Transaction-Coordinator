@@ -120,12 +120,7 @@ def payment_check(request):
 
     payment = Payment.objects.filter(transaction_id=transaction_uuid).first()
     if payment:
-        return Response({
-            "transaction_id": str(payment.transaction_id),
-            "user_id": payment.user_id,
-            "user_email": payment.user_email,
-            "status": payment.status # CHARGED
-        })
+        return _payment_response(payment, status=201)
 
     return Response({"transaction_id": str(transaction_uuid), "status": NOT_CHARGED})
 
@@ -137,6 +132,7 @@ def refund_payment(request):
         return error_response
 
     payment = Payment.objects.filter(transaction_id=transaction_uuid).first()
+
     if not payment:
         return Response(
             {
@@ -162,9 +158,32 @@ def refund_payment(request):
         )
 
     with transaction.atomic():
+        """
+        select_for_update() — Database Row-Level Locking Definition:
+
+        Executes a SQL `SELECT ... FOR UPDATE` query to acquire an exclusive row-level 
+        lock on the matching database records.
+
+        Core Mechanics:
+        1. Transaction Boundary: Must run within an atomic block (`transaction.atomic()`).
+           The lock is held continuously until the current transaction commits or rolls back.
+
+        2. Mutex for Writers: Blocks any concurrent transaction attempting to UPDATE, 
+           DELETE, or execute another `select_for_update()` on the same rows, forcing 
+           them to queue up until the lock is released.
+
+        3. Non-Blocking for Readers: Does NOT block standard read queries (`SELECT`).
+           Under MVCC (Multi-Version Concurrency Control), standard readers continue to read 
+           the last committed snapshot immediately without waiting.
+
+        4. Primary Purpose: Guarantees serialization for Read-Modify-Write cycles to eliminate 
+           race conditions (e.g. preventing two users from reserving the same seat simultaneously).
+        """
         p = Payment.objects.select_for_update().get(id=payment.id)
+
         if p.status == Payment.Status.REFUNDED:
             return _payment_response(p, status=200)
+        
         if p.status != Payment.Status.CHARGED:
             return Response(
                 {
@@ -177,4 +196,5 @@ def refund_payment(request):
 
         p.status = Payment.Status.REFUNDED
         p.save(update_fields=["status"])
+        
         return _payment_response(p, status=200)
