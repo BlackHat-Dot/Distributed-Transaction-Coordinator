@@ -1,0 +1,199 @@
+flowchart TD
+    %% ==========================================
+    %% CLASS DEFINITIONS & COLOR PALETTE
+    %% ==========================================
+    classDef success fill:#d4edda,stroke:#28a745,stroke-width:2px,color:#155724;
+    classDef failure fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#721c24;
+    classDef unhandled fill:#fff3cd,stroke:#e0a800,stroke-width:3px,stroke-dasharray: 5 5,color:#856404;
+    classDef decision fill:#e2e3e5,stroke:#495057,stroke-width:2px,color:#212529;
+    classDef background fill:#d1ecf1,stroke:#17a2b8,stroke-width:2px,color:#0c5460;
+    classDef step fill:#e8f4fd,stroke:#0d6efd,stroke-width:2px,color:#084298;
+
+    %% ==========================================
+    %% 1. CLIENT INGRESS & VALIDATION
+    %% ==========================================
+    subgraph S1 ["1. Client Request Ingress & Validation"]
+        REQ["Client: POST /transactions/<br/>(Headers, JSON payload, query params)"] --> D1{"Valid payload structure?<br/>_request_payload_verify()<br/>[coordinator/views.py]"}
+        D1 -- "Missing/Not List of Ints" --> ERR_PAYLOAD["HTTP 400: SEATS_REQUIRED / INVALID_SEAT_IDS<br/>(Immediate Rejection)"]:::failure
+        D1 -- "Disallowed fields (user_id, amount, etc.)" --> ERR_FIELDS["HTTP 400: INVALID_FIELDS<br/>(Immediate Rejection)"]:::failure
+        D1 -- "Valid seat_ids" --> D2{"Caller Authenticated?<br/>_get_requester_identity()<br/>[coordinator/views.py]"}
+
+        D2 -- "DEBUG=False & No JWT/Staff Key" --> ERR_AUTH["HTTP 401: AUTHENTICATION_REQUIRED<br/>(Immediate Rejection)"]:::failure
+        D2 -- "Authenticated / Dev / Test" --> PRICE_CALL["_resolve_seat_pricing()<br/>Calls: POST /seats/pricing/<br/>[coordinator/views.py]"]
+    end
+
+    %% ==========================================
+    %% 2. INVENTORY PRICING RESOLUTION
+    %% ==========================================
+    subgraph S2 ["2. Inventory Pricing Discovery"]
+        PRICE_CALL --> D3{"Inventory Reachable & Found?<br/>seat_pricing()<br/>[inventory/views.py]"}
+        D3 -- "Connection Timeout / 5xx" --> ERR_PRICE_503["HTTP 503: PRICING_UNAVAILABLE<br/>(Transaction not created)"]:::failure
+        D3 -- "Seats count mismatch" --> ERR_PRICE_404["HTTP 404: SEATS_NOT_FOUND<br/>(Transaction not created)"]:::failure
+        D3 -- "HTTP 200: Seat Prices Returned" --> D4{"Create STARTED Record?<br/>_create_transaction_idempotent()<br/>[coordinator/views.py]"}
+
+        D4 -- "IntegrityError (Duplicate ID)" --> D4_DUP["Return existing transaction state<br/>(Idempotent response)"]:::failure
+        D4 -- "Inserted in DB" --> D5{"Simulate Crash Header?<br/>request.data.coordinator<br/>[coordinator/views.py]"}
+        D5 -- "True" --> CRASH_START["HTTP 200: Intentional Crash<br/>(Transaction remains STARTED)"]:::unhandled
+        D5 -- "False" --> D6{"Execution Mode?<br/>?sync=true vs default async<br/>[coordinator/views.py]"}
+    end
+
+    %% ==========================================
+    %% 3. EXECUTION MODE & CELERY DISPATCH
+    %% ==========================================
+    subgraph S3 ["3. Execution Mode Dispatch"]
+        D6 -- "Default (Async)" --> CELERY_PUB["execute_saga_task.delay()<br/>[coordinator/tasks.py]"]
+        CELERY_PUB -- "Redis Available" --> RESP_202["HTTP 202 Accepted + poll_url<br/>Client polls GET /transactions/tx_id/"]:::background
+        CELERY_PUB -- "Redis ConnectionError" --> FALLBACK_SYNC["Log Warning & Fallback to Synchronous"]:::step
+        RESP_202 --> CELERY_WORKER["Celery Worker Pops Task<br/>execute_saga_task()<br/>[coordinator/tasks.py]"]
+        CELERY_WORKER --> RUN_SAGA["_run_saga_pipeline()<br/>[coordinator/views.py]"]
+
+        D6 -- "sync=true" --> RUN_SAGA
+        FALLBACK_SYNC --> RUN_SAGA
+    end
+
+    %% ==========================================
+    %% 4. STEP 1: INVENTORY RESERVATION (LOCKING)
+    %% ==========================================
+    subgraph S4 ["4. Saga Step 1: Inventory Hold (Pessimistic Locking)"]
+        RUN_SAGA --> INV_CALL["_reserve_inventory()<br/>Calls: POST /seats/reserve/<br/>[coordinator/views.py]"]
+        INV_CALL --> INV_LOCK{"PostgreSQL Atomic Lock<br/>select_for_update().order_by(id)<br/>reserve_seat() [inventory/views.py]"}
+
+        INV_LOCK -- "Missing Seats" --> INV_ERR_404["HTTP 404: One or more seats not found"]
+        INV_LOCK -- "len(seats) > max_user_holds" --> INV_ERR_429A["HTTP 429: MAX_HOLDS_EXCEEDED"]
+        INV_LOCK -- "active_holds + new > max_user_holds" --> INV_ERR_429B["HTTP 429: MAX_HOLDS_EXCEEDED"]
+        INV_LOCK -- "Already BOOKED or HELD by other" --> INV_ERR_409["HTTP 409: SEAT_UNAVAILABLE"]
+        INV_LOCK -- "AVAILABLE or Same User Hold" --> INV_HELD["Set status=HELD, held_until=now+10m<br/>held_by_transaction_id=tx_id<br/>HTTP 200 OK"]
+
+        INV_CALL -- "Timeout / ConnectionError" --> INV_TIMEOUT["Set status=INVENTORY_TIMEOUT/CONN_ERROR<br/>HTTP 504 Gateway Timeout"]:::unhandled
+        INV_ERR_404 & INV_ERR_429A & INV_ERR_429B & INV_ERR_409 --> INV_FAIL["Set status=INVENTORY_RESERVE_FAILED<br/>HTTP 400/409/429 Response"]:::failure
+
+        INV_HELD --> SET_RESERVED["Set status=INVENTORY_RESERVED<br/>_set_status_with_event()<br/>[coordinator/views.py]"]
+        SET_RESERVED --> SET_PAY_PROC["Set status=PAYMENT_PROCESSING<br/>_set_status_with_event()<br/>[coordinator/views.py]"]
+    end
+
+    %% ==========================================
+    %% 5. STEP 2: PAYMENT PROCESSING
+    %% ==========================================
+    subgraph S5 ["5. Saga Step 2: Payment Execution"]
+        SET_PAY_PROC --> PAY_CALL["_charge_payment()<br/>Calls: POST /payments/charge/<br/>[coordinator/views.py]"]
+        PAY_CALL --> PAY_EXEC{"Idempotency & Gateway Simulation<br/>charge_payment() [payments/views.py]"}
+
+        PAY_EXEC -- "Already CHARGED" --> PAY_200["Return Existing CHARGED (Idempotent)"]
+        PAY_EXEC -- "Testing Amount ($9999)" --> PAY_422["HTTP 422: Payment Declined (NOT_CHARGED)"]
+        PAY_EXEC -- "Payment Gateway Decline/5xx" --> PAY_500["HTTP 500: Gateway Error (NOT_CHARGED)"]
+        PAY_EXEC -- "New Payment Approved" --> PAY_CHARGED["Create Payment status=CHARGED<br/>HTTP 200 OK"]
+
+        PAY_CALL -- "Timeout / ConnectionError" --> PAY_TIMEOUT["Set status=PAYMENT_TIMEOUT/CONN_ERROR<br/>HTTP 504 Gateway Timeout"]:::unhandled
+        PAY_422 & PAY_500 --> COMP_PAY_FAIL["_finalize_payment_outcome()<br/>Payment Failed (was_charged=False)"]
+        PAY_200 & PAY_CHARGED --> CONF_CALL["_confirm_inventory()<br/>Calls: POST /seats/confirm/<br/>[coordinator/views.py]"]
+    end
+
+    %% ==========================================
+    %% 6. STEP 3: INVENTORY CONFIRMATION
+    %% ==========================================
+    subgraph S6 ["6. Saga Step 3: Inventory Confirmation"]
+        CONF_CALL --> CONF_EXEC{"PostgreSQL Atomic Lock<br/>select_for_update()<br/>confirm_seats() [inventory/views.py]"}
+
+        CONF_EXEC -- "Seat already BOOKED" --> CONF_OK_IDEMP["Idempotent Confirmation Pass"]
+        CONF_EXEC -- "Seat HELD by tx_id & unexpired" --> CONF_BOOKED["Set status=BOOKED, held_until=null<br/>Reservation status=CONFIRMED<br/>HTTP 200 OK"]
+        CONF_EXEC -- "Hold Expired or Stolen by Other" --> CONF_ERR_409["HTTP 409: Hold Expired / Invalid"]
+
+        CONF_OK_IDEMP & CONF_BOOKED --> SAGA_COMPLETED["Set status=COMPLETED<br/>_set_status_with_event()<br/>HTTP 200 OK: Booking Confirmed!"]:::success
+
+        CONF_CALL -- "Timeout / ConnectionError" --> CONF_TIMEOUT["Inventory Confirm Timeout"]
+        CONF_ERR_409 & CONF_TIMEOUT --> COMP_CONF_FAIL["_finalize_payment_outcome()<br/>Confirm Failed (was_charged=True)"]
+    end
+
+    %% ==========================================
+    %% 7. COMPENSATION & ROLLBACK PIPELINE
+    %% ==========================================
+    subgraph S7 ["7. Saga Compensation & Rollback Flow"]
+        COMP_PAY_FAIL --> COMP_ENTRY["_compensate(fail_comp, payment_data)<br/>Set status=COMPENSATING<br/>[coordinator/views.py]"]
+        COMP_CONF_FAIL --> COMP_ENTRY
+
+        COMP_ENTRY --> D_FAIL_COMP{"fail_compensation flag?<br/>(Dev fault injection)"}
+        D_FAIL_COMP -- "True" --> COMP_FAIL_DEV["Set status=COMPENSATION_FAILED<br/>HTTP 500: Fault injected"]:::failure
+        D_FAIL_COMP -- "False" --> REL_CALL["_release_inventory()<br/>Calls: POST /seats/release/<br/>[inventory/views.py]"]
+
+        REL_CALL --> REL_EXEC{"Release Seat Hold<br/>release_seats() [inventory/views.py]"}
+        REL_EXEC -- "Seat is BOOKED" --> REL_NOOP["Do not release booked seats<br/>HTTP 200 OK"]
+        REL_EXEC -- "Seat is HELD by tx_id" --> REL_OK["Set status=AVAILABLE, held_by=null<br/>Reservation status=RELEASED<br/>HTTP 200 OK"]
+
+        REL_CALL -- "Timeout / ConnectionError" --> COMP_FAIL_REL_NET["Set status=COMPENSATION_FAILED<br/>HTTP 503: Release Network Error"]:::unhandled
+        REL_CALL -- "HTTP != 200" --> COMP_FAIL_REL_ERR["Set status=COMPENSATION_FAILED<br/>HTTP 500: Release Rejected"]:::unhandled
+
+        REL_OK & REL_NOOP --> D_REFUND{"was_charged == True?<br/>(Did money leave user's card?)"}
+
+        D_REFUND -- "False (Payment declined initially)" --> COMP_NO_REFUND["No refund required"]
+        COMP_NO_REFUND --> SAGA_COMPENSATED["Set status=COMPENSATED<br/>_set_status_with_event()<br/>HTTP 400 Bad Request<br/>(Clean Rollback, No Money Charged)"]:::failure
+
+        D_REFUND -- "True (Charged, but confirm failed)" --> REF_CALL["Calls: POST /payments/refund/<br/>refund_payment() [payments/views.py]"]
+        REF_CALL -- "Timeout / ConnectionError" --> COMP_FAIL_REF_NET["Set status=COMPENSATION_FAILED<br/>HTTP 503: Refund Network Error"]:::failure
+        REF_CALL -- "HTTP != 200 (Cannot refund)" --> COMP_FAIL_REF_ERR["Set status=COMPENSATION_FAILED<br/>HTTP 500: Refund Rejected"]:::failure
+        REF_CALL -- "HTTP 200: Payment REFUNDED" --> SAGA_REFUNDED["Set status=COMPENSATED<br/>refund_response attached<br/>HTTP 400 Bad Request<br/>(Clean Rollback, Money Fully Refunded)"]:::failure
+    end
+
+    %% ==========================================
+    %% 8. RECOVERY DAEMON (CELERY BEAT)
+    %% ==========================================
+    subgraph S8 ["8. Recovery Daemon & Distributed Sweeper"]
+        BEAT["Celery Beat Periodic Timer<br/>every 60s / 90s"] --> LOCK_TRY{"Acquire Redis Distributed Lock<br/>SET dtc:recovery:lock <token> NX EX 120<br/>[coordinator/tasks.py]"}
+        LOCK_TRY -- "Lock Busy (Already Held)" --> LOCK_SKIP["Skip sweep run<br/>('skipped')"]:::background
+        LOCK_TRY -- "Lock Granted" --> SWEEP_CMD["call_command('recovery_stuck_transactions')<br/>[recovery_stuck_transactions.py]"]
+
+        SWEEP_CMD --> CLAIM["Atomically claim records older than 60s:<br/>STARTED, INVENTORY_RESERVED, PAYMENT_PROCESSING,<br/>TIMEOUTS, COMPENSATING, COMPENSATION_FAILED<br/>Transition to RECOVERY_IN_PROGRESS"]:::step
+
+        CLAIM --> REC_PROBE_PAY["Probe: GET /payments/check/?transaction_id=tx_id"]
+        REC_PROBE_PAY -- "Network Timeout / Error" --> REC_LEAVE_PAY["Leave in RECOVERY_IN_PROGRESS<br/>(Retry on next beat sweep)"]:::background
+
+        REC_PROBE_PAY -- "Status: CHARGED" --> REC_CONF_INV["Roll-Forward: POST /seats/confirm/"]
+        REC_CONF_INV -- "HTTP 200 OK" --> REC_COMPLETED["Set status=COMPLETED<br/>(Recovered forward to completion)"]:::success
+        REC_CONF_INV -- "Timeout / Error" --> REC_COMP_CHARGED["_compensate(payment_was_charged=True)"]
+
+        REC_PROBE_PAY -- "Status: NOT_CHARGED" --> REC_PROBE_INV["Probe: GET /reserve/check/?transaction_id=tx_id"]
+        REC_PROBE_INV -- "Network Timeout / Error" --> REC_LEAVE_INV["Leave in RECOVERY_IN_PROGRESS<br/>(Retry on next beat sweep)"]:::background
+        REC_PROBE_INV -- "Status: INVENTORY_RESERVED" --> REC_COMP_UNCHG["_compensate(payment_was_charged=False)"]
+        REC_PROBE_INV -- "Status: RELEASED / NOT_RESERVED" --> REC_TIMEOUT["Set status=TIMEOUT<br/>(Nothing held or charged)"]:::failure
+
+        REC_COMP_CHARGED & REC_COMP_UNCHG --> REC_REL["POST /seats/release/"]
+        REC_REL -- "Release Failed" --> REC_DEAD_REL["Set status=COMPENSATION_FAILED<br/>[UNHANDLED: Refund skipped on failed release]"]:::unhandled
+        REC_REL -- "Release 200" --> REC_REF_CHECK{"payment_was_charged?"}
+        REC_REF_CHECK -- "False" --> REC_CLEAN_COMP["Set status=COMPENSATED"]:::failure
+        REC_REF_CHECK -- "True" --> REC_REF_CALL["POST /payments/refund/"]
+        REC_REF_CALL -- "Refund Failed" --> REC_REF_FAIL["Set status=COMPENSATION_FAILED<br/>(Retried on next sweep)"]:::failure
+        REC_REF_CALL -- "Refund 200" --> REC_REF_COMP["Set status=COMPENSATED<br/>(Money safely refunded)"]:::failure
+
+        SWEEP_CMD --> LUA_RELEASE["Lua Script Lock Release:<br/>if redis.get(KEY) == TOKEN then redis.del(KEY)<br/>[coordinator/tasks.py]"]:::background
+    end
+
+    %% ==========================================
+    %% 9. MANUAL RETRY & SOFT-HOLD RECLAIM
+    %% ==========================================
+    subgraph S9 ["9. Manual Retry & Soft-Hold Expiry"]
+        MANUAL_REQ["Client / Admin: POST /transactions/tx_id/retry-compensation/<br/>[coordinator/views.py]"] --> RETRY_CHECK{"Current status == COMPENSATION_FAILED?"}
+        RETRY_CHECK -- "No" --> RETRY_ERR_400["HTTP 400: Cannot retry non-failed transaction"]:::failure
+        RETRY_CHECK -- "Yes" --> RETRY_RUN["Re-run _compensate()<br/>Set status=COMPENSATING"]
+        RETRY_RUN -- "Compensation Succeeds" --> RETRY_OK["HTTP 200: COMPENSATED_ON_RETRY"]:::failure
+        RETRY_RUN -- "Compensation Fails Again" --> RETRY_FAIL["HTTP 500: RETRY_COMPENSATION_FAILED"]:::failure
+
+        HOLD_SWEEP["reclaim_expired_holds()<br/>Periodic Background Worker [inventory/views.py]"] --> HOLD_CHECK{"Seat status == HELD?"}
+        HOLD_CHECK -- "held_until < now (Time-based expiry)" --> SEAT_EXPIRE["Reset seat to AVAILABLE<br/>Reservation status=RELEASED"]:::failure
+        HOLD_CHECK -- "Redis session dead dtc:session:email (Dead-man switch)" --> SEAT_EXPIRE
+        HOLD_CHECK -- "Hold still active and session alive" --> SEAT_STAY["Seat remains HELD"]:::step
+    end
+
+    %% ==========================================
+    %% CRITICAL CROSS-COMPONENT WIRING
+    %% ==========================================
+    CRASH_START -.-> CLAIM
+    INV_TIMEOUT -.-> CLAIM
+    PAY_TIMEOUT -.-> CLAIM
+    COMP_FAIL_DEV -.-> CLAIM
+    COMP_FAIL_REL_NET -.-> CLAIM
+    COMP_FAIL_REL_ERR -.-> CLAIM
+    COMP_FAIL_REF_NET -.-> CLAIM
+    COMP_FAIL_REF_ERR -.-> CLAIM
+    COMP_FAIL_REF_NET -.-> MANUAL_REQ
+    COMP_FAIL_REF_ERR -.-> MANUAL_REQ
+    COMP_FAIL_REL_NET -.-> MANUAL_REQ
+    INV_HELD -.-> HOLD_CHECK

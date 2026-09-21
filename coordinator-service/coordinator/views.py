@@ -1033,8 +1033,8 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
 
     _set_status_with_event(
         transaction_id,
-        Transaction.Status.COMPENSATING,
-        expected_status=(
+        Transaction.Status.COMPENSATING, # to
+        expected_status=( # from
             Transaction.Status.PAYMENT_PROCESSING,
             Transaction.Status.PAYMENT_TIMEOUT,
             Transaction.Status.PAYMENT_CONNECTION_ERROR,
@@ -1089,6 +1089,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             was_charged = True
 
         refund_data = None
+
         if was_charged:
             try:
                 refund_response = requests.post(
@@ -1141,6 +1142,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
                     status=500,
                 )
 
+        # Not charged then direct execution , also for charged below executed.
         _set_status_with_event(
             transaction_id,
             Transaction.Status.COMPENSATED,
@@ -1158,10 +1160,16 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             "payment_response": payment_data,
             "compensation_response": resp_json,
         })
+        # if refunded then tell the client with reponse
         if refund_data:
             data["refund_response"] = refund_data
+
+        # status=400 because this not a happy seat booking but a refund/release.
+        # but the user intention is to buy seats but somehow he/she got this refund due to network hicups.
+        # so, I consider this has 400, desired != un-desired
         return Response(data, status=400)
 
+    # If release reponse != 200
     _set_status_with_event(
         transaction_id,
         Transaction.Status.COMPENSATION_FAILED,
@@ -1170,15 +1178,21 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
         http_status_code=release_response.status_code,
         http_payload=resp_json,
     )
+
+    # fetch that transaction object 
     txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+
+    # get serialized response, else condition wont be executed at PRODUCTION (it's just a safety net).
     data = _serialize_transaction(txn) if txn else {
         "transaction_id": str(transaction_id),
         "status": Transaction.Status.COMPENSATION_FAILED,
     }
+
     data.update({
         "payment_response": payment_data,
         "compensation_response": resp_json,
     })
+
     return Response(data, status=500)
 
 

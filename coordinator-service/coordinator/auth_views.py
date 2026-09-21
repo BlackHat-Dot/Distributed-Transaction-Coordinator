@@ -4,7 +4,6 @@ import hmac
 import json
 import os
 import secrets
-import sys
 import threading
 import time
 import uuid
