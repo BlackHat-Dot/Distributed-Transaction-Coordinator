@@ -66,15 +66,27 @@ def _is_dev_auth_mode():
     
     return bool(getattr(settings, "DEBUG", False)) or os.getenv("DTC_DEV_AUTH_MODE", "").lower() in ("true", "1")
 
-
+# remove spaces and lower the email
 def _normalize_email(email_str):
+    # email_str can be of other types , so guard it by converting it to string before performing string operations.
     return str(email_str).strip().lower()
 
 
 import re
 
-GMAIL_LOCAL_REGEX = re.compile(r"^[a-z0-9](?:[a-z0-9._%+-]*[a-z0-9])?$")
+"""
+1. '^' -> Start of string.
+2. [a-z0-9] -> a character class matching exactly one character, which must be a lowercase letter or digit.
+3. [a-z0-9._%+-] -> Middle characters: letters, numbers, or . _ % + -
+4. {1, 62} -> a quantifier applied to the class right before it. It means "repeat the previous character class between 1 and 62 times." So the middle section must have at least 1 character and at most 62.
+5. [a-z0-9] -> same class as the first one: exactly one alphanumeric character, no symbols. This is the last character of the local part.
+6. $ -> end of string.
 
+=> Together ^...$ means the entire string must match this pattern top to bottom, nothing before, nothing after.
+"""
+GMAIL_LOCAL_REGEX = re.compile(r"^[a-z0-9][a-z0-9._%+-]{1,62}[a-z0-9]$")
+
+# A frozenset is an immutable (read-only) set. Once created, its elements cannot be changed, added, or deleted.
 _PROD_DOMAINS = frozenset({"gmail.com"})
 _TEST_DOMAINS = frozenset({"example.com", "test.io", "local.io"})
 
@@ -86,50 +98,20 @@ _KNOWN_GMAIL_TYPOS = frozenset({
 })
 
 
-def _levenshtein(a, b):
-    """Standard edit distance, iterative DP. Fine for short domain strings."""
-    if a == b:
-        return 0
-    if not a:
-        return len(b)
-    if not b:
-        return len(a)
-
-    prev = list(range(len(b) + 1))
-    for i, ca in enumerate(a, 1):
-        curr = [i] + [0] * len(b)
-        for j, cb in enumerate(b, 1):
-            cost = 0 if ca == cb else 1
-            curr[j] = min(
-                prev[j] + 1,      # deletion
-                curr[j - 1] + 1,  # insertion
-                prev[j - 1] + cost,  # substitution
-            )
-        prev = curr
-    return prev[-1]
-
 
 def _suggest_domain(domain_part):
     """
     Returns a suggested correction for `domain_part` if it looks like a
-    near-miss typo of gmail.com, else None. Two passes:
+    near-miss typo of gmail.com, else None.
       1. Exact match against a known-typo list (cheap, catches 90% of cases).
-      2. Edit-distance <= 2 against 'gmail.com' as a fallback.
     """
     if domain_part in _KNOWN_GMAIL_TYPOS:
-        return "gmail.com"
-
-    if domain_part in _PROD_DOMAINS:
-        return None  # already correct, nothing to suggest
-
-    distance = _levenshtein(domain_part, "gmail.com")
-    if distance <= 2:
         return "gmail.com"
 
     return None
 
 
-def validate_custom_email(email_str):
+def validate_email(email):
     """
     Validates that the email address is a valid @gmail.com address
     (plus test domains when IS_TESTING/DEBUG is on).
@@ -142,16 +124,14 @@ def validate_custom_email(email_str):
     On domain failure, attempts a typo suggestion (e.g. 'gmial.com' ->
     'gmail.com') and includes it in the error message when found.
     """
-    if not email_str or not isinstance(email_str, str):
-        return False, "Email address is required."
 
-    email = email_str.strip().lower()
     if len(email) > 254:
         return False, "Email address exceeds maximum length of 254 characters."
 
     parts = email.split("@")
     if len(parts) != 2:
         return False, "Email address must contain exactly one '@' symbol."
+    
     local_part, domain_part = parts
 
     if not local_part or len(local_part) < 3 or len(local_part) > 64:
@@ -382,7 +362,7 @@ If you did not request this verification code, please ignore this message.
 @api_view(["POST"])
 def send_otp(request):
     """
-    Validates email, generates random 6-digit OTP, stores in Redis (5-min TTL),
+    generates random 6-digit OTP, stores in Redis (5-min TTL),
     and sends via Gmail SMTP with console fallback.
     """
 
@@ -393,7 +373,7 @@ def send_otp(request):
         return Response({"error": "email is required"}, status=400)
 
     email = _normalize_email(email_raw)
-    is_valid, err_msg = validate_custom_email(email)
+    is_valid, err_msg = validate_email(email)
     if not is_valid:
         return Response({"error": err_msg, "code": "INVALID_EMAIL"}, status=400)
 
@@ -600,7 +580,7 @@ def verify_otp(request):
     Phase 2: Compares submitted OTP against Redis value, deletes Redis key on match (single-use),
     and issues a JWT token. Wrong OTPs are tracked per IP+email — 5 failures triggers a 24h block.
     """
-    email_raw = request.data.get("email") or request.data.get("email_address")
+    email_raw = request.data.get("email")
     submitted_otp = str(request.data.get("otp", "")).strip()
 
     if not email_raw or not submitted_otp:
