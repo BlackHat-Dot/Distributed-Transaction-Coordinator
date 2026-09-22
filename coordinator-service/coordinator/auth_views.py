@@ -71,114 +71,54 @@ def _normalize_email(email_str):
     return str(email_str).strip().lower()
 
 
-TYPO_DOMAIN_MAP = {
-    # Gmail typos
-    "gail.com": "gmail.com",
-    "gamil.com": "gmail.com",
-    "gmial.com": "gmail.com",
-    "gmaill.com": "gmail.com",
-    "gmai.com": "gmail.com",
-    "gmaul.com": "gmail.com",
-    "gmeil.com": "gmail.com",
-    "gmail.co": "gmail.com",
-    "gmaild.com": "gmail.com",
-    "gmaik.com": "gmail.com",
-    "gemail.com": "gmail.com",
-    # Yahoo typos
-    "yaho.com": "yahoo.com",
-    "yahooo.com": "yahoo.com",
-    "yhaoo.com": "yahoo.com",
-    "yaho.co": "yahoo.com",
-    "yahou.com": "yahoo.com",
-    # Hotmail typos
-    "hotmial.com": "hotmail.com",
-    "hotmaill.com": "hotmail.com",
-    "hotmai.com": "hotmail.com",
-    "hotmil.com": "hotmail.com",
-    # Outlook typos
-    "outlok.com": "outlook.com",
-    "outloo.com": "outlook.com",
-    "outlock.com": "outlook.com",
-    "outllok.com": "outlook.com",
-    # iCloud typos
-    "icluod.com": "icloud.com",
-    "icld.com": "icloud.com",
-}
+GMAIL_LOCAL_REGEX = re.compile(r"^[a-z0-9](?:[a-z0-9._%+-]*[a-z0-9])?$")
 
-LOCAL_PART_REGEX = re.compile(r"^[a-zA-Z0-9](?:[a-zA-Z0-9._%+-]*[a-zA-Z0-9])?$")
-DOMAIN_PART_REGEX = re.compile(
-    r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$"
-)
+_PROD_DOMAINS = frozenset({"gmail.com"})
+_TEST_DOMAINS = frozenset({"example.com", "test.io", "local.io"})
 
 
 def validate_custom_email(email_str):
     """
-    Custom email validator that:
-    1. Enforces strict format & length constraints.
-    2. Prohibits consecutive dots ('..') and invalid leading/trailing characters.
-    3. Detects common typos in major email providers (e.g. gail.com -> gmail.com).
-    4. Validates domain structure and TLD format.
+    Validates that the email address is a valid @gmail.com address
+    (plus test domains when IS_TESTING/DEBUG is on).
 
-    Returns (is_valid: bool, error_message: str | None, suggestion: str | None).
+    Enforces:
+      1. Only @gmail.com domain (or test domains in test/debug mode).
+      2. Local-part syntax: no consecutive dots, no leading/trailing dot.
+      3. Local-part length between 3 and 64 characters.
     """
     if not email_str or not isinstance(email_str, str):
-        return False, "Email address is required.", None
+        return False, "Email address is required."
 
-    email = email_str.strip()
+    email = email_str.strip().lower()
     if len(email) > 254:
-        return False, "Email address exceeds maximum length of 254 characters.", None
-
-    if "@" not in email:
-        return False, "Email address must contain an '@' symbol.", None
+        return False, "Email address exceeds maximum length of 254 characters."
 
     parts = email.split("@")
     if len(parts) != 2:
-        return False, "Email address must contain exactly one '@' symbol.", None
+        return False, "Email address must contain exactly one '@' symbol."
+    local_part, domain_part = parts
 
-    local_part, domain_part = parts[0], parts[1].lower()
-
-    # Local-part validation
-    if not local_part or len(local_part) > 64:
-        return False, "Email username (before '@') must be between 1 and 64 characters.", None
+    if not local_part or len(local_part) < 3 or len(local_part) > 64:
+        return False, "Email username (before '@') must be between 3 and 64 characters."
 
     if ".." in local_part:
-        return False, "Email username cannot contain consecutive dots ('..').", None
+        return False, "Email username cannot contain consecutive dots ('..')."
 
     if local_part.startswith(".") or local_part.endswith("."):
-        return False, "Email username cannot begin or end with a dot.", None
+        return False, "Email username cannot begin or end with a dot."
 
-    if not LOCAL_PART_REGEX.match(local_part):
-        return False, "Email username contains invalid characters.", None
+    if not GMAIL_LOCAL_REGEX.match(local_part):
+        return False, "Email username contains invalid characters."
 
-    # Domain-part validation
-    if not domain_part or len(domain_part) > 253:
-        return False, "Email domain is invalid.", None
+    allowed_domains = _PROD_DOMAINS
+    if getattr(settings, "IS_TESTING", False) or getattr(settings, "DEBUG", False):
+        allowed_domains = _PROD_DOMAINS | _TEST_DOMAINS
 
-    if ".." in domain_part:
-        return False, "Email domain cannot contain consecutive dots ('..').", None
+    if domain_part not in allowed_domains:
+        return False, "Only @gmail.com email addresses are supported."
 
-    if "." not in domain_part:
-        return False, "Email domain must include a valid top-level domain (e.g. .com).", None
-
-    # Check for common typos (e.g. gail.com, gmial.com)
-    if domain_part in TYPO_DOMAIN_MAP:
-        suggested_domain = TYPO_DOMAIN_MAP[domain_part]
-        suggested_email = f"{local_part}@{suggested_domain}"
-        return (
-            False,
-            f"Invalid email domain '{domain_part}'. Did you mean '{suggested_email}'?",
-            suggested_email,
-        )
-
-    # Validate domain and TLD structure
-    if not DOMAIN_PART_REGEX.match(domain_part):
-        return False, "Invalid email domain structure (must have a valid domain and TLD like .com).", None
-
-    tld = domain_part.split(".")[-1]
-    if not tld.isalpha() or len(tld) < 2:
-        return False, "Top-level domain (TLD) must be at least 2 letters.", None
-
-    return True, None, None
+    return True, None
 
 
 def _generate_user_id(email):
@@ -395,12 +335,9 @@ def send_otp(request):
         return Response({"error": "email is required"}, status=400)
 
     email = _normalize_email(email_raw)
-    is_valid, err_msg, suggestion = validate_custom_email(email)
+    is_valid, err_msg = validate_custom_email(email)
     if not is_valid:
-        resp_data = {"error": err_msg, "code": "INVALID_EMAIL"}
-        if suggestion:
-            resp_data["suggestion"] = suggestion
-        return Response(resp_data, status=400)
+        return Response({"error": err_msg, "code": "INVALID_EMAIL"}, status=400)
 
     is_dev_mode = _is_dev_auth_mode()
     client = _get_redis_client()

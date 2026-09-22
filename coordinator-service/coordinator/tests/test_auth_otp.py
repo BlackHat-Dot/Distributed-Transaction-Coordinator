@@ -208,44 +208,57 @@ class CustomEmailValidatorTests(TestCase):
     def setUp(self):
         self.client = APIClient()
 
-    def test_typo_domains_rejected_with_suggestion(self):
-        resp = self.client.post("/auth/send-otp/", {"email": "vijayzidane321@gail.com"}, format="json")
-        self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.data.get("code"), "INVALID_EMAIL")
-        self.assertIn("Did you mean 'vijayzidane321@gmail.com'?", resp.data.get("error"))
-        self.assertEqual(resp.data.get("suggestion"), "vijayzidane321@gmail.com")
-
-    def test_yahoo_typo_rejected(self):
-        resp = self.client.post("/auth/send-otp/", {"email": "user@yaho.com"}, format="json")
-        self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.data.get("suggestion"), "user@yahoo.com")
+    def test_non_gmail_domain_rejected(self):
+        invalid_domains = [
+            "vijayzidane321@g.com",
+            "vijayzidane321@gail.com",
+            "user@yaho.com",
+            "user@yahoo.com",
+            "user@domain",
+            "user@domain.123",
+            "user@outlook.com",
+            "user@hotmail.com",
+        ]
+        for email in invalid_domains:
+            resp = self.client.post("/auth/send-otp/", {"email": email}, format="json")
+            self.assertEqual(resp.status_code, 400, f"Expected 400 for {email}")
+            self.assertEqual(resp.data.get("code"), "INVALID_EMAIL")
+            self.assertEqual(resp.data.get("error"), "Only @gmail.com email addresses are supported.")
+            self.assertNotIn("suggestion", resp.data)
 
     def test_consecutive_dots_rejected(self):
         resp = self.client.post("/auth/send-otp/", {"email": "user..name@gmail.com"}, format="json")
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.data.get("code"), "INVALID_EMAIL")
+        self.assertIn("consecutive dots", resp.data.get("error"))
 
-    def test_missing_tld_rejected(self):
-        resp = self.client.post("/auth/send-otp/", {"email": "user@domain"}, format="json")
+    def test_leading_or_trailing_dots_rejected(self):
+        resp = self.client.post("/auth/send-otp/", {"email": ".username@gmail.com"}, format="json")
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.data.get("code"), "INVALID_EMAIL")
+        self.assertIn("begin or end with a dot", resp.data.get("error"))
 
-    def test_numeric_tld_rejected(self):
-        resp = self.client.post("/auth/send-otp/", {"email": "user@domain.123"}, format="json")
+        resp = self.client.post("/auth/send-otp/", {"email": "username.@gmail.com"}, format="json")
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.data.get("code"), "INVALID_EMAIL")
+        self.assertIn("begin or end with a dot", resp.data.get("error"))
+
+    def test_username_length_rejected(self):
+        resp = self.client.post("/auth/send-otp/", {"email": "ab@gmail.com"}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("code"), "INVALID_EMAIL")
+        self.assertIn("between 3 and 64 characters", resp.data.get("error"))
 
     def test_valid_emails_pass(self):
         from coordinator.auth_views import validate_custom_email
         valid_emails = [
             "vijayzidane321@gmail.com",
-            "test.user+tag@domain.co.uk",
-            "first_last@company.org",
-            "name@sub.domain.io",
+            "test.user+tag@gmail.com",
+            "first_last@gmail.com",
+            "john.doe123@gmail.com",
         ]
         for email in valid_emails:
-            is_valid, err, sugg = validate_custom_email(email)
+            is_valid, err = validate_custom_email(email)
             self.assertTrue(is_valid, f"Failed for {email}: {err}")
             self.assertIsNone(err)
-            self.assertIsNone(sugg)
 
