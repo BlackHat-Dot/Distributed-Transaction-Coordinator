@@ -71,10 +71,62 @@ def _normalize_email(email_str):
     return str(email_str).strip().lower()
 
 
+import re
+
 GMAIL_LOCAL_REGEX = re.compile(r"^[a-z0-9](?:[a-z0-9._%+-]*[a-z0-9])?$")
 
 _PROD_DOMAINS = frozenset({"gmail.com"})
 _TEST_DOMAINS = frozenset({"example.com", "test.io", "local.io"})
+
+# Common gmail typos worth catching explicitly (fast path, no distance calc needed)
+_KNOWN_GMAIL_TYPOS = frozenset({
+    "gmial.com", "gmal.com", "gmai.com", "gnail.com", "gmail.co",
+    "gmail.cm", "gmail.con", "gamil.com", "gmail.comm", "gmaill.com",
+    "gmail.vom", "gmali.com", "gmailc.om", "gmail",
+})
+
+
+def _levenshtein(a, b):
+    """Standard edit distance, iterative DP. Fine for short domain strings."""
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        curr = [i] + [0] * len(b)
+        for j, cb in enumerate(b, 1):
+            cost = 0 if ca == cb else 1
+            curr[j] = min(
+                prev[j] + 1,      # deletion
+                curr[j - 1] + 1,  # insertion
+                prev[j - 1] + cost,  # substitution
+            )
+        prev = curr
+    return prev[-1]
+
+
+def _suggest_domain(domain_part):
+    """
+    Returns a suggested correction for `domain_part` if it looks like a
+    near-miss typo of gmail.com, else None. Two passes:
+      1. Exact match against a known-typo list (cheap, catches 90% of cases).
+      2. Edit-distance <= 2 against 'gmail.com' as a fallback.
+    """
+    if domain_part in _KNOWN_GMAIL_TYPOS:
+        return "gmail.com"
+
+    if domain_part in _PROD_DOMAINS:
+        return None  # already correct, nothing to suggest
+
+    distance = _levenshtein(domain_part, "gmail.com")
+    if distance <= 2:
+        return "gmail.com"
+
+    return None
 
 
 def validate_custom_email(email_str):
@@ -86,6 +138,9 @@ def validate_custom_email(email_str):
       1. Only @gmail.com domain (or test domains in test/debug mode).
       2. Local-part syntax: no consecutive dots, no leading/trailing dot.
       3. Local-part length between 3 and 64 characters.
+
+    On domain failure, attempts a typo suggestion (e.g. 'gmial.com' ->
+    'gmail.com') and includes it in the error message when found.
     """
     if not email_str or not isinstance(email_str, str):
         return False, "Email address is required."
@@ -116,6 +171,9 @@ def validate_custom_email(email_str):
         allowed_domains = _PROD_DOMAINS | _TEST_DOMAINS
 
     if domain_part not in allowed_domains:
+        suggestion = _suggest_domain(domain_part)
+        if suggestion:
+            return False, f"Only @gmail.com addresses are supported. Did you mean {local_part}@{suggestion}?"
         return False, "Only @gmail.com email addresses are supported."
 
     return True, None
