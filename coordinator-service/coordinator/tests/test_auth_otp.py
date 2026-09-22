@@ -203,3 +203,49 @@ class LocalDevAuthNumbModeTests(TestCase):
                 self.assertEqual(resp.data.get("user_email"), "fan@test.io")
                 self.assertIsNotNone(resp.data.get("transaction_id"))
 
+
+class CustomEmailValidatorTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_typo_domains_rejected_with_suggestion(self):
+        resp = self.client.post("/auth/send-otp/", {"email": "vijayzidane321@gail.com"}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("code"), "INVALID_EMAIL")
+        self.assertIn("Did you mean 'vijayzidane321@gmail.com'?", resp.data.get("error"))
+        self.assertEqual(resp.data.get("suggestion"), "vijayzidane321@gmail.com")
+
+    def test_yahoo_typo_rejected(self):
+        resp = self.client.post("/auth/send-otp/", {"email": "user@yaho.com"}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("suggestion"), "user@yahoo.com")
+
+    def test_consecutive_dots_rejected(self):
+        resp = self.client.post("/auth/send-otp/", {"email": "user..name@gmail.com"}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("code"), "INVALID_EMAIL")
+
+    def test_missing_tld_rejected(self):
+        resp = self.client.post("/auth/send-otp/", {"email": "user@domain"}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("code"), "INVALID_EMAIL")
+
+    def test_numeric_tld_rejected(self):
+        resp = self.client.post("/auth/send-otp/", {"email": "user@domain.123"}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("code"), "INVALID_EMAIL")
+
+    def test_valid_emails_pass(self):
+        from coordinator.auth_views import validate_custom_email
+        valid_emails = [
+            "vijayzidane321@gmail.com",
+            "test.user+tag@domain.co.uk",
+            "first_last@company.org",
+            "name@sub.domain.io",
+        ]
+        for email in valid_emails:
+            is_valid, err, sugg = validate_custom_email(email)
+            self.assertTrue(is_valid, f"Failed for {email}: {err}")
+            self.assertIsNone(err)
+            self.assertIsNone(sugg)
+

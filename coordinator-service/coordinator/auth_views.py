@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import threading
 import time
@@ -11,7 +12,6 @@ import redis
 import resend
 from django.conf import settings
 from django.core.cache import cache
-from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -69,6 +69,116 @@ def _is_dev_auth_mode():
 
 def _normalize_email(email_str):
     return str(email_str).strip().lower()
+
+
+TYPO_DOMAIN_MAP = {
+    # Gmail typos
+    "gail.com": "gmail.com",
+    "gamil.com": "gmail.com",
+    "gmial.com": "gmail.com",
+    "gmaill.com": "gmail.com",
+    "gmai.com": "gmail.com",
+    "gmaul.com": "gmail.com",
+    "gmeil.com": "gmail.com",
+    "gmail.co": "gmail.com",
+    "gmaild.com": "gmail.com",
+    "gmaik.com": "gmail.com",
+    "gemail.com": "gmail.com",
+    # Yahoo typos
+    "yaho.com": "yahoo.com",
+    "yahooo.com": "yahoo.com",
+    "yhaoo.com": "yahoo.com",
+    "yaho.co": "yahoo.com",
+    "yahou.com": "yahoo.com",
+    # Hotmail typos
+    "hotmial.com": "hotmail.com",
+    "hotmaill.com": "hotmail.com",
+    "hotmai.com": "hotmail.com",
+    "hotmil.com": "hotmail.com",
+    # Outlook typos
+    "outlok.com": "outlook.com",
+    "outloo.com": "outlook.com",
+    "outlock.com": "outlook.com",
+    "outllok.com": "outlook.com",
+    # iCloud typos
+    "icluod.com": "icloud.com",
+    "icld.com": "icloud.com",
+}
+
+LOCAL_PART_REGEX = re.compile(r"^[a-zA-Z0-9](?:[a-zA-Z0-9._%+-]*[a-zA-Z0-9])?$")
+DOMAIN_PART_REGEX = re.compile(
+    r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$"
+)
+
+
+def validate_custom_email(email_str):
+    """
+    Custom email validator that:
+    1. Enforces strict format & length constraints.
+    2. Prohibits consecutive dots ('..') and invalid leading/trailing characters.
+    3. Detects common typos in major email providers (e.g. gail.com -> gmail.com).
+    4. Validates domain structure and TLD format.
+
+    Returns (is_valid: bool, error_message: str | None, suggestion: str | None).
+    """
+    if not email_str or not isinstance(email_str, str):
+        return False, "Email address is required.", None
+
+    email = email_str.strip()
+    if len(email) > 254:
+        return False, "Email address exceeds maximum length of 254 characters.", None
+
+    if "@" not in email:
+        return False, "Email address must contain an '@' symbol.", None
+
+    parts = email.split("@")
+    if len(parts) != 2:
+        return False, "Email address must contain exactly one '@' symbol.", None
+
+    local_part, domain_part = parts[0], parts[1].lower()
+
+    # Local-part validation
+    if not local_part or len(local_part) > 64:
+        return False, "Email username (before '@') must be between 1 and 64 characters.", None
+
+    if ".." in local_part:
+        return False, "Email username cannot contain consecutive dots ('..').", None
+
+    if local_part.startswith(".") or local_part.endswith("."):
+        return False, "Email username cannot begin or end with a dot.", None
+
+    if not LOCAL_PART_REGEX.match(local_part):
+        return False, "Email username contains invalid characters.", None
+
+    # Domain-part validation
+    if not domain_part or len(domain_part) > 253:
+        return False, "Email domain is invalid.", None
+
+    if ".." in domain_part:
+        return False, "Email domain cannot contain consecutive dots ('..').", None
+
+    if "." not in domain_part:
+        return False, "Email domain must include a valid top-level domain (e.g. .com).", None
+
+    # Check for common typos (e.g. gail.com, gmial.com)
+    if domain_part in TYPO_DOMAIN_MAP:
+        suggested_domain = TYPO_DOMAIN_MAP[domain_part]
+        suggested_email = f"{local_part}@{suggested_domain}"
+        return (
+            False,
+            f"Invalid email domain '{domain_part}'. Did you mean '{suggested_email}'?",
+            suggested_email,
+        )
+
+    # Validate domain and TLD structure
+    if not DOMAIN_PART_REGEX.match(domain_part):
+        return False, "Invalid email domain structure (must have a valid domain and TLD like .com).", None
+
+    tld = domain_part.split(".")[-1]
+    if not tld.isalpha() or len(tld) < 2:
+        return False, "Top-level domain (TLD) must be at least 2 letters.", None
+
+    return True, None, None
 
 
 def _generate_user_id(email):
@@ -274,18 +384,23 @@ If you did not request this verification code, please ignore this message.
 @api_view(["POST"])
 def send_otp(request):
     """
-    Phase 1: Validates email, generates random 6-digit OTP, stores in Redis (5-min TTL),
+    Validates email, generates random 6-digit OTP, stores in Redis (5-min TTL),
     and sends via Gmail SMTP with console fallback.
     """
-    email_raw = request.data.get("email") or request.data.get("email_address")
+
+    email_raw = request.data.get("email")
+
+    # If email is not sent reject the request
     if not email_raw:
         return Response({"error": "email is required"}, status=400)
 
     email = _normalize_email(email_raw)
-    try:
-        validate_email(email)
-    except ValidationError:
-        return Response({"error": "Invalid email address format"}, status=400)
+    is_valid, err_msg, suggestion = validate_custom_email(email)
+    if not is_valid:
+        resp_data = {"error": err_msg, "code": "INVALID_EMAIL"}
+        if suggestion:
+            resp_data["suggestion"] = suggestion
+        return Response(resp_data, status=400)
 
     is_dev_mode = _is_dev_auth_mode()
     client = _get_redis_client()
