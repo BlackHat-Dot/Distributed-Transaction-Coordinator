@@ -1,7 +1,7 @@
 import os
 import uuid
 import requests
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -1217,7 +1217,7 @@ def _get_requester_identity(request):
     # 1. Primary: JWT Bearer Token
     user_info = get_user_from_request(request)
     if user_info and user_info.get("is_authenticated"):
-        user_email = user_info.get("email") or user_info.get("user_email") or ""
+        user_email = user_info.get("email")
         is_staff = bool(user_info.get("is_staff")) or user_email.endswith("@dtc.admin")
         return True, user_info.get("user_id"), is_staff
 

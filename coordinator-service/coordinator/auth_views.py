@@ -8,6 +8,7 @@ import secrets
 import threading
 import time
 import uuid
+from datetime import datetime, timedelta
 import redis
 import resend
 from django.conf import settings
@@ -18,23 +19,22 @@ from rest_framework.response import Response
 
 
 _redis_last_check = 0
-_redis_is_available = False
 _redis_client_instance = None
 
 is_testing = bool(getattr(settings, "IS_TESTING", False))
 
 def _get_redis_client():
-    global _redis_last_check, _redis_is_available, _redis_client_instance
+    global _redis_last_check, _redis_client_instance
 
     # Use time.monotonic() instead of time.time() for interval/cooldown calculations.
     # Monotonic is immune to system wall-clock shifts (e.g. NTP syncs, leap seconds, 
     # or manual clock adjustments), guaranteeing the timer never jumps backward.
     now = time.monotonic()
 
-    if _redis_client_instance and _redis_is_available:
+    if _redis_client_instance:
         return _redis_client_instance
     
-    if now - _redis_last_check < 5.0 and not _redis_is_available:
+    if now - _redis_last_check < 5.0:
         return None
     
     _redis_last_check = now
@@ -43,20 +43,22 @@ def _get_redis_client():
     try:
         # socket_connect_timeout = 0.5(500ms); max time allowed to establish the TCP network connection.
         # socket_timeout = 0.5(500ms); max time allowed to wait for redis to reply to a command
+        # decode_responses=True tells the Redis client to automatically decode raw bytes into Python str (strings) using UTF-8.
         client = redis.Redis.from_url(
             broker_url, decode_responses=True, socket_connect_timeout=0.5, socket_timeout=0.5
         )
 
         # If connection is successful then redis will reply 'PONG'
+        # If redis OFF then client.ping() does not return False or None instead, it raises an exception
         client.ping()
         
-        _redis_is_available = True
         _redis_client_instance = client
+
         return client
 
     except Exception:           
-        _redis_is_available = False
         _redis_client_instance = None
+
         return None
 
 
@@ -64,7 +66,7 @@ def _is_dev_auth_mode():
     if is_testing:
         return False
     
-    return bool(getattr(settings, "DEBUG", False)) or os.getenv("DTC_DEV_AUTH_MODE", "").lower() in ("true", "1")
+    return bool(getattr(settings, "DEBUG", False))
 
 # remove spaces and lower the email
 def _normalize_email(email_str):
@@ -159,6 +161,9 @@ def validate_email(email):
     return True, None
 
 
+validate_custom_email = validate_email
+
+
 def _generate_user_id(email):
     norm = _normalize_email(email)
     sha = hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
@@ -189,20 +194,23 @@ def _email_hash(email):
     return hashlib.sha256(email.encode("utf-8")).hexdigest()[:20]
 
 
-def _create_jwt(user_id, email, session_id=None, expires_in=None):
+def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
     """A JSON Web Token (JWT) is just a single string made of 3 parts separated by dots (.)"""
 
     header = {"alg": "HS256", "typ": "JWT"}
+
     now = int(time.time())
-    uid = user_id
+
     if expires_in is None:
-        expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "1800"))
+        expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS"))
+
     payload = {
-        "user_id": uid,
-        "user_email": email,
+        "user_id": user_id,
+        "user_email": user_email,
         "iat": now,
         "exp": now + expires_in
     }
+
     if session_id:
         payload["sid"] = session_id
 
@@ -322,28 +330,112 @@ resend.api_key = os.getenv("RESEND_API_KEY")
 
 def _dispatch_otp_email(to_email, otp_code):
     subject = f"Your DTC Verification Code: {otp_code}"
+
     text_content = f"""Hello,
 
-Your verification code for the Distributed Transaction Coordinator is:
+    Your verification code for the Distributed Transaction Coordinator is:
 
-    {otp_code}
+        {otp_code}
 
-This code will expire in 5 minutes.
+    This code will expire in 5 minutes.
 
-If you did not request this verification code, please ignore this message.
+    If you did not request this verification code, please ignore this message
+    — no further action is needed.
 
-— DTC Security"""
+    — DTC Security
+    Distributed Transaction Coordinator"""
 
-    html_content = f"""<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f5; padding: 40px 20px;">
-      <div style="max-width: 460px; margin: 0 auto; background-color: #ffffff; padding: 32px; border-radius: 8px; border: 1px solid #e4e4e7; text-align: center;">
-        <h2 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #18181b;">DTC Verification</h2>
-        <p style="color: #52525b; font-size: 15px; margin: 0 0 24px; line-height: 1.6;">Use the 6-digit verification code below to verify your user identity and access live seat holds.</p>
-        <div style="background-color: #f4f4f5; border-radius: 6px; padding: 16px; display: inline-block; margin-bottom: 24px;">
-          <span style="font-size: 36px; font-weight: 700; color: #18181b; letter-spacing: 2px; user-select: all;">{otp_code}</span>
-        </div>
-        <p style="color: #71717a; font-size: 13px; margin: 0; line-height: 1.5;">This code will expire in 5 minutes.<br>If you didn't request this, you can safely ignore this email.</p>
+    html_content = f"""<!DOCTYPE html>
+    <html lang="en">
+    <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DTC Verification Code</title>
+    </head>
+    <body style="margin:0; padding:0; background-color:#f4f4f5; -webkit-text-size-adjust:100%;">
+      <!-- Preheader (hidden, shows next to subject line in inbox) -->
+      <div style="display:none; max-height:0; overflow:hidden; opacity:0;">
+        Your DTC verification code is {otp_code}. It expires in 5 minutes.
       </div>
-    </div>"""
+
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f5; padding:40px 20px;">
+        <tr>
+          <td align="center">
+            <table role="presentation" width="460" cellpadding="0" cellspacing="0" border="0"
+                   style="max-width:460px; width:100%; background-color:#ffffff; border-radius:10px; border:1px solid #e4e4e7; overflow:hidden;">
+
+              <!-- Brand bar -->
+              <tr>
+                <td style="background-color:#111827; padding:20px 32px;">
+                  <span style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:16px; font-weight:700; color:#ffffff; letter-spacing:0.5px;">
+                    DTC
+                  </span>
+                  <span style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:13px; color:#9ca3af; margin-left:8px;">
+                    Distributed Transaction Coordinator
+                  </span>
+                </td>
+              </tr>
+
+              <!-- Body -->
+              <tr>
+                <td style="padding:36px 32px 28px; text-align:center; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+                  <h1 style="margin:0 0 12px; font-size:20px; font-weight:600; color:#18181b;">
+                    Verify your identity
+                  </h1>
+                  <p style="margin:0 0 24px; font-size:14px; line-height:1.6; color:#52525b;">
+                    Use the code below to verify your identity and access live seat holds.
+                  </p>
+
+                  <!-- OTP block -->
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 20px;">
+                    <tr>
+                      <td style="background-color:#f4f4f5; border:1px solid #e4e4e7; border-radius:8px; padding:18px 28px;">
+                        <span style="font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace; font-size:32px; font-weight:700; color:#111827; letter-spacing:8px;">
+                          {otp_code}
+                        </span>
+                      </td>
+                    </tr>
+                  </table>
+
+                  <p style="margin:0; font-size:13px; color:#a1a1aa;">
+                    This code expires in <strong style="color:#52525b;">5 minutes</strong>.
+                  </p>
+                </td>
+              </tr>
+
+              <!-- Security notice -->
+              <tr>
+                <td style="padding:0 32px 32px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                         style="background-color:#fafafa; border-radius:6px; border:1px solid #f0f0f1;">
+                    <tr>
+                      <td style="padding:14px 18px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:12.5px; line-height:1.6; color:#71717a; text-align:left;">
+                        Didn't request this code? You can safely ignore this email — your account is still secure. Never share this code with anyone, including anyone claiming to be from DTC support.
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+
+              <!-- Footer -->
+              <tr>
+                <td style="padding:20px 32px 28px; border-top:1px solid #f0f0f1; text-align:center; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+                  <p style="margin:0 0 4px; font-size:12px; color:#a1a1aa;">
+                    This is an automated message from DTC Security.
+                  </p>
+                  <p style="margin:0; font-size:12px; color:#d4d4d8;">
+                    Distributed Transaction Coordinator
+                  </p>
+                </td>
+              </tr>
+
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>"""
+
 
     try:
         params: resend.Emails.SendParams = {
@@ -379,17 +471,20 @@ def send_otp(request):
 
     is_dev_mode = _is_dev_auth_mode()
     client = _get_redis_client()
+
     chances_remaining = 10
 
     # Single-Device Guard: Reject new login attempts if an active session already exists for this email
     session_key = f"dtc:session:{email}"
     session_active = False
+
     if client:
         try:
             if client.exists(session_key):
                 session_active = True
         except Exception:
             pass
+
     if not session_active:
         try:
             if cache.get(session_key):
@@ -462,7 +557,8 @@ def send_otp(request):
                 # Hard daily block (set after limit is crossed)
                 if client.exists(daily_block_key):
                     return Response(
-                        {"error": "Daily OTP limit reached. You can request a new code tomorrow.", "code": "DAILY_LIMIT_REACHED"},
+                        {"error": "Daily OTP limit reached. You can request a new code tomorrow.", 
+                         "code": "DAILY_LIMIT_REACHED"},
                         status=429,
                     )
 
@@ -487,25 +583,21 @@ def send_otp(request):
                         status=429,
                     )
 
+                now_dt = datetime.now()
+                midnight = (now_dt + timedelta(days=1)).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
+                ttl_until_midnight = max(1, int((midnight - now_dt).total_seconds()))
+
                 # Increment today's counter (expires at midnight via TTL)
                 daily_count = client.incr(daily_key) # "key created"
 
                 if daily_count == 1:
-                    from datetime import datetime
-
-                    now_dt = datetime.now() # 2026-09-15 17:32:16
-
-                    # Adds 1 day (24 hours) to move to tomorrow (eg., 2026-09-16 17:32:16)
-                    # .replace(...) wipes out the hours, minutes, and seconds, setting them to zero (eg., 2026-09-16 00:00:00 "Midnight")
-                    midnight = (now_dt + datetime.timedelta(days=1)).replace(
-                        hour=0, minute=0, second=0, microsecond=0
-                    )
-
-                    # .total_seconds() : convert the calculated interval time to seconds
-                    client.expire(daily_key, int((midnight - now_dt).total_seconds())) # "expiry added"
+                    client.expire(daily_key, ttl_until_midnight) # "expiry added"
 
                 if daily_count > 10:
-                    client.setex(daily_block_key, 86400, "blocked")
+                    # Block expires at midnight so user can request OTP again next day morning
+                    client.setex(daily_block_key, ttl_until_midnight, "blocked")
                     client.delete(daily_key)
                     return Response(
                         {"error": "Daily OTP limit reached. You can request a new code tomorrow.", "code": "DAILY_LIMIT_REACHED"},
@@ -545,6 +637,12 @@ def send_otp(request):
     # Only dispatch real email if NOT running in development or test mode
 
     if not is_dev_mode and not is_testing:
+        # Non blocking mechanism is used : Threads
+        # daemon=True: Make is as a daemon thread, If servers shutsdown , python will not freeze/hang waiting for this thread to finish, 
+        # non-daemon block process shutdown , daemon threads exit gracefully with the process.
+        # .start(): Immediately creates and starts the OS level thread
+
+        # target=_dispatch_otp_email, args=(email, otp_code) together form `_dispatch_otp_email(email, otp_code)`
         threading.Thread(target=_dispatch_otp_email, args=(email, otp_code), daemon=True).start()
     else:
         print(f"[Local Auth] Simulated OTP generated for {email}: {otp_code} (Infinite dev resends enabled)")
@@ -560,7 +658,6 @@ def send_otp(request):
     resp_data = {
         "success": True,
         "message": f"[LOCAL DEV] Verification code: {otp_code} (Infinite resends enabled)" if is_dev_mode else f"Verification code sent to {email}",
-        "email": email,
         "user_email": email,
         "user_id": user_id,
         "expires_in_seconds": 300,
@@ -621,6 +718,7 @@ def verify_otp(request):
     client_ip = _get_client_ip(request)
     block_key = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
     fail_key = f"dtc:ip_fail:{client_ip}:{_email_hash(email)}"
+    abandon_key = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
 
     # In production: check IP+email block before allowing verify attempt
     if not is_dev_mode:
@@ -732,13 +830,14 @@ def verify_otp(request):
             # Clear OTP, fail counter, and abandon counter; clean slate on success
             client.delete(cache_key)
             client.delete(fail_key)
-            client.delete(f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}")
+            client.delete(abandon_key)
         except Exception:
             pass
+
     try:
         cache.delete(cache_key)
         cache.delete(fail_key)
-        cache.delete(f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}")
+        cache.delete(abandon_key)
     except Exception:
         pass
 
@@ -754,7 +853,7 @@ def verify_otp(request):
         pass
 
     user_id = _generate_user_id(email)
-    jwt_expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "1800"))
+    jwt_expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS"))
     jwt_token = _create_jwt(user_id=user_id, email=email, session_id=session_id, expires_in=jwt_expires_in)
 
     return Response({

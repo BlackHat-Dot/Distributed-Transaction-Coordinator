@@ -84,6 +84,16 @@ class AuthOtpLockoutTests(TestCase):
         self.assertEqual(req_locked.status_code, 429)
         self.assertIn(req_locked.data.get("code"), ["ACCOUNT_LOCKED", "IP_EMAIL_BLOCKED"])
 
+    @patch("coordinator.auth_views._is_dev_auth_mode", return_value=False)
+    def test_daily_key_expiry_set_on_first_request(self, mock_is_dev):
+        resp = self.client.post("/auth/send-otp/", {"email": self.email}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        if self.redis_client:
+            daily_key = f"dtc:otp_daily:{self.email}"
+            ttl = self.redis_client.ttl(daily_key)
+            self.assertGreater(ttl, 0, f"Expected positive TTL for {daily_key}, got {ttl}")
+            self.assertLessEqual(ttl, 86400)
+
 
 class LocalDevAuthNumbModeTests(TestCase):
     def setUp(self):
