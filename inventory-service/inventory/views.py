@@ -2,8 +2,7 @@ import os
 import uuid
 from datetime import timedelta
 from django.conf import settings
-from django.db import transaction, IntegrityError
-from django.db.models import Q
+from django.db import transaction
 from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -11,7 +10,7 @@ from rest_framework.response import Response
 import redis
 
 from .models import Event, Seat, Reservation
-from .serializers import EventSerializer, SeatSerializer, ReservationSerializer
+from .serializers import EventSerializer, SeatSerializer
 
 
 def get_redis_client():
@@ -30,8 +29,16 @@ def health_check(request):
 
 @api_view(["GET"])
 def event_list(request):
+    """
+    2. prefetch_related (Separate Queries — Joined in Python)
+    You cannot use select_related for one-to-many or many-to-many relationships 
+    because a SQL JOIN would duplicate the parent record hundreds of times for every child row.
+
+    Instead, prefetch_related executes separate queries and links them in Python memory.
+    """
     events = Event.objects.all().prefetch_related("seats")
     serializer = EventSerializer(events, many=True)
+
     return Response(serializer.data)
 
 def reclaim_expired_holds():
@@ -112,8 +119,10 @@ def seat_list(request):
 
         Seat.objects.bulk_create(seats_to_create)
 
-    # N+1 query problem solved by select_related — all seats + events in 1 SQL query.
-    seats = Seat.objects.all().select_related("event").order_by("id")
+    
+    # Use select_related when an object has at most one related object (a direct ForeignKey or OneToOneField).
+    
+    seats = Seat.objects.all().order_by("id")
 
     # Convert returned QuerySet containing Python Seat model instances to JSON format
     # By definition: Objects -> JSON
@@ -185,7 +194,7 @@ def seat_pricing(request):
     # but because many=True DRF wraps SeatSerializer inside a ListSerializer,
     # it save the variable pointer: self.instance = seats,
     # it sits idle, waiting for instructions.
-    serializer = SeatSerializer(seats, many=True) # Think this line as Gun.
+    serializer = SeatSerializer(seats, many=True) # Think this line as `Gun`.
 
     # .data is a Python @property:
 
@@ -200,7 +209,7 @@ def seat_pricing(request):
        # 2. Caches and returns the clean dictionary/list
        return self._data
     """
-    return Response(serializer.data) # .data ; the actual trigger.
+    return Response(serializer.data) # .data ; the actual `trigger`.
 
 
 def _validate_uuid(val):
