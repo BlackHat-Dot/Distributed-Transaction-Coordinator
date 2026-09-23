@@ -181,9 +181,26 @@ def seat_pricing(request):
 
     seats = Seat.objects.filter(id__in=target_ids).order_by("id")
 
-    serializer = SeatSerializer(seats, many=True)
-    
-    return Response(serializer.data)
+    # Nothing yet started (Data query hasn't run yet, no loop has run), to_representation() has not been called, No JSON has been created).
+    # but because many=True DRF wraps SeatSerializer inside a ListSerializer,
+    # it save the variable pointer: self.instance = seats,
+    # it sits idle, waiting for instructions.
+    serializer = SeatSerializer(seats, many=True) # Think this line as Gun.
+
+    # .data is a Python @property:
+
+    """
+    # Simplified DRF source code:
+    @property
+    def data(self):
+       if not hasattr(self, '_data'):
+           # 1. Triggers to_representation on your instance
+           self._data = self.to_representation(self.instance)
+       
+       # 2. Caches and returns the clean dictionary/list
+       return self._data
+    """
+    return Response(serializer.data) # .data ; the actual trigger.
 
 
 def _validate_uuid(val):
