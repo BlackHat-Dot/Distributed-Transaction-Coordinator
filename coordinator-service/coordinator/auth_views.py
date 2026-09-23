@@ -195,7 +195,7 @@ def _email_hash(email):
 
 
 def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
-    """A JSON Web Token (JWT) is just a single string made of 3 parts separated by dots (.)"""
+    """A JSON Web Token (JWT) is created"""
 
     header = {"alg": "HS256", "typ": "JWT"}
 
@@ -216,16 +216,22 @@ def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
 
 
     def b64url(data_bytes):
+        # eg: data_bytes = b'{"alg":"HS256","typ":"JWT"}'
         # 1. base64: Translates any messy sequence of bytes into a clean, universally safe alphabet of 64 printable ASCII characters.
         # 2. urlsafe_b64encode: Replaces '+' and '/' with '-' and '_' for URL safety
         # 3. rstrip(b"="): Strips trailing '=' padding required by JWT standard
-        # 4. decode("utf-8"): Converts resulting bytes to a standard Python string
+        # 4. base64.urlsafe_b64encode(data_bytes) => gives still bytes (b'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9') -> decode("utf-8"): Converts resulting bytes to a standard Python string ('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9')
         return base64.urlsafe_b64encode(data_bytes).rstrip(b"=").decode("utf-8")
 
-    # json.dumps() does: Converts the Python dictionary into a JSON string.
+    # json.dumps(): Converts the Python dictionary into a JSON string.
     # By default, json.dumps() inserts spaces after commas and colons: '{"alg": "HS256", "typ": "JWT"}' (31 characters)
     # By specifying separators=(",", ":"), all unnecessary whitespace is stripped: '{"alg":"HS256","typ":"JWT"}' (27 characters)
-    # Serialize header/payload dict into compact JSON bytes and encode as unpadded URL-safe Base64
+    # .encode("utd-8") : converts JSON string to bytes.
+
+    # json_str = '{"user_id": "usr_9a8b", "email": "vijay@gmail.com"}'
+    # json_bytes = json_str.encode("utf-8")
+    # print(json_bytes)
+    # Output: b'{"user_id": "usr_9a8b", "email": "vijay@gmail.com"}'
     h_str = b64url(json.dumps(header, separators=(",", ":")).encode("utf-8"))
     p_str = b64url(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
 
@@ -241,7 +247,7 @@ def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
     sig_str = b64url(sig) # Convert signature bytes to a URL-safe Base64 string
 
 
-    # JWT token
+    # A JSON Web Token (JWT) is just a single string made of 3 parts separated by dots (.)
     return f"{h_str}.{p_str}.{sig_str}"
 
 
@@ -854,7 +860,7 @@ def verify_otp(request):
 
     user_id = _generate_user_id(email)
     jwt_expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS"))
-    jwt_token = _create_jwt(user_id=user_id, email=email, session_id=session_id, expires_in=jwt_expires_in)
+    jwt_token = _create_jwt(user_id=user_id, user_email=email, session_id=session_id, expires_in=jwt_expires_in)
 
     return Response({
         "success": True,
