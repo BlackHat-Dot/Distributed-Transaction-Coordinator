@@ -186,7 +186,7 @@ def seat_pricing(request):
     try:
         target_ids = list({int(x) for x in seat_ids})
     except (ValueError, TypeError):
-        return Response({"error": "seat_ids must be a list of integers"}, status=400)
+        return Response({"error": "seaSeatSerializert_ids must be a list of integers"}, status=400)
 
     seats = Seat.objects.filter(id__in=target_ids).order_by("id")
 
@@ -365,7 +365,7 @@ def reserve_seat(request):
                     defaults={'user_id': user_id, 'user_email': user_email, 'status': Reservation.Status.RESERVED} # used only if the object doesn't exist
                 )
                 # object created using those lookup + defaults
-                # .get_or_Create() gives `object, True` if object is created if not then `object, False`
+                # .get_or_create() gives `object, True` if object is created if not then `object, False`
 
                 if not created:
                     res.status = Reservation.Status.RESERVED
@@ -473,7 +473,7 @@ def release_seat(request):
             if is_internal or settings.DEBUG or getattr(settings, "IS_TESTING", False):
                 active_res = [r for r in reservations if r.status in (Reservation.Status.RESERVED, Reservation.Status.BOOKED)]
             else:
-                # Client callers can only release their own temporary holds (RESERVED), not finalized BOOKED seats
+                # Admin/Staff callers can only release their own temporary holds (RESERVED), not finalized BOOKED seats
                 active_res = [r for r in reservations if r.status == Reservation.Status.RESERVED]
 
             if active_res:
