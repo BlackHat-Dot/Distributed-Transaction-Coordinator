@@ -171,12 +171,15 @@ def seat_pricing(request):
     if not seat_ids or not isinstance(seat_ids, list):
         return Response({"error": "seat_ids is required and must be a list"}, status=400)
 
+    # defensive check for seat_ids type, coordinator already checked this and that is why the request reached here,
+    # though it feels redudant, it protect the staff/admin from sending invalid seat_ids (because they have service key to reach the endpoint manually),
+    # and this process wont take much time (approx. 300 ns ~  0.0003 ms)
     try:
-        target_ids = [int(x) for x in seat_ids]
+        target_ids = list({int(x) for x in seat_ids})
     except (ValueError, TypeError):
         return Response({"error": "seat_ids must be a list of integers"}, status=400)
 
-    seats = Seat.objects.filter(id__in=target_ids).select_related("event").order_by("id")
+    seats = Seat.objects.filter(id__in=target_ids).order_by("id")
 
     serializer = SeatSerializer(seats, many=True)
     

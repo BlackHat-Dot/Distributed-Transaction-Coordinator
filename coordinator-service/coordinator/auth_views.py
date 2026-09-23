@@ -304,6 +304,7 @@ def get_user_from_request(request):
 
     if token:
         payload, err = verify_jwt(token)
+        # error is consumed
         if payload:
             uid = payload.get("user_id")
             uemail = payload.get("user_email")

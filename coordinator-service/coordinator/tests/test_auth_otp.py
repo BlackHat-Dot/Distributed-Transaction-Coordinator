@@ -1,3 +1,4 @@
+import os
 import sys
 import uuid
 from unittest.mock import patch, MagicMock
@@ -212,6 +213,57 @@ class LocalDevAuthNumbModeTests(TestCase):
                 self.assertEqual(resp.data.get("user_id"), "usr_real_fan")
                 self.assertEqual(resp.data.get("user_email"), "fan@test.io")
                 self.assertIsNotNone(resp.data.get("transaction_id"))
+
+    @patch("coordinator.views.settings.DEBUG", False)
+    @patch("coordinator.views.settings.IS_TESTING", False)
+    @patch.dict(os.environ, {"STAFF_API_KEY": "super-secret-staff-key", "STAFF_USER_ID": "usr_staff_01", "STAFF_EMAIL_ID": "staff@dtc.internal"})
+    def test_staff_key_allows_booking_without_jwt(self):
+        import sys
+        with patch.object(sys, "argv", ["gunicorn"]):
+            mock_pricing = MagicMock()
+            mock_pricing.status_code = 200
+            mock_pricing.json.return_value = [{"id": 43, "price": 500, "row": "D", "seat_number": "43"}]
+            with patch("coordinator.views.requests.post", return_value=mock_pricing), \
+                 patch("coordinator.tasks.execute_saga_task.delay"), \
+                 patch("coordinator.views.get_user_from_request") as mock_get_user:
+                resp = self.client.post(
+                    "/transactions/",
+                    {"seat_ids": [43]},
+                    HTTP_X_STAFF_KEY="super-secret-staff-key",
+                    format="json"
+                )
+                self.assertIn(resp.status_code, [200, 202])
+                self.assertEqual(resp.data.get("user_id"), "usr_staff_01")
+                self.assertEqual(resp.data.get("user_email"), "staff@dtc.internal")
+                # get_user_from_request must NOT be called when staff key is provided
+                mock_get_user.assert_not_called()
+
+    @patch("coordinator.views.settings.DEBUG", False)
+    @patch("coordinator.views.settings.IS_TESTING", False)
+    @patch.dict(os.environ, {"STAFF_API_KEY": "super-secret-staff-key"})
+    def test_staff_key_bypasses_invalid_jwt_token(self):
+        import sys
+        with patch.object(sys, "argv", ["gunicorn"]):
+            mock_pricing = MagicMock()
+            mock_pricing.status_code = 200
+            mock_pricing.json.return_value = [{"id": 43, "price": 500, "row": "D", "seat_number": "43"}]
+            with patch("coordinator.views.requests.post", return_value=mock_pricing), \
+                 patch("coordinator.tasks.execute_saga_task.delay"), \
+                 patch("coordinator.views.get_user_from_request") as mock_get_user:
+                # Even with completely invalid Bearer token, staff key authorizes immediately
+                resp = self.client.post(
+                    "/transactions/",
+                    {"seat_ids": [43]},
+                    HTTP_X_STAFF_KEY="super-secret-staff-key",
+                    HTTP_AUTHORIZATION="Bearer completely.garbage.token",
+                    HTTP_X_USER_ID="custom_staff_id",
+                    HTTP_X_USER_EMAIL="custom_staff@dtc.internal",
+                    format="json"
+                )
+                self.assertIn(resp.status_code, [200, 202])
+                self.assertEqual(resp.data.get("user_id"), "custom_staff_id")
+                self.assertEqual(resp.data.get("user_email"), "custom_staff@dtc.internal")
+                mock_get_user.assert_not_called()
 
 
 class CustomEmailValidatorTests(TestCase):
