@@ -202,7 +202,7 @@ def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
     now = int(time.time())
 
     if expires_in is None:
-        expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS"))
+        expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "1800"))
 
     payload = {
         "user_id": user_id,
@@ -554,9 +554,10 @@ def send_otp(request):
                         return Response({
                             "success": True,
                             "message": "Verification code was recently sent.",
-                            "email": email,
+                            "user_email": email,
                             "user_id": _generate_user_id(email),
                             "cooldown_remaining": ttl,
+                            "is_cooldown": True,
                             "chances_remaining": max(0, 10 - int(client.get(daily_key) or 0)),
                         }, status=200)
 
@@ -664,10 +665,12 @@ def send_otp(request):
     resp_data = {
         "success": True,
         "message": f"[LOCAL DEV] Verification code: {otp_code} (Infinite resends enabled)" if is_dev_mode else f"Verification code sent to {email}",
+        "email": email,
         "user_email": email,
         "user_id": user_id,
         "expires_in_seconds": 300,
         "cooldown_remaining": 0 if is_dev_mode else 30,
+        "is_cooldown": False,
         "chances_remaining": "∞" if is_dev_mode else chances_remaining,
     }
     if is_dev_mode:
@@ -859,7 +862,7 @@ def verify_otp(request):
         pass
 
     user_id = _generate_user_id(email)
-    jwt_expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS"))
+    jwt_expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "1800"))
     jwt_token = _create_jwt(user_id=user_id, user_email=email, session_id=session_id, expires_in=jwt_expires_in)
 
     return Response({

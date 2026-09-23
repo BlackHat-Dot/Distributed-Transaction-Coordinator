@@ -2855,10 +2855,12 @@ async function handleMainSendOtp() {
         ? "\n(Local Dev: Infinite Resends Available)"
         : (res.data.chances_remaining !== undefined ? `\n(${10 - res.data.chances_remaining}/10 daily requests used — ${res.data.chances_remaining} remaining today)` : "");
 
+      const resolvedEmail = (res.data && (res.data.email || res.data.user_email)) || email;
+
       if (isLocal && res.data.otp) {
         // LOCAL DEVELOPMENT ONLY: Display badge & auto-fill code
         if (targetEmail) {
-          targetEmail.innerHTML = `${res.data.email}<br><span style="display:inline-block;margin-top:8px;padding:6px 12px;background:rgba(56,189,248,0.15);border:1px dashed #38bdf8;border-radius:6px;font-size:0.95rem;color:#38bdf8;font-weight:600;">Local Dev OTP: <strong style="letter-spacing:3px;font-size:1.15rem;color:#ffffff;text-shadow:0 0 8px #38bdf8;">${res.data.otp}</strong> <span style="font-size:0.8rem;color:#a5f3fc;">(Infinite Resend Mode)</span></span>`;
+          targetEmail.innerHTML = `${resolvedEmail}<br><span style="display:inline-block;margin-top:8px;padding:6px 12px;background:rgba(56,189,248,0.15);border:1px dashed #38bdf8;border-radius:6px;font-size:0.95rem;color:#38bdf8;font-weight:600;">Local Dev OTP: <strong style="letter-spacing:3px;font-size:1.15rem;color:#ffffff;text-shadow:0 0 8px #38bdf8;">${res.data.otp}</strong> <span style="font-size:0.8rem;color:#a5f3fc;">(Infinite Resend Mode)</span></span>`;
         }
         if (otpInput) {
           otpInput.value = res.data.otp;
@@ -2872,16 +2874,16 @@ async function handleMainSendOtp() {
       } else {
         // LIVE PRODUCTION: Normal workflow, no autofill, manual entry required
         if (targetEmail) {
-          targetEmail.textContent = res.data.email;
+          targetEmail.textContent = resolvedEmail;
         }
         if (otpInput) {
           otpInput.value = "";
         }
-        const isCooldown = res.data.cooldown_remaining !== undefined;
+        const isCooldown = Boolean(res.data.is_cooldown) || (res.data.message && res.data.message.includes("recently sent"));
         const title = isCooldown ? "Code Already Sent!" : "Verification Code Sent!";
         const messageBody = isCooldown 
-          ? `An active verification code was already sent to ${res.data.email}. Please check your inbox.`
-          : `6-Digit verification code sent to ${res.data.email}. Please check your inbox.`;
+          ? `An active verification code was already sent to ${resolvedEmail}. Please check your inbox.`
+          : `6-Digit verification code sent to ${resolvedEmail}. Please check your inbox.`;
 
         showToast({
           title: title,
