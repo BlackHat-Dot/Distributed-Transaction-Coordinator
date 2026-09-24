@@ -215,6 +215,7 @@ def retry_compensation(request, transaction_id):
     )
 
 
+# this endpoint allows an authenticated admin or the frontend visualizer to manually trigger an immediate crash-recovery sweep on demand.
 @api_view(["POST"])
 def trigger_recovery_sweep(request):
     import io
@@ -225,17 +226,38 @@ def trigger_recovery_sweep(request):
     if not is_authenticated:
         return Response({"error": "Authentication required to trigger recovery sweep."}, status=401)
 
+    """
+    1. Management commands normally print their logs directly to the command line terminal (stdout).
+
+    2. io.StringIO() creates an in-memory text buffer.
+
+    3. When passed to stdout=out, all the text that would normally be printed in the terminal is redirected into 
+    this buffer so it can be sent back in the HTTP JSON response!
+    """
     out = io.StringIO()
+
+    # threshold_seconds => How long a transaction must be sitting in an unfinished state before the sweeper considers it "abandoned/crashed" (default: 60 seconds).
     raw_threshold = int(request.data.get("threshold_seconds", 60) if request.data else 60)
-    # Enforce minimum floor on threshold_seconds regardless of what caller passes
+
+
+    # What if a caller sends threshold_seconds = 0 or 1
+    # The sweeper would mistakenly abort and kill legitimate transactions that are actively processing payments right now.
+    # This enforces a minimum floor of atleast 30 seconds.    
     min_floor = 5 if getattr(settings, "DEBUG", False) else int(os.getenv("RECOVERY_MIN_THRESHOLD_SECONDS", "30"))
+
+
     threshold_seconds = max(raw_threshold, min_floor)
 
+    # This is Django’s programmatic way of running:
+    #   python manage.py recovery_stuck_transactions --threshold_seconds=30
     call_command("recovery_stuck_transactions", threshold_seconds=threshold_seconds, stdout=out)
+
     try:
         import time
         from coordinator.tasks import get_redis_client
         client = get_redis_client()
+
+        # Update timestamp because a sweep just finished.
         client.set("dtc:recovery:last_run_timestamp", str(time.time()))
     except Exception:
         pass
@@ -266,6 +288,8 @@ def recovery_status(request):
     now = time.time()
     cycle = 90.0
     if last_run_ts:
+        # time since last run
+        # If elapsed time is 30 seconds, then (elapsed % cycle) = (30 % 90) = 30, 90 - 30 = 60 seconds remaing
         elapsed = now - last_run_ts
         next_in = max(1, int(cycle - (elapsed % cycle)))
     else:
@@ -353,9 +377,15 @@ def _resolve_seat_pricing(seat_ids=None, correlation_id=None):
     if seats_list and isinstance(seats_list, list):
 
         if len(seats_list) == len(seat_ids):
+            # Using single for loop to complete this process might be clean but that wont give us a drastic speed improvement,
+            # but current code has good readability with each line has one single, independent responsibilty.
+            # typical time to takes to loop over 4 seats or 5 seats is about 0.000003 seconds(3 microseconds).
             total_amount = sum(Decimal(str(s.get("price"))) for s in seats_list)
+
             resolved_seat_ids = [s["id"] for s in seats_list]
+
             resolved_seat_numbers = ", ".join(f"{s.get('row', '')}{s.get('seat_number', '')}" for s in seats_list)
+            # EX: "A1, A2, B5"
 
             return total_amount, resolved_seat_ids, resolved_seat_numbers, None
         else:
@@ -524,7 +554,7 @@ def _handle_create_transaction(request):
 
     # Test flag
     fail_compensation = request.data.get("fail_compensation", False) if request.data else False
-    correlation_id = request.correlation_id
+    correlation_id = request.correlation_id # attached by the middleware
 
     if not correlation_id:
         raise RuntimeError("CorrelationIdMiddleware is missing or misconfigured.")
@@ -728,6 +758,7 @@ def _run_saga_pipeline(
             status=400,
         )
 
+    # If reponse is 200:
     resp_json = None
 
     try:
@@ -1121,6 +1152,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
                     status=500,
                 )
 
+        # Compensated doesnt mean amount is given back , instead it means actions were reversed (Context: DTC).
         # Not charged then direct execution , also for charged below executed.
         _set_status_with_event(
             transaction_id,
