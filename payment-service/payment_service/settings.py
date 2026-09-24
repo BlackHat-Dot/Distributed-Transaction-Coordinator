@@ -39,6 +39,20 @@ else:
         "CRITICAL SECURITY ERROR: ALLOWED_HOSTS environment variable is not set in production (DEBUG=False)!"
     )
 
+INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY")
+if not INTERNAL_SERVICE_KEY:
+    if DEBUG or IS_TESTING:
+        INTERNAL_SERVICE_KEY = "dtc-internal-coordinator-secret-key-2026"
+    else:
+        raise RuntimeError(
+            "CRITICAL SECURITY ERROR: INTERNAL_SERVICE_KEY environment variable is not set in production (DEBUG=False)!"
+        )
+elif not (DEBUG or IS_TESTING) and INTERNAL_SERVICE_KEY == "dtc-internal-coordinator-secret-key-2026":
+    raise RuntimeError(
+        "CRITICAL SECURITY ERROR: Insecure default INTERNAL_SERVICE_KEY detected in production (DEBUG=False)! "
+        "You must configure a strong, unique INTERNAL_SERVICE_KEY for production."
+    )
+
 
 INSTALLED_APPS = [
     'corsheaders',

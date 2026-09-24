@@ -77,6 +77,7 @@ services:
       DEBUG: ${DEBUG:-True}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
       SECRET_KEY: ${SECRET_KEY:-django-insecure-payment-secret}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-dtc-internal-coordinator-secret-key-2026}
     ports:
       - "8001:8001"
     depends_on:

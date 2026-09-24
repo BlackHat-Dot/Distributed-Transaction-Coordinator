@@ -899,7 +899,10 @@ def _charge_payment(
     user_email=None,
 ):
 
-    headers = {"X-Correlation-ID": correlation_id}
+    headers = {
+        "X-Correlation-ID": correlation_id,
+        "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+    }
 
     try:
         payment_response = requests.post(

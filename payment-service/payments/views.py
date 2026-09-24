@@ -1,11 +1,41 @@
+import os
+import secrets
 import uuid
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
+from django.conf import settings
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.db import IntegrityError, transaction
 
 from .models import Payment
+
+INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
+
+
+def _verify_internal_service_key(request):
+    """
+    Ensures internal payment endpoints (charge, check, refund) can only be called
+    by internal services (e.g. coordinator) presenting the shared secret.
+    Uses constant-time comparison to prevent timing side-channels (SEC-04).
+    """
+    key = request.headers.get("X-Internal-Service-Key")
+    if key is not None:
+        if not secrets.compare_digest(key, INTERNAL_SERVICE_KEY or ""):
+            return Response(
+                {"error": "Forbidden: invalid internal service key."},
+                status=403,
+            )
+        return None
+
+    if getattr(settings, "IS_TESTING", False) or getattr(settings, "DEBUG", False):
+        return None
+
+    return Response(
+        {"error": "Forbidden: missing internal service key."},
+        status=403,
+    )
+
 
 TESTING_FAILURE_AMOUNT = Decimal("9999")
 
@@ -98,6 +128,10 @@ def _payment_response(payment, status=None):
 
 @api_view(["POST"])
 def charge_payment(request):
+    auth_err = _verify_internal_service_key(request)
+    if auth_err:
+        return auth_err
+
     transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response
@@ -145,6 +179,10 @@ def charge_payment(request):
 
 @api_view(["GET"])
 def payment_check(request):
+    auth_err = _verify_internal_service_key(request)
+    if auth_err:
+        return auth_err
+
     transaction_uuid, error_response = _require_transaction_id(request.query_params.get("transaction_id"))
     if error_response:
         return error_response
@@ -158,6 +196,10 @@ def payment_check(request):
 
 @api_view(["POST"])
 def refund_payment(request):
+    auth_err = _verify_internal_service_key(request)
+    if auth_err:
+        return auth_err
+
     transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response

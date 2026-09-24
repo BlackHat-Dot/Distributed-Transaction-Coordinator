@@ -373,3 +373,48 @@ class RefundPaymentTests(TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn("Cannot refund", resp.data.get("error", ""))
 
+
+class InternalServiceKeyAuthTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.valid_key = "dtc-internal-coordinator-secret-key-2026"
+        self.invalid_key = "attacker-unauthorized-key"
+
+    def test_production_rejects_missing_internal_service_key(self):
+        tid = str(uuid.uuid4())
+        with self.settings(DEBUG=False, IS_TESTING=False, INTERNAL_SERVICE_KEY=self.valid_key):
+            resp = self.client.post("/payments/charge/", {"transaction_id": tid, "amount": 100}, format="json")
+            self.assertEqual(resp.status_code, 403)
+            self.assertIn("missing", resp.data.get("error", "").lower())
+
+            resp = self.client.get(f"/payments/check/?transaction_id={tid}")
+            self.assertEqual(resp.status_code, 403)
+
+            resp = self.client.post("/payments/refund/", {"transaction_id": tid}, format="json")
+            self.assertEqual(resp.status_code, 403)
+
+    def test_rejects_invalid_internal_service_key(self):
+        tid = str(uuid.uuid4())
+        # Both in production and debug mode, an invalid key must be rejected
+        resp = self.client.post(
+            "/payments/charge/",
+            {"transaction_id": tid, "amount": 100},
+            format="json",
+            HTTP_X_INTERNAL_SERVICE_KEY=self.invalid_key,
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn("invalid", resp.data.get("error", "").lower())
+
+    def test_accepts_valid_internal_service_key(self):
+        tid = str(uuid.uuid4())
+        with self.settings(DEBUG=False, IS_TESTING=False, INTERNAL_SERVICE_KEY=self.valid_key):
+            resp = self.client.post(
+                "/payments/charge/",
+                {"transaction_id": tid, "amount": 100},
+                format="json",
+                HTTP_X_INTERNAL_SERVICE_KEY=self.valid_key,
+            )
+            self.assertEqual(resp.status_code, 201)
+            self.assertEqual(resp.data.get("status"), "CHARGED")
+
+
