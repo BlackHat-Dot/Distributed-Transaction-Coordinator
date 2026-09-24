@@ -65,3 +65,50 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         # 4. Verify transaction ended in COMPENSATION_FAILED so recovery daemon can retry seat release
         txn = Transaction.objects.get(transaction_id=tx_id)
         self.assertEqual(txn.status, Transaction.Status.COMPENSATION_FAILED)
+
+    @patch("coordinator.views.requests.post")
+    @patch("coordinator.views._get_requester_identity")
+    def test_sec01_retry_compensation_idor_rejected(self, mock_identity, mock_post):
+        """
+        SEC-01: Proves that a non-staff caller cannot trigger retry-compensation
+        on a transaction owned by another user (BOLA/IDOR protection).
+        """
+        tx_id = uuid.uuid4()
+        Transaction.objects.create(
+            transaction_id=tx_id,
+            status=Transaction.Status.COMPENSATION_FAILED,
+            amount=Decimal("350.00"),
+            seat_ids=[5],
+            user_id="usr_victim_123",
+            user_email="victim@example.com",
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"status": "RELEASED"}
+        mock_post.return_value = mock_resp
+
+        # 1. Attacker (non-staff, different user_id) tries to trigger retry_compensation
+        mock_identity.return_value = (True, "usr_attacker_666", False)
+        request = self.factory.post(f"/transactions/{tx_id}/retry-compensation/")
+        response = retry_compensation(request, tx_id)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("error", response.data)
+        self.assertIn("permission", response.data["error"].lower())
+
+        # 2. Owner (non-staff, matching user_id) triggers retry_compensation -> Allowed
+        mock_identity.return_value = (True, "usr_victim_123", False)
+        request = self.factory.post(f"/transactions/{tx_id}/retry-compensation/")
+        response = retry_compensation(request, tx_id)
+        self.assertEqual(response.status_code, 200)
+
+        # Reset transaction status back to COMPENSATION_FAILED for staff test
+        Transaction.objects.filter(transaction_id=tx_id).update(status=Transaction.Status.COMPENSATION_FAILED)
+
+        # 3. Staff user (is_staff=True) triggers retry_compensation -> Allowed
+        mock_identity.return_value = (True, "admin_user", True)
+        request = self.factory.post(f"/transactions/{tx_id}/retry-compensation/")
+        response = retry_compensation(request, tx_id)
+        self.assertEqual(response.status_code, 200)
+

@@ -130,6 +130,13 @@ def retry_compensation(request, transaction_id):
         return Response({
             "detail": "Transaction is already charged and marked as completed"
         })
+
+    # IDOR protection: Non-staff callers can only retry compensation on their own transactions
+    if not is_staff and user_id and txn.user_id and txn.user_id != user_id:
+        return Response(
+            {"error": "You do not have permission to retry compensation for this transaction."},
+            status=403,
+        )
     
     txn_status_at_entry = txn.status
     
