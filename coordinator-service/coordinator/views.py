@@ -636,6 +636,9 @@ def _handle_create_transaction(request):
                 headers={"Location": f"/transactions/{transaction_id}/"},
             )
         except Exception:
+            import logging
+
+            logger = logging.getLogger(__name__)
             
             logger.exception("Failed to dispatch Saga task")
             return Response(
