@@ -92,43 +92,36 @@ def reclaim_expired_holds():
 
 @api_view(["GET"])
 def seat_list(request):
-    # Option C: Piggyback Sweep
-    # Every time the seat map is loaded, immediately release any expired or abandoned holds
-    # in PostgreSQL so the DB always reflects truth for the requesting user.
-    reclaim_expired_holds()
-    # End Piggyback Sweep
+    # PERF-01: Removed reclaim_expired_holds() piggyback sweep from read path.
+    # Expired holds are presented as AVAILABLE lazily by SeatSerializer,
+    # and physically reclaimed asynchronously by Celery Beat / recovery sweeps.
 
+    # PERF-02: Seed demo seats once per process in DEBUG mode if table is empty
+    if getattr(settings, "DEBUG", False) and not getattr(settings, "_SEATS_SEEDED", False):
+        if Seat.objects.count() == 0:
+            event = Event.objects.first()
 
-    # Will be deleted once project reaches real theater owners. 
-    if Seat.objects.count() == 0:
-        event = Event.objects.first()
-
-        if not event:
-            event = Event.objects.create(
-                name='Coldplay: Music of the Spheres World Tour',
-                venue='Grand Arena Stadium',
-                starts_at=timezone.now() + timedelta(days=14)
-            )
-
-        seats_to_create = []
-
-        for r, price in [('A', 750.00), ('B', 500.00), ('C', 350.00)]:
-            for num in range(1, 11):
-                seats_to_create.append(
-                    Seat(event=event, row=r, seat_number=str(num), price=price, status=Seat.Status.AVAILABLE)
+            if not event:
+                event = Event.objects.create(
+                    name='Coldplay: Music of the Spheres World Tour',
+                    venue='Grand Arena Stadium',
+                    starts_at=timezone.now() + timedelta(days=14)
                 )
 
-        Seat.objects.bulk_create(seats_to_create)
+            seats_to_create = []
 
-    
-    # Use select_related when an object has at most one related object (a direct ForeignKey or OneToOneField).
-    
+            for r, price in [('A', 750.00), ('B', 500.00), ('C', 350.00)]:
+                for num in range(1, 11):
+                    seats_to_create.append(
+                        Seat(event=event, row=r, seat_number=str(num), price=price, status=Seat.Status.AVAILABLE)
+                    )
+
+            Seat.objects.bulk_create(seats_to_create)
+        settings._SEATS_SEEDED = True
+
     seats = Seat.objects.all().order_by("id")
-
-    # Convert returned QuerySet containing Python Seat model instances to JSON format
-    # By definition: Objects -> JSON
     serializer = SeatSerializer(seats, many=True)
-    return Response(serializer.data) # JSON string is sent over the internet
+    return Response(serializer.data)
 
 
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
@@ -155,7 +148,7 @@ def _verify_internal_service_key(request, allow_client=False):
     if allow_client:
         return None, False
 
-    if getattr(settings, "IS_TESTING", False) or settings.DEBUG:
+    if getattr(settings, "IS_TESTING", False):
         return None, True
 
     return Response(
