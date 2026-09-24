@@ -42,7 +42,8 @@ INVENTORY_PRICING_URL = f"{INVENTORY_BASE_URL}/seats/pricing/"
 PAYMENT_CHARGE_URL = f"{PAYMENT_BASE_URL}/payments/charge/"
 PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
 PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
-REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "5"))
+
+REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT"))
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 
 
@@ -623,6 +624,7 @@ def _handle_list_transactions(request):
     if not is_authenticated:
         return Response({"error": "Authentication required."}, status=401)
 
+    # .GET.get for query params
     limit_param = request.GET.get("limit", 10)
     offset_param = request.GET.get("offset", 0)
     page_param = request.GET.get("page")
@@ -645,6 +647,7 @@ def _handle_list_transactions(request):
         except (ValueError, TypeError):
             offset = 0
 
+    # No database call yet
     queryset = Transaction.objects.all().order_by("-created_at") # Hypen means descending order
 
     # IDOR protection: Non-staff users only see their own transactions
@@ -657,6 +660,9 @@ def _handle_list_transactions(request):
     total_count = queryset.count()
     txs = queryset[offset : offset + limit]
 
+    # When Python reaches the list comprehension
+    # Before the loop starts:
+    # Django executes ONE single SQL query to get all 10 rows in a single batch and store it inside the `txs`.
     data = [_serialize_transaction(t) for t in txs]
 
     return Response(
@@ -1187,35 +1193,43 @@ def _get_requester_identity(request):
     """
     from django.conf import settings
 
-    # 1. Machine-to-Machine: Internal Staff Secret Key (Priority 1)
+    # Machine-to-Machine: Internal Staff Secret Key (Priority 1)
     staff_key = os.getenv("STAFF_API_KEY")
+    
     if staff_key and request.headers.get("X-Staff-Key") and request.headers.get("X-Staff-Key") == staff_key:
+
         return True, "system_staff", True
 
-    # 2. JWT Bearer Token
+    # JWT Bearer Token
     user_info = get_user_from_request(request)
+    admin_domain = os.getenv("ADMIN_DOMAIN")
+    
     if user_info and user_info.get("is_authenticated"):
-        user_email = user_info.get("email") or user_info.get("user_email")
-        is_staff = bool(user_info.get("is_staff")) or (user_email and user_email.endswith("@dtc.admin"))
+        user_email = user_info.get("user_email")
+        is_staff = (user_email and user_email.endswith(admin_domain))
+
         return True, user_info.get("user_id"), is_staff
 
-    # 3. Automated Test Runner Environment
+    # Automated Test Runner Environment
     is_testing = bool(getattr(settings, "IS_TESTING", False))
+
     if is_testing:
         test_uid = request.headers.get("X-User-ID") or "system_test"
+
         return True, test_uid, True
 
-    # 4. Local Development Mode (DEBUG=True)
+    # Local Development Mode (DEBUG=True)
     is_dev = getattr(settings, "DEBUG", False)
+
     if is_dev:
         dev_uid = (
             request.headers.get("X-User-ID")
-            or (user_info.get("user_id") if user_info else None)
-            or "system_dev"
+            or (user_info.get("user_id") if user_info else "system_dev")
         )
+
         return True, dev_uid, True
 
-    # 5. Default: Unauthenticated
+    # Default: Unauthenticated
     return False, None, False
 
 

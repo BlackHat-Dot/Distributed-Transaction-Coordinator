@@ -309,6 +309,7 @@ def get_user_from_request(request):
             uid = payload.get("user_id")
             uemail = payload.get("user_email")
             sid = payload.get("sid")
+
             return {
                 "user_id": uid,
                 "user_email": uemail,
@@ -325,7 +326,6 @@ def get_user_from_request(request):
         return {
             "user_id": str(user_id),
             "user_email": user_email or str(user_id),
-            "email": user_email or str(user_id),
             "is_authenticated": False
         }
 
