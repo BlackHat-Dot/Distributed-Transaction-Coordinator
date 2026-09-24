@@ -3,7 +3,7 @@ import secrets
 import uuid
 from datetime import timedelta
 from django.conf import settings
-from django.db import transaction
+from django.db import transaction, connection
 from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -290,6 +290,11 @@ def reserve_seat(request):
 
     try:
         with transaction.atomic():
+            # CONC-01: Acquire transaction-scoped advisory lock on user_id to serialize hold checks per user
+            if user_id and connection.vendor == "postgresql":
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", [f"user_hold:{user_id}"])
+
             seats = list(Seat.objects.select_for_update().filter(id__in=seat_ids).order_by('id'))
 
             if len(seats) != len(seat_ids):

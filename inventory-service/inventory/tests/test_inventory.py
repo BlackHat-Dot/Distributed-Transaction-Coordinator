@@ -3,6 +3,7 @@ from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from unittest.mock import patch, MagicMock
 
+from django.conf import settings
 from django.db import connection
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
@@ -709,6 +710,59 @@ class ProductionReserveAuthEnforcementTests(TestCase):
             self.seat.refresh_from_db()
             self.assertEqual(self.seat.status, Seat.Status.HELD)
             self.assertEqual(self.seat.user_id, "usr_fan123")
+
+
+class ConcurrentHoldQuotaTests(TransactionTestCase):
+    def setUp(self):
+        self.event = _create_event()
+        self.seats_group1 = [
+            _create_seat(self.event, row="X", seat_number=str(i)) for i in range(1, 4)
+        ]
+        self.seats_group2 = [
+            _create_seat(self.event, row="Y", seat_number=str(i)) for i in range(1, 4)
+        ]
+
+    def test_conc01_concurrent_reservations_cannot_exceed_max_user_holds(self):
+        """
+        CONC-01: Proves that PostgreSQL transactional advisory locks prevent
+        two concurrent requests from racing past MAX_USER_HOLDS.
+        """
+        user_id = "usr_concurrent_scalper"
+        user_email = "scalper@test.io"
+
+        def do_reserve(seat_group):
+            client = APIClient()
+            tid = str(uuid.uuid4())
+            try:
+                with patch.object(settings, "MAX_USER_HOLDS", 4):
+                    resp = client.post(
+                        RESERVE_URL,
+                        {
+                            "seat_ids": [s.id for s in seat_group],
+                            "transaction_id": tid,
+                            "user_id": user_id,
+                            "user_email": user_email,
+                        },
+                        format="json",
+                    )
+                    return resp.status_code, resp.data
+            finally:
+                connection.close()
+
+        with patch.object(settings, "MAX_USER_HOLDS", 4):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                f1 = executor.submit(do_reserve, self.seats_group1)
+                f2 = executor.submit(do_reserve, self.seats_group2)
+                results = [f1.result(), f2.result()]
+
+        status_codes = [r[0] for r in results]
+        self.assertIn(200, status_codes)
+        self.assertIn(429, status_codes)
+
+        # Verify held seat count in database is exactly 3 (within limit of 4), not 6
+        held_count = Seat.objects.filter(user_id=user_id, status=Seat.Status.HELD).count()
+        self.assertEqual(held_count, 3)
+
 
 
 
