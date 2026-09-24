@@ -300,6 +300,10 @@ class Command(BaseCommand):
             "X-Correlation-ID": str(transaction_id),
             "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
         }
+        # 1. Attempt Inventory Release
+        release_ok = False
+        release_status_code = None
+        release_payload = None
         try:
             resp = requests.post(
                 INVENTORY_RELEASE_URL,
@@ -307,40 +311,24 @@ class Command(BaseCommand):
                 headers=headers,
                 timeout=REQUEST_TIMEOUT,
             )
+            release_status_code = resp.status_code
+            release_ok = (resp.status_code == 200)
+            if release_ok:
+                release_payload = resp.json() if resp.content else None
+            else:
+                self.stdout.write(
+                    self.style.ERROR(
+                        f"  -> {transaction_id}: compensation rejected by inventory (HTTP {resp.status_code})."
+                    )
+                )
         except requests.exceptions.RequestException:
-            _set_status_with_event(
-                transaction_id=transaction_id,
-                to_status=Transaction.Status.COMPENSATION_FAILED,
-                expected_status=Transaction.Status.COMPENSATING,
-                actor=SagaEvent.ACTOR_RECOVERY,
-                http_status_code=None,
-                http_payload=None,
-            )
             self.stdout.write(
                 self.style.ERROR(
-                    f"  -> {transaction_id}: compensation failed (network error releasing inventory)."
+                    f"  -> {transaction_id}: compensation network error releasing inventory."
                 )
             )
-            return
 
-        if resp.status_code != 200:
-            _set_status_with_event(
-                transaction_id=transaction_id,
-                to_status=Transaction.Status.COMPENSATION_FAILED,
-                expected_status=Transaction.Status.COMPENSATING,
-                actor=SagaEvent.ACTOR_RECOVERY,
-                http_status_code=resp.status_code,
-                http_payload=resp.json() if resp.status_code == 200 else None,
-            )
-            self.stdout.write(
-                self.style.ERROR(
-                    f"  -> {transaction_id}: compensation rejected by inventory "
-                    f"(HTTP {resp.status_code})."
-                )
-            )
-            return
-
-        # Check if payment was charged and needs refund
+        # 2. Check if payment was charged and needs refund (regardless of release status)
         if payment_was_charged is None:
             try:
                 p_resp = requests.get(
@@ -354,6 +342,9 @@ class Command(BaseCommand):
             except requests.exceptions.RequestException:
                 pass
 
+        refund_ok = not payment_was_charged
+        refund_status_code = None
+        refund_payload = None
         if payment_was_charged:
             try:
                 refund_resp = requests.post(
@@ -362,48 +353,49 @@ class Command(BaseCommand):
                     headers=headers,
                     timeout=REQUEST_TIMEOUT,
                 )
+                refund_status_code = refund_resp.status_code
+                refund_ok = (refund_resp.status_code == 200)
+                if refund_ok:
+                    refund_payload = refund_resp.json() if refund_resp.content else None
+                else:
+                    self.stdout.write(
+                        self.style.ERROR(
+                            f"  -> {transaction_id}: refund rejected by payment service (HTTP {refund_resp.status_code})."
+                        )
+                    )
             except requests.exceptions.RequestException:
-                _set_status_with_event(
-                    transaction_id=transaction_id,
-                    to_status=Transaction.Status.COMPENSATION_FAILED,
-                    expected_status=Transaction.Status.COMPENSATING,
-                    actor=SagaEvent.ACTOR_RECOVERY,
-                    http_status_code=None,
-                    http_payload=None,
-                )
                 self.stdout.write(
                     self.style.ERROR(
                         f"  -> {transaction_id}: refund failed (network error reaching payment service)."
                     )
                 )
-                return
 
-            if refund_resp.status_code != 200:
-                _set_status_with_event(
-                    transaction_id=transaction_id,
-                    to_status=Transaction.Status.COMPENSATION_FAILED,
-                    expected_status=Transaction.Status.COMPENSATING,
-                    actor=SagaEvent.ACTOR_RECOVERY,
-                    http_status_code=refund_resp.status_code,
-                    http_payload=refund_resp.json() if refund_resp.content else None,
-                )
-                self.stdout.write(
-                    self.style.ERROR(
-                        f"  -> {transaction_id}: refund rejected by payment service (HTTP {refund_resp.status_code})."
-                    )
-                )
-                return
-
-        _set_status_with_event(
-            transaction_id=transaction_id,
-            to_status=Transaction.Status.COMPENSATED,
-            expected_status=Transaction.Status.COMPENSATING,
-            actor=SagaEvent.ACTOR_RECOVERY,
-            http_status_code=resp.status_code,
-            http_payload=resp.json() if resp.status_code == 200 else None,
-        )
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"  -> {transaction_id}: compensated successfully."
+        # 3. Final State Resolution
+        if release_ok and refund_ok:
+            _set_status_with_event(
+                transaction_id=transaction_id,
+                to_status=Transaction.Status.COMPENSATED,
+                expected_status=Transaction.Status.COMPENSATING,
+                actor=SagaEvent.ACTOR_RECOVERY,
+                http_status_code=release_status_code or 200,
+                http_payload=release_payload,
             )
-        )
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"  -> {transaction_id}: compensated successfully."
+                )
+            )
+        else:
+            _set_status_with_event(
+                transaction_id=transaction_id,
+                to_status=Transaction.Status.COMPENSATION_FAILED,
+                expected_status=Transaction.Status.COMPENSATING,
+                actor=SagaEvent.ACTOR_RECOVERY,
+                http_status_code=refund_status_code if not refund_ok else release_status_code,
+                http_payload=refund_payload if not refund_ok else release_payload,
+            )
+            self.stdout.write(
+                self.style.ERROR(
+                    f"  -> {transaction_id}: compensation partially failed; will retry next sweep."
+                )
+            )

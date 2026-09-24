@@ -1068,6 +1068,21 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
         http_payload=payment_data,
     )
 
+    # Check if payment was charged and needs a refund
+    was_charged = False
+    if isinstance(payment_data, dict):
+        if payment_data.get("status") == "CHARGED":
+            was_charged = True
+        elif isinstance(payment_data.get("payment"), dict) and payment_data["payment"].get("status") == "CHARGED":
+            was_charged = True
+    elif payment_status_code == 200:
+        was_charged = True
+
+    # 1. Attempt Inventory Release
+    release_ok = False
+    release_data = None
+    release_status_code = None
+    release_transport_error = None
     try:
         release_response = requests.post(
             INVENTORY_RELEASE_URL,
@@ -1075,106 +1090,46 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
+        release_status_code = release_response.status_code
+        release_ok = (release_status_code == 200)
+        try:
+            release_data = release_response.json()
+        except Exception:
+            pass
     except (Timeout, ConnectionError) as e:
-        _set_status_with_event(
-            transaction_id,
-            Transaction.Status.COMPENSATION_FAILED,
-            expected_status=Transaction.Status.COMPENSATING,
-            actor=SagaEvent.ACTOR_REQUEST,
-            http_status_code=None,
-            http_payload=None,
-        )
-        cause = _transport_status(e, Transaction.Status.TIMEOUT, Transaction.Status.CONNECTION_FAILED)
-        return Response(
-            {
-                "transaction_id": str(transaction_id),
-                "status": Transaction.Status.COMPENSATION_FAILED,
-                "cause": cause,
-                "error": "Could not reach Inventory during compensation",
-            },
-            status=503,
-        )
+        release_transport_error = e
 
-    resp_json = None
-    try:
-        resp_json = release_response.json()
-    except Exception:
-        pass
-
-    if release_response.status_code == 200:
-        # Check if payment was charged and needs a refund
-        was_charged = False
-        if isinstance(payment_data, dict):
-            if payment_data.get("status") == "CHARGED":
-                was_charged = True
-            elif isinstance(payment_data.get("payment"), dict) and payment_data["payment"].get("status") == "CHARGED":
-                was_charged = True
-        elif payment_status_code == 200:
-            was_charged = True
-
-        refund_data = None
-
-        if was_charged:
-            try:
-                refund_response = requests.post(
-                    PAYMENT_REFUND_URL,
-                    json={"transaction_id": str(transaction_id)},
-                    headers=headers,
-                    timeout=REQUEST_TIMEOUT,
-                )
-            except (Timeout, ConnectionError) as e:
-                _set_status_with_event(
-                    transaction_id,
-                    Transaction.Status.COMPENSATION_FAILED,
-                    expected_status=Transaction.Status.COMPENSATING,
-                    actor=SagaEvent.ACTOR_REQUEST,
-                    http_status_code=None,
-                    http_payload=None,
-                )
-                cause = _transport_status(e, Transaction.Status.TIMEOUT, Transaction.Status.CONNECTION_FAILED)
-                return Response(
-                    {
-                        "transaction_id": str(transaction_id),
-                        "status": Transaction.Status.COMPENSATION_FAILED,
-                        "cause": cause,
-                        "error": "Could not reach Payment during refund compensation",
-                    },
-                    status=503,
-                )
-
+    # 2. Attempt Payment Refund if money was charged (independent of inventory release outcome)
+    refund_ok = not was_charged
+    refund_data = None
+    refund_status_code = None
+    refund_transport_error = None
+    if was_charged:
+        try:
+            refund_response = requests.post(
+                PAYMENT_REFUND_URL,
+                json={"transaction_id": str(transaction_id)},
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
+            )
+            refund_status_code = refund_response.status_code
+            refund_ok = (refund_status_code == 200)
             try:
                 refund_data = refund_response.json()
             except Exception:
                 pass
+        except (Timeout, ConnectionError) as e:
+            refund_transport_error = e
 
-            if refund_response.status_code != 200:
-                _set_status_with_event(
-                    transaction_id,
-                    Transaction.Status.COMPENSATION_FAILED,
-                    expected_status=Transaction.Status.COMPENSATING,
-                    actor=SagaEvent.ACTOR_REQUEST,
-                    http_status_code=refund_response.status_code,
-                    http_payload=refund_data,
-                )
-                return Response(
-                    {
-                        "transaction_id": str(transaction_id),
-                        "status": Transaction.Status.COMPENSATION_FAILED,
-                        "error": "Payment refund failed during compensation",
-                        "refund_response": refund_data,
-                    },
-                    status=500,
-                )
-
-        # Compensated doesnt mean amount is given back , instead it means actions were reversed (Context: DTC).
-        # Not charged then direct execution , also for charged below executed.
+    # 3. Resolve Overall Compensation State
+    if release_ok and refund_ok:
         _set_status_with_event(
             transaction_id,
             Transaction.Status.COMPENSATED,
             expected_status=Transaction.Status.COMPENSATING,
             actor=SagaEvent.ACTOR_REQUEST,
-            http_status_code=release_response.status_code,
-            http_payload=resp_json,
+            http_status_code=release_status_code or 200,
+            http_payload=release_data,
         )
         txn = Transaction.objects.filter(transaction_id=transaction_id).first()
         data = _serialize_transaction(txn) if txn else {
@@ -1183,41 +1138,41 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
         }
         data.update({
             "payment_response": payment_data,
-            "compensation_response": resp_json,
+            "compensation_response": release_data,
         })
-        # if refunded then tell the client with reponse
         if refund_data:
             data["refund_response"] = refund_data
-
-        # status=400 because this not a happy seat booking but a refund/release.
-        # but the user intention is to buy seats but somehow he/she got this refund due to network hicups.
-        # so, I consider this has 400, desired != un-desired
         return Response(data, status=400)
 
-    # If release reponse != 200
+    # Partial or full failure during compensation
     _set_status_with_event(
         transaction_id,
         Transaction.Status.COMPENSATION_FAILED,
         expected_status=Transaction.Status.COMPENSATING,
         actor=SagaEvent.ACTOR_REQUEST,
-        http_status_code=release_response.status_code,
-        http_payload=resp_json,
+        http_status_code=refund_status_code if not refund_ok else release_status_code,
+        http_payload=refund_data if not refund_ok else release_data,
     )
-
-    # fetch that transaction object 
     txn = Transaction.objects.filter(transaction_id=transaction_id).first()
-
-    # get serialized response, else condition wont be executed at PRODUCTION (it's just a safety net).
     data = _serialize_transaction(txn) if txn else {
         "transaction_id": str(transaction_id),
         "status": Transaction.Status.COMPENSATION_FAILED,
     }
-
     data.update({
         "payment_response": payment_data,
-        "compensation_response": resp_json,
+        "compensation_response": release_data,
     })
+    if refund_data:
+        data["refund_response"] = refund_data
 
+    if release_transport_error or refund_transport_error:
+        active_err = release_transport_error or refund_transport_error
+        cause = _transport_status(active_err, Transaction.Status.TIMEOUT, Transaction.Status.CONNECTION_FAILED)
+        data["cause"] = cause
+        data["error"] = "Network error during compensation"
+        return Response(data, status=503)
+
+    data["error"] = "Compensation failed"
     return Response(data, status=500)
 
 
