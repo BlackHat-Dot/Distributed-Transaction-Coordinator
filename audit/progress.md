@@ -50,4 +50,30 @@
 ---
 
 ## Phase 7: Approval Gate
-- **Status**: AWAITING USER APPROVAL (No production application code modified prior to explicit approval).
+- **Status**: COMPLETED & APPROVED by user.
+  - Question 1: Payment Service host port 8001 mapping kept in `docker-compose.yml`.
+  - Question 2: Recovery sweep permitted for dev/test visualizer demo calls (`DEBUG=True` or `IS_TESTING=True`), strictly enforcing staff privileges in production (`DEBUG=False`).
+
+---
+
+## Phase 8: Hardening & Remediation (Atomic Commits on `audit/hardening`)
+- **Status**: COMPLETED
+  - `a8f5347`: `fix(saga): ensure payment refund is dispatched when inventory release fails (REL-01)`
+  - `033033e`: `fix(auth): enforce transaction ownership check on retry-compensation (SEC-01)`
+  - `ce51c58`: `fix(auth): restrict recovery sweep trigger to staff in production (SEC-02)`
+  - `6bd3b9d`: `fix(auth): enforce internal service key on payment service endpoints (SEC-03)`
+  - `7cf7845`: `fix(security): use constant-time comparison for secret authentication keys (SEC-04)`
+  - `e545a48`: `fix(concurrency): serialize user reservation holds via postgres advisory locks (CONC-01)`
+  - `1b9bba9`: `perf(inventory): eliminate piggyback sweep and count check on get seats (PERF-01, PERF-02, SEC-08)`
+  - `8da92ae`: `fix(auth): prevent cross-tenant transaction leak on falsy user ID (SEC-07)`
+  - `0504932`: `fix(security): sanitize client IP resolution against spoofed X-Forwarded-For (SEC-05)`
+
+---
+
+## Phase 9: Automated Verification & Final Re-Attack
+- **Status**: COMPLETED (100% Pass Rate across all microservices)
+  - Coordinator Service: 84 / 84 tests passing (0 failures, 0 errors)
+  - Inventory Service: 48 / 48 tests passing (0 failures, 0 errors)
+  - Payment Service: 31 / 31 tests passing (0 failures, 0 errors)
+  - Total: 163 / 163 tests passing
+
