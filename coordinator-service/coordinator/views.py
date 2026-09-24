@@ -84,7 +84,7 @@ def get_transaction(request, transaction_id):
         return Response({"detail": "Transaction not found"}, status=404)
 
     # IDOR protection: Non-staff users may only view their own transactions
-    if not is_staff and auth_user_id and txn.user_id and txn.user_id != auth_user_id:
+    if not is_staff and (not auth_user_id or (txn.user_id and txn.user_id != auth_user_id)):
         return Response({"error": "You do not have permission to view this transaction."}, status=403)
 
     return Response(_serialize_transaction(txn))
@@ -102,7 +102,7 @@ def list_transaction_events(request, transaction_id):
         return Response({"detail": "Transaction not found", "events": []}, status=404)
 
     # IDOR protection: Non-staff users may only view their own transaction events
-    if not is_staff and auth_user_id and txn.user_id and txn.user_id != auth_user_id:
+    if not is_staff and (not auth_user_id or (txn.user_id and txn.user_id != auth_user_id)):
         return Response({"error": "You do not have permission to view this transaction's events."}, status=403)
 
     events = txn.events.order_by("seq")
@@ -133,7 +133,7 @@ def retry_compensation(request, transaction_id):
         })
 
     # IDOR protection: Non-staff callers can only retry compensation on their own transactions
-    if not is_staff and user_id and txn.user_id and txn.user_id != user_id:
+    if not is_staff and (not user_id or (txn.user_id and txn.user_id != user_id)):
         return Response(
             {"error": "You do not have permission to retry compensation for this transaction."},
             status=403,
@@ -709,8 +709,18 @@ def _handle_list_transactions(request):
     queryset = Transaction.objects.all().order_by("-created_at") # Hypen means descending order
 
     # IDOR protection: Non-staff users only see their own transactions
-    if not is_staff and auth_user_id:
-        queryset = queryset.filter(user_id=auth_user_id)
+    if not is_staff:
+        if auth_user_id:
+            queryset = queryset.filter(user_id=auth_user_id)
+        else:
+            return Response(
+                {
+                    "count": 0,
+                    "limit": limit,
+                    "offset": offset,
+                    "results": [],
+                }
+            )
 
     if status_filter:
         queryset = queryset.filter(status=status_filter)

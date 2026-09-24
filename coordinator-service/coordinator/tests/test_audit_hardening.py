@@ -6,7 +6,14 @@ from django.test import TestCase
 import requests
 
 from coordinator.models import Transaction, SagaEvent
-from coordinator.views import _compensate, retry_compensation, trigger_recovery_sweep
+from coordinator.views import (
+    _compensate,
+    retry_compensation,
+    trigger_recovery_sweep,
+    list_transactions,
+    get_transaction,
+    list_transaction_events,
+)
 from rest_framework.test import APIRequestFactory
 
 
@@ -181,6 +188,50 @@ class SecurityAndReliabilityHardeningTests(TestCase):
             is_auth, uid, is_staff = _get_requester_identity(req_prefix)
             self.assertFalse(is_auth)
             self.assertFalse(is_staff)
+
+    @patch("coordinator.views._get_requester_identity")
+    def test_sec07_falsy_user_id_does_not_leak_cross_tenant_transactions(self, mock_identity):
+        """
+        SEC-07: Proves that non-staff callers with empty or falsy user_ids
+        cannot view all transactions (cross-tenant leak) or inspect other users'
+        transaction details and events.
+        """
+        tx1 = Transaction.objects.create(
+            transaction_id=uuid.uuid4(),
+            status=Transaction.Status.COMPLETED,
+            amount=Decimal("100.00"),
+            seat_ids=[1],
+            user_id="usr_alice",
+            user_email="alice@example.com",
+        )
+        tx2 = Transaction.objects.create(
+            transaction_id=uuid.uuid4(),
+            status=Transaction.Status.COMPLETED,
+            amount=Decimal("200.00"),
+            seat_ids=[2],
+            user_id="usr_bob",
+            user_email="bob@example.com",
+        )
+
+        # 1. Non-staff caller with falsy/empty user ID lists transactions
+        mock_identity.return_value = (True, "", False)
+        request = self.factory.get("/transactions/")
+        response = list_transactions(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 0)
+        self.assertEqual(len(response.data["results"]), 0)
+
+        # 2. Non-staff caller with falsy user ID attempts to view Alice's transaction details
+        mock_identity.return_value = (True, "", False)
+        request = self.factory.get(f"/transactions/{tx1.transaction_id}/")
+        response = get_transaction(request, tx1.transaction_id)
+        self.assertEqual(response.status_code, 403)
+
+        # 3. Non-staff caller with falsy user ID attempts to view Alice's events
+        request = self.factory.get(f"/transactions/{tx1.transaction_id}/events/")
+        response = list_transaction_events(request, tx1.transaction_id)
+        self.assertEqual(response.status_code, 403)
+
 
 
 
