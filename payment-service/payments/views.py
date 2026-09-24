@@ -151,7 +151,7 @@ def payment_check(request):
 
     payment = Payment.objects.filter(transaction_id=transaction_uuid).first()
     if payment:
-        return _payment_response(payment, status=201)
+        return _payment_response(payment, status=200)
 
     return Response({"transaction_id": str(transaction_uuid), "status": NOT_CHARGED})
 

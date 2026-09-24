@@ -43,7 +43,7 @@ PAYMENT_CHARGE_URL = f"{PAYMENT_BASE_URL}/payments/charge/"
 PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
 PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
 
-REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT"))
+REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "5"))
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 
 
@@ -649,6 +649,18 @@ def _handle_create_transaction(request):
                 },
                 status=503,
             )
+
+    # Synchronous execution: when sync=true is requested (e.g. tests or direct API calls)
+    return _run_saga_pipeline(
+        transaction_id=transaction_id,
+        seat_ids=seat_ids,
+        amount=amount,
+        fail_compensation=fail_compensation,
+        correlation_id=correlation_id,
+        actor=SagaEvent.ACTOR_REQUEST,
+        user_id=user_id,
+        user_email=user_email,
+    )
 
 
 def _handle_list_transactions(request):
@@ -1297,6 +1309,9 @@ def _create_transaction(
             },
             status=200,
         )
+
+
+_create_transaction_idempotent = _create_transaction
 
 
 def _serialize_transaction(txn):
