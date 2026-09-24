@@ -172,6 +172,8 @@ def retry_compensation(request, transaction_id):
             status=503,
         )
 
+    release_data = _parse_json_response(release_response)
+
     if release_response.status_code == 200:
         transitioned = _set_status_with_event(
             transaction_id,
@@ -179,7 +181,7 @@ def retry_compensation(request, transaction_id):
             expected_status=txn_status_at_entry,
             actor=SagaEvent.ACTOR_RETRY,
             http_status_code=release_response.status_code,
-            http_payload=release_response.json(),
+            http_payload=release_data,
         )
 
         if not transitioned:
@@ -188,13 +190,13 @@ def retry_compensation(request, transaction_id):
                 "transaction_id": str(transaction_id),
                 "status": current.status,
                 "message": "Transaction was concurrently resolved by another process",
-                "compensation_response": release_response.json(),
+                "compensation_response": release_data,
             })
 
         return Response({
             "transaction_id": str(transaction_id),
             "status": Transaction.Status.COMPENSATED_ON_RETRY,
-            "compensation_response": release_response.json(),
+            "compensation_response": release_data,
         })
 
     _set_status_with_event(
@@ -203,13 +205,13 @@ def retry_compensation(request, transaction_id):
         expected_status=txn_status_at_entry,
         actor=SagaEvent.ACTOR_RETRY,
         http_status_code=release_response.status_code,
-        http_payload=release_response.json(),
+        http_payload=release_data,
     )
     return Response(
         {
             "transaction_id": str(transaction_id),
             "status": Transaction.Status.RETRY_COMPENSATION_FAILED,
-            "compensation_response": release_response.json(),
+            "compensation_response": release_data,
         },
         status=500,
     )
@@ -451,9 +453,7 @@ def _request_payload_verify(request):
             status=400,
         )
 
-    try:
-        seat_ids = list({int(s) for s in raw_seats})
-    except (ValueError, TypeError):
+    if any(type(seat_id) is not int for seat_id in raw_seats):
         return None, None, Response(
             {
                 "error": "seat_ids must be a list of integers.",
@@ -461,6 +461,9 @@ def _request_payload_verify(request):
             },
             status=400,
         )
+
+    seat_ids = list(raw_seats)
+
 
     return seat_ids, True, None # Satisfied (for Production)
 
@@ -559,7 +562,7 @@ def _handle_create_transaction(request):
     if not correlation_id:
         raise RuntimeError("CorrelationIdMiddleware is missing or misconfigured.")
 
-    created, dup_response = _create_transaction_idempotent(
+    created, dup_response = _create_transaction(
         transaction_id=transaction_id,
         seat_ids=seat_ids,
         seat_numbers=seat_numbers,
@@ -573,7 +576,7 @@ def _handle_create_transaction(request):
 
     # Simulation flag for coordinator crash 
     if request.data.get("coordinator"):
-        return Response({"detail": "Intentional crash"})
+        raise RuntimeError("Intentional crash")
 
     # If needed sync response
     is_sync = request.query_params.get("sync") == "true"
@@ -632,21 +635,17 @@ def _handle_create_transaction(request):
                 status=202,
                 headers={"Location": f"/transactions/{transaction_id}/"},
             )
-        except Exception as exc:
-            import logging
-            logging.getLogger(__name__).warning("Celery unavailable (%s) - running synchronously", exc)
-
-    # Fallback: run synchronously if Celery is not available, or if sync=true was requested
-    return _run_saga_pipeline(
-        transaction_id=transaction_id,
-        seat_ids=seat_ids,
-        amount=amount,
-        fail_compensation=fail_compensation,
-        correlation_id=correlation_id,
-        actor=SagaEvent.ACTOR_REQUEST,
-        user_id=user_id,
-        user_email=user_email,
-    )
+        except Exception:
+            
+            logger.exception("Failed to dispatch Saga task")
+            return Response(
+                {
+                    "transaction_id": str(transaction_id),
+                    "status": Transaction.Status.STARTED,
+                    "error": "Saga could not be dispatched",
+                },
+                status=503,
+            )
 
 
 def _handle_list_transactions(request):
@@ -790,7 +789,7 @@ def _run_saga_pipeline(
                 if txn:
                     txn.amount = amount
                     txn.save(update_fields=["amount"])
-        except (ValueError, TypeError, Exception):
+        except (ValueError, TypeError):
             pass
 
     _set_status_with_event(
@@ -1265,7 +1264,7 @@ def _get_requester_identity(request):
     return False, None, False
 
 
-def _create_transaction_idempotent(
+def _create_transaction(
     transaction_id, seat_ids=None, seat_numbers=None, amount=500, quantity=1, user_id=None, user_email=None
 ):
 
@@ -1341,3 +1340,10 @@ def _serialize_event(event):
 
 def _transport_status(exc, timeout_status, conn_status):
     return timeout_status if isinstance(exc, Timeout) else conn_status
+
+
+def _parse_json_response(response):
+    try:
+        return response.json()
+    except ValueError:
+        return None
