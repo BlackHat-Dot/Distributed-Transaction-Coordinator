@@ -42,6 +42,37 @@ def _validate_amount(raw_amount):
         return None, Response({"error": "amount is required"}, status=400)
 
     try:
+        """
+        .quantize(TWO_PLACES) Setting 2 Decimal Places
+        rounding=ROUND_HALD_UP means If the deciding digit is 5 or higher, round UP(add TWO_PLACES(0.01)) and round DOWN otherwise(remove extra part and keep upto TWO PLACES).
+        """
+        # >>> Decimal(0.1)
+        # Decimal('0.1000000000000000055511151231257827021181583404541015625') # bug
+
+        # >>> Decimal(str(0.1))
+        # Decimal('0.1')  # Clean and exact
+
+        # Example:
+        # raw_amount = 150
+        # 1. str(150)           -> "150"
+        # 2. Decimal("150")     -> Decimal('150')
+        # 3. quantize to "0.01" -> Decimal('150.00')
+
+        # TWO_PLACES adds a boundary to the raw_amount:
+        # If raw_amount = 19.933
+        #  1 9 . 9 3  |  3
+        #             ▲
+        #        Cutoff line
+        # Keep two places, and deciding digit is 3rd digit, Deciding Digit = Target Places + 1
+        # 3 < 5, so keep the '19.93'
+
+        # If raw_amount = 8.347
+        # 8 . 3 4  |  7
+        #          ▲
+        # 7 > 5, so add 0.01 to 8.34 => 8.35
+
+        # If raw_amount = 25.125
+        # 5 >= 5, so add 0.01 to 25.12 => 25.13 
         amount = Decimal(str(raw_amount)).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
     except (InvalidOperation, TypeError):
         return None, Response({"error": "amount must be a valid number"}, status=400)
