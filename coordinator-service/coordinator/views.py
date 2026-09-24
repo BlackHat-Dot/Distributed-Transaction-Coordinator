@@ -1,4 +1,5 @@
 import os
+import secrets
 import uuid
 import requests
 from decimal import Decimal
@@ -511,7 +512,7 @@ def _handle_create_transaction(request):
     has_staff_key = bool(
         staff_api_key
         and request.headers.get("X-Staff-Key")
-        and request.headers.get("X-Staff-Key") == staff_api_key
+        and secrets.compare_digest(request.headers.get("X-Staff-Key"), staff_api_key)
     )
 
     if has_staff_key:
@@ -1213,7 +1214,7 @@ def _get_requester_identity(request):
     # Machine-to-Machine: Internal Staff Secret Key (Priority 1)
     staff_key = os.getenv("STAFF_API_KEY")
     
-    if staff_key and request.headers.get("X-Staff-Key") and request.headers.get("X-Staff-Key") == staff_key:
+    if staff_key and request.headers.get("X-Staff-Key") and secrets.compare_digest(request.headers.get("X-Staff-Key"), staff_key):
 
         return True, "system_staff", True
 

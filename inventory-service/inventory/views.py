@@ -1,4 +1,5 @@
 import os
+import secrets
 import uuid
 from datetime import timedelta
 from django.conf import settings
@@ -144,7 +145,7 @@ def _verify_internal_service_key(request, allow_client=False):
     """
     key = request.headers.get("X-Internal-Service-Key")
     if key is not None:
-        if key != INTERNAL_SERVICE_KEY:
+        if not secrets.compare_digest(key, INTERNAL_SERVICE_KEY or ""):
             return Response(
                 {"error": "Forbidden: invalid internal service key."},
                 status=403,
@@ -561,7 +562,8 @@ STAFF_API_KEY = os.getenv("STAFF_API_KEY")
 @api_view(["POST"])
 def reset_seats(request):
     if not settings.DEBUG:
-        if request.headers.get("X-Staff-Key") != STAFF_API_KEY:
+        staff_key = request.headers.get("X-Staff-Key")
+        if not (staff_key and STAFF_API_KEY and secrets.compare_digest(staff_key, STAFF_API_KEY)):
             return Response(
                 {"error": "Resetting venue seats is restricted."},
                 status=403,

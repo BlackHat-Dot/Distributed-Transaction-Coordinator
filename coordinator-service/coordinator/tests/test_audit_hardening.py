@@ -1,3 +1,4 @@
+import os
 import uuid
 from decimal import Decimal
 from unittest.mock import patch, MagicMock
@@ -152,5 +153,34 @@ class SecurityAndReliabilityHardeningTests(TestCase):
             response = trigger_recovery_sweep(request)
             self.assertEqual(response.status_code, 200)
             mock_call_cmd.assert_called_once()
+
+    @patch.dict(os.environ, {"STAFF_API_KEY": "super-secret-staff-key-xyz"})
+    def test_sec04_constant_time_secret_comparison(self):
+        """
+        SEC-04: Proves that staff key authentication validates keys
+        and rejects forged or prefix-matched keys.
+        """
+        from coordinator.views import _get_requester_identity
+
+        # Valid staff key
+        req_valid = self.factory.get("/transactions/", HTTP_X_STAFF_KEY="super-secret-staff-key-xyz")
+        is_auth, uid, is_staff = _get_requester_identity(req_valid)
+        self.assertTrue(is_auth)
+        self.assertTrue(is_staff)
+        self.assertEqual(uid, "system_staff")
+
+        # Wrong key
+        with self.settings(DEBUG=False, IS_TESTING=False):
+            req_invalid = self.factory.get("/transactions/", HTTP_X_STAFF_KEY="super-secret-staff-key-wrong")
+            is_auth, uid, is_staff = _get_requester_identity(req_invalid)
+            self.assertFalse(is_auth)
+            self.assertFalse(is_staff)
+
+            # Prefix attack
+            req_prefix = self.factory.get("/transactions/", HTTP_X_STAFF_KEY="super-secret-staff-key")
+            is_auth, uid, is_staff = _get_requester_identity(req_prefix)
+            self.assertFalse(is_auth)
+            self.assertFalse(is_staff)
+
 
 
