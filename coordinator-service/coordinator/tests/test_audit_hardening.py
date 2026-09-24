@@ -112,3 +112,45 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         response = retry_compensation(request, tx_id)
         self.assertEqual(response.status_code, 200)
 
+    @patch("django.core.management.call_command")
+    @patch("coordinator.views._get_requester_identity")
+    def test_sec02_recovery_sweep_requires_staff_in_production(self, mock_identity, mock_call_cmd):
+        """
+        SEC-02: Proves that in production (DEBUG=False, IS_TESTING=False),
+        non-staff callers are denied access (403) to trigger recovery sweep,
+        while staff callers are allowed. In dev/testing, execution is permitted.
+        """
+        # 1. Unauthenticated in prod -> 401
+        with self.settings(DEBUG=False, IS_TESTING=False):
+            mock_identity.return_value = (False, None, False)
+            request = self.factory.post("/recovery/sweep/", {"threshold_seconds": 30}, format="json")
+            response = trigger_recovery_sweep(request)
+            self.assertEqual(response.status_code, 401)
+            mock_call_cmd.assert_not_called()
+
+        # 2. Authenticated non-staff in prod -> 403
+        with self.settings(DEBUG=False, IS_TESTING=False):
+            mock_identity.return_value = (True, "usr_normal_user", False)
+            request = self.factory.post("/recovery/sweep/", {"threshold_seconds": 30}, format="json")
+            response = trigger_recovery_sweep(request)
+            self.assertEqual(response.status_code, 403)
+            self.assertIn("Staff privileges required", response.data.get("error", ""))
+            mock_call_cmd.assert_not_called()
+
+        # 3. Authenticated staff in prod -> 200
+        with self.settings(DEBUG=False, IS_TESTING=False):
+            mock_identity.return_value = (True, "admin_user", True)
+            request = self.factory.post("/recovery/sweep/", {"threshold_seconds": 30}, format="json")
+            response = trigger_recovery_sweep(request)
+            self.assertEqual(response.status_code, 200)
+            mock_call_cmd.assert_called_once()
+
+        # 4. Dev / Testing mode -> Allowed without staff check
+        mock_call_cmd.reset_mock()
+        with self.settings(DEBUG=True, IS_TESTING=False):
+            request = self.factory.post("/recovery/sweep/", {"threshold_seconds": 30}, format="json")
+            response = trigger_recovery_sweep(request)
+            self.assertEqual(response.status_code, 200)
+            mock_call_cmd.assert_called_once()
+
+
