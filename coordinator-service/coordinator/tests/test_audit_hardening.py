@@ -232,6 +232,37 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         response = list_transaction_events(request, tx1.transaction_id)
         self.assertEqual(response.status_code, 403)
 
+    def test_sec05_spoofed_x_forwarded_for_is_ignored(self):
+        """
+        SEC-05: Proves that spoofed X-Forwarded-For headers from untrusted
+        remote clients are ignored to prevent IP rate-limit bypass.
+        """
+        from coordinator.auth_views import _get_client_ip
+
+        # 1. Untrusted caller directly connects with spoofed XFF
+        req_untrusted = self.factory.get(
+            "/auth/send-otp/",
+            REMOTE_ADDR="198.51.100.42",
+            HTTP_X_FORWARDED_FOR="203.0.113.99, 1.1.1.1",
+        )
+        resolved_ip = _get_client_ip(req_untrusted)
+        self.assertEqual(
+            resolved_ip,
+            "198.51.100.42",
+            "Spoofed XFF was accepted from an untrusted peer!",
+        )
+
+        # 2. Trusted proxy connects on behalf of real client
+        with self.settings(TRUSTED_PROXIES={"10.0.0.1", "127.0.0.1"}):
+            req_trusted = self.factory.get(
+                "/auth/send-otp/",
+                REMOTE_ADDR="10.0.0.1",
+                HTTP_X_FORWARDED_FOR="198.51.100.77, 10.0.0.1",
+            )
+            resolved_ip = _get_client_ip(req_trusted)
+            self.assertEqual(resolved_ip, "198.51.100.77")
+
+
 
 
 

@@ -171,22 +171,36 @@ def _generate_user_id(email):
 
 
 def _get_client_ip(request):
-    # Django prefixes all HTTP headers with "HTTP_" and replaces dashes with underscores.
-    # So "X-Forwarded-For" becomes "HTTP_X_FORWARDED_FOR".
+    """
+    Safely resolves client IP address (SEC-05).
+    X-Forwarded-For is only trusted if the immediate peer (REMOTE_ADDR)
+    is in the configured TRUSTED_PROXIES set. Otherwise REMOTE_ADDR is used.
+    """
+    remote_addr = request.META.get("REMOTE_ADDR", "0.0.0.0").strip()
+    
+    trusted_proxies = getattr(settings, "TRUSTED_PROXIES", None)
+    if trusted_proxies is None:
+        raw = os.getenv("TRUSTED_PROXIES", "127.0.0.1,::1")
+        trusted_proxies = {ip.strip() for ip in raw.split(",") if ip.strip()}
+
+    if remote_addr not in trusted_proxies:
+        return remote_addr
+
     xff = request.META.get("HTTP_X_FORWARDED_FOR")
-    
-    # If the request came through a proxy (e.g., Railway / Cloudflare):
-    if xff:
-        # Example: "203.0.113.19, 10.0.0.5"
-        # .split(",")[0] -> grabs the first element: "203.0.113.19"
-        # .strip()       -> cleans any extra whitespace
-        return xff.split(",")[0].strip()
-    
-    # Fallback (Localhost / Direct Connection):
-    # If you are running locally without a proxy, X-Forwarded-For won't exist.
-    # Fall back to standard REMOTE_ADDR (e.g. "127.0.0.1"), or "0.0.0.0" if missing.
-    # REMOTE_ADDR holds the IP of the immediate machine that directly connected to this server
-    return request.META.get("REMOTE_ADDR", "0.0.0.0")
+    if not xff:
+        return remote_addr
+
+    # Parse X-Forwarded-For IPs in order
+    ips = [ip.strip() for ip in xff.split(",") if ip.strip()]
+    if not ips:
+        return remote_addr
+
+    # Rightmost untrusted IP is the genuine client
+    for ip in reversed(ips):
+        if ip not in trusted_proxies:
+            return ip
+
+    return ips[0]
 
 
 def _email_hash(email):
