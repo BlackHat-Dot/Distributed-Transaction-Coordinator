@@ -2783,9 +2783,8 @@ function setupMainAuthEventListeners() {
     });
   }
 
-  // Session Heartbeat (runs every 3s locally to immediately reflect 10s JWT expiry)
-  const heartbeatInterval = isLocal ? 3000 : 15000;
-  setInterval(() => {
+  // Session Heartbeat: executed once on page refresh/boot (no background polling/spam)
+  const initSessionHeartbeat = () => {
     const token = localStorage.getItem("dtc_auth_token");
     if (token) {
       fetch(`${CONFIG.coordinatorUrl}/auth/heartbeat/`, {
@@ -2810,7 +2809,8 @@ function setupMainAuthEventListeners() {
         }
       }).catch(() => {});
     }
-  }, heartbeatInterval);
+  };
+  initSessionHeartbeat();
 
   // Tab Close Session Cleanup
   window.addEventListener("beforeunload", () => {
