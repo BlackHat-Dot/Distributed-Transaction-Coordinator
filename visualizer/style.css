@@ -157,11 +157,9 @@ button, input, select, textarea {
 .logo-mark {
   width: 36px;
   height: 36px;
-  border-radius: 50%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
-  box-shadow: 0 0 14px rgba(255, 255, 255, 0.2);
-  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5)) drop-shadow(0 0 10px rgba(255, 255, 255, 0.2));
   flex-shrink: 0;
 }
 
