@@ -3003,12 +3003,6 @@ window.addEventListener("DOMContentLoaded", () => {
   fetchTransactionsFeed();
   startRecoveryCountdown();
 
-  // Dedicated health checks on 15s interval (skipped when tab is in background)
-  setInterval(() => {
-    if (document.hidden) return;
-    checkServiceHealth();
-  }, CONFIG.healthPollIntervalMs);
-
   // Dedicated transaction feed polling on 6s interval (only when authenticated or in Demo mode)
   setInterval(() => {
     if (document.hidden) return;
@@ -3020,7 +3014,6 @@ window.addEventListener("DOMContentLoaded", () => {
   // Immediate refresh when user switches back to this tab
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
-      checkServiceHealth();
       if (STATE.isSimulatedMode || isUserAuthenticated()) {
         fetchTransactionsFeed();
       }
