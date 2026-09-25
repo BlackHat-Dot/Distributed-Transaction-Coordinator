@@ -1458,7 +1458,7 @@ async function handleBottomPaySubmit() {
     DOM.btnBottomPay.textContent = "Processing...";
   }
 
-  const holdTxId = crypto.randomUUID();
+  const holdTxId = crypto.randomUUID(); // kept only as a local fallback label; server owns the real ID
   const allSeatIds = [...STATE.draftSeatIds];
   const allSeatLabels = [...STATE.draftSeatLabels];
 
@@ -1467,25 +1467,25 @@ async function handleBottomPaySubmit() {
   updateMatrixHoldState();
 
   try {
-    const uid = STATE.user ? STATE.user.userId : undefined;
     const res = await fetchJson(`${CONFIG.inventoryUrl}/seats/reserve/`, {
       method: "POST",
       body: JSON.stringify({
         seat_ids: allSeatIds,
-        transaction_id: holdTxId,
-        user_id: uid,
-        user_email: STATE.user ? STATE.user.email : undefined,
+        // transaction_id, user_id, and user_email are intentionally omitted —
+        // the inventory service generates the transaction_id server-side and reads
+        // identity from the X-User-ID / X-User-Email headers injected by fetchJson.
       }),
     });
 
     if (res.ok) {
-      // SUCCESS
+      // SUCCESS — use the server-assigned transaction_id from the response
+      const serverTxId = res.data.transaction_id || holdTxId;
       const heldUntil = res.data.held_until || new Date(Date.now() + 10 * 60 * 1000).toISOString();
       STATE.myHold = {
         seatId: allSeatIds[0],
         seatIds: allSeatIds,
         seatNumbers: allSeatLabels,
-        txId: holdTxId,
+        txId: serverTxId,
         heldUntil: heldUntil,
         timerInterval: null,
       };
@@ -1502,7 +1502,7 @@ async function handleBottomPaySubmit() {
         const s = STATE.seatsMap.get(id);
         if (s) {
             s.status = "HELD";
-            s.held_by_transaction_id = holdTxId;
+            s.held_by_transaction_id = serverTxId;
             s.held_until = heldUntil;
             s.user_email = STATE.user ? STATE.user.email : undefined;
             s.user_id = STATE.user ? STATE.user.userId : undefined;
