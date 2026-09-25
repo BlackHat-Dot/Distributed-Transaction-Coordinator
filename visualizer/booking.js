@@ -1834,8 +1834,12 @@ async function initiateSagaCheckout() {
   // Open Saga Orchestration Stepper Modal
   openSagaModal(firstSeat, selectedAmount);
 
-  const simulateParam = selectedAmount === "9999" ? "?simulate_payment_decline=true" : "";
-  const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/${simulateParam}`;
+  const queryParams = new URLSearchParams();
+  queryParams.set("sync", "true");
+  if (selectedAmount === "9999") {
+    queryParams.set("simulate_payment_decline", "true");
+  }
+  const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/?${queryParams.toString()}`;
 
   // POST to Coordinator — synchronous execution on Railway (returns 200 directly)
   // Identity is securely transmitted via Authorization Bearer JWT header in fetchJson
@@ -1917,20 +1921,25 @@ function openSagaModal(firstSeat, amount) {
 
 async function pollSagaStatus(txId, amount) {
   let attempts = 0;
-  const maxAttempts = 30;
+  const maxAttempts = 25; // 25 attempts * 1000ms = 25s safety ceiling
+  let isPolling = true;
 
-  const interval = setInterval(async () => {
+  const poll = async () => {
+    if (!isPolling) return;
     attempts++;
-    const [txRes, eventsRes] = await Promise.all([
-      fetchJson(`${CONFIG.coordinatorUrl}/transactions/${txId}/`),
-      fetchJson(`${CONFIG.coordinatorUrl}/transactions/${txId}/events/`),
-    ]);
+
+    // High Performance: Query ONLY the status endpoint (NOT events/) during polling
+    const txRes = await fetchJson(`${CONFIG.coordinatorUrl}/transactions/${txId}/`);
+
+    if (!isPolling) return;
 
     if (!txRes.ok || !txRes.data) {
       if (attempts >= maxAttempts) {
-        clearInterval(interval);
-        handleSagaTerminalState("TIMEOUT", txId);
+        isPolling = false;
+        handleSagaTerminalState("TIMEOUT", txId, amount);
+        return;
       }
+      setTimeout(poll, 1000);
       return;
     }
 
@@ -1941,13 +1950,37 @@ async function pollSagaStatus(txId, amount) {
     if (status === "PAYMENT_PROCESSING") {
       DOM.step2.className = "step-item active";
       DOM.step2Status.textContent = "AUTHORIZING";
+    } else if (status === "INVENTORY_RESERVED") {
+      DOM.step1.className = "step-item done";
+      DOM.step1Status.textContent = "RESERVED";
     }
 
     if (txn.is_terminal || ["COMPLETED", "COMPENSATED", "INVENTORY_RESERVE_FAILED", "COMPENSATION_FAILED"].includes(status)) {
-      clearInterval(interval);
-      handleSagaTerminalState(status, txId, amount, eventsRes.data);
+      isPolling = false;
+      // Fetch forensic events ONCE upon completion for modal display
+      let eventsData = [];
+      try {
+        const evRes = await fetchJson(`${CONFIG.coordinatorUrl}/transactions/${txId}/events/`);
+        if (evRes && evRes.ok && evRes.data) {
+          eventsData = Array.isArray(evRes.data) ? evRes.data : (evRes.data.events || []);
+        }
+      } catch (e) {}
+      handleSagaTerminalState(status, txId, amount, eventsData);
+      return;
     }
-  }, 400);
+
+    if (attempts >= maxAttempts) {
+      isPolling = false;
+      handleSagaTerminalState("TIMEOUT", txId, amount);
+      return;
+    }
+
+    // Sequential non-overlapping poll (prevents socket exhaustion and (pending) queue freezes)
+    setTimeout(poll, 1000);
+  };
+
+  // Give Celery a 600ms head start before the first poll
+  setTimeout(poll, 600);
 }
 
 function handleSagaTerminalState(status, txId, amount, eventsData) {

@@ -120,6 +120,10 @@ CORS_EXPOSE_HEADERS = [
     "x-user-email",
     "content-type",
 ]
+
+CORS_PREFLIGHT_MAX_AGE = 86400
+# Cache CORS preflight (OPTIONS) requests in the browser for 24 hours to eliminate redundant network round-trips
+
 CORS_ALLOW_HEADERS = [
     "accept",
     "accept-encoding",

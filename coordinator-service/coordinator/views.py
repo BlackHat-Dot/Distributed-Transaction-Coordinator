@@ -47,6 +47,31 @@ PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "5"))
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 
+from requests.adapters import HTTPAdapter
+
+_HTTP_SESSION = None
+
+def _get_http_session():
+    global _HTTP_SESSION
+    if _HTTP_SESSION is None:
+        _HTTP_SESSION = requests.Session()
+        adapter = HTTPAdapter(pool_connections=25, pool_maxsize=25)
+        _HTTP_SESSION.mount("http://", adapter)
+        _HTTP_SESSION.mount("https://", adapter)
+    return _HTTP_SESSION
+
+def _http_post(url, **kwargs):
+    # Support unittest.mock patches in test suite
+    if hasattr(requests.post, "mock_calls") or hasattr(requests.post, "assert_called"):
+        return requests.post(url, **kwargs)
+    return _get_http_session().post(url, **kwargs)
+
+def _http_get(url, **kwargs):
+    # Support unittest.mock patches in test suite
+    if hasattr(requests.get, "mock_calls") or hasattr(requests.get, "assert_called"):
+        return requests.get(url, **kwargs)
+    return _get_http_session().get(url, **kwargs)
+
 
 # ==============================================================================
 # SECTION 2: PUBLIC API ENDPOINTS (URL VIEW TARGETS)
@@ -153,7 +178,7 @@ def retry_compensation(request, transaction_id):
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
     try:
-        release_response = requests.post(
+        release_response = _http_post(
             INVENTORY_RELEASE_URL,
             json={"transaction_id": str(transaction_id), "seat_ids": txn.seat_ids},
             headers=headers,
@@ -372,7 +397,7 @@ def _resolve_seat_pricing(seat_ids=None, correlation_id=None):
     """
 
     try:
-        resp = requests.post(
+        resp = _http_post(
             INVENTORY_PRICING_URL,
             json={"seat_ids": seat_ids},
             headers=headers,
@@ -872,7 +897,7 @@ def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=No
     }
 
     try:
-        response = requests.post(
+        response = _http_post(
             INVENTORY_RESERVE_URL,
             json={
                 "seat_ids": seat_ids,
@@ -916,7 +941,7 @@ def _charge_payment(
     }
 
     try:
-        payment_response = requests.post(
+        payment_response = _http_post(
             PAYMENT_CHARGE_URL,
             json={
                 "transaction_id": str(transaction_id),
@@ -942,7 +967,7 @@ def _charge_payment(
         )
 
         try:
-            payment_check = requests.get(
+            payment_check = _http_get(
                 PAYMENT_CHECK_URL,
                 params={"transaction_id": str(transaction_id)},
                 headers=headers,
@@ -999,7 +1024,7 @@ def _confirm_inventory(transaction_id, seat_ids=None, correlation_id=None):
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
     try:
-        response = requests.post(
+        response = _http_post(
             INVENTORY_CONFIRM_URL,
             json={"seat_ids": seat_ids, "transaction_id": str(transaction_id)},
             headers=headers,
@@ -1111,7 +1136,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
     release_status_code = None
     release_transport_error = None
     try:
-        release_response = requests.post(
+        release_response = _http_post(
             INVENTORY_RELEASE_URL,
             json={"transaction_id": release_transaction_id, "seat_ids": seat_ids},
             headers=headers,
@@ -1133,7 +1158,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
     refund_transport_error = None
     if was_charged:
         try:
-            refund_response = requests.post(
+            refund_response = _http_post(
                 PAYMENT_REFUND_URL,
                 json={"transaction_id": str(transaction_id)},
                 headers=headers,
