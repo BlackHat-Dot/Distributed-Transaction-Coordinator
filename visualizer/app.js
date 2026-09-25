@@ -1998,16 +1998,8 @@ function startRecoveryCountdown() {
         if (STATE.activeTxId) {
           inspectTransaction(STATE.activeTxId, true);
         }
-      } else {
-        // IN LIVE MODE: Celery Beat runs automatically as an independent background service on Railway.
-        // The frontend does NOT dispatch HTTP POST requests for automated 90s sweeps.
-        // Instead, the frontend polls the latest transactions to display any records swept by the server.
-        fetchTransactionsFeed();
-        if (STATE.activeTxId) {
-          inspectTransaction(STATE.activeTxId, true);
-        }
-        fetchRecoveryStatus();
       }
+      // In Live mode: countdown purely updates the timer UI; no automatic network spam
 
       setTimeout(() => {
         DOM.topoCoordLease.textContent = "READY";
@@ -3003,22 +2995,6 @@ window.addEventListener("DOMContentLoaded", () => {
   fetchTransactionsFeed();
   startRecoveryCountdown();
 
-  // Dedicated transaction feed polling on 6s interval (only when authenticated or in Demo mode)
-  setInterval(() => {
-    if (document.hidden) return;
-    if (STATE.isSimulatedMode || isUserAuthenticated()) {
-      fetchTransactionsFeed();
-    }
-  }, CONFIG.txFeedPollIntervalMs);
-
-  // Immediate refresh when user switches back to this tab
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) {
-      if (STATE.isSimulatedMode || isUserAuthenticated()) {
-        fetchTransactionsFeed();
-      }
-    }
-  });
 });
 
 DOM.btnDemoCompFail.addEventListener("click", async () => {
