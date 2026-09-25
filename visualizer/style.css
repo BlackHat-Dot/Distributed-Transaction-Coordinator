@@ -155,15 +155,13 @@ button, input, select, textarea {
 }
 
 .logo-mark {
-  width: 34px;
-  height: 34px;
-  background: linear-gradient(135deg, #4f46e5, #06b6d4);
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.2);
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
   flex-shrink: 0;
 }
 
