@@ -30,9 +30,10 @@ if (isLocal) {
 const localHost = (typeof window !== "undefined" && window.location.hostname && window.location.protocol !== "file:" && window.location.hostname !== "::1" && window.location.hostname !== "[::1]")
   ? window.location.hostname
   : "localhost";
-const defaultCoord = isLocal ? `http://${localHost}:8002` : "https://coordinator-production-4685.up.railway.app";
-const defaultInv = isLocal ? `http://${localHost}:8000` : "https://inventory-production-9e43.up.railway.app";
-const defaultPay = isLocal ? `http://${localHost}:8001` : "https://payment-production-bcb1.up.railway.app";
+const PROXY_BASE = "https://reverse-proxy.nexoflow.workers.dev";
+const defaultCoord = isLocal ? `http://${localHost}:8002` : `${PROXY_BASE}/coordinator`;
+const defaultInv = isLocal ? `http://${localHost}:8000` : `${PROXY_BASE}/inventory`;
+const defaultPay = isLocal ? `http://${localHost}:8001` : `${PROXY_BASE}/payment`;
 
 // Service Configuration (Local Microservices in Docker / Localhost, Railway in Cloud)
 const CONFIG = {
