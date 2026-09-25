@@ -1835,15 +1835,15 @@ async function initiateSagaCheckout() {
   openSagaModal(firstSeat, selectedAmount);
 
   const queryParams = new URLSearchParams();
-  queryParams.set("sync", "true");
   if (selectedAmount === "9999") {
     queryParams.set("simulate_payment_decline", "true");
   }
-  const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/?${queryParams.toString()}`;
+  const queryString = queryParams.toString();
+  const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/${queryString ? `?${queryString}` : ""}`;
 
-  // POST to Coordinator — synchronous execution on Railway (returns 200 directly)
+  // POST to Coordinator — asynchronous non-blocking saga execution (returns HTTP 202 Accepted)
+  // Celery worker drives the distributed saga pipeline in the background via Redis
   // Identity is securely transmitted via Authorization Bearer JWT header in fetchJson
-  // Server generates transaction_id and calculates amount based on seat selection
   const res = await fetchJson(endpointUrl, {
     method: "POST",
     body: JSON.stringify({
