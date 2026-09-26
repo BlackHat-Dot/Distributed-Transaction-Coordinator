@@ -590,8 +590,7 @@ def reset_seats(request):
             (staff_key and STAFF_API_KEY and secrets.compare_digest(staff_key, STAFF_API_KEY))
             or (staff_key and secrets.compare_digest(staff_key, DEFAULT_STAFF_KEY))
         )
-        user_id = request.headers.get("X-User-ID")
-        if not (has_valid_staff or user_id):
+        if not (has_valid_staff):
             return Response(
                 {"error": "Resetting venue seats is restricted."},
                 status=403,
