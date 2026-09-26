@@ -372,6 +372,14 @@ def reserve_seat(request):
             
             reservations = []
             for seat in seats:
+                # Clean up any unfinalized hold on this seat so it doesn't get orphaned
+                if seat.held_by_transaction_id and str(seat.held_by_transaction_id) != str(transaction_id):
+                    Reservation.objects.filter(
+                        seat=seat,
+                        transaction_id=seat.held_by_transaction_id,
+                        status=Reservation.Status.RESERVED,
+                    ).delete()
+
                 seat.status = Seat.Status.HELD
                 seat.held_until = held_until_dt
                 seat.held_by_transaction_id = transaction_id

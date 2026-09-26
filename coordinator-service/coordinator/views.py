@@ -302,10 +302,14 @@ def transaction_stream(request, transaction_id):
                 except Exception:
                     pass
 
+    # Regular HttpResponse / JsonResponse: Takes an entire payload, computes its Content-Length, sends it all at once in a single network packet, and closes the TCP connection.
+    # StreamingHttpResponse: Takes a Python generator / iterator (a function with yield). It does not close the connection immediately. Instead, whenever the generator yields a chunk of text, Django flushes that chunk down the open HTTP socket to the browser in real time.
     response = StreamingHttpResponse(event_generator(), content_type="text/event-stream")
+
     response["Cache-Control"] = "no-cache, no-transform"
     response["X-Accel-Buffering"] = "no"
     response["Connection"] = "keep-alive"
+
     return response
 
 
