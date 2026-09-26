@@ -1655,15 +1655,143 @@ async function handleBottomPaySubmit() {
     return;
   }
 
-  const seatIds = (STATE.myHold && STATE.myHold.seatIds && STATE.myHold.seatIds.length > 0)
-    ? STATE.myHold.seatIds
-    : (STATE.draftSeatIds ? [...STATE.draftSeatIds] : []);
-
-  if (seatIds.length === 0) return;
+  if (STATE.draftSeatIds.length === 0) return;
   if (STATE.isActionInProgress) return;
 
-  // Seamlessly initiate Coordinator Saga checkout directly
-  await initiateSagaCheckout();
+  STATE.isActionInProgress = true;
+  if (!DOM.btnBottomPay) DOM.btnBottomPay = document.getElementById("btn-bottom-pay");
+  if (!DOM.raceConditionModal) DOM.raceConditionModal = document.getElementById("race-condition-modal");
+
+  if (DOM.btnBottomPay) {
+    DOM.btnBottomPay.disabled = true;
+    DOM.btnBottomPay.textContent = "Processing...";
+  }
+
+  const holdTxId = crypto.randomUUID(); // local fallback label; server owns the real ID
+  const allSeatIds = [...STATE.draftSeatIds];
+  const allSeatLabels = [...STATE.draftSeatLabels];
+
+  STATE.pendingHoldSeatIds = allSeatIds;
+  allSeatIds.forEach(id => STATE.inFlightSeatIds.add(id));
+  updateMatrixHoldState();
+
+  try {
+    const res = await fetchJson(`${CONFIG.inventoryUrl}/seats/reserve/`, {
+      method: "POST",
+      body: JSON.stringify({
+        seat_ids: allSeatIds,
+      }),
+    });
+
+    if (res.ok) {
+      // SUCCESS — use the server-assigned transaction_id from the response
+      const serverTxId = (res.data && res.data.transaction_id) || holdTxId;
+      const heldUntil = (res.data && res.data.held_until) || new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      STATE.myHold = {
+        seatId: allSeatIds[0],
+        seatIds: allSeatIds,
+        seatNumbers: allSeatLabels,
+        txId: serverTxId,
+        heldUntil: heldUntil,
+        timerInterval: null,
+      };
+      saveHoldToStorage(STATE.myHold);
+
+      STATE.draftSeatIds = [];
+      STATE.draftSeatLabels = [];
+      STATE.pendingHoldSeatIds = null;
+      allSeatIds.forEach(id => STATE.inFlightSeatIds.delete(id));
+      updateBottomPayBar();
+
+      // Update internal map
+      allSeatIds.forEach(id => {
+        const s = STATE.seatsMap.get(id);
+        if (s) {
+          s.status = "HELD";
+          s.held_by_transaction_id = serverTxId;
+          s.held_until = heldUntil;
+          s.user_email = STATE.user ? STATE.user.email : undefined;
+          s.user_id = STATE.user ? STATE.user.userId : undefined;
+        }
+        applySeatTileDOMState(id, "SELECTED");
+      });
+
+      startHoldTimer(heldUntil);
+      updateCheckoutSummary();
+      updateMatrixHoldState();
+      updateInventoryStats();
+
+      showToast({
+        title: "10-Minute Hold Acquired!",
+        message: `${allSeatIds.length} seat(s) reserved for you. Complete payment before the timer expires.`,
+        type: "success",
+        icon: "",
+        duration: 4000,
+      });
+
+    } else {
+      STATE.pendingHoldSeatIds = null;
+      allSeatIds.forEach(id => STATE.inFlightSeatIds.delete(id));
+      allSeatIds.forEach(id => {
+        applySeatTileDOMState(id, "AVAILABLE");
+      });
+      STATE.draftSeatIds = [];
+      STATE.draftSeatLabels = [];
+      updateBottomPayBar();
+      updateMatrixHoldState();
+
+      if (res.status === 409 || (res.data && res.data.code === "SEAT_UNAVAILABLE")) {
+        if (DOM.raceConditionModal) {
+          DOM.raceConditionModal.classList.add("show");
+        }
+      } else if (res.status === 429 || (res.data && res.data.code === "MAX_HOLDS_EXCEEDED")) {
+        showToast({
+          title: "Hold Limit Reached",
+          message: (res.data && res.data.error) || "You have reached the maximum allowed active holds. Please complete checkout or wait for previous holds to expire.",
+          type: "warning",
+          duration: 6000,
+        });
+      } else if (res.status === 401 || res.status === 403) {
+        handleLogout();
+        showAuthModal(1);
+        showToast({
+          title: "Authentication Required",
+          message: (res.data && res.data.error) || "Your session expired. Please sign in again with your email to reserve seats.",
+          type: "warning",
+          duration: 6000,
+        });
+      } else {
+        showToast({
+          title: "Hold Failed",
+          message: (res.data && res.data.error) || "Unable to reserve selected seats. Please try again.",
+          type: "danger",
+          duration: 5000,
+        });
+      }
+    }
+  } catch (err) {
+    STATE.pendingHoldSeatIds = null;
+    allSeatIds.forEach(id => STATE.inFlightSeatIds.delete(id));
+    allSeatIds.forEach(id => {
+      applySeatTileDOMState(id, "AVAILABLE");
+    });
+    STATE.draftSeatIds = [];
+    STATE.draftSeatLabels = [];
+    updateBottomPayBar();
+    updateMatrixHoldState();
+    showToast({
+      title: "Network Error",
+      message: "Could not reach Inventory service. Please check your connection and try again.",
+      type: "danger",
+      duration: 5000,
+    });
+  } finally {
+    if (DOM.btnBottomPay) {
+      DOM.btnBottomPay.disabled = false;
+      DOM.btnBottomPay.textContent = "Pay Amount";
+    }
+    STATE.isActionInProgress = false;
+  }
 }
 
 function updateMatrixHoldState() {
@@ -1887,8 +2015,9 @@ function updateCheckoutSummary() {
    ========================================================================== */
 
 async function initiateSagaCheckout() {
-  const seatIds = (STATE.myHold && STATE.myHold.seatIds && STATE.myHold.seatIds.length > 0)
-    ? STATE.myHold.seatIds
+  const hasHold = Boolean(STATE.myHold && STATE.myHold.txId);
+  const seatIds = hasHold
+    ? (STATE.myHold.seatIds || [STATE.myHold.seatId])
     : (STATE.draftSeatIds ? [...STATE.draftSeatIds] : []);
 
   if (seatIds.length === 0) return;
@@ -1903,7 +2032,8 @@ async function initiateSagaCheckout() {
   const firstSeat = STATE.seatsMap.get(seatIds[0]);
   if (!firstSeat) return;
 
-  const txId = (STATE.myHold && STATE.myHold.txId) || null;
+  const txId = hasHold ? STATE.myHold.txId : null;
+  const isPreReserved = hasHold;
   const selectedAmount = document.querySelector('input[name="pay_sim"]:checked')
     ? document.querySelector('input[name="pay_sim"]:checked').value
     : "500";
@@ -1926,7 +2056,7 @@ async function initiateSagaCheckout() {
   if (DOM.btnBottomPay) DOM.btnBottomPay.disabled = true;
 
   // Open Saga Orchestration Stepper Modal
-  openSagaModal(firstSeat, selectedAmount);
+  openSagaModal(firstSeat, selectedAmount, isPreReserved);
 
   const queryParams = new URLSearchParams();
   if (selectedAmount === "9999") {
@@ -1935,14 +2065,22 @@ async function initiateSagaCheckout() {
   const queryString = queryParams.toString();
   const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/${queryString ? `?${queryString}` : ""}`;
 
+  const payload = {
+    seat_ids: seatIds,
+  };
+  if (txId) {
+    payload.transaction_id = txId;
+  }
+  if (isPreReserved) {
+    payload.pre_reserved = true;
+  }
+
   // POST to Coordinator — asynchronous non-blocking saga execution (returns HTTP 202 Accepted)
   // Celery worker drives the distributed saga pipeline in the background via Redis
   // Identity is securely transmitted via Authorization Bearer JWT header in fetchJson
   const res = await fetchJson(endpointUrl, {
     method: "POST",
-    body: JSON.stringify({
-      seat_ids: seatIds,
-    }),
+    body: JSON.stringify(payload),
   });
 
   const finalTxId = (res.data && res.data.transaction_id) || txId;
@@ -1985,18 +2123,29 @@ async function initiateSagaCheckout() {
   }
 }
 
-function openSagaModal(firstSeat, amount) {
+function openSagaModal(firstSeat, amount, isPreReserved = false) {
   if (!DOM.sagaModal) return;
   DOM.sagaModal.classList.remove("hidden");
 
-  DOM.step1.className = "step-item active";
-  DOM.step1Status.textContent = "IN PROGRESS";
+  if (isPreReserved) {
+    DOM.step1.className = "step-item done";
+    DOM.step1Status.textContent = "VERIFIED";
 
-  DOM.step2.className = "step-item";
-  DOM.step2Status.textContent = "WAITING";
+    DOM.step2.className = "step-item active";
+    DOM.step2Status.textContent = "IN PROGRESS";
 
-  DOM.step3.className = "step-item";
-  DOM.step3Status.textContent = "WAITING";
+    DOM.step3.className = "step-item";
+    DOM.step3Status.textContent = "WAITING";
+  } else {
+    DOM.step1.className = "step-item active";
+    DOM.step1Status.textContent = "IN PROGRESS";
+
+    DOM.step2.className = "step-item";
+    DOM.step2Status.textContent = "WAITING";
+
+    DOM.step3.className = "step-item";
+    DOM.step3Status.textContent = "WAITING";
+  }
 
   if (DOM.modalResult) DOM.modalResult.classList.add("hidden");
   if (DOM.eticketCard) DOM.eticketCard.classList.add("hidden");

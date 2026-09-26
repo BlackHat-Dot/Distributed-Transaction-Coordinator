@@ -638,7 +638,7 @@ def _request_payload_verify(request):
 
     is_dev = getattr(settings, "DEBUG", False)
 
-    allowed_fields = {"seat_ids", "transaction_id", "fail_compensation", "coordinator"}
+    allowed_fields = {"seat_ids", "transaction_id", "fail_compensation", "coordinator", "pre_reserved"}
 
     invalid_fields = [k for k in request.data.keys() if k not in allowed_fields]
 
@@ -749,6 +749,8 @@ def _handle_create_transaction(request):
     else:
         transaction_id = str(uuid.uuid4())
 
+    pre_reserved = bool(request.data.get("pre_reserved", False)) if isinstance(request.data, dict) else False
+
     # 3. Resolve Seats and Server-Side Pricing from Database
 
     amount, seat_ids, seat_numbers, price_error = _resolve_seat_pricing(
@@ -848,6 +850,7 @@ def _handle_create_transaction(request):
                 correlation_id=correlation_id,
                 user_id=user_id,
                 user_email=user_email,
+                pre_reserved=pre_reserved,
             )
             return Response(
                 {
@@ -887,6 +890,7 @@ def _handle_create_transaction(request):
         actor=SagaEvent.ACTOR_REQUEST,
         user_id=user_id,
         user_email=user_email,
+        pre_reserved=pre_reserved,
     )
 
 
@@ -972,8 +976,40 @@ def _run_saga_pipeline(
 
     user_id=None,
     user_email=None,
+    pre_reserved=False,
 ):
-
+    if pre_reserved:
+        # Frontend already acquired the seat hold in Inventory via its manual reserve call.
+        # Coordinator reuses the hold directly — NO redundant network hop or duplicate DB row!
+        _set_status_with_event(
+            transaction_id,
+            Transaction.Status.INVENTORY_RESERVED,
+            expected_status=Transaction.Status.STARTED,
+            actor=actor,
+            http_status_code=200,
+            http_payload={
+                "message": f"{len(seat_ids) if seat_ids else 1} Seats pre-reserved by client hold",
+                "seat_ids": seat_ids,
+                "transaction_id": str(transaction_id),
+            },
+        )
+        _set_status_with_event(
+            transaction_id,
+            Transaction.Status.PAYMENT_PROCESSING,
+            expected_status=Transaction.Status.INVENTORY_RESERVED,
+            actor=actor,
+            http_status_code=None,
+            http_payload=None,
+        )
+        return _charge_payment(
+            transaction_id,
+            amount,
+            fail_compensation,
+            correlation_id=correlation_id,
+            seat_ids=seat_ids,
+            user_id=user_id,
+            user_email=user_email,
+        )
 
     response, reserve_error = _reserve_inventory(
         transaction_id,
