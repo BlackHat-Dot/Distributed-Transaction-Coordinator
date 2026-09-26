@@ -1527,7 +1527,8 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
   const targetSeatId = await getNextAvailableSeatId();
 
   if (STATE.isSimulatedMode) {
-    createSimulatedTransaction("STARTED", crypto.randomUUID());
+    txId = crypto.randomUUID();
+    createSimulatedTransaction("STARTED", txId);
   } else {
     const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
       method: "POST",
@@ -1546,7 +1547,7 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
   showToast({
     icon: "⦿",
     title: "Process Crash Simulated",
-    message: `Coordinator process crashed mid-flight! Transaction ${txId.substring(0,8)}... is orphaned in database. Awaiting natural 90s Celery Beat sweep!`,
+    message: `Coordinator process crashed mid-flight! Transaction ${txId ? txId.substring(0,8) : "unknown"}... is orphaned in database. Awaiting natural 90s Celery Beat sweep!`,
     type: "race",
     duration: 8000,
   });
