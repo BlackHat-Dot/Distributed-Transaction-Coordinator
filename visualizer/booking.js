@@ -2272,7 +2272,7 @@ async function resetVenueSeats() {
 
       showToast({
         title: "Venue Restocked",
-        message: "All 30 venue seats have been reset to AVAILABLE in PostgreSQL & Redis!",
+        message: "All 30 venue seats have been reset to AVAILABLE in PostgreSQL!",
         type: "success",
         icon: "",
       });

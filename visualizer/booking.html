@@ -178,7 +178,7 @@
         </div>
         <div class="timer-display">
           <div class="timer-clock" id="hold-clock">10:00</div>
-          <p class="timer-caption">Seat is locked for you in Redis & PostgreSQL. Server auto-sweeps on zero.</p>
+          <p class="timer-caption">Seat is locked for you in PostgreSQL. Server auto-sweeps on zero.</p>
         </div>
         <div class="timer-progress-bar">
           <div class="timer-progress-fill" id="timer-progress-fill" style="width: 100%;"></div>
@@ -265,9 +265,9 @@
       <div class="info-guarantees-card">
         <h4>Distributed Systems Invariants</h4>
         <ul>
-          <li><strong>PostgreSQL <code>select_for_update</code>:</strong> Zero double-bookings.</li>
-          <li><strong>Redis Speed Layer:</strong> 10-minute hold TTL shedding concurrent hold storms.</li>
-          <li><strong>Async Task Coordinator:</strong> WSGI threads never blocked on downstream I/O.</li>
+          <li><strong>PostgreSQL <code>select_for_update</code>:</strong> Zero double-bookings via row-level locks.</li>
+          <li><strong>PostgreSQL 10-min Hold Window:</strong> Auto-expiration timestamps shedding abandoned holds.</li>
+          <li><strong>Redis Real-Time Pub/Sub:</strong> Push-based SSE stream shedding 20–50+ polling requests.</li>
           <li><strong>Saga Compensating Release:</strong> Failed payment auto-releases seat.</li>
         </ul>
       </div>
@@ -509,7 +509,7 @@
     <button id="btn-bottom-pay" class="btn-bottom-pay">Pay Amount</button>
   </div>
 
-  <script src="booking.js?v=5.7.0"></script>
+  <script src="booking.js?v=5.7.1"></script>
 </body>
 </html>
 
