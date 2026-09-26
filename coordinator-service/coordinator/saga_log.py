@@ -1,8 +1,63 @@
+import json
+import logging
+import redis
+from django.conf import settings
 from django.db import transaction as db_transaction
 from django.db.models import Max
 from django.utils import timezone
 
 from .models import Transaction, SagaEvent
+
+logger = logging.getLogger(__name__)
+
+_pub_client = None
+
+
+def _get_pub_client():
+    global _pub_client
+    if _pub_client is None:
+        broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://localhost:6379/0")
+        try:
+            _pub_client = redis.Redis.from_url(
+                broker_url,
+                decode_responses=True,
+                socket_connect_timeout=1.0,
+                socket_timeout=1.0,
+            )
+        except Exception as e:
+            logger.warning("Failed to initialize Redis publisher client: %s", e)
+            return None
+    return _pub_client
+
+
+TERMINAL_STATUSES = {
+    Transaction.Status.COMPLETED,
+    Transaction.Status.COMPENSATED,
+    Transaction.Status.COMPENSATION_FAILED,
+    Transaction.Status.INVENTORY_RESERVE_FAILED,
+    Transaction.Status.COMPENSATED_ON_RETRY,
+    Transaction.Status.RETRY_COMPENSATION_FAILED,
+    Transaction.Status.TIMEOUT,
+    Transaction.Status.PAYMENT_TIMEOUT,
+    Transaction.Status.PAYMENT_FAILED,
+    Transaction.Status.PAYMENT_CONNECTION_ERROR,
+}
+
+
+def _publish_transaction_update(transaction_id, to_status, from_status=None):
+    try:
+        client = _get_pub_client()
+        if not client:
+            return
+        payload = json.dumps({
+            "transaction_id": str(transaction_id),
+            "status": to_status,
+            "from_status": from_status,
+            "is_terminal": to_status in TERMINAL_STATUSES,
+        })
+        client.publish(f"dtc:tx_stream:{transaction_id}", payload)
+    except Exception as exc:
+        logger.warning("Failed to publish SSE event for tx %s: %s", transaction_id, exc)
 
 
 def _set_status_with_event(
@@ -64,5 +119,8 @@ def _set_status_with_event(
             http_status_code=http_status_code,
             http_payload=http_payload,
         )
+
+    # Database transaction committed. Publish real-time event to Redis for SSE streaming.
+    _publish_transaction_update(transaction_id, to_status, from_status)
 
     return True

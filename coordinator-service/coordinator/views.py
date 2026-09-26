@@ -1,6 +1,10 @@
+import json
+import logging
 import os
 import secrets
+import time
 import uuid
+import redis
 import requests
 from decimal import Decimal
 
@@ -9,11 +13,14 @@ from rest_framework.response import Response
 from requests.exceptions import Timeout, ConnectionError
 from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.http import StreamingHttpResponse, JsonResponse, HttpResponse
 
 from .models import Transaction, SagaEvent
 from .saga_log import _set_status_with_event
 from .middleware import get_correlation_id
 from coordinator.auth_views import get_user_from_request
+
+logger = logging.getLogger(__name__)
 
 
 def _get_active_correlation_id(correlation_id=None):
@@ -136,6 +143,142 @@ def list_transaction_events(request, transaction_id):
         "status": txn.status,
         "events": [_serialize_event(e) for e in events],
     })
+
+
+def transaction_stream(request, transaction_id):
+    """
+    Server-Sent Events (SSE) streaming endpoint for real-time transaction state updates.
+    Eliminates client-side polling by streaming state transitions directly via Redis Pub/Sub.
+    """
+    if request.method == "OPTIONS":
+        return HttpResponse(status=204)
+
+    is_authenticated, auth_user_id, is_staff = _get_requester_identity(request)
+    if not is_authenticated:
+        return JsonResponse({"error": "Authentication required."}, status=401)
+
+    try:
+        txn = Transaction.objects.get(transaction_id=transaction_id)
+    except Transaction.DoesNotExist:
+        return JsonResponse({"detail": "Transaction not found"}, status=404)
+
+    # IDOR protection: Non-staff users may only stream their own transactions
+    if not is_staff and (not auth_user_id or (txn.user_id and txn.user_id != auth_user_id)):
+        return JsonResponse({"error": "You do not have permission to view this transaction."}, status=403)
+
+    terminal_statuses = {
+        Transaction.Status.COMPLETED,
+        Transaction.Status.COMPENSATED,
+        Transaction.Status.COMPENSATION_FAILED,
+        Transaction.Status.INVENTORY_RESERVE_FAILED,
+        Transaction.Status.COMPENSATED_ON_RETRY,
+        Transaction.Status.RETRY_COMPENSATION_FAILED,
+        Transaction.Status.TIMEOUT,
+        Transaction.Status.PAYMENT_TIMEOUT,
+        Transaction.Status.PAYMENT_FAILED,
+        Transaction.Status.PAYMENT_CONNECTION_ERROR,
+    }
+
+    def event_generator():
+        channel_name = f"dtc:tx_stream:{transaction_id}"
+        broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://localhost:6379/0")
+
+        redis_client = None
+        pubsub = None
+        try:
+            # Step 1: Subscribe to Redis channel FIRST to prevent any race conditions
+            redis_client = redis.Redis.from_url(
+                broker_url,
+                decode_responses=True,
+                socket_connect_timeout=2.0,
+            )
+            pubsub = redis_client.pubsub()
+            pubsub.subscribe(channel_name)
+
+            # Step 2: Query PostgreSQL for current state
+            current_txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+            if current_txn:
+                is_term = current_txn.status in terminal_statuses
+                initial_msg = json.dumps({
+                    "transaction_id": str(current_txn.transaction_id),
+                    "status": current_txn.status,
+                    "is_terminal": is_term,
+                })
+                yield f"data: {initial_msg}\n\n"
+                if is_term:
+                    return
+
+            # Step 3: Stream updates as Celery publishes them
+            start_time = time.monotonic()
+            max_duration = 30.0  # 30-second safety timeout
+            last_db_check = start_time
+
+            while True:
+                now = time.monotonic()
+                if now - start_time > max_duration:
+                    timeout_msg = json.dumps({
+                        "transaction_id": str(transaction_id),
+                        "status": "TIMEOUT",
+                        "is_terminal": True,
+                    })
+                    yield f"data: {timeout_msg}\n\n"
+                    break
+
+                # Non-blocking check with 1-second timeout
+                msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                if msg and msg.get("type") == "message":
+                    raw_data = msg.get("data")
+                    yield f"data: {raw_data}\n\n"
+                    try:
+                        parsed = json.loads(raw_data)
+                        if parsed.get("is_terminal"):
+                            break
+                    except Exception:
+                        pass
+                else:
+                    # Reverse proxy keep-alive heartbeat comment
+                    yield ": ping\n\n"
+
+                    # Safeguard: periodic DB check every 3 seconds in case Redis message was missed
+                    if now - last_db_check >= 3.0:
+                        last_db_check = now
+                        db_txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+                        if db_txn and db_txn.status in terminal_statuses:
+                            term_msg = json.dumps({
+                                "transaction_id": str(db_txn.transaction_id),
+                                "status": db_txn.status,
+                                "is_terminal": True,
+                            })
+                            yield f"data: {term_msg}\n\n"
+                            break
+
+        except Exception as exc:
+            logger.warning("SSE stream error for tx %s: %s", transaction_id, exc)
+            err_msg = json.dumps({
+                "transaction_id": str(transaction_id),
+                "status": "STREAM_ERROR",
+                "is_terminal": False,
+                "error": str(exc),
+            })
+            yield f"data: {err_msg}\n\n"
+        finally:
+            if pubsub:
+                try:
+                    pubsub.unsubscribe(channel_name)
+                    pubsub.close()
+                except Exception:
+                    pass
+            if redis_client:
+                try:
+                    redis_client.close()
+                except Exception:
+                    pass
+
+    response = StreamingHttpResponse(event_generator(), content_type="text/event-stream")
+    response["Cache-Control"] = "no-cache, no-transform"
+    response["X-Accel-Buffering"] = "no"
+    response["Connection"] = "keep-alive"
+    return response
 
 
 @api_view(["POST"])
@@ -669,6 +812,7 @@ def _handle_create_transaction(request):
                     "user_email": user_email,
                     "status": "PENDING",
                     "poll_url": f"/transactions/{transaction_id}/",
+                    "stream_url": f"/transactions/{transaction_id}/stream/",
                     "message": "Saga dispatched to Celery worker",
                 },
                 status=202,

@@ -9,6 +9,7 @@ from coordinator.views import (
     transactions_endpoint,
     trigger_recovery_sweep,
     recovery_status,
+    transaction_stream,
 )
 from coordinator.auth_views import (
     send_otp,
@@ -29,6 +30,7 @@ urlpatterns = [
     path('auth/logout/', logout),
     
     path("transactions/", transactions_endpoint),
+    path("transactions/<uuid:transaction_id>/stream/", transaction_stream),
     path("transactions/<uuid:transaction_id>/retry-compensation/",
          retry_compensation),
     path("transactions/<uuid:transaction_id>/events/", list_transaction_events),

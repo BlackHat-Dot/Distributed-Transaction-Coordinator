@@ -262,6 +262,84 @@ class SecurityAndReliabilityHardeningTests(TestCase):
             resolved_ip = _get_client_ip(req_trusted)
             self.assertEqual(resolved_ip, "198.51.100.77")
 
+    @patch("coordinator.saga_log._get_pub_client")
+    def test_sse01_publish_transaction_update_dispatches_redis_event(self, mock_get_client):
+        """
+        SSE-01: Proves that _publish_transaction_update publishes a JSON event
+        to the Redis pub/sub channel for real-time frontend streaming.
+        """
+        from coordinator.saga_log import _publish_transaction_update
+        mock_redis = MagicMock()
+        mock_get_client.return_value = mock_redis
+
+        tx_id = uuid.uuid4()
+        _publish_transaction_update(tx_id, "PAYMENT_PROCESSING", "INVENTORY_RESERVED")
+
+        mock_redis.publish.assert_called_once()
+        channel, message = mock_redis.publish.call_args[0]
+        self.assertEqual(channel, f"dtc:tx_stream:{tx_id}")
+
+        import json
+        payload = json.loads(message)
+        self.assertEqual(payload["transaction_id"], str(tx_id))
+        self.assertEqual(payload["status"], "PAYMENT_PROCESSING")
+        self.assertEqual(payload["from_status"], "INVENTORY_RESERVED")
+        self.assertFalse(payload["is_terminal"])
+
+    @patch("coordinator.views._get_requester_identity")
+    def test_sse02_transaction_stream_idor_protection(self, mock_identity):
+        """
+        SSE-02: Proves that non-staff callers cannot open an SSE stream
+        for transactions belonging to another user.
+        """
+        from coordinator.views import transaction_stream
+        tx_id = uuid.uuid4()
+        Transaction.objects.create(
+            transaction_id=tx_id,
+            user_id="user_alice",
+            status=Transaction.Status.STARTED,
+            amount=Decimal("500.00"),
+        )
+
+        # Bob attempts to stream Alice's transaction
+        mock_identity.return_value = (True, "user_bob", False)
+        request = self.factory.get(f"/transactions/{tx_id}/stream/")
+        response = transaction_stream(request, tx_id)
+        self.assertEqual(response.status_code, 403)
+
+    @patch("coordinator.views._get_requester_identity")
+    def test_sse03_transaction_stream_yields_terminal_state_immediately(self, mock_identity):
+        """
+        SSE-03: Proves that if a transaction is already terminal when the SSE stream
+        connects, the generator immediately yields the terminal state and terminates.
+        """
+        from coordinator.views import transaction_stream
+        import json
+        tx_id = uuid.uuid4()
+        Transaction.objects.create(
+            transaction_id=tx_id,
+            user_id="user_alice",
+            status=Transaction.Status.COMPLETED,
+            amount=Decimal("500.00"),
+        )
+
+        mock_identity.return_value = (True, "user_alice", False)
+        request = self.factory.get(f"/transactions/{tx_id}/stream/")
+        response = transaction_stream(request, tx_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/event-stream")
+
+        # Read chunks from generator
+        chunks = list(response.streaming_content)
+        self.assertTrue(len(chunks) >= 1)
+        first_chunk = chunks[0]
+        if isinstance(first_chunk, bytes):
+            first_chunk = first_chunk.decode("utf-8")
+        self.assertTrue(first_chunk.startswith("data: "))
+        data = json.loads(first_chunk.replace("data: ", "").strip())
+        self.assertEqual(data["status"], "COMPLETED")
+        self.assertTrue(data["is_terminal"])
+
 
 
 

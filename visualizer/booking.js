@@ -1857,8 +1857,8 @@ async function initiateSagaCheckout() {
 
   if (res.ok && res.data && res.data.status) {
     if (res.status === 202) {
-      // Async: Celery picked it up — start polling
-      pollSagaStatus(finalTxId, selectedAmount);
+      // Async: Celery picked it up — listen via Server-Sent Events (SSE) push (reduces to 2 requests)
+      listenToTransactionSSE(finalTxId, selectedAmount);
     } else {
       // Sync: Coordinator returned final result immediately (200)
       handleSagaTerminalState(res.data.status, finalTxId, selectedAmount);
@@ -1905,8 +1905,6 @@ function openSagaModal(firstSeat, amount) {
   if (DOM.eticketCard) DOM.eticketCard.classList.add("hidden");
   if (DOM.compensationCard) DOM.compensationCard.classList.add("hidden");
 
-  // Note: Async Celery is disabled on this Railway deployment.
-  // The saga runs synchronously — the modal will resolve in ~1-2 seconds.
   if (DOM.btnModalClose) {
     DOM.btnModalClose.disabled = true;
     DOM.btnModalClose.textContent = "Processing...";
@@ -1916,6 +1914,88 @@ function openSagaModal(firstSeat, amount) {
     DOM.btnViewForensics.href = `index.html`;
     DOM.btnViewForensics.classList.add("hidden");
   }
+}
+
+/**
+ * Listen to real-time transaction state updates via Server-Sent Events (SSE).
+ * Reduces network requests from 20-50 polling calls to exactly 1 streaming connection!
+ * Gracefully falls back to polling if the stream encounters a network error.
+ */
+function listenToTransactionSSE(txId, amount) {
+  const token = localStorage.getItem("dtc_auth_token") || "";
+  const queryParam = token ? `?token=${encodeURIComponent(token)}` : "";
+  const sseUrl = `${CONFIG.coordinatorUrl}/transactions/${txId}/stream/${queryParam}`;
+
+  let eventSource = null;
+  let hasHandledTerminal = false;
+  let streamClosed = false;
+
+  const closeStream = () => {
+    if (streamClosed) return;
+    streamClosed = true;
+    if (eventSource) {
+      try {
+        eventSource.close();
+      } catch (e) {}
+      eventSource = null;
+    }
+  };
+
+  try {
+    eventSource = new EventSource(sseUrl);
+  } catch (err) {
+    console.warn("EventSource initialization failed, falling back to polling:", err);
+    pollSagaStatus(txId, amount);
+    return;
+  }
+
+  // Safety fallback timer: if SSE doesn't finish within 25 seconds, switch to polling check
+  const safetyTimeout = setTimeout(() => {
+    if (!hasHandledTerminal) {
+      closeStream();
+      pollSagaStatus(txId, amount);
+    }
+  }, 25000);
+
+  eventSource.onmessage = (event) => {
+    if (!event.data) return;
+
+    try {
+      const data = JSON.parse(event.data);
+      const status = data.status;
+
+      // Update Phase Stepper Visual Progression in real-time
+      if (status === "PAYMENT_PROCESSING") {
+        DOM.step2.className = "step-item active";
+        DOM.step2Status.textContent = "AUTHORIZING";
+      } else if (status === "INVENTORY_RESERVED") {
+        DOM.step1.className = "step-item done";
+        DOM.step1Status.textContent = "RESERVED";
+      }
+
+      if (data.is_terminal || ["COMPLETED", "COMPENSATED", "INVENTORY_RESERVE_FAILED", "COMPENSATION_FAILED"].includes(status)) {
+        if (hasHandledTerminal) return;
+        hasHandledTerminal = true;
+        clearTimeout(safetyTimeout);
+        closeStream();
+        handleSagaTerminalState(status, txId, amount);
+      }
+    } catch (e) {
+      console.warn("Error parsing SSE data chunk:", e);
+    }
+  };
+
+  eventSource.onerror = (err) => {
+    // If stream already completed, ignore error on close
+    if (hasHandledTerminal) return;
+
+    console.warn("SSE connection error or closed by server. Falling back to poll:", err);
+    clearTimeout(safetyTimeout);
+    closeStream();
+
+    // Fall back to polling immediately
+    pollSagaStatus(txId, amount);
+  };
 }
 
 async function pollSagaStatus(txId, amount) {
