@@ -123,6 +123,7 @@ const DOM = {
   timerProgressFill: document.getElementById("timer-progress-fill"),
   btnCancelHold: document.getElementById("btn-cancel-hold"),
 
+  checkoutCard: document.getElementById("checkout-card"),
   summaryEmpty: document.getElementById("summary-empty"),
   summaryActive: document.getElementById("summary-active"),
   summaryTier: document.getElementById("summary-tier"),
@@ -1560,7 +1561,6 @@ async function handleSeatTileClick(seatId) {
     STATE.draftSeatLabels.splice(idx, 1);
     applySeatTileDOMState(seatId, seat.status);
     updateBottomPayBar();
-    updateCheckoutSummary();
     return;
   }
 
@@ -1644,9 +1644,8 @@ async function handleSeatTileClick(seatId) {
     }
   }
 
-  // 6. Update Bottom Pay Bar & Checkout Summary
+  // 6. Update Bottom Pay Bar
   updateBottomPayBar();
-  updateCheckoutSummary();
 }
 
 async function handleBottomPaySubmit() {
@@ -1956,37 +1955,37 @@ function handleHoldAutoExpired() {
    ========================================================================== */
 
 function updateCheckoutSummary() {
-  const activeSeatIds = (STATE.myHold && STATE.myHold.seatIds && STATE.myHold.seatIds.length > 0)
-    ? STATE.myHold.seatIds
-    : (STATE.draftSeatIds ? [...STATE.draftSeatIds] : []);
+  if (!DOM.checkoutCard) DOM.checkoutCard = document.getElementById("checkout-card");
 
-  if (activeSeatIds.length === 0) {
+  if (!STATE.myHold || !STATE.myHold.txId) {
+    if (DOM.checkoutCard) DOM.checkoutCard.classList.add("hidden");
     if (DOM.summaryEmpty) DOM.summaryEmpty.classList.remove("hidden");
     if (DOM.summaryActive) DOM.summaryActive.classList.add("hidden");
     if (DOM.summaryTier) DOM.summaryTier.textContent = "No Selection";
     return;
   }
 
-  const firstSeat = STATE.seatsMap.get(activeSeatIds[0]);
+  const seatIds = STATE.myHold.seatIds || [STATE.myHold.seatId];
+  const firstSeat = STATE.seatsMap.get(seatIds[0]);
   if (!firstSeat) return;
 
   const tierMeta = TIERS[firstSeat.row] || { name: "General Seat", price: "500.00", basePrice: 500 };
   let totalBasePrice = 0;
-  activeSeatIds.forEach(id => {
+  seatIds.forEach(id => {
     const s = STATE.seatsMap.get(id);
     totalBasePrice += s && s.price ? parseFloat(s.price) : tierMeta.basePrice;
   });
 
-  const seatLabels = (STATE.myHold && STATE.myHold.seatNumbers)
-    || (STATE.draftSeatLabels && STATE.draftSeatLabels.length > 0 ? STATE.draftSeatLabels.join(", ") : `${firstSeat.row}${firstSeat.seat_number}`);
+  const seatLabels = STATE.myHold.seatNumbers || `${firstSeat.row}${firstSeat.seat_number}`;
 
+  if (DOM.checkoutCard) DOM.checkoutCard.classList.remove("hidden");
   if (DOM.summaryEmpty) DOM.summaryEmpty.classList.add("hidden");
   if (DOM.summaryActive) DOM.summaryActive.classList.remove("hidden");
 
-  if (DOM.summaryTier) DOM.summaryTier.textContent = `${tierMeta.name} (${activeSeatIds.length})`;
+  if (DOM.summaryTier) DOM.summaryTier.textContent = `${tierMeta.name} (${seatIds.length})`;
   if (DOM.summarySeatLabel) DOM.summarySeatLabel.textContent = `Row ${firstSeat.row} - Seats ${seatLabels}`;
-  if (DOM.summarySeatTier) DOM.summarySeatTier.textContent = `${activeSeatIds.length}x ${tierMeta.name}`;
-  if (DOM.summaryTxId) DOM.summaryTxId.textContent = (STATE.myHold && STATE.myHold.txId) ? `${STATE.myHold.txId.substring(0, 8)}...` : `Pending Checkout`;
+  if (DOM.summarySeatTier) DOM.summarySeatTier.textContent = `${seatIds.length}x ${tierMeta.name}`;
+  if (DOM.summaryTxId) DOM.summaryTxId.textContent = `${STATE.myHold.txId.substring(0, 8)}...`;
   if (DOM.summaryBasePrice) DOM.summaryBasePrice.textContent = `$${totalBasePrice.toFixed(2)}`;
   if (DOM.summaryTotalPrice) DOM.summaryTotalPrice.textContent = `$${totalBasePrice.toFixed(2)}`;
   
@@ -1996,18 +1995,10 @@ function updateCheckoutSummary() {
   if (radioSuccess) radioSuccess.value = totalBasePrice;
   if (radioFail) radioFail.value = 9999; // failure simulation amount
 
-  const quantityEl = document.getElementById("seat-quantity");
-  const requestedQuantity = quantityEl ? parseInt(quantityEl.value, 10) : 1;
   if (DOM.btnProceedPay) {
-    if (activeSeatIds.length < requestedQuantity) {
-      DOM.btnProceedPay.textContent = `Select ${requestedQuantity - activeSeatIds.length} more seat(s)`;
-      DOM.btnProceedPay.disabled = true;
-      DOM.btnProceedPay.classList.add("opacity-50", "cursor-not-allowed");
-    } else {
-      DOM.btnProceedPay.textContent = "Proceed to Payment →";
-      DOM.btnProceedPay.disabled = false;
-      DOM.btnProceedPay.classList.remove("opacity-50", "cursor-not-allowed");
-    }
+    DOM.btnProceedPay.textContent = "Proceed to Payment →";
+    DOM.btnProceedPay.disabled = false;
+    DOM.btnProceedPay.classList.remove("opacity-50", "cursor-not-allowed");
   }
 }
 

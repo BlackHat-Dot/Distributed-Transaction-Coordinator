@@ -872,79 +872,94 @@ def _handle_create_transaction(request):
     # Coordinator looks up the HOLDING record, skips reserve, runs charge+confirm.
     # =========================================================================
     if action == "pay":
-        try:
-            txn = Transaction.objects.get(transaction_id=pay_tid)
-        except Transaction.DoesNotExist:
-            return Response(
-                {"error": "Transaction not found.", "code": "TRANSACTION_NOT_FOUND"},
-                status=404,
-            )
-
-        # Ownership check — non-staff users can only pay their own holds
-        if not (has_staff_key or is_dev or is_testing):
-            if txn.user_id and txn.user_id != user_id:
+        with transaction.atomic():
+            txn = Transaction.objects.select_for_update().filter(transaction_id=pay_tid).first()
+            if not txn:
                 return Response(
-                    {"error": "You do not have permission to pay for this transaction.", "code": "FORBIDDEN"},
-                    status=403,
+                    {"error": "Transaction not found.", "code": "TRANSACTION_NOT_FOUND"},
+                    status=404,
                 )
 
-        # Idempotent: already completed → return it
-        if txn.status == Transaction.Status.COMPLETED:
-            return Response(_serialize_transaction(txn), status=200)
+            # Ownership check — non-staff users can only pay their own holds
+            if not (has_staff_key or is_dev or is_testing):
+                if txn.user_id and txn.user_id != user_id:
+                    return Response(
+                        {"error": "You do not have permission to pay for this transaction.", "code": "FORBIDDEN"},
+                        status=403,
+                    )
 
-        # Only HOLDING status is valid for pay
-        if txn.status != Transaction.Status.HOLDING:
-            return Response(
-                {
-                    "error": f"Transaction cannot be paid in status '{txn.status}'.",
-                    "code": "INVALID_TRANSACTION_STATUS",
-                    "status": txn.status,
-                    "transaction_id": str(txn.transaction_id),
-                },
-                status=409,
-            )
+            # Idempotent: already completed → return it
+            if txn.status == Transaction.Status.COMPLETED:
+                return Response(_serialize_transaction(txn), status=200)
 
-        transaction_id = txn.transaction_id
-        seat_ids = txn.seat_ids
-        amount = txn.amount
-
-        if simulate_decline:
-            amount = Decimal("9999")
-
-        if not is_sync:
-            try:
-                from .tasks import execute_saga_task
-                execute_saga_task.delay(
-                    str(transaction_id),
-                    seat_ids=seat_ids,
-                    amount=str(amount),
-                    fail_compensation=fail_compensation,
-                    correlation_id=correlation_id,
-                    user_id=txn.user_id,
-                    user_email=txn.user_email,
-                    skip_reserve=True,
-                )
+            # Only HOLDING status is valid for pay
+            if txn.status != Transaction.Status.HOLDING:
                 return Response(
                     {
-                        "transaction_id": str(transaction_id),
-                        "status": "PENDING",
-                        "poll_url": f"/transactions/{transaction_id}/",
-                        "stream_url": f"/transactions/{transaction_id}/stream/",
-                        "message": "Saga dispatched to Celery worker",
-                    },
-                    status=202,
-                    headers={"Location": f"/transactions/{transaction_id}/"},
-                )
-            except Exception:
-                logger.exception("Failed to dispatch Saga task for pay action")
-                return Response(
-                    {
-                        "transaction_id": str(transaction_id),
+                        "error": f"Transaction cannot be paid in status '{txn.status}'.",
+                        "code": "INVALID_TRANSACTION_STATUS",
                         "status": txn.status,
-                        "error": "Saga could not be dispatched",
+                        "transaction_id": str(txn.transaction_id),
                     },
-                    status=503,
+                    status=409,
                 )
+
+            transaction_id = txn.transaction_id
+            seat_ids = txn.seat_ids
+            amount = txn.amount
+            pay_user_id = txn.user_id
+            pay_user_email = txn.user_email
+
+            if simulate_decline:
+                amount = Decimal("9999")
+
+            if not is_sync:
+                # Atomically mark as INVENTORY_RESERVED so parallel duplicate requests are rejected
+                _set_status_with_event(
+                    transaction_id,
+                    Transaction.Status.INVENTORY_RESERVED,
+                    expected_status=Transaction.Status.HOLDING,
+                    actor=SagaEvent.ACTOR_REQUEST,
+                    http_status_code=200,
+                    http_payload={
+                        "message": f"{len(seat_ids) if seat_ids else 1} Seats reserved via coordinator hold",
+                        "seat_ids": seat_ids,
+                        "transaction_id": str(transaction_id),
+                    },
+                )
+                try:
+                    from .tasks import execute_saga_task
+                    execute_saga_task.delay(
+                        str(transaction_id),
+                        seat_ids=seat_ids,
+                        amount=str(amount),
+                        fail_compensation=fail_compensation,
+                        correlation_id=correlation_id,
+                        user_id=pay_user_id,
+                        user_email=pay_user_email,
+                        skip_reserve=True,
+                    )
+                    return Response(
+                        {
+                            "transaction_id": str(transaction_id),
+                            "status": "PENDING",
+                            "poll_url": f"/transactions/{transaction_id}/",
+                            "stream_url": f"/transactions/{transaction_id}/stream/",
+                            "message": "Saga dispatched to Celery worker",
+                        },
+                        status=202,
+                        headers={"Location": f"/transactions/{transaction_id}/"},
+                    )
+                except Exception:
+                    logger.exception("Failed to dispatch Saga task for pay action")
+                    return Response(
+                        {
+                            "transaction_id": str(transaction_id),
+                            "status": txn.status,
+                            "error": "Saga could not be dispatched",
+                        },
+                        status=503,
+                    )
 
         return _run_saga_pipeline(
             transaction_id=transaction_id,
@@ -952,9 +967,8 @@ def _handle_create_transaction(request):
             amount=amount,
             fail_compensation=fail_compensation,
             correlation_id=correlation_id,
-            actor=SagaEvent.ACTOR_REQUEST,
-            user_id=txn.user_id,
-            user_email=txn.user_email,
+            user_id=pay_user_id,
+            user_email=pay_user_email,
             skip_reserve=True,
         )
 
@@ -1167,10 +1181,10 @@ def _run_saga_pipeline(
     **kwargs,
 ):
     if skip_reserve:
-        _set_status_with_event(
+        transitioned = _set_status_with_event(
             transaction_id,
             Transaction.Status.INVENTORY_RESERVED,
-            expected_status=Transaction.Status.HOLDING,
+            expected_status=[Transaction.Status.HOLDING, Transaction.Status.INVENTORY_RESERVED],
             actor=actor,
             http_status_code=200,
             http_payload={
@@ -1179,6 +1193,15 @@ def _run_saga_pipeline(
                 "transaction_id": str(transaction_id),
             },
         )
+        if not transitioned:
+            return Response(
+                {
+                    "error": "Transaction is already being processed or is not in an eligible state for payment.",
+                    "code": "CONCURRENT_PAYMENT_IN_PROGRESS",
+                    "transaction_id": str(transaction_id),
+                },
+                status=409,
+            )
         _set_status_with_event(
             transaction_id,
             Transaction.Status.PAYMENT_PROCESSING,
