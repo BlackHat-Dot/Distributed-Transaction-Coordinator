@@ -1,0 +1,305 @@
+/* ==========================================================================
+   APPLE.COM-STYLE THEME OVERRIDE
+   Loaded after style.css / booking.css — repaints tokens + the specific
+   components that used hardcoded neon/glow values. Nothing here touches
+   app.js or booking.js: every #id and .class your scripts reference is
+   left exactly where it was, so all live functionality keeps working.
+   ========================================================================== */
+
+/* ---------- 1. Design tokens (index / dashboard: style.css root) ---------- */
+:root {
+  --bg-deep: #000000;
+  --bg-surface: #1d1d1f;
+  --bg-surface-elevated: #2a2a2c;
+  --bg-surface-subtle: #161617;
+  --bg-input: #1c1c1e;
+
+  --border-subtle: rgba(255, 255, 255, 0.13);
+  --border-strong: rgba(255, 255, 255, 0.24);
+  --border-focus: #2997ff;
+
+  --text-primary: #f5f5f7;
+  --text-secondary: #a1a1a6;
+  --text-muted: #6e6e73;
+  --text-code: #2997ff;
+
+  --accent-blue: #2997ff;
+  --accent-indigo: #5e5ce6;
+  --accent-green: #30d158;
+  --accent-green-glow: rgba(48, 209, 88, 0.12);
+  --accent-amber: #ff9f0a;
+  --accent-rose: #ff453a;
+  --accent-purple: #bf5af2;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Inter Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
+  --shadow-md: 0 2px 10px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.35);
+  --shadow-glow-green: none;
+  --shadow-glow-indigo: none;
+  --shadow-glow-red: none;
+
+  --panel-pad-desktop: 28px 32px;
+  --panel-pad-tablet: 20px 22px;
+  --panel-pad-mobile: 16px 16px;
+}
+
+[data-theme="light"] {
+  --bg-deep: #f5f5f7;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #fbfbfd;
+  --bg-surface-subtle: #f5f5f7;
+  --bg-input: #ffffff;
+
+  --border-subtle: #d2d2d7;
+  --border-strong: #b8b8bd;
+  --border-focus: #0071e3;
+
+  --text-primary: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --text-muted: #86868b;
+  --text-code: #0071e3;
+
+  --accent-blue: #0071e3;
+  --accent-indigo: #5e5ce6;
+  --accent-green: #248a3d;
+  --accent-green-glow: rgba(36, 138, 61, 0.1);
+  --accent-amber: #ff9500;
+  --accent-rose: #ff3b30;
+  --accent-purple: #af52de;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --shadow-glow-green: none;
+  --shadow-glow-indigo: none;
+  --shadow-glow-red: none;
+}
+
+/* ---------- 2. Design tokens (booking page: booking.css root) ---------- */
+:root {
+  --bg-primary: #000000;
+  --bg-secondary: #1d1d1f;
+  --bg-card: #1d1d1f;
+  --bg-card-hover: #2a2a2c;
+  --bg-elevated: #2a2a2c;
+
+  --border-color: rgba(255, 255, 255, 0.13);
+  --border-focus: #2997ff;
+
+  --color-available: #30d158;
+  --color-available-bg: rgba(48, 209, 88, 0.08);
+  --color-available-border: rgba(48, 209, 88, 0.3);
+
+  --color-held: #ff9f0a;
+  --color-held-bg: rgba(255, 159, 10, 0.1);
+  --color-held-border: rgba(255, 159, 10, 0.35);
+
+  --color-booked: #ff453a;
+  --color-booked-bg: rgba(255, 69, 58, 0.07);
+  --color-booked-border: rgba(255, 69, 58, 0.22);
+
+  --color-selected: #2997ff;
+  --color-selected-bg: #2997ff;
+  --color-selected-glow: rgba(41, 151, 255, 0.28);
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-glow: none;
+}
+
+/* ---------- 3. Base typography & surface ---------- */
+html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+body { letter-spacing: -0.011em; }
+h1, h2, h3, h4 { letter-spacing: -0.02em; font-weight: 600; }
+
+/* Apple never sets small labels in shouting caps — these six classes
+   were forcing uppercase on otherwise normal-case strings. */
+.scenario-label, .stack-badge, .tooltip-title, .dtc-entry-top-brand,
+.stat-label, .tier-name, .sim-label, .info-guarantees-card h4 {
+  text-transform: none !important;
+  letter-spacing: -0.005em;
+}
+
+/* ---------- 4. Entry preloader — kill the glow blobs ---------- */
+.dtc-entry-ambient-1, .dtc-entry-ambient-2 {
+  opacity: 0.35;
+  filter: blur(60px);
+}
+.dtc-entry-overlay { background: var(--bg-deep); }
+.dtc-entry-top-brand { color: var(--text-secondary); font-weight: 500; }
+
+/* ---------- 5. Buttons — flat, pill-shaped, no glow ---------- */
+.btn {
+  border-radius: 980px;
+  font-weight: 500;
+  box-shadow: none !important;
+  transition: opacity 150ms ease, background-color 150ms ease;
+}
+.btn-primary {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  color: #fff;
+}
+.btn-primary:hover { background: var(--accent-blue); opacity: 0.82; box-shadow: none; }
+.btn-secondary { background: var(--bg-surface-elevated); border-color: var(--border-subtle); }
+.btn-secondary:hover { background: var(--bg-surface-elevated); opacity: 0.85; }
+.btn-outline:hover { background: transparent; opacity: 0.7; }
+.btn-icon { border-radius: 50%; }
+
+.btn-scenario { box-shadow: none !important; border-radius: var(--radius-md); }
+.btn-scenario-happy:hover  { border-color: var(--accent-green);  background: var(--bg-surface-elevated); }
+.btn-scenario-comp:hover   { border-color: var(--accent-amber);  background: var(--bg-surface-elevated); }
+.btn-scenario-race:hover   { border-color: var(--accent-rose);   background: var(--bg-surface-elevated); }
+.btn-scenario-crash:hover  { border-color: var(--accent-purple); background: var(--bg-surface-elevated); }
+.btn-scenario-custom:hover { border-color: var(--accent-blue);   background: var(--bg-surface-elevated); }
+
+/* ---------- 6. Badges — flat pills, no border glow ---------- */
+.badge-success { background: rgba(48, 209, 88, 0.14);  color: var(--accent-green);  border: none; }
+.badge-blue    { background: rgba(41, 151, 255, 0.14); color: var(--accent-blue);   border: none; }
+.badge-amber   { background: rgba(255, 159, 10, 0.14); color: var(--accent-amber);  border: none; }
+.badge-rose    { background: rgba(255, 69, 58, 0.14);  color: var(--accent-rose);   border: none; }
+.badge-purple  { background: rgba(191, 90, 242, 0.14); color: var(--accent-purple); border: none; }
+.badge-neutral { background: var(--bg-surface-elevated); color: var(--text-muted);  border: none; }
+.badge, .badge-comp, .eticket-status-badge, .saga-badge, .step-status {
+  border-radius: 980px !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+/* ---------- 7. Health strip — calmer status dots ---------- */
+.health-node { border-radius: 980px; padding: 6px 14px; }
+.health-node .pulse-dot { box-shadow: none; }
+.health-node.online .pulse-dot {
+  background: var(--accent-green);
+  box-shadow: none;
+  animation: apple-breathe 2.4s ease-in-out infinite;
+}
+.health-node.offline .pulse-dot {
+  background: var(--accent-rose);
+  box-shadow: none;
+  animation: apple-breathe 1.2s ease-in-out infinite;
+}
+@keyframes apple-breathe {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+.node-latency { color: var(--text-secondary); }
+.node-countdown { color: var(--accent-purple); }
+.node-infra { border-left: 2px solid var(--border-subtle); }
+
+/* ---------- 8. Toggles — simple iOS-style switches ---------- */
+.toggle-slider { background: rgba(120, 120, 128, 0.32); box-shadow: none; }
+[data-theme="light"] .toggle-slider { background: rgba(120, 120, 128, 0.16); }
+.toggle-knob { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
+.mode-toggle-container .toggle-slider,
+.mode-toggle-container input:checked + .toggle-slider,
+.theme-toggle-container .toggle-slider,
+.theme-toggle-container input:checked + .toggle-slider {
+  background: rgba(120, 120, 128, 0.32);
+  border-color: transparent;
+  box-shadow: none;
+}
+.mode-toggle-container .toggle-knob,
+.mode-toggle-container input:checked + .toggle-slider .toggle-knob {
+  background-color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.theme-toggle-container .toggle-knob,
+.theme-toggle-container input:checked + .toggle-slider .toggle-knob {
+  background-color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.toggle-label-live.active { color: var(--accent-green); text-shadow: none; }
+.toggle-label-demo.active { color: var(--accent-blue); text-shadow: none; }
+.toggle-icon-dark.active, .toggle-icon-light.active { filter: none; }
+.sliding-toggle-group:hover .toggle-slider { filter: none; }
+
+/* ---------- 9. Hero panel — flat surface, no gradient/glow ---------- */
+.proof-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  box-shadow: none;
+  border-radius: var(--radius-xl);
+}
+[data-theme="light"] .proof-panel { background: var(--bg-surface); box-shadow: none; }
+
+.stat-card {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  box-shadow: none;
+  border-radius: var(--radius-md);
+  padding: 18px 18px;
+}
+[data-theme="light"] .stat-card { box-shadow: none; }
+.stat-num { font-size: 30px; font-weight: 600; font-family: var(--font-sans); letter-spacing: -0.02em; }
+.stat-label { font-size: 12px; font-weight: 400; letter-spacing: 0; }
+.stat-highlight { border-color: var(--accent-green); background: var(--accent-green-glow); }
+
+.scenario-bar { background: var(--bg-surface-subtle); border: 1px solid var(--border-subtle); box-shadow: none; }
+.scenario-label { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+
+/* ---------- 10. Panels / cards / tables — hairlines, no drop shadow ---------- */
+.panel, .forensic-meta-card, .timeline-item {
+  box-shadow: none !important;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+.tx-table th, .tx-table td { border-color: var(--border-subtle); }
+
+/* ---------- 11. Ambient background blobs elsewhere on the page ---------- */
+[style*="radial-gradient"] { opacity: 0.5; }
+
+/* ---------- 12. Booking page: seat tiles — flat Apple palette ---------- */
+.seat-tile { border-radius: var(--radius-sm); }
+.tier-price-tag { color: var(--accent-blue); }
+.event-badge { color: var(--accent-blue); font-weight: 500; }
+
+.seat-tile[data-status="AVAILABLE"] .seat-num { color: var(--color-available); }
+.seat-tile[data-status="AVAILABLE"]:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-available);
+  box-shadow: 0 4px 10px rgba(48, 209, 88, 0.18);
+}
+
+.seat-tile[data-status="SELECTED"] {
+  background: var(--color-selected);
+  border-color: var(--color-selected);
+  box-shadow: none;
+  animation: none;
+}
+.seat-tile[data-status="SELECTED"] .seat-num,
+.seat-tile[data-status="SELECTED"] .seat-icon { color: #ffffff; }
+
+.seat-tile[data-status="HELD"] .seat-num { color: var(--color-held); }
+.seat-tile[data-status="BOOKED"] .seat-num { color: var(--color-booked); }
+
+@keyframes select-pulse { 0%, 100% { box-shadow: none; } 50% { box-shadow: none; } }
+@keyframes pulse-glow   { 0%, 100% { box-shadow: none; } 50% { box-shadow: none; } }
+
+.app-header, .booking-summary-card, .info-guarantees-card {
+  box-shadow: none !important;
+  border: 1px solid var(--border-color);
+}
+
+/* ---------- 13. Scrollbars — quiet, native-feeling ---------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(120, 120, 128, 0.4); border-radius: 980px; border: 2px solid transparent; background-clip: padding-box; }
+
+/* ---------- 14. Motion & accessibility ---------- */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
