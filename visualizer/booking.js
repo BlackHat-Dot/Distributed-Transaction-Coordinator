@@ -924,6 +924,8 @@ let isDataReady = false;
 
 function initEntryScreen() {
   const overlay = document.getElementById("dtc-entry-screen");
+  const logoWrap = document.getElementById("dtc-entry-logo-wrap");
+  const meta = document.getElementById("dtc-entry-meta");
   const canvas = document.getElementById("dtc-entry-canvas");
   const pctLabel = document.getElementById("dtc-entry-pct");
   const skipBtn = document.getElementById("btn-skip-entry");
@@ -934,23 +936,38 @@ function initEntryScreen() {
   const offCtx = offCanvas.getContext("2d");
   let dpr = window.devicePixelRatio || 1;
 
+  let width = 0;
+  let height = 0;
+
   function resizeCanvas() {
-    const rect = canvas.getBoundingClientRect();
+    const rect = (logoWrap || canvas).getBoundingClientRect();
     dpr = window.devicePixelRatio || 1;
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    offCanvas.width = canvas.width;
-    offCanvas.height = canvas.height;
+    width = rect.width;
+    height = rect.height;
+
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    offCanvas.width = width * dpr;
+    offCanvas.height = height * dpr;
   }
   window.addEventListener("resize", resizeCanvas);
   resizeCanvas();
 
-  const TOTAL_DURATION_MS = 4200; // Smooth 4.2s mandatory watch window
-  const HOLD_DURATION_MS = 500;   // Hold fully filled letters at 100%
-  let waveTime = 0;
+  const DURATION_MS = 4000; // 4.0s smooth progression
+  const HOLD_MS = 350;     // 350ms solid fill hold
   let startTime = null;
+  let phase = 0;           // wave phase accumulator (m in NeoLeaf)
   let hasDismissed = false;
   let isHolding = false;
+
+  const isDesktop = window.innerWidth >= 1024;
+  const waveAmplitude = isDesktop ? 34 : 20;
+
+  // NeoLeaf triple-sine organic wave function:
+  // l = v * e - Math.sin(0.02 * t + m) * Math.sin(0.01 * t + m) * Math.sin(0.05 * t + m) * c
+  function calculateWaveY(x, waterY, m, amp) {
+    return waterY - Math.sin(0.02 * x + m) * Math.sin(0.01 * x + m) * Math.sin(0.05 * x + m) * amp;
+  }
 
   function easeInOutCubic(t) {
     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -959,11 +976,22 @@ function initEntryScreen() {
   function dismiss() {
     if (hasDismissed) return;
     hasDismissed = true;
-    overlay.classList.add("fade-out");
+
+    // 1. Fade out the counter
+    if (meta) meta.classList.add("fade");
+
+    // 2. NeoLeaf zoom punch: scale up logo & fade out
+    if (logoWrap) logoWrap.classList.add("zoom-out");
+
+    // 3. Graceful overlay fade out
+    setTimeout(() => {
+      overlay.classList.add("fade-out");
+    }, 150);
+
     setTimeout(() => {
       if (entryAnimId) cancelAnimationFrame(entryAnimId);
       overlay.style.display = "none";
-    }, 750);
+    }, 950);
   }
 
   if (skipBtn) {
@@ -975,97 +1003,97 @@ function initEntryScreen() {
 
   function render(now) {
     if (!startTime) startTime = now;
-    waveTime += 0.034;
+    phase += 0.034; // exact NeoLeaf phase increment ~0.03
     const elapsed = now - startTime;
 
     if (!isHolding) {
-      let timeProgress = Math.min(1, elapsed / TOTAL_DURATION_MS);
+      let timeProgress = Math.min(1, elapsed / DURATION_MS);
 
-      // If backend cold-start takes longer than 4.2s, pause gracefully at 94% until ready
+      // If backend cold-start takes longer than 4s, pause gracefully at 94% until ready
       if (timeProgress > 0.94 && !isDataReady) {
         timeProgress = 0.94;
       }
 
       const eased = easeInOutCubic(timeProgress);
       entryProgress = eased * 100;
-      pctLabel.textContent = `${Math.min(100, Math.floor(entryProgress))} %`;
+      pctLabel.textContent = `${Math.min(100, Math.floor(entryProgress))}`;
 
       if (timeProgress >= 1) {
         entryProgress = 100;
-        pctLabel.textContent = "100 %";
+        pctLabel.textContent = "100";
         isHolding = true;
-        setTimeout(dismiss, HOLD_DURATION_MS);
+        setTimeout(dismiss, HOLD_MS);
       }
     }
 
     const w = canvas.width;
     const h = canvas.height;
+    const cw = width;
+    const ch = height;
+
     ctx.clearRect(0, 0, w, h);
     offCtx.clearRect(0, 0, w, h);
-
-    const cw = w / dpr;
-    const ch = h / dpr;
 
     ctx.save();
     ctx.scale(dpr, dpr);
 
     const text = "DTC";
-    const fontSize = Math.min(cw * 0.38, 140);
-    ctx.font = `900 ${fontSize}px "Montserrat", system-ui, -apple-system, sans-serif`;
+    const fontSize = Math.min(cw * 0.32, ch * 0.72);
+    const fontStr = `900 ${fontSize}px "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+
+    ctx.font = fontStr;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
     const centerX = cw / 2;
-    const centerY = ch / 2 - 4;
+    const centerY = ch / 2;
 
-    // 1. Ghost / Silhouette Background Text
+    // 1. Ghost / Silhouette Background (NeoLeaf bg-opacity-30)
     ctx.fillStyle = "rgba(255, 255, 255, 0.16)";
     ctx.fillText(text, centerX, centerY);
 
-    // 2. Offscreen Wave Mask for Liquid Text Fill
-    const textHeight = fontSize * 0.82;
-    const fillRange = textHeight + 16;
-    const waterY = (centerY + textHeight / 2 + 8) - (entryProgress / 100) * fillRange;
+    // 2. Offscreen Mask for Liquid Wave Fill
+    const textHeight = fontSize * 0.78;
+    const fillRange = textHeight + waveAmplitude * 1.5;
+    const waterY = (centerY + textHeight / 2 + waveAmplitude * 0.75) - (entryProgress / 100) * fillRange;
 
     offCtx.save();
     offCtx.scale(dpr, dpr);
 
-    offCtx.fillStyle = "#ffffff";
-    offCtx.font = ctx.font;
+    offCtx.font = fontStr;
     offCtx.textAlign = "center";
     offCtx.textBaseline = "middle";
+    offCtx.fillStyle = "#ffffff";
     offCtx.fillText(text, centerX, centerY);
 
     offCtx.globalCompositeOperation = "source-in";
 
-    // Secondary Wave (Deeper, darker liquid layer with subtle opacity)
+    // Secondary subtle wave crest layer (depth)
     offCtx.save();
     offCtx.beginPath();
     offCtx.moveTo(0, ch);
-    const amp1 = 7.0;
-    const freq1 = 0.020;
     for (let x = 0; x <= cw; x += 3) {
-      const y = waterY + Math.sin(x * freq1 - waveTime * 1.1) * amp1 - 2;
+      const y = calculateWaveY(x + 120, waterY + 3, phase * 0.9, waveAmplitude * 1.15);
       offCtx.lineTo(x, y);
     }
     offCtx.lineTo(cw, ch);
+    offCtx.lineTo(0, ch);
     offCtx.closePath();
     offCtx.fillStyle = "#ffffff";
-    offCtx.globalAlpha = 0.42;
+    offCtx.globalAlpha = 0.35;
     offCtx.fill();
     offCtx.restore();
 
-    // Primary Wave (Surface liquid crests)
+    // Primary wave crest layer (solid white)
     offCtx.save();
     offCtx.beginPath();
     offCtx.moveTo(0, ch);
-    const amp2 = 5.5;
-    const freq2 = 0.026;
     for (let x = 0; x <= cw; x += 3) {
-      const y = waterY + Math.cos(x * freq2 + waveTime * 1.4) * amp2;
+      const y = calculateWaveY(x, waterY, phase, waveAmplitude);
       offCtx.lineTo(x, y);
     }
     offCtx.lineTo(cw, ch);
+    offCtx.lineTo(0, ch);
     offCtx.closePath();
     offCtx.fillStyle = "#ffffff";
     offCtx.globalAlpha = 1.0;
@@ -1074,7 +1102,7 @@ function initEntryScreen() {
 
     offCtx.restore();
 
-    // Draw liquid back to main canvas
+    // Draw masked liquid wave back to main canvas
     ctx.drawImage(offCanvas, 0, 0, cw, ch);
     ctx.restore();
 
@@ -1085,7 +1113,6 @@ function initEntryScreen() {
 
   entryAnimId = requestAnimationFrame(render);
 
-  // Safety fallback: Ensure data is marked ready after 8s max
   setTimeout(() => {
     finishEntryScreen();
   }, 8000);
