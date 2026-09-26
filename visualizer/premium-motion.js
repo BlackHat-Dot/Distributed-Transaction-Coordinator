@@ -1,9 +1,7 @@
 /* ==========================================================================
-   DTC MISSION CONTROL — PREMIUM MOTION LAYER
-   Loaded AFTER app.js / booking.js. This file only ever ADDS classes/DOM to
-   elements that already exist — it never reassigns window.* functions, never
-   removes listeners, and never mutates STATE. If anything in here throws,
-   the dashboard underneath keeps working exactly as it did before.
+   DTC OBSERVABILITY CONSOLE — MOTION & INTERACTION LAYER
+   Loaded AFTER app.js / booking.js. Non-invasive: never mutates state,
+   never alters button dimensions or injects intrusive DOM elements.
    ========================================================================== */
 (function () {
   "use strict";
@@ -18,118 +16,8 @@
     }
   }
 
-  function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
-
   /* ------------------------------------------------------------------
-     1. Count-up tween for every .stat-num, whenever its real value
-        changes (guarded against self-triggered mutations and against
-        polling refreshes that re-set the same value).
-     ------------------------------------------------------------------ */
-  function watchStatNumbers() {
-    var nodes = document.querySelectorAll(".stat-num");
-    nodes.forEach(function (node) {
-      var lastKnown = node.textContent;
-      var internal = false;
-
-      var mo = new MutationObserver(function () {
-        if (internal) return;
-        var now = node.textContent;
-        if (now === lastKnown) return;
-        var from = lastKnown;
-        lastKnown = now;
-        if (reduceMotion) return;
-        animate(from, now);
-      });
-      mo.observe(node, { characterData: true, childList: true, subtree: true });
-
-      function animate(fromText, toText) {
-        var toMatch = String(toText).match(/^(-?[\d,]*\.?\d+)(.*)$/);
-        var fromMatch = String(fromText).match(/^(-?[\d,]*\.?\d+)(.*)$/);
-        if (!toMatch) return;
-
-        var toNum = parseFloat(toMatch[1].replace(/,/g, ""));
-        var fromNum = fromMatch ? parseFloat(fromMatch[1].replace(/,/g, "")) : toNum;
-        var suffix = toMatch[2] || "";
-        var decimals = (toMatch[1].split(".")[1] || "").length;
-        if (isNaN(toNum) || isNaN(fromNum)) return;
-
-        var duration = 550;
-        var start = performance.now();
-
-        function frame(t) {
-          var p = Math.min(1, (t - start) / duration);
-          var val = fromNum + (toNum - fromNum) * easeOutCubic(p);
-          var text = val.toFixed(decimals).replace(/\B(?=(\d{3})+(?!\d))/g, ",") + suffix;
-
-          internal = true;
-          node.textContent = text;
-          internal = false;
-          lastKnown = node.textContent;
-
-          if (p < 1) {
-            requestAnimationFrame(frame);
-          } else {
-            internal = true;
-            node.textContent = toText;
-            internal = false;
-            lastKnown = toText;
-            node.classList.add("stat-pop");
-            setTimeout(function () { node.classList.remove("stat-pop"); }, 550);
-          }
-        }
-        requestAnimationFrame(frame);
-      }
-    });
-  }
-
-  /* ------------------------------------------------------------------
-     2. One orchestrated boot sequence: health nodes and hero stats
-        settle into place, staggered, right as the entry overlay clears.
-     ------------------------------------------------------------------ */
-  function initBootSequence() {
-    if (reduceMotion) return;
-
-    function runBoot() {
-      var groups = [
-        document.querySelectorAll(".health-node"),
-        document.querySelectorAll(".stat-card, .stat-pill")
-      ];
-      var i = 0;
-      groups.forEach(function (group, groupIdx) {
-        group.forEach(function (el) {
-          el.style.setProperty("--pm-delay", (groupIdx * 140 + i * 70) + "ms");
-          el.classList.add("pm-boot-in");
-          i++;
-        });
-      });
-    }
-
-    var overlay = document.getElementById("dtc-entry-screen");
-    if (!overlay) { runBoot(); return; }
-
-    var done = false;
-    var mo = new MutationObserver(function () {
-      if (done) return;
-      if (overlay.classList.contains("fade-out")) {
-        done = true;
-        mo.disconnect();
-        runBoot();
-      }
-    });
-    mo.observe(overlay, { attributes: true, attributeFilter: ["class"] });
-
-    // Safety net: if the overlay never reports fade-out (e.g. skipped
-    // entirely, or this page has no entry screen wiring), boot anyway.
-    setTimeout(function () {
-      if (!done) { done = true; mo.disconnect(); runBoot(); }
-    }, 6000);
-  }
-
-  /* ------------------------------------------------------------------
-     3. Seat tiles: flash a ring exactly when a seat's real status
-        flips (your hold landing, or another buyer taking a seat live).
-        Hooks tile.dataset.status, which booking.js only ever writes
-        when the value actually changes — so this never fires on noise.
+     1. Seat tiles: flash a clean highlight ring when seat status flips.
      ------------------------------------------------------------------ */
   function watchSeatFlips() {
     var matrix = document.getElementById("seat-matrix");
@@ -141,7 +29,6 @@
         var tile = m.target;
         if (!tile.classList || !tile.classList.contains("seat-tile")) return;
         tile.classList.remove("pm-flip");
-        // Force reflow so the animation can restart on rapid re-flips.
         void tile.offsetWidth;
         tile.classList.add("pm-flip");
       });
@@ -150,9 +37,7 @@
   }
 
   /* ------------------------------------------------------------------
-     4. Hold countdown urgency: last 60 seconds of an ephemeral hold
-        get a quiet red glow on the timer card — a real deadline, not
-        a decorative one.
+     2. Hold countdown urgency: last 60 seconds get an alert state.
      ------------------------------------------------------------------ */
   function watchHoldUrgency() {
     var clock = document.getElementById("hold-clock");
@@ -169,50 +54,30 @@
   }
 
   /* ------------------------------------------------------------------
-     5. Button ripple — feedback that answers the click itself.
-     ------------------------------------------------------------------ */
-  function initButtonRipples() {
-    if (reduceMotion) return;
-
-    document.addEventListener("pointerdown", function (e) {
-      var btn = e.target.closest(".btn, .health-node");
-      if (!btn) return;
-      var rect = btn.getBoundingClientRect();
-      var size = Math.max(rect.width, rect.height) * 1.6;
-      var span = document.createElement("span");
-      span.className = "pm-ripple";
-      span.style.width = span.style.height = size + "px";
-      span.style.left = (e.clientX - rect.left - size / 2) + "px";
-      span.style.top = (e.clientY - rect.top - size / 2) + "px";
-      btn.appendChild(span);
-      span.addEventListener("animationend", function () { span.remove(); });
-      setTimeout(function () { if (span.parentNode) span.remove(); }, 700);
-    });
-  }
-
-  /* ------------------------------------------------------------------
-     6. A single restrained cursor sheen on each page's hero surface.
+     3. Subtle cursor sheen on hero surfaces (rAF throttled)
      ------------------------------------------------------------------ */
   function initHeroSheen() {
     if (reduceMotion) return;
     var hero = document.querySelector(".proof-panel, .checkout-card");
     if (!hero) return;
 
+    var rafId = null;
     hero.addEventListener("pointermove", function (e) {
-      var rect = hero.getBoundingClientRect();
-      var x = ((e.clientX - rect.left) / rect.width) * 100;
-      var y = ((e.clientY - rect.top) / rect.height) * 100;
-      hero.style.setProperty("--pm-x", x + "%");
-      hero.style.setProperty("--pm-y", y + "%");
+      if (rafId) return;
+      rafId = requestAnimationFrame(function () {
+        var rect = hero.getBoundingClientRect();
+        var x = ((e.clientX - rect.left) / rect.width) * 100;
+        var y = ((e.clientY - rect.top) / rect.height) * 100;
+        hero.style.setProperty("--pm-x", x.toFixed(2) + "%");
+        hero.style.setProperty("--pm-y", y.toFixed(2) + "%");
+        rafId = null;
+      });
     });
   }
 
   onReady(function () {
-    try { watchStatNumbers(); } catch (e) {}
-    try { initBootSequence(); } catch (e) {}
     try { watchSeatFlips(); } catch (e) {}
     try { watchHoldUrgency(); } catch (e) {}
-    try { initButtonRipples(); } catch (e) {}
     try { initHeroSheen(); } catch (e) {}
   });
 })();

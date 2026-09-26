@@ -1,11 +1,7 @@
 /* ==========================================================================
-   DTC MISSION CONTROL — PREMIUM VISUAL LAYER
-   Loaded AFTER apple-theme.css. Purely additive: no selector here removes
-   functionality, no #id used by app.js/booking.js is repurposed, and every
-   motion effect either (a) plays once as an orchestrated "system boot"
-   moment, or (b) fires in direct response to a real state change (a lock
-   acquired, a seat flipping in real time, a saga completing) rather than on
-   a timer or on every hover. prefers-reduced-motion is respected throughout.
+   DTC OBSERVABILITY CONSOLE — PREMIUM VISUAL LAYER
+   Loaded AFTER apple-theme.css. Purely additive styling that preserves
+   element dimensions and button integrity.
    ========================================================================== */
 
 /* ---------- 0. Tokens ---------- */
@@ -17,8 +13,7 @@
   --pm-signal-2: #818cf8;
 }
 
-/* A faint circuit-grid ground, in place of a flat void — nods to the
-   product's own node-and-trace logomark instead of a generic dark SaaS bg. */
+/* Subtle circuit-grid background */
 body {
   background-image:
     radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.035) 1px, transparent 0);
@@ -35,7 +30,7 @@ body {
   color: #fff;
 }
 
-/* Visible, on-brand keyboard focus (a11y quality floor) */
+/* Visible, on-brand keyboard focus without altering natural border-radius */
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
@@ -45,7 +40,6 @@ select:focus-visible,
 .health-node:focus-visible {
   outline: 2px solid var(--pm-signal);
   outline-offset: 2px;
-  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -53,7 +47,7 @@ select:focus-visible,
 }
 
 /* ==========================================================================
-   1. ENTRY PRELOADER — sharpen the existing liquid-fill moment, don't replace it
+   1. ENTRY PRELOADER
    ========================================================================== */
 .dtc-entry-ambient-1, .dtc-entry-ambient-2 {
   animation: pm-ambient-drift 9s ease-in-out infinite alternate;
@@ -74,23 +68,7 @@ select:focus-visible,
 .dtc-entry-pct-num { font-variant-numeric: tabular-nums; }
 
 /* ==========================================================================
-   2. ORCHESTRATED BOOT SEQUENCE (one moment, sequenced by premium-motion.js)
-   The console "comes online" once, node by node, instead of every panel on
-   the page fading up independently.
-   ========================================================================== */
-@media (prefers-reduced-motion: no-preference) {
-  .pm-boot-in {
-    animation: pm-rise 0.6s var(--pm-ease-out) both;
-    animation-delay: var(--pm-delay, 0ms);
-  }
-  @keyframes pm-rise {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-}
-
-/* ==========================================================================
-   3. HEADER / HEALTH STRIP — a signal ping, not a constant glow
+   2. HEADER / HEALTH STRIP
    ========================================================================== */
 .health-node {
   position: relative;
@@ -122,16 +100,15 @@ select:focus-visible,
 }
 .nav-brand:hover .logo-mark,
 .header-brand:hover .brand-logo-img {
-  transform: rotate(-4deg) scale(1.04);
+  transform: scale(1.02);
 }
 
 /* ==========================================================================
-   4. BUTTONS — tactile press feedback + a response-to-click ripple
+   3. BUTTONS — Clean tactile feedback (NO DOM injection, NO size blowups)
    ========================================================================== */
 .btn {
   position: relative;
-  overflow: hidden;
-  isolation: isolate;
+  transition: transform 0.12s var(--pm-ease), box-shadow 0.2s ease, filter 0.2s ease;
 }
 .btn:active {
   transform: scale(0.97);
@@ -144,26 +121,9 @@ select:focus-visible,
   box-shadow: 0 4px 18px rgba(94, 92, 230, 0.35);
   filter: brightness(1.05);
 }
-.pm-ripple {
-  position: absolute;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.35);
-  transform: scale(0);
-  pointer-events: none;
-  z-index: 0;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .pm-ripple {
-    animation: pm-ripple-out 0.55s var(--pm-ease-out);
-  }
-  @keyframes pm-ripple-out {
-    to { transform: scale(1); opacity: 0; }
-  }
-}
-.btn > * { position: relative; z-index: 1; }
 
 /* ==========================================================================
-   5. PROOF PANEL (hero) — glass depth + one restrained cursor sheen
+   4. PROOF PANEL (hero)
    ========================================================================== */
 .proof-panel {
   position: relative;
@@ -186,7 +146,7 @@ select:focus-visible,
 }
 
 .stat-card {
-  transition: transform 0.35s var(--pm-ease), border-color 0.35s ease, box-shadow 0.35s ease;
+  transition: transform 0.25s var(--pm-ease), border-color 0.25s ease, box-shadow 0.25s ease;
 }
 .stat-card:hover {
   transform: translateY(-2px);
@@ -196,21 +156,9 @@ select:focus-visible,
   font-variant-numeric: tabular-nums;
   display: inline-block;
 }
-/* Triggered by premium-motion.js right as a stat finishes tweening to its
-   new value — the one moment a number is allowed to draw the eye. */
-@media (prefers-reduced-motion: no-preference) {
-  .stat-pop {
-    animation: pm-stat-pop 0.5s var(--pm-ease-out);
-  }
-  @keyframes pm-stat-pop {
-    0%   { text-shadow: 0 0 0 rgba(56, 189, 248, 0); }
-    35%  { text-shadow: 0 0 14px rgba(56, 189, 248, 0.8); transform: scale(1.06); }
-    100% { text-shadow: 0 0 0 rgba(56, 189, 248, 0); transform: scale(1); }
-  }
-}
 
 /* ==========================================================================
-   6. SCENARIO BUTTONS — a legible accent bar per outcome type
+   5. SCENARIO BUTTONS — a legible accent bar per outcome type
    ========================================================================== */
 .btn-scenario {
   border-left: 3px solid transparent;
@@ -232,7 +180,7 @@ select:focus-visible,
 .btn-scenario-custom:hover .btn-icon { color: var(--accent-blue);  text-shadow: 0 0 8px var(--accent-blue); }
 
 /* ==========================================================================
-   7. TOASTS — the outcome earns the motion
+   6. TOASTS
    ========================================================================== */
 .toast-icon {
   display: flex;
@@ -249,8 +197,6 @@ select:focus-visible,
 .toast-purple .toast-icon  { background: rgba(191, 90, 242, 0.16); }
 
 @media (prefers-reduced-motion: no-preference) {
-  /* "Race condition defended" — the demo's single most important proof
-     point — gets its own shield-pulse instead of a generic slide-in. */
   .toast-race {
     animation: toast-slide-in 0.3s var(--pm-ease), pm-shield-pulse 1s var(--pm-ease-out) 0.25s;
   }
@@ -268,7 +214,7 @@ select:focus-visible,
 }
 
 /* ==========================================================================
-   8. MODALS — a deliberate entrance (was instant show/hide)
+   7. MODALS
    ========================================================================== */
 @media (prefers-reduced-motion: no-preference) {
   .modal-backdrop:not(.hidden) {
@@ -286,7 +232,7 @@ select:focus-visible,
 }
 
 /* ==========================================================================
-   9. BOOKING PAGE — cinema hero, screen glow, seat matrix
+   8. BOOKING PAGE — cinema hero, screen glow, seat matrix
    ========================================================================== */
 .event-hero {
   position: relative;
@@ -318,9 +264,6 @@ select:focus-visible,
 .seat-tile[data-status="AVAILABLE"]:hover {
   box-shadow: 0 6px 18px rgba(48, 209, 88, 0.25), 0 0 0 1px var(--color-available-border) inset;
 }
-/* Fired by premium-motion.js the instant a seat's real status flips —
-   whether that's your own hold landing or another buyer taking a seat
-   in real time. Color-agnostic so it reads correctly for every state. */
 @media (prefers-reduced-motion: no-preference) {
   .pm-flip {
     animation: pm-seat-flip 0.6s var(--pm-ease-out);
@@ -339,8 +282,8 @@ select:focus-visible,
 }
 
 /* ==========================================================================
-   10. MOTION SAFETY NET
+   9. MOTION SAFETY NET
    ========================================================================== */
 @media (prefers-reduced-motion: reduce) {
-  .pm-boot-in, .pm-ripple, .pm-flip { animation: none !important; }
+  .pm-flip { animation: none !important; }
 }
