@@ -976,41 +976,12 @@ def _run_saga_pipeline(
 
     user_id=None,
     user_email=None,
-    pre_reserved=False,
+    pre_reserved=False,  # Accepted for signature compatibility — intentionally NOT trusted.
+                         # Backend always verifies the hold directly with Inventory,
+                         # which is idempotent: a second call with the same transaction_id
+                         # hits the guard on Seat.held_by_transaction_id and returns 200
+                         # without creating any duplicate Reservation row.
 ):
-    if pre_reserved:
-        # Frontend already acquired the seat hold in Inventory via its manual reserve call.
-        # Coordinator reuses the hold directly — NO redundant network hop or duplicate DB row!
-        _set_status_with_event(
-            transaction_id,
-            Transaction.Status.INVENTORY_RESERVED,
-            expected_status=Transaction.Status.STARTED,
-            actor=actor,
-            http_status_code=200,
-            http_payload={
-                "message": f"{len(seat_ids) if seat_ids else 1} Seats pre-reserved by client hold",
-                "seat_ids": seat_ids,
-                "transaction_id": str(transaction_id),
-            },
-        )
-        _set_status_with_event(
-            transaction_id,
-            Transaction.Status.PAYMENT_PROCESSING,
-            expected_status=Transaction.Status.INVENTORY_RESERVED,
-            actor=actor,
-            http_status_code=None,
-            http_payload=None,
-        )
-        return _charge_payment(
-            transaction_id,
-            amount,
-            fail_compensation,
-            correlation_id=correlation_id,
-            seat_ids=seat_ids,
-            user_id=user_id,
-            user_email=user_email,
-        )
-
     response, reserve_error = _reserve_inventory(
         transaction_id,
         seat_ids,

@@ -2068,11 +2068,13 @@ async function initiateSagaCheckout() {
   const payload = {
     seat_ids: seatIds,
   };
+  // Pass the existing hold transaction_id so the Coordinator adopts it.
+  // The Coordinator will still call _reserve_inventory() with this ID — the Inventory service's
+  // idempotency guard (seat.held_by_transaction_id == transaction_id check) ensures no duplicate
+  // Reservation row is created. pre_reserved is NOT sent: backends must never trust client claims
+  // about server-side state.
   if (txId) {
     payload.transaction_id = txId;
-  }
-  if (isPreReserved) {
-    payload.pre_reserved = true;
   }
 
   // POST to Coordinator — asynchronous non-blocking saga execution (returns HTTP 202 Accepted)
