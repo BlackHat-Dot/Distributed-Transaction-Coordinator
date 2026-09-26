@@ -2078,7 +2078,7 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
     DOM.step2Status.textContent = "CHARGED";
 
     DOM.step3.className = "step-item done";
-    DOM.step3Title.textContent = "3. Ticket Confirmed";
+    DOM.step3Title.textContent = "Ticket Confirmed";
     DOM.step3Desc.textContent = "PostgreSQL row transitioned HELD → BOOKED";
     DOM.step3Status.textContent = "BOOKED";
 
