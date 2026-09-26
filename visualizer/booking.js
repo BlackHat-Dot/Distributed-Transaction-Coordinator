@@ -1023,12 +1023,10 @@ function initEventListeners() {
 
 async function loadCatalog(isInitial = false) {
   try {
-    const [eventsRes, seatsRes] = await Promise.all([
-      fetchJson(`${CONFIG.inventoryUrl}/events/`),
-      fetchJson(`${CONFIG.inventoryUrl}/seats/`),
-    ]);
+    // Single consolidated fetch: /events/ already includes event metadata AND all nested seats!
+    const eventsRes = await fetchJson(`${CONFIG.inventoryUrl}/events/`);
 
-    if (!seatsRes.ok || !Array.isArray(seatsRes.data)) {
+    if (!eventsRes.ok || !Array.isArray(eventsRes.data) || eventsRes.data.length === 0) {
       if (DOM.healthText) DOM.healthText.textContent = "Inventory: Offline";
       if (DOM.healthIndicator) {
         const ind = DOM.healthIndicator.querySelector(".status-indicator");
@@ -1047,30 +1045,31 @@ async function loadCatalog(isInitial = false) {
     }
 
     // Update Event Metadata
-    if (eventsRes && eventsRes.ok && Array.isArray(eventsRes.data) && eventsRes.data.length > 0) {
-      const ev = eventsRes.data[0];
-      STATE.eventData = ev;
-      if (DOM.eventTitle) DOM.eventTitle.textContent = ev.name;
-      if (DOM.eventMeta) {
-        DOM.eventMeta.innerHTML = `
-          <span>📍 ${ev.venue || "Grand Arena Stadium"}</span>
-          <span class="meta-sep">•</span>
-          <span>📅 Tomorrow, 8:00 PM</span>
-          <span class="meta-sep">•</span>
-          <span>⏱️ 10-Min Ephemeral Holds</span>
-          <span class="meta-sep"></span>
-          <span style="color: #38bdf8; font-weight: 600;"></span>
-        `;
-      }
+    const ev = eventsRes.data[0];
+    STATE.eventData = ev;
+    if (DOM.eventTitle) DOM.eventTitle.textContent = ev.name;
+    if (DOM.eventMeta) {
+      DOM.eventMeta.innerHTML = `
+        <span>📍 ${ev.venue || "Grand Arena Stadium"}</span>
+        <span class="meta-sep">•</span>
+        <span>📅 Tomorrow, 8:00 PM</span>
+        <span class="meta-sep">•</span>
+        <span>⏱️ 10-Min Ephemeral Holds</span>
+        <span class="meta-sep"></span>
+        <span style="color: #38bdf8; font-weight: 600;"></span>
+      `;
     }
 
+    // Extract nested seats directly from the event payload (zero extra HTTP calls)
+    let seatsList = Array.isArray(ev.seats) ? ev.seats : [];
+
     // If no seats exist in database yet, automatically trigger seed restock
-    if (seatsRes.data.length === 0) {
+    if (seatsList.length === 0) {
       const seedRes = await fetchJson(`${CONFIG.inventoryUrl}/seats/reset/`, { method: "POST" });
       if (seedRes.ok) {
-        const refreshedSeats = await fetchJson(`${CONFIG.inventoryUrl}/seats/`);
-        if (refreshedSeats.ok && Array.isArray(refreshedSeats.data)) {
-          seatsRes.data = refreshedSeats.data;
+        const refreshedEvents = await fetchJson(`${CONFIG.inventoryUrl}/events/`);
+        if (refreshedEvents.ok && Array.isArray(refreshedEvents.data) && refreshedEvents.data[0]) {
+          seatsList = refreshedEvents.data[0].seats || [];
         }
       }
     }
@@ -1081,7 +1080,7 @@ async function loadCatalog(isInitial = false) {
     const ownerSeatIds = [];
     const ownerSeatLabels = [];
 
-    seatsRes.data.forEach(seat => {
+    seatsList.forEach(seat => {
       STATE.seatsMap.set(seat.id, seat);
       
       if (STATE.user && (STATE.user.email || STATE.user.userId)) {
@@ -1137,7 +1136,7 @@ async function loadCatalog(isInitial = false) {
       renderFullSeatMatrix();
       if (DOM.seatSkeleton) DOM.seatSkeleton.classList.add("hidden");
     } else {
-      reconcileSeatStates(seatsRes.data);
+      reconcileSeatStates(seatsList);
     }
 
     updateInventoryStats();
