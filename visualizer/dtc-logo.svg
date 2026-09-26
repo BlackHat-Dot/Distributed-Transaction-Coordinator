@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <defs>
+    <filter id="dtc-shadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <!-- GREEN SCALE / T-PILLAR -->
+  <g id="scale-t" filter="url(#dtc-shadow)">
+    <!-- Top Triangular Cap -->
+    <path d="M 250,30 L 294,106 L 206,106 Z" fill="#34c759" stroke="#34c759" stroke-width="4" stroke-linejoin="round"/>
+    
+    <!-- Top Horizontal Beam -->
+    <rect x="35" y="106" width="430" height="34" rx="4" fill="#34c759"/>
+    
+    <!-- Center Vertical Stem -->
+    <rect x="233" y="140" width="34" height="280" fill="#34c759"/>
+    
+    <!-- Bottom Base Foot -->
+    <rect x="194" y="420" width="112" height="36" rx="4" fill="#34c759"/>
+  </g>
+
+  <!-- SUSPENSION STRINGS (GREEN) -->
+  <g id="scale-strings" stroke="#34c759" stroke-width="3" stroke-linecap="round" opacity="0.95">
+    <!-- Left Scale Strings (to D) -->
+    <line x1="88" y1="140" x2="30" y2="232"/>
+    <line x1="88" y1="140" x2="88" y2="232"/>
+    <line x1="88" y1="140" x2="146" y2="232"/>
+
+    <!-- Right Scale Strings (to C) -->
+    <line x1="412" y1="140" x2="354" y2="232"/>
+    <line x1="412" y1="140" x2="412" y2="232"/>
+    <line x1="412" y1="140" x2="470" y2="232"/>
+  </g>
+
+  <!-- LETTER D (COBALT BLUE) -->
+  <g id="scale-d" filter="url(#dtc-shadow)">
+    <path d="M 24,232 L 96,232 C 136,232 156,258 156,307 C 156,356 136,382 96,382 L 24,382 Z M 62,268 L 62,346 L 92,346 C 114,346 120,332 120,307 C 120,282 114,268 92,268 Z" fill="#1180e9"/>
+  </g>
+
+  <!-- LETTER C (CLEAN WHITE) -->
+  <g id="scale-c" filter="url(#dtc-shadow)">
+    <path d="M 476,270 L 442,286 C 436,272 425,265 410,265 C 382,265 364,285 364,307 C 364,329 382,349 410,349 C 425,349 436,342 442,328 L 476,344 C 464,370 440,386 410,386 C 360,386 326,351 326,307 C 326,263 360,228 410,228 C 440,228 464,244 476,270 Z" fill="#ffffff"/>
+  </g>
+</svg>
