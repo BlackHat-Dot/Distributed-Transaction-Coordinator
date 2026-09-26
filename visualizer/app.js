@@ -1388,7 +1388,7 @@ if (DOM.btnResetSeats) {
         showToast({
           icon: "⦿",
           title: "Reset Failed",
-          message: "Could not reset venue seats. Verify Inventory service is running.",
+          message: "Could not reset venue seats. Needs elevated privilege.",
           type: "danger",
         });
       }
