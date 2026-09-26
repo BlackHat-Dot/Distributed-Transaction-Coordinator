@@ -1388,7 +1388,7 @@ if (DOM.btnResetSeats) {
         showToast({
           icon: "⦿",
           title: "Reset Failed",
-          message: "Could not reset venue seats. Needs elevated privilege.",
+          message: "Could not reset venue seats. Elevated privileges are required.",
           type: "danger",
         });
       }

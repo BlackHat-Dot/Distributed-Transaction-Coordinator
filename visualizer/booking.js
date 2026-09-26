@@ -2486,7 +2486,7 @@ async function resetVenueSeats() {
 
       loadCatalog(false);
     } else {
-      showToast({ title: "Reset Failed", message: "Could not reset venue seats", type: "danger" });
+      showToast({ title: "Reset Failed", message: "Could not reset venue seats. Elevated privileges are required.", type: "danger" });
     }
   } catch (err) {
     showToast({ title: "Error", message: err.message, type: "danger" });
