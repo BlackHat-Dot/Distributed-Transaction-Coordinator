@@ -164,15 +164,19 @@ button, input, select, textarea {
 }
 
 .brand-title {
-  font-weight: 800;
+  font-weight: 700;
   font-size: 14px;
-  letter-spacing: 0.8px;
+  letter-spacing: -0.1px;
   color: var(--text-primary);
+  line-height: 1.25;
 }
 
 .brand-sub {
   font-size: 11px;
-  color: var(--text-muted);
+  font-weight: 500;
+  color: var(--text-secondary, #94a3b8);
+  letter-spacing: 0.1px;
+  line-height: 1.25;
 }
 
 .health-strip {
