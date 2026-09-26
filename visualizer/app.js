@@ -1473,6 +1473,7 @@ DOM.btnDemoRace.addEventListener("click", async () => {
       method: "POST",
       body: JSON.stringify({
         seat_ids: [targetSeatId],
+        transaction_id: sharedTxId,
       }),
     })
   );

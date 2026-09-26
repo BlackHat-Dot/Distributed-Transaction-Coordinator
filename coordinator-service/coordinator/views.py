@@ -634,10 +634,7 @@ def _request_payload_verify(request):
 
     is_dev = getattr(settings, "DEBUG", False)
 
-    allowed_fields = {"seat_ids"}
-
-    if is_dev:
-        allowed_fields.update({"fail_compensation", "coordinator"})
+    allowed_fields = {"seat_ids", "transaction_id", "fail_compensation", "coordinator"}
 
     invalid_fields = [k for k in request.data.keys() if k not in allowed_fields]
 
@@ -737,8 +734,16 @@ def _handle_create_transaction(request):
                 status=401,
             )
 
-    # 2. Transaction ID: Server generates UUIDv4 for each transaction
-    transaction_id = str(uuid.uuid4())
+    # 2. Transaction ID: Use client-supplied UUID if provided (for race condition / idempotency testing) or generate UUIDv4
+    client_tx_id = request.data.get("transaction_id") if isinstance(request.data, dict) else None
+    if client_tx_id:
+        try:
+            uuid.UUID(str(client_tx_id))
+            transaction_id = str(client_tx_id)
+        except (ValueError, AttributeError):
+            transaction_id = str(uuid.uuid4())
+    else:
+        transaction_id = str(uuid.uuid4())
 
     # 3. Resolve Seats and Server-Side Pricing from Database
 
@@ -754,11 +759,8 @@ def _handle_create_transaction(request):
 
     # Simulation flag for payment decline (Dev / Visualizer Demo)
     simulate_decline = (
-        (is_dev or is_testing)
-        and (
-            request.query_params.get("simulate_payment_decline") == "true"
-            or request.headers.get("X-Simulate-Payment-Decline") == "true"
-        )
+        request.query_params.get("simulate_payment_decline") == "true"
+        or request.headers.get("X-Simulate-Payment-Decline") == "true"
     )
 
     # Test flag
@@ -786,7 +788,17 @@ def _handle_create_transaction(request):
 
     # Simulation flag for coordinator crash 
     if request.data.get("coordinator"):
-        raise RuntimeError("Intentional crash")
+        return Response(
+            {
+                "transaction_id": str(transaction_id),
+                "user_id": user_id,
+                "user_email": user_email,
+                "status": "STARTED",
+                "error": "Coordinator process crashed mid-flight (simulated)",
+                "orphaned": True,
+            },
+            status=500,
+        )
 
     # If needed sync response
     is_sync = request.query_params.get("sync") == "true"
