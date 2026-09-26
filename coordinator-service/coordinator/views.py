@@ -192,7 +192,30 @@ def transaction_stream(request, transaction_id):
                 decode_responses=True,
                 socket_connect_timeout=2.0,
             )
+
+            # Normaly redis is a storage where we either set or get key
+            # but we insist redis to not treat this like a storage right now,
+            # and create a walkie-talkie (Pub/Sub)for us where i can listen for announcements.
+            # pubsub is simply the variable holding that open walkie-talkie
             pubsub = redis_client.pubsub()
+
+            # Now that we have the walkie-talkie what channel should we listen to?
+            # below line means, tune my walkie-talkie to channel # channel_name
+
+            """
+            Why we need this?
+
+            Imagine 500 different people are buying tickets on my website at the same time:
+
+            User A is buying Seat A1.
+            User B is buying Seat B5.
+            You are buying Seat C10.
+            If your walkie-talkie listened to everything, you would hear updates about User A's credit card and User B's credit card!
+
+            So the computer gives your transaction a unique channel name (like dtc:tx_stream:order-999).
+
+            pubsub.subscribe(channel_name) makes sure your walkie-talkie only listens to updates about YOUR order, completely ignoring everyone else.
+            """
             pubsub.subscribe(channel_name)
 
             # Step 2: Query PostgreSQL for current state
@@ -243,6 +266,11 @@ def transaction_stream(request, transaction_id):
                     if now - last_db_check >= 3.0:
                         last_db_check = now
                         db_txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+
+                        # If redis had a network hiccup or restarted right as celery finished
+                        # then for every three seconds of silence, this code directly checks PostgresSQL
+                        # If the txn status is in terminal_statuses then i send the finish message to browser
+                        # and closes the stream(break).
                         if db_txn and db_txn.status in terminal_statuses:
                             term_msg = json.dumps({
                                 "transaction_id": str(db_txn.transaction_id),

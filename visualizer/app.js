@@ -2976,7 +2976,155 @@ async function handleMainVerifyOtp() {
   }
 }
 
+/* ==========================================================================
+   DTC LIQUID ENTRY SCREEN ANIMATION
+   ========================================================================== */
+let entryAnimId = null;
+let entryProgress = 0;
+let isEntryComplete = false;
+
+function initEntryScreen() {
+  const overlay = document.getElementById("dtc-entry-screen");
+  const canvas = document.getElementById("dtc-entry-canvas");
+  const pctLabel = document.getElementById("dtc-entry-pct");
+  if (!overlay || !canvas || !pctLabel) return;
+
+  const ctx = canvas.getContext("2d");
+  let dpr = window.devicePixelRatio || 1;
+
+  function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+  }
+  window.addEventListener("resize", resizeCanvas);
+  resizeCanvas();
+
+  let waveTime = 0;
+  const startTime = performance.now();
+  let hasDismissed = false;
+
+  function dismiss() {
+    if (hasDismissed) return;
+    hasDismissed = true;
+    overlay.classList.add("fade-out");
+    setTimeout(() => {
+      if (entryAnimId) cancelAnimationFrame(entryAnimId);
+      overlay.style.display = "none";
+    }, 680);
+  }
+
+  function render(now) {
+    waveTime += 0.045;
+    const elapsed = now - startTime;
+
+    if (!isEntryComplete) {
+      const naturalTarget = Math.min(88, (elapsed / 1600) * 88);
+      entryProgress += (naturalTarget - entryProgress) * 0.08;
+    } else {
+      entryProgress += (100 - entryProgress) * 0.15;
+      if (entryProgress >= 99.2) {
+        entryProgress = 100;
+        pctLabel.textContent = "100 %";
+        setTimeout(dismiss, 180);
+        return;
+      }
+    }
+
+    pctLabel.textContent = `${Math.floor(entryProgress)} %`;
+
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const cw = w / dpr;
+    const ch = h / dpr;
+
+    ctx.save();
+    ctx.scale(dpr, dpr);
+
+    const text = "DTC";
+    const fontSize = Math.min(cw * 0.38, 140);
+    ctx.font = `900 ${fontSize}px "Montserrat", system-ui, -apple-system, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    const centerX = cw / 2;
+    const centerY = ch / 2 - 4;
+
+    ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
+    ctx.fillText(text, centerX, centerY);
+
+    const textHeight = fontSize * 0.82;
+    const textBottom = centerY + textHeight / 2;
+    const waterY = textBottom - (entryProgress / 100) * textHeight;
+
+    const offCanvas = document.createElement("canvas");
+    offCanvas.width = w;
+    offCanvas.height = h;
+    const offCtx = offCanvas.getContext("2d");
+    offCtx.scale(dpr, dpr);
+
+    offCtx.fillStyle = "#ffffff";
+    offCtx.font = ctx.font;
+    offCtx.textAlign = "center";
+    offCtx.textBaseline = "middle";
+    offCtx.fillText(text, centerX, centerY);
+
+    offCtx.globalCompositeOperation = "source-in";
+
+    offCtx.save();
+    offCtx.beginPath();
+    offCtx.moveTo(0, ch);
+    const amp1 = 7.0;
+    const freq1 = 0.022;
+    for (let x = 0; x <= cw; x += 3) {
+      const y = waterY + Math.sin(x * freq1 - waveTime * 1.2) * amp1 - 2;
+      offCtx.lineTo(x, y);
+    }
+    offCtx.lineTo(cw, ch);
+    offCtx.closePath();
+    offCtx.fillStyle = "#ffffff";
+    offCtx.globalAlpha = 0.45;
+    offCtx.fill();
+    offCtx.restore();
+
+    offCtx.save();
+    offCtx.beginPath();
+    offCtx.moveTo(0, ch);
+    const amp2 = 5.5;
+    const freq2 = 0.028;
+    for (let x = 0; x <= cw; x += 3) {
+      const y = waterY + Math.cos(x * freq2 + waveTime * 1.5) * amp2;
+      offCtx.lineTo(x, y);
+    }
+    offCtx.lineTo(cw, ch);
+    offCtx.closePath();
+    offCtx.fillStyle = "#ffffff";
+    offCtx.globalAlpha = 1.0;
+    offCtx.fill();
+    offCtx.restore();
+
+    ctx.drawImage(offCanvas, 0, 0, cw, ch);
+    ctx.restore();
+
+    entryAnimId = requestAnimationFrame(render);
+  }
+
+  entryAnimId = requestAnimationFrame(render);
+
+  setTimeout(() => {
+    finishEntryScreen();
+  }, 3500);
+}
+
+function finishEntryScreen() {
+  isEntryComplete = true;
+}
+
 window.addEventListener("DOMContentLoaded", () => {
+  initEntryScreen();
   const savedTheme = localStorage.getItem("dtc_theme") || "dark";
   window.setDashboardTheme(savedTheme);
   window.setBackendMode(false);
@@ -2992,8 +3140,15 @@ window.addEventListener("DOMContentLoaded", () => {
   CanvasEngine.init();
   initTechStackModal();
   checkServiceHealth();
-  fetchTransactionsFeed();
+  fetchTransactionsFeed().finally(() => {
+    finishEntryScreen();
+  });
   startRecoveryCountdown();
+
+  // Natural timeout so animation displays for at least ~1.2s
+  setTimeout(() => {
+    finishEntryScreen();
+  }, 1400);
 
 });
 
