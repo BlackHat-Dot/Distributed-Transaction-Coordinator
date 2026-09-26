@@ -926,9 +926,9 @@ function initEntryScreen() {
   const overlay = document.getElementById("dtc-entry-screen");
   const logoWrap = document.getElementById("dtc-entry-logo-wrap");
   const meta = document.getElementById("dtc-entry-meta");
+  const topBrand = document.getElementById("dtc-entry-top-brand");
   const canvas = document.getElementById("dtc-entry-canvas");
   const pctLabel = document.getElementById("dtc-entry-pct");
-  const skipBtn = document.getElementById("btn-skip-entry");
   if (!overlay || !canvas || !pctLabel) return;
 
   const ctx = canvas.getContext("2d");
@@ -977,8 +977,9 @@ function initEntryScreen() {
     if (hasDismissed) return;
     hasDismissed = true;
 
-    // 1. Fade out the counter
+    // 1. Fade out the counter and top brand
     if (meta) meta.classList.add("fade");
+    if (topBrand) topBrand.classList.add("fade");
 
     // 2. NeoLeaf zoom punch: scale up logo & fade out
     if (logoWrap) logoWrap.classList.add("zoom-out");
@@ -992,13 +993,6 @@ function initEntryScreen() {
       if (entryAnimId) cancelAnimationFrame(entryAnimId);
       overlay.style.display = "none";
     }, 950);
-  }
-
-  if (skipBtn) {
-    skipBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      dismiss();
-    });
   }
 
   function render(now) {

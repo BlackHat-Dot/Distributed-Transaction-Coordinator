@@ -2526,38 +2526,24 @@ button, input, select, textarea {
   pointer-events: none;
 }
 
-.dtc-entry-skip-btn {
+.dtc-entry-top-brand {
   position: absolute;
-  top: 24px;
-  right: 28px;
-  z-index: 100;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.65);
+  top: 28px;
+  left: 32px;
+  z-index: 10;
   font-family: var(--font-mono, monospace);
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.08em;
-  padding: 6px 14px;
-  border-radius: 9999px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.45);
+  text-transform: uppercase;
+  user-select: none;
+  transition: opacity 0.35s ease-out;
 }
 
-.dtc-entry-skip-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.3);
-  color: #ffffff;
-  transform: translateY(-1px);
-}
-
-.dtc-entry-skip-btn:active {
-  transform: scale(0.96);
+.dtc-entry-top-brand.fade,
+.dtc-entry-overlay.fade-out .dtc-entry-top-brand {
+  opacity: 0;
 }
 
 .dtc-entry-stage {
@@ -2622,7 +2608,7 @@ button, input, select, textarea {
 .dtc-entry-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   margin-top: 12px;
   font-family: var(--font-mono, monospace);
   font-size: 11px;
@@ -2632,14 +2618,6 @@ button, input, select, textarea {
 
 .dtc-entry-meta.fade {
   opacity: 0;
-}
-
-.dtc-entry-subtext {
-  font-family: var(--font-mono, monospace);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  color: rgba(255, 255, 255, 0.35);
-  text-transform: uppercase;
 }
 
 .dtc-entry-counter {
@@ -2663,13 +2641,10 @@ button, input, select, textarea {
 }
 
 @media (max-width: 640px) {
-  .dtc-entry-skip-btn {
-    top: 16px;
-    right: 18px;
-    font-size: 10px;
-    padding: 5px 11px;
-  }
-  .dtc-entry-subtext {
-    display: none;
+  .dtc-entry-top-brand {
+    top: 18px;
+    left: 20px;
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
   }
 }
