@@ -1676,9 +1676,10 @@ async function handleBottomPaySubmit() {
   updateMatrixHoldState();
 
   try {
-    const res = await fetchJson(`${CONFIG.inventoryUrl}/seats/reserve/`, {
+    const res = await fetchJson(`${CONFIG.coordinatorUrl}/transactions/`, {
       method: "POST",
       body: JSON.stringify({
+        action: "hold",
         seat_ids: allSeatIds,
       }),
     });
@@ -2068,12 +2069,10 @@ async function initiateSagaCheckout() {
   const payload = {
     seat_ids: seatIds,
   };
-  // Pass the existing hold transaction_id so the Coordinator adopts it.
-  // The Coordinator will still call _reserve_inventory() with this ID — the Inventory service's
-  // idempotency guard (seat.held_by_transaction_id == transaction_id check) ensures no duplicate
-  // Reservation row is created. pre_reserved is NOT sent: backends must never trust client claims
-  // about server-side state.
+  // If an active hold exists from Phase 1, invoke action: "pay" with the hold's transaction_id.
+  // The Coordinator will skip redundant seat reservation, directly process payment, and confirm.
   if (txId) {
+    payload.action = "pay";
     payload.transaction_id = txId;
   }
 

@@ -624,48 +624,95 @@ def _resolve_seat_pricing(seat_ids=None, correlation_id=None):
 
 def _request_payload_verify(request):
     """
-    Validates that incoming transaction creation requests provide required business data.
-    Enforces strict allowlist of client fields:
-      - Only 'seat_ids' is permitted from clients.
-      - Disallowed fields: 'transaction_id', 'amount', 'user_id', 'user_email',
-        'seat_id', 'seat_numbers', 'quantity', or any unrecognized fields.
-      - If any disallowed or extra fields are sent, returns HTTP 400 Bad Request prompting the client.
+    Validates incoming transaction requests. Supports three modes:
+
+    1. Default (no 'action'): one-shot saga. Requires seat_ids only.
+       Rejects transaction_id, amount, user_id, user_email, etc. from clients.
+
+    2. action='hold': Phase-1 hold. Requires seat_ids.
+       Rejects transaction_id (Coordinator generates it).
+
+    3. action='pay': Phase-2 pay. Requires transaction_id.
+       seat_ids optional (Coordinator already stored them on the hold).
     """
     if not isinstance(request.data, dict):
-        return None, None, Response({"error": "Request body must be a valid JSON object"}, status=400)
+        return None, None, None, Response(
+            {"error": "Request body must be a valid JSON object"}, status=400
+        )
 
-    from django.conf import settings
-
-    is_dev = getattr(settings, "DEBUG", False)
-
-    allowed_fields = {"seat_ids", "transaction_id", "fail_compensation", "coordinator", "pre_reserved"}
-
-    invalid_fields = [k for k in request.data.keys() if k not in allowed_fields]
-
-    if invalid_fields:
-        return None, None, Response(
+    action = request.data.get("action") or None
+    if action not in (None, "hold", "pay"):
+        return None, None, None, Response(
             {
-                "error": f"Invalid field(s) in payload: {', '.join(sorted(invalid_fields))}. These fields cannot be supplied by the client.",
-                "code": "INVALID_FIELDS",
-                "invalid_fields": sorted(list(invalid_fields)),
+                "error": "Invalid action. Supported values are 'hold' or 'pay'.",
+                "code": "INVALID_ACTION",
             },
             status=400,
         )
 
-    # Validate seat identifier is present
-    raw_seats = request.data.get("seat_ids")
+    # Build the allowlist based on action
+    if action == "pay":
+        # For pay we need transaction_id; seat_ids is accepted but optional
+        allowed_fields = {"action", "transaction_id", "seat_ids"}
+    elif action == "hold":
+        # For hold we generate transaction_id server-side — client must NOT send one
+        allowed_fields = {"action", "seat_ids"}
+    else:
+        # One-shot legacy path: client must only send seat_ids
+        allowed_fields = {"seat_ids"}
 
+    # Dev/test flags allowed in every mode
+    from django.conf import settings
+    if getattr(settings, "DEBUG", False):
+        allowed_fields = allowed_fields | {"fail_compensation", "coordinator"}
+
+    invalid_fields = [k for k in request.data.keys() if k not in allowed_fields]
+    if invalid_fields:
+        return None, None, None, Response(
+            {
+                "error": f"Invalid field(s) in payload: {', '.join(sorted(invalid_fields))}. "
+                         "These fields cannot be supplied by the client.",
+                "code": "INVALID_FIELDS",
+                "invalid_fields": sorted(invalid_fields),
+            },
+            status=400,
+        )
+
+    # --- PAY path: validate transaction_id, seat_ids optional ---
+    if action == "pay":
+        raw_tid = request.data.get("transaction_id")
+        if not raw_tid:
+            return None, None, None, Response(
+                {
+                    "error": "transaction_id is required for action='pay'.",
+                    "code": "TRANSACTION_ID_REQUIRED",
+                },
+                status=400,
+            )
+        try:
+            pay_tid = uuid.UUID(str(raw_tid))
+        except (ValueError, TypeError):
+            return None, None, None, Response(
+                {
+                    "error": "transaction_id must be a valid UUID.",
+                    "code": "INVALID_TRANSACTION_ID",
+                },
+                status=400,
+            )
+        return None, action, pay_tid, None
+
+    # --- HOLD or one-shot path: seat_ids is mandatory ---
+    raw_seats = request.data.get("seat_ids")
     if not raw_seats or not isinstance(raw_seats, list):
-        return None, None, Response(
+        return None, None, None, Response(
             {
                 "error": "seat_ids is required and must be a non-empty list of integers.",
                 "code": "SEATS_REQUIRED",
             },
             status=400,
         )
-
-    if any(type(seat_id) is not int for seat_id in raw_seats):
-        return None, None, Response(
+    if any(type(s) is not int for s in raw_seats):
+        return None, None, None, Response(
             {
                 "error": "seat_ids must be a list of integers.",
                 "code": "INVALID_SEAT_IDS",
@@ -673,38 +720,21 @@ def _request_payload_verify(request):
             status=400,
         )
 
-    seat_ids = list(raw_seats)
-
-
-    return seat_ids, True, None # Satisfied (for Production)
+    return list(raw_seats), action, None, None
 
 
 def _handle_create_transaction(request):
-    seat_ids, payload_legit, invalid = _request_payload_verify(request)
+    seat_ids, action, pay_tid, invalid = _request_payload_verify(request)
     if invalid:
         return invalid
 
     from django.conf import settings
 
-    # DEBUG (True) : what source code (Django) does
-    #   1. Gives rich yellow traceback screen (django.views.debug)
-    #   Django calls its internal technical_500_response() function. It inspects the entire Python call stack and builds that famous yellow web page containing:
-    #       - The exact file and line number that crashed
-    #       - The values of every local variable at every step in the stack trace
-    #       - All HTTP headers, cookies, and environment settings
-    #   2. Recording every SQL query in RAM
-
-    # IS_TESTING (True) : Only current project uses it
-    #   1. Whenever test cases executed with (python manage.py test) this varaible becomes True because of 'test' in sys.argv statement.
-
     is_testing = bool(getattr(settings, "IS_TESTING", False))
-
     is_dev = getattr(settings, "DEBUG", False)
 
-    # 1. Staff Key Check (Priority 1)
-    # X-Staff-Key is used for machine-to-machine / admin / staff booking.
-    # If the user sends a valid X-Staff-Key, they are immediately authorized.
-    # JWT authentication is bypassed completely (no get_user_from_request, no token verification).
+    # ── Auth ─────────────────────────────────────────────────────────────────
+    # Priority 1: Staff/machine-to-machine via X-Staff-Key header
     staff_api_key = os.getenv("STAFF_API_KEY")
     has_staff_key = bool(
         staff_api_key
@@ -715,21 +745,17 @@ def _handle_create_transaction(request):
     if has_staff_key:
         user_id = request.headers.get("X-User-ID") or os.getenv("STAFF_USER_ID") or "system_staff"
         user_email = request.headers.get("X-User-Email") or os.getenv("STAFF_EMAIL_ID") or "admin@dtc.internal"
-
     else:
-        # 2. Regular User: Authenticate via JWT Bearer token
+        # Priority 2: Regular user authenticated via JWT Bearer token
         user_info = get_user_from_request(request)
 
         if user_info and user_info.get("is_authenticated"):
             user_id = user_info.get("user_id")
             user_email = user_info.get("user_email")
-
         elif is_testing or is_dev:
             user_id = request.headers.get("X-User-ID") or None
             user_email = request.headers.get("X-User-Email") or None
-
         else:
-            # In production (DEBUG=False): Reject unauthenticated requests!
             return Response(
                 {
                     "error": "Authentication required. Your session has expired or you are not signed in. Please sign in to book seats.",
@@ -738,47 +764,218 @@ def _handle_create_transaction(request):
                 status=401,
             )
 
-    # 2. Transaction ID: Use client-supplied UUID if provided (for race condition / idempotency testing) or generate UUIDv4
-    client_tx_id = request.data.get("transaction_id") if isinstance(request.data, dict) else None
-    if client_tx_id:
-        try:
-            uuid.UUID(str(client_tx_id))
-            transaction_id = str(client_tx_id)
-        except (ValueError, AttributeError):
-            transaction_id = str(uuid.uuid4())
-    else:
-        transaction_id = str(uuid.uuid4())
+    correlation_id = request.correlation_id
+    if not correlation_id:
+        raise RuntimeError("CorrelationIdMiddleware is missing or misconfigured.")
 
-    pre_reserved = bool(request.data.get("pre_reserved", False)) if isinstance(request.data, dict) else False
+    fail_compensation = request.data.get("fail_compensation", False) if request.data else False
 
-    # 3. Resolve Seats and Server-Side Pricing from Database
-
-    amount, seat_ids, seat_numbers, price_error = _resolve_seat_pricing(
-        seat_ids = seat_ids,
-        correlation_id = request.correlation_id
-    )
-
-    if price_error: # On Response(...)
-        return price_error
-    
-    quantity = len(seat_ids)
-
-    # Simulation flag for payment decline (Dev / Visualizer Demo)
     simulate_decline = (
         request.query_params.get("simulate_payment_decline") == "true"
         or request.headers.get("X-Simulate-Payment-Decline") == "true"
     )
 
-    # Test flag
+    is_sync = request.query_params.get("sync") == "true"
+
+    # =========================================================================
+    # ACTION: HOLD — Phase 1
+    # Browser → POST /transactions/ {seat_ids, action:"hold"}
+    # Coordinator generates ONE UUID, reserves seats, stores HOLDING record.
+    # Returns {transaction_id, held_until} — browser shows yellow seats.
+    # =========================================================================
+    if action == "hold":
+        transaction_id = str(uuid.uuid4())
+
+        amount, seat_ids, seat_numbers, price_error = _resolve_seat_pricing(
+            seat_ids=seat_ids,
+            correlation_id=correlation_id,
+        )
+        if price_error:
+            return price_error
+
+        quantity = len(seat_ids)
+
+        # Reserve in inventory — this is the ONE and only reserve call for this booking.
+        response, reserve_error = _reserve_inventory(
+            transaction_id,
+            seat_ids,
+            correlation_id=correlation_id,
+            user_id=user_id,
+            user_email=user_email,
+        )
+        if reserve_error:
+            return reserve_error
+
+        resp_json = None
+        try:
+            resp_json = response.json()
+        except Exception:
+            pass
+
+        if response.status_code != 200:
+            return Response(
+                resp_json or {
+                    "error": "Inventory reserve failed",
+                    "code": "INVENTORY_RESERVE_FAILED",
+                },
+                status=response.status_code if response.status_code in (400, 404, 409, 429) else 400,
+            )
+
+        # Use Inventory's authoritative price if returned
+        if resp_json and "total_amount" in resp_json:
+            try:
+                amount = Decimal(str(resp_json["total_amount"]))
+            except (ValueError, TypeError):
+                pass
+
+        created, dup_response = _create_transaction(
+            transaction_id=transaction_id,
+            seat_ids=seat_ids,
+            seat_numbers=seat_numbers,
+            amount=amount,
+            quantity=quantity,
+            user_id=user_id,
+            user_email=user_email,
+        )
+        if not created:
+            return dup_response
+
+        _set_status_with_event(
+            transaction_id,
+            Transaction.Status.HOLDING,
+            expected_status=Transaction.Status.STARTED,
+            actor=SagaEvent.ACTOR_REQUEST,
+            http_status_code=response.status_code,
+            http_payload=resp_json,
+        )
+
+        held_until = resp_json.get("held_until") if resp_json else None
+        return Response(
+            {
+                "transaction_id": str(transaction_id),
+                "status": Transaction.Status.HOLDING,
+                "held_until": held_until,
+                "seat_ids": seat_ids,
+                "seat_numbers": seat_numbers,
+                "amount": str(amount),
+                "quantity": quantity,
+                "user_id": user_id,
+                "user_email": user_email,
+                "message": f"{quantity} seat(s) held. Complete payment before the hold expires.",
+            },
+            status=200,
+        )
+
+    # =========================================================================
+    # ACTION: PAY — Phase 2
+    # Browser → POST /transactions/ {transaction_id, action:"pay"}
+    # Coordinator looks up the HOLDING record, skips reserve, runs charge+confirm.
+    # =========================================================================
+    if action == "pay":
+        try:
+            txn = Transaction.objects.get(transaction_id=pay_tid)
+        except Transaction.DoesNotExist:
+            return Response(
+                {"error": "Transaction not found.", "code": "TRANSACTION_NOT_FOUND"},
+                status=404,
+            )
+
+        # Ownership check — non-staff users can only pay their own holds
+        if not (has_staff_key or is_dev or is_testing):
+            if txn.user_id and txn.user_id != user_id:
+                return Response(
+                    {"error": "You do not have permission to pay for this transaction.", "code": "FORBIDDEN"},
+                    status=403,
+                )
+
+        # Idempotent: already completed → return it
+        if txn.status == Transaction.Status.COMPLETED:
+            return Response(_serialize_transaction(txn), status=200)
+
+        # Only HOLDING status is valid for pay
+        if txn.status != Transaction.Status.HOLDING:
+            return Response(
+                {
+                    "error": f"Transaction cannot be paid in status '{txn.status}'.",
+                    "code": "INVALID_TRANSACTION_STATUS",
+                    "status": txn.status,
+                    "transaction_id": str(txn.transaction_id),
+                },
+                status=409,
+            )
+
+        transaction_id = txn.transaction_id
+        seat_ids = txn.seat_ids
+        amount = txn.amount
+
+        if simulate_decline:
+            amount = Decimal("9999")
+
+        if not is_sync:
+            try:
+                from .tasks import execute_saga_task
+                execute_saga_task.delay(
+                    str(transaction_id),
+                    seat_ids=seat_ids,
+                    amount=str(amount),
+                    fail_compensation=fail_compensation,
+                    correlation_id=correlation_id,
+                    user_id=txn.user_id,
+                    user_email=txn.user_email,
+                    skip_reserve=True,
+                )
+                return Response(
+                    {
+                        "transaction_id": str(transaction_id),
+                        "status": "PENDING",
+                        "poll_url": f"/transactions/{transaction_id}/",
+                        "stream_url": f"/transactions/{transaction_id}/stream/",
+                        "message": "Saga dispatched to Celery worker",
+                    },
+                    status=202,
+                    headers={"Location": f"/transactions/{transaction_id}/"},
+                )
+            except Exception:
+                logger.exception("Failed to dispatch Saga task for pay action")
+                return Response(
+                    {
+                        "transaction_id": str(transaction_id),
+                        "status": txn.status,
+                        "error": "Saga could not be dispatched",
+                    },
+                    status=503,
+                )
+
+        return _run_saga_pipeline(
+            transaction_id=transaction_id,
+            seat_ids=seat_ids,
+            amount=amount,
+            fail_compensation=fail_compensation,
+            correlation_id=correlation_id,
+            actor=SagaEvent.ACTOR_REQUEST,
+            user_id=txn.user_id,
+            user_email=txn.user_email,
+            skip_reserve=True,
+        )
+
+    # =========================================================================
+    # DEFAULT: One-shot full saga (legacy path — backward compatible)
+    # Browser or staff → POST /transactions/ {seat_ids}
+    # Coordinator generates UUID, reserves, charges, confirms in one go.
+    # =========================================================================
+    transaction_id = str(uuid.uuid4())
+
+    amount, seat_ids, seat_numbers, price_error = _resolve_seat_pricing(
+        seat_ids=seat_ids,
+        correlation_id=correlation_id,
+    )
+    if price_error:
+        return price_error
+
+    quantity = len(seat_ids)
+
     if simulate_decline:
         amount = Decimal("9999")
-
-    # Test flag
-    fail_compensation = request.data.get("fail_compensation", False) if request.data else False
-    correlation_id = request.correlation_id # attached by the middleware
-
-    if not correlation_id:
-        raise RuntimeError("CorrelationIdMiddleware is missing or misconfigured.")
 
     created, dup_response = _create_transaction(
         transaction_id=transaction_id,
@@ -792,7 +989,7 @@ def _handle_create_transaction(request):
     if not created:
         return dup_response
 
-    # Simulation flag for coordinator crash 
+    # Dev/test flag: simulate coordinator crash after transaction row is created
     if request.data.get("coordinator"):
         return Response(
             {
@@ -806,11 +1003,7 @@ def _handle_create_transaction(request):
             status=500,
         )
 
-    # If needed sync response
-    is_sync = request.query_params.get("sync") == "true"
-    
     if not is_sync:
-        # Try async via Celery (supervisord keeps worker alive alongside gunicorn)
         try:
             from .tasks import execute_saga_task
 
@@ -845,12 +1038,11 @@ def _handle_create_transaction(request):
             execute_saga_task.delay(
                 str(transaction_id),
                 seat_ids=seat_ids,
-                amount=amount,
+                amount=str(amount),
                 fail_compensation=fail_compensation,
                 correlation_id=correlation_id,
                 user_id=user_id,
                 user_email=user_email,
-                pre_reserved=pre_reserved,
             )
             return Response(
                 {
@@ -866,10 +1058,6 @@ def _handle_create_transaction(request):
                 headers={"Location": f"/transactions/{transaction_id}/"},
             )
         except Exception:
-            import logging
-
-            logger = logging.getLogger(__name__)
-            
             logger.exception("Failed to dispatch Saga task")
             return Response(
                 {
@@ -880,7 +1068,6 @@ def _handle_create_transaction(request):
                 status=503,
             )
 
-    # Synchronous execution: when sync=true is requested (e.g. tests or direct API calls)
     return _run_saga_pipeline(
         transaction_id=transaction_id,
         seat_ids=seat_ids,
@@ -890,8 +1077,8 @@ def _handle_create_transaction(request):
         actor=SagaEvent.ACTOR_REQUEST,
         user_id=user_id,
         user_email=user_email,
-        pre_reserved=pre_reserved,
     )
+
 
 
 def _handle_list_transactions(request):
@@ -976,12 +1163,40 @@ def _run_saga_pipeline(
 
     user_id=None,
     user_email=None,
-    pre_reserved=False,  # Accepted for signature compatibility — intentionally NOT trusted.
-                         # Backend always verifies the hold directly with Inventory,
-                         # which is idempotent: a second call with the same transaction_id
-                         # hits the guard on Seat.held_by_transaction_id and returns 200
-                         # without creating any duplicate Reservation row.
+    skip_reserve=False,
+    **kwargs,
 ):
+    if skip_reserve:
+        _set_status_with_event(
+            transaction_id,
+            Transaction.Status.INVENTORY_RESERVED,
+            expected_status=Transaction.Status.HOLDING,
+            actor=actor,
+            http_status_code=200,
+            http_payload={
+                "message": f"{len(seat_ids) if seat_ids else 1} Seats reserved via coordinator hold",
+                "seat_ids": seat_ids,
+                "transaction_id": str(transaction_id),
+            },
+        )
+        _set_status_with_event(
+            transaction_id,
+            Transaction.Status.PAYMENT_PROCESSING,
+            expected_status=Transaction.Status.INVENTORY_RESERVED,
+            actor=actor,
+            http_status_code=None,
+            http_payload=None,
+        )
+        return _charge_payment(
+            transaction_id,
+            amount,
+            fail_compensation,
+            correlation_id=correlation_id,
+            seat_ids=seat_ids,
+            user_id=user_id,
+            user_email=user_email,
+        )
+
     response, reserve_error = _reserve_inventory(
         transaction_id,
         seat_ids,

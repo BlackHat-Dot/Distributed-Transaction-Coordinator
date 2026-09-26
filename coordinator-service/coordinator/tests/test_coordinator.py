@@ -379,3 +379,81 @@ class StrictPayloadValidationTests(TestCase):
         self.assertIn("seat_id", resp.data.get("invalid_fields", []))
         self.assertIn("seat_numbers", resp.data.get("invalid_fields", []))
 
+
+class TwoPhaseHoldAndPayTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_two_phase_hold_and_pay_flow(self):
+        # 1. HOLD phase
+        with _mock_saga_ok() as (mock_post, _):
+            hold_resp = self.client.post(
+                "/transactions/?sync=true",
+                {"action": "hold", "seat_ids": [1]},
+                format="json",
+            )
+        self.assertEqual(hold_resp.status_code, 200)
+        self.assertEqual(hold_resp.data.get("status"), Transaction.Status.HOLDING)
+        tid = hold_resp.data.get("transaction_id")
+        self.assertIsNotNone(tid)
+
+        # Verify DB status is HOLDING
+        txn = Transaction.objects.get(transaction_id=tid)
+        self.assertEqual(txn.status, Transaction.Status.HOLDING)
+
+        # 2. PAY phase
+        with _mock_saga_ok() as (mock_post, _):
+            pay_resp = self.client.post(
+                "/transactions/?sync=true",
+                {"action": "pay", "transaction_id": tid},
+                format="json",
+            )
+        self.assertEqual(pay_resp.status_code, 200)
+        self.assertEqual(pay_resp.data.get("status"), Transaction.Status.COMPLETED)
+
+        # Verify DB status is COMPLETED
+        txn.refresh_from_db()
+        self.assertEqual(txn.status, Transaction.Status.COMPLETED)
+
+        # Verify reserve was NOT called during the pay phase!
+        called_urls = [call.args[0] for call in mock_post.call_args_list]
+        self.assertFalse(any("reserve" in url for url in called_urls), "reserve/ must NOT be called during pay phase")
+        self.assertTrue(any("charge" in url for url in called_urls), "charge/ must be called during pay phase")
+        self.assertTrue(any("confirm" in url for url in called_urls), "confirm/ must be called during pay phase")
+
+    def test_hold_rejects_client_transaction_id(self):
+        resp = self.client.post(
+            "/transactions/?sync=true",
+            {"action": "hold", "seat_ids": [1], "transaction_id": str(uuid.uuid4())},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("code"), "INVALID_FIELDS")
+
+    def test_pay_requires_transaction_id(self):
+        resp = self.client.post(
+            "/transactions/?sync=true",
+            {"action": "pay"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("code"), "TRANSACTION_ID_REQUIRED")
+
+    def test_pay_rejects_invalid_uuid(self):
+        resp = self.client.post(
+            "/transactions/?sync=true",
+            {"action": "pay", "transaction_id": "not-a-uuid"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("code"), "INVALID_TRANSACTION_ID")
+
+    def test_pay_nonexistent_transaction_returns_404(self):
+        resp = self.client.post(
+            "/transactions/?sync=true",
+            {"action": "pay", "transaction_id": str(uuid.uuid4())},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.data.get("code"), "TRANSACTION_NOT_FOUND")
+

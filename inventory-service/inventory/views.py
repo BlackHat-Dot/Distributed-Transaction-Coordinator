@@ -145,11 +145,11 @@ def _verify_internal_service_key(request, allow_client=False):
             ), False
         return None, True
 
-    if allow_client:
-        return None, False
-
     if getattr(settings, "IS_TESTING", False):
         return None, True
+
+    if allow_client:
+        return None, False
 
     return Response(
         {"error": "Forbidden: missing internal service key."},
@@ -255,12 +255,14 @@ def reserve_seat(request):
     #   - Browser calls never supply a valid transaction_id from the body (client-sent ID is silently ignored).
 
     try:
-        if has_internal_key and supplied_tid:
+        if has_internal_key:
+            if not supplied_tid:
+                return Response({"error": "transaction_id is required"}, status=400)
             transaction_id = supplied_tid
         else:
             transaction_id = uuid.uuid4()  # Always freshly generated for browser callers
     except (ValueError):
-        transaction_id = uuid.uuid4()  # If staff provided transaction id not valid
+        transaction_id = uuid.uuid4()
 
     # Read identity from request headers first (injected by fetchJson on every browser call),
     # falling back to body fields for coordinator / internal service calls.

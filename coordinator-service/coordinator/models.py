@@ -5,6 +5,7 @@ class Transaction(models.Model):
 
     class Status(models.TextChoices):
         STARTED = "STARTED"
+        HOLDING = "HOLDING"
         INVENTORY_RESERVED = "INVENTORY_RESERVED"
         INVENTORY_RELEASED = "INVENTORY_RELEASED"
         INVENTORY_RESERVE_FAILED = "INVENTORY_RESERVE_FAILED"
