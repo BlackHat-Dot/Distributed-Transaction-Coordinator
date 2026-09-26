@@ -920,15 +920,18 @@ document.addEventListener("DOMContentLoaded", () => {
    ========================================================================== */
 let entryAnimId = null;
 let entryProgress = 0;
-let isEntryComplete = false;
+let isDataReady = false;
 
 function initEntryScreen() {
   const overlay = document.getElementById("dtc-entry-screen");
   const canvas = document.getElementById("dtc-entry-canvas");
   const pctLabel = document.getElementById("dtc-entry-pct");
+  const skipBtn = document.getElementById("btn-skip-entry");
   if (!overlay || !canvas || !pctLabel) return;
 
   const ctx = canvas.getContext("2d");
+  const offCanvas = document.createElement("canvas");
+  const offCtx = offCanvas.getContext("2d");
   let dpr = window.devicePixelRatio || 1;
 
   function resizeCanvas() {
@@ -936,13 +939,22 @@ function initEntryScreen() {
     dpr = window.devicePixelRatio || 1;
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
+    offCanvas.width = canvas.width;
+    offCanvas.height = canvas.height;
   }
   window.addEventListener("resize", resizeCanvas);
   resizeCanvas();
 
+  const TOTAL_DURATION_MS = 4200; // Smooth 4.2s mandatory watch window
+  const HOLD_DURATION_MS = 500;   // Hold fully filled letters at 100%
   let waveTime = 0;
-  const startTime = performance.now();
+  let startTime = null;
   let hasDismissed = false;
+  let isHolding = false;
+
+  function easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
 
   function dismiss() {
     if (hasDismissed) return;
@@ -951,33 +963,45 @@ function initEntryScreen() {
     setTimeout(() => {
       if (entryAnimId) cancelAnimationFrame(entryAnimId);
       overlay.style.display = "none";
-    }, 680);
+    }, 750);
+  }
+
+  if (skipBtn) {
+    skipBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      dismiss();
+    });
   }
 
   function render(now) {
-    waveTime += 0.045;
+    if (!startTime) startTime = now;
+    waveTime += 0.034;
     const elapsed = now - startTime;
 
-    if (!isEntryComplete) {
-      // Natural crawl towards 88% while network is loading
-      const naturalTarget = Math.min(88, (elapsed / 1600) * 88);
-      entryProgress += (naturalTarget - entryProgress) * 0.08;
-    } else {
-      // Fast finish to 100% once data is ready
-      entryProgress += (100 - entryProgress) * 0.15;
-      if (entryProgress >= 99.2) {
+    if (!isHolding) {
+      let timeProgress = Math.min(1, elapsed / TOTAL_DURATION_MS);
+
+      // If backend cold-start takes longer than 4.2s, pause gracefully at 94% until ready
+      if (timeProgress > 0.94 && !isDataReady) {
+        timeProgress = 0.94;
+      }
+
+      const eased = easeInOutCubic(timeProgress);
+      entryProgress = eased * 100;
+      pctLabel.textContent = `${Math.min(100, Math.floor(entryProgress))} %`;
+
+      if (timeProgress >= 1) {
         entryProgress = 100;
         pctLabel.textContent = "100 %";
-        setTimeout(dismiss, 180);
-        return;
+        isHolding = true;
+        setTimeout(dismiss, HOLD_DURATION_MS);
       }
     }
-
-    pctLabel.textContent = `${Math.floor(entryProgress)} %`;
 
     const w = canvas.width;
     const h = canvas.height;
     ctx.clearRect(0, 0, w, h);
+    offCtx.clearRect(0, 0, w, h);
 
     const cw = w / dpr;
     const ch = h / dpr;
@@ -995,18 +1019,15 @@ function initEntryScreen() {
     const centerY = ch / 2 - 4;
 
     // 1. Ghost / Silhouette Background Text
-    ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.16)";
     ctx.fillText(text, centerX, centerY);
 
     // 2. Offscreen Wave Mask for Liquid Text Fill
     const textHeight = fontSize * 0.82;
-    const textBottom = centerY + textHeight / 2;
-    const waterY = textBottom - (entryProgress / 100) * textHeight;
+    const fillRange = textHeight + 16;
+    const waterY = (centerY + textHeight / 2 + 8) - (entryProgress / 100) * fillRange;
 
-    const offCanvas = document.createElement("canvas");
-    offCanvas.width = w;
-    offCanvas.height = h;
-    const offCtx = offCanvas.getContext("2d");
+    offCtx.save();
     offCtx.scale(dpr, dpr);
 
     offCtx.fillStyle = "#ffffff";
@@ -1017,20 +1038,20 @@ function initEntryScreen() {
 
     offCtx.globalCompositeOperation = "source-in";
 
-    // Secondary Wave (Deeper liquid layer)
+    // Secondary Wave (Deeper, darker liquid layer with subtle opacity)
     offCtx.save();
     offCtx.beginPath();
     offCtx.moveTo(0, ch);
     const amp1 = 7.0;
-    const freq1 = 0.022;
+    const freq1 = 0.020;
     for (let x = 0; x <= cw; x += 3) {
-      const y = waterY + Math.sin(x * freq1 - waveTime * 1.2) * amp1 - 2;
+      const y = waterY + Math.sin(x * freq1 - waveTime * 1.1) * amp1 - 2;
       offCtx.lineTo(x, y);
     }
     offCtx.lineTo(cw, ch);
     offCtx.closePath();
     offCtx.fillStyle = "#ffffff";
-    offCtx.globalAlpha = 0.45;
+    offCtx.globalAlpha = 0.42;
     offCtx.fill();
     offCtx.restore();
 
@@ -1039,9 +1060,9 @@ function initEntryScreen() {
     offCtx.beginPath();
     offCtx.moveTo(0, ch);
     const amp2 = 5.5;
-    const freq2 = 0.028;
+    const freq2 = 0.026;
     for (let x = 0; x <= cw; x += 3) {
-      const y = waterY + Math.cos(x * freq2 + waveTime * 1.5) * amp2;
+      const y = waterY + Math.cos(x * freq2 + waveTime * 1.4) * amp2;
       offCtx.lineTo(x, y);
     }
     offCtx.lineTo(cw, ch);
@@ -1051,23 +1072,27 @@ function initEntryScreen() {
     offCtx.fill();
     offCtx.restore();
 
+    offCtx.restore();
+
     // Draw liquid back to main canvas
     ctx.drawImage(offCanvas, 0, 0, cw, ch);
     ctx.restore();
 
-    entryAnimId = requestAnimationFrame(render);
+    if (!hasDismissed) {
+      entryAnimId = requestAnimationFrame(render);
+    }
   }
 
   entryAnimId = requestAnimationFrame(render);
 
-  // Safety fallback: Auto-dismiss after 3.5s max in case of network timeout
+  // Safety fallback: Ensure data is marked ready after 8s max
   setTimeout(() => {
     finishEntryScreen();
-  }, 3500);
+  }, 8000);
 }
 
 function finishEntryScreen() {
-  isEntryComplete = true;
+  isDataReady = true;
 }
 
 function initEventListeners() {
