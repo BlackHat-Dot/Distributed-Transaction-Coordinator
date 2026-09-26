@@ -261,7 +261,6 @@ const DOM = {
 
   btnDemoHappy: document.getElementById("btn-demo-happy"),
   btnDemoFail: document.getElementById("btn-demo-fail"),
-  btnDemoCompFail: document.getElementById("btn-demo-comp-fail"),
   btnDemoRace: document.getElementById("btn-demo-race"),
   btnDemoCrash: document.getElementById("btn-demo-crash"),
   btnToggleCustom: document.getElementById("btn-toggle-custom"),
@@ -3206,33 +3205,4 @@ window.addEventListener("DOMContentLoaded", () => {
   startRecoveryCountdown();
 });
 
-DOM.btnDemoCompFail.addEventListener("click", async () => {
-  if (!checkLiveAuthGate("execute the Decline & Compensate Fail scenario")) return;
 
-  STATE.stats.dispatchedCount++;
-  DOM.topoClientSent.textContent = STATE.stats.dispatchedCount;
-  DOM.topoCoordState.textContent = "COMPENSATING";
-
-  await animatePacketAlongPath({
-    route: "client-coord",
-    type: "info",
-    durationMs: 400,
-    label: "POST /transactions/ (Decline+FailComp)"
-  });
-
-  try {
-    const res = await fetchJson(`${CONFIG.coordinatorUrl}/transactions/?simulate_payment_decline=true`, {
-      method: "POST",
-      body: JSON.stringify({
-        seat_ids: [34],
-        fail_compensation: true,
-      })
-    });
-    if (!res.ok) throw new Error(res.error || "Failed");
-
-    // The saga is running async in the background and will stick at COMPENSATION_FAILED
-    // Let poll capture the state
-  } catch (err) {
-    showToast({ title: "Scenario Failed", message: err.message, type: "error" });
-  }
-});
