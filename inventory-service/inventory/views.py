@@ -229,12 +229,12 @@ def _validate_reserve_input(data):
         return None, None, Response({"error": "seat_ids must be a list of integers"}, status=400)
 
     raw_tid = data.get("transaction_id")
-    if not raw_tid:
-        return None, None, Response({"error": "transaction_id is required"}, status=400)
-
-    tid = _validate_uuid(raw_tid)
-    if not tid:
-        return None, None, Response({"error": "transaction_id must be a valid UUID"}, status=400)
+    if raw_tid:
+        tid = _validate_uuid(raw_tid)
+        if not tid:
+            return None, None, Response({"error": "transaction_id must be a valid UUID"}, status=400)
+    else:
+        tid = None  # Caller will decide: generate server-side or reject
 
     return seat_ids, tid, None
 
@@ -245,14 +245,35 @@ def reserve_seat(request):
     if auth_err:
         return auth_err
 
-    seat_ids, transaction_id, error_response = _validate_reserve_input(request.data)
+    seat_ids, supplied_tid, error_response = _validate_reserve_input(request.data)
 
     if error_response:
         return error_response
 
-    # 'None' is used to allows admin/Staff to buy tickets without mentioning their ids
-    user_id = request.data.get("user_id") or None
-    user_email = request.data.get("user_email") or None
+    # Determine the transaction_id:
+    #   - Coordinator calls (X-Internal-Service-Key present) send their saga UUID in the body → honour it.
+    #   - Browser calls never supply a valid transaction_id from the body (client-sent ID is silently ignored).
+
+    try:
+        if has_internal_key and supplied_tid:
+            transaction_id = supplied_tid
+        else:
+            transaction_id = uuid.uuid4()  # Always freshly generated for browser callers
+    except (ValueError):
+        transaction_id = uuid.uuid4()  # If staff provided transaction id not valid
+
+    # Read identity from request headers first (injected by fetchJson on every browser call),
+    # falling back to body fields for coordinator / internal service calls.
+    user_id = (
+        request.headers.get("X-User-ID")
+        or request.data.get("user_id")
+        or None
+    )
+    user_email = (
+        request.headers.get("X-User-Email")
+        or request.data.get("user_email")
+        or None
+    )
 
     is_testing = bool(getattr(settings, "IS_TESTING", False))
     is_dev = getattr(settings, "DEBUG", False)
@@ -395,6 +416,9 @@ def confirm_seat(request):
     seat_ids, transaction_id, error_response = _validate_reserve_input(request.data)
     if error_response:
         return error_response
+    if not transaction_id:
+        return Response({"error": "transaction_id is required"}, status=400)
+
 
     try:
         with transaction.atomic():
