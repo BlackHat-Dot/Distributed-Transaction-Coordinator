@@ -637,11 +637,12 @@ def release_seat(request):
                 )
 
             seat_ids = [r.seat_id for r in active_res if r.seat_id]
-            Reservation.objects.filter(id__in=[r.id for r in active_res]).update(
-                status=Reservation.Status.RELEASED
-            )
+
 
             if seat_ids:
+                Reservation.objects.filter(id__in=[r.id for r in active_res]).update(
+                    status=Reservation.Status.RELEASED
+                )
                 Seat.objects.filter(
                     id__in=seat_ids,
                     held_by_transaction_id=transaction_id
