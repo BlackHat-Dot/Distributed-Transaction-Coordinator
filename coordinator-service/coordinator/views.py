@@ -10,7 +10,7 @@ from decimal import Decimal
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from requests.exceptions import Timeout, ConnectionError
+from requests.exceptions import Timeout, ConnectionError, RequestException
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.http import StreamingHttpResponse, JsonResponse, HttpResponse
@@ -1358,7 +1358,7 @@ def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=No
             timeout=REQUEST_TIMEOUT,
         )
         return response, None
-    except (Timeout, ConnectionError) as e:
+    except RequestException as e:
         status = _transport_status(
             e, Transaction.Status.INVENTORY_TIMEOUT, Transaction.Status.INVENTORY_CONNECTION_ERROR
         )
@@ -1409,7 +1409,7 @@ def _charge_payment(
             headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
-    except (Timeout, ConnectionError) as e:
+    except RequestException as e:
         uncertain_status = _transport_status(
             e, Transaction.Status.PAYMENT_TIMEOUT, Transaction.Status.PAYMENT_CONNECTION_ERROR
         )
@@ -1438,7 +1438,7 @@ def _charge_payment(
                 headers=headers,
                 timeout=REQUEST_TIMEOUT,
             )
-        except (Timeout, ConnectionError):
+        except RequestException:
             return Response(
                 {
                     "transaction_id": str(transaction_id),
@@ -1489,7 +1489,7 @@ def _charge_payment(
                 headers=headers,
                 timeout=REQUEST_TIMEOUT,
             )
-        except (Timeout, ConnectionError):
+        except RequestException:
             return Response(
                 {
                     "transaction_id": str(transaction_id),
@@ -1549,7 +1549,7 @@ def _confirm_inventory(transaction_id, seat_ids=None, correlation_id=None):
             timeout=REQUEST_TIMEOUT,
         )
         return response, None
-    except (Timeout, ConnectionError) as e:
+    except RequestException as e:
         return None, e
 
 
@@ -1685,7 +1685,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
         release_status_code = release_response.status_code
         release_ok = (release_status_code == 200)
         release_data = _parse_json_response(release_response)
-    except (Timeout, ConnectionError) as e:
+    except RequestException as e:
         release_transport_error = e
 
     # 2. Attempt Payment Refund if money was charged (independent of inventory release outcome)
@@ -1704,7 +1704,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             refund_status_code = refund_response.status_code
             refund_ok = (refund_status_code == 200)
             refund_data = _parse_json_response(refund_response)
-        except (Timeout, ConnectionError) as e:
+        except RequestException as e:
             refund_transport_error = e
 
     # 3. Resolve Overall Compensation State
