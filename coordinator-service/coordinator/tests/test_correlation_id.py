@@ -111,7 +111,10 @@ class CorrelationIdOutboundPropagationTests(TransactionTestCase):
             captured_release_headers.append((url, kwargs.get("headers", {})))
             mock = MagicMock()
             mock.status_code = 200
-            mock.json.return_value = {"message": "Inventory released"}
+            if "void" in url:
+                mock.json.return_value = {"status": "VOIDED"}
+            else:
+                mock.json.return_value = {"message": "Inventory released"}
             return mock
 
         with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=mock_get), \
@@ -126,10 +129,10 @@ class CorrelationIdOutboundPropagationTests(TransactionTestCase):
                 f"Recovery probe to {url} did not send X-Correlation-ID",
             )
 
-        self.assertEqual(len(captured_release_headers), 1)
+        self.assertEqual(len(captured_release_headers), 2)
         for url, headers in captured_release_headers:
             self.assertEqual(
                 headers.get("X-Correlation-ID"),
                 tid,
-                f"Recovery compensation release to {url} did not send X-Correlation-ID",
+                f"Recovery compensation call to {url} did not send X-Correlation-ID",
             )

@@ -49,6 +49,7 @@ INVENTORY_PRICING_URL = f"{INVENTORY_BASE_URL}/seats/pricing/"
 PAYMENT_CHARGE_URL = f"{PAYMENT_BASE_URL}/payments/charge/"
 PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
 PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
+PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
 
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "5"))
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
@@ -775,7 +776,7 @@ def _handle_create_transaction(request):
 
     fail_compensation = request.data.get("fail_compensation", False) if request.data else False
 
-    enable_test_payment_failure = getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False) or is_testing
+    enable_test_payment_failure = bool(getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False))
     simulate_decline = False
     if enable_test_payment_failure and (is_dev or is_testing or has_staff_key):
         simulate_decline = (
@@ -1268,7 +1269,7 @@ def _run_saga_pipeline(
     }
     """
 
-    enable_test_payment_failure = getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False) or bool(getattr(settings, "IS_TESTING", False))
+    enable_test_payment_failure = bool(getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False))
     if resp_json and "total_amount" in resp_json:
         try:
             from decimal import Decimal
@@ -1570,7 +1571,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
     if not was_charged:
         # Priority 2: Void payment in-flight before compensating inventory
         try:
-            void_url = f"{PAYMENT_SERVICE_URL.rstrip('/')}/payments/void/"
+            void_url = PAYMENT_VOID_URL
             void_resp = _http_post(
                 void_url,
                 json={"transaction_id": str(transaction_id)},

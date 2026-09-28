@@ -13,6 +13,7 @@ PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rst
 
 PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
 PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
+PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
 INVENTORY_CHECK_URL = f"{INVENTORY_BASE_URL}/reserve/check/"
 INVENTORY_CONFIRM_URL = f"{INVENTORY_BASE_URL}/seats/confirm/"
 INVENTORY_RELEASE_URL = f"{INVENTORY_BASE_URL}/seats/release/"
@@ -243,7 +244,7 @@ class Command(BaseCommand):
         # Ensure payment is voided so an in-flight charge cannot land after inventory release
         try:
             void_resp = requests.post(
-                f"{PAYMENT_SERVICE_URL.rstrip('/')}/payments/void/",
+                PAYMENT_VOID_URL,
                 json={"transaction_id": str(transaction_id)},
                 headers=headers,
                 timeout=REQUEST_TIMEOUT,

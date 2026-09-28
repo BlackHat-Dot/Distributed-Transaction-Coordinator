@@ -74,6 +74,10 @@ def _dispatch_post(url, *args, **kwargs):
         mock.status_code = 200
         mock.json.return_value = {"message": "Seat confirmed", "seat_ids": [1], "status": "BOOKED"}
         return mock
+    if "void" in url:
+        mock.status_code = 200
+        mock.json.return_value = {"status": "VOIDED"}
+        return mock
     raise ValueError(f"Unexpected POST url in _dispatch_post: {url}")
 
 
@@ -458,7 +462,7 @@ class TwoPhaseHoldAndPayTests(TestCase):
         self.assertEqual(resp.data.get("code"), "TRANSACTION_NOT_FOUND")
 
     def test_simulate_decline_ignored_when_flag_disabled(self):
-        with self.settings(ENABLE_TEST_PAYMENT_FAILURE=False, IS_TESTING=False):
+        with self.settings(ENABLE_TEST_PAYMENT_FAILURE=False):
             with _mock_saga_ok() as (mock_post, _):
                 resp = self.client.post(
                     "/transactions/?sync=true&simulate_payment_decline=true",
