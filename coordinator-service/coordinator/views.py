@@ -18,6 +18,7 @@ from django.http import StreamingHttpResponse, JsonResponse, HttpResponse
 from .models import Transaction, SagaEvent
 from .saga_log import _set_status_with_event
 from .middleware import get_correlation_id
+from .recovery import execute_compensation_sweep
 from coordinator.auth_views import get_user_from_request
 
 logger = logging.getLogger(__name__)
@@ -312,116 +313,92 @@ def transaction_stream(request, transaction_id):
     return response
 
 
+ALLOWED_RETRY_STATUSES = (
+    Transaction.Status.COMPENSATION_FAILED,
+    Transaction.Status.RETRY_COMPENSATION_FAILED,
+    Transaction.Status.PAYMENT_TIMEOUT,
+    Transaction.Status.PAYMENT_CONNECTION_ERROR,
+)
+
+
 @api_view(["POST"])
 def retry_compensation(request, transaction_id):
-    # Public reach blocked
+    # Staff privileges required (staff-only recovery endpoint)
     is_authenticated, user_id, is_staff = _get_requester_identity(request)
 
     if not is_authenticated:
-        return Response({"Status": "Not Authenticated"}, status=401)
-    
-    txn = Transaction.objects.exclude(
-        status=Transaction.Status.COMPLETED
-    ).filter(
-        transaction_id=transaction_id
-    ).first()
+        return Response({"error": "Authentication required"}, status=401)
 
-    if not txn:
-        return Response({
-            "detail": "Transaction is already charged and marked as completed"
-        })
-
-    # IDOR protection: Non-staff callers can only retry compensation on their own transactions
-    if not is_staff and (not user_id or (txn.user_id and txn.user_id != user_id)):
+    if not is_staff:
         return Response(
             {"error": "You do not have permission to retry compensation for this transaction."},
             status=403,
         )
-    
-    txn_status_at_entry = txn.status
-    
-    if txn_status_at_entry == Transaction.Status.COMPENSATED:
+
+    # 404 for unknown IDs (ownership/staff check before status)
+    txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+    if not txn:
+        return Response({"error": "Transaction not found"}, status=404)
+
+    # Short-circuit COMPENSATED and COMPENSATED_ON_RETRY
+    if txn.status in (Transaction.Status.COMPENSATED, Transaction.Status.COMPENSATED_ON_RETRY):
         return Response({
             "transaction_id": str(transaction_id),
-            "status": Transaction.Status.COMPENSATED,
+            "status": txn.status,
             "message": "Transaction is already compensated",
-        })
+        }, status=200)
 
-    headers = {
-        "X-Correlation-ID": _get_active_correlation_id(getattr(request, "correlation_id", None)),
-        "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
-    }
-    try:
-        release_response = _http_post(
-            INVENTORY_RELEASE_URL,
-            json={"transaction_id": str(transaction_id)},
-            headers=headers,
-            timeout=REQUEST_TIMEOUT,
-        )
-    except (Timeout, ConnectionError) as e:
-   
-        _set_status_with_event(
-            transaction_id,
-            to_status=Transaction.Status.RETRY_COMPENSATION_FAILED,
-            expected_status=txn_status_at_entry,
-            actor=SagaEvent.ACTOR_RETRY,
-            http_status_code=None,
-            http_payload=None,
-        )
-        cause = _transport_status(e, "TIMEOUT", "CONNECTION_FAILED")
+    # Status allowlist
+    if txn.status not in ALLOWED_RETRY_STATUSES:
         return Response(
             {
                 "transaction_id": str(transaction_id),
-                "status": Transaction.Status.RETRY_COMPENSATION_FAILED,
-                "cause": cause,
-                "error": "Could not reach Inventory during retry compensation",
+                "status": txn.status,
+                "error": f"Transaction in status '{txn.status}' is not eligible for retry compensation",
             },
-            status=503,
+            status=400,
         )
 
-    release_data = _parse_json_response(release_response)
-
-    if release_response.status_code == 200:
-        transitioned = _set_status_with_event(
-            transaction_id,
-            to_status=Transaction.Status.COMPENSATED_ON_RETRY,
-            expected_status=txn_status_at_entry,
-            actor=SagaEvent.ACTOR_RETRY,
-            http_status_code=release_response.status_code,
-            http_payload=release_data,
-        )
-
-        if not transitioned:
-            current = Transaction.objects.get(transaction_id=transaction_id)
-            return Response({
-                "transaction_id": str(transaction_id),
-                "status": current.status,
-                "message": "Transaction was concurrently resolved by another process",
-                "compensation_response": release_data,
-            })
-
+    # CAS-claim to RECOVERY_IN_PROGRESS BEFORE any external call
+    claimed = _set_status_with_event(
+        transaction_id,
+        to_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+        expected_status=txn.status,
+        actor=SagaEvent.ACTOR_RETRY,
+        http_status_code=None,
+        http_payload=None,
+    )
+    if not claimed:
+        current = Transaction.objects.filter(transaction_id=transaction_id).first()
+        curr_status = current.status if current else "UNKNOWN"
         return Response({
             "transaction_id": str(transaction_id),
-            "status": Transaction.Status.COMPENSATED_ON_RETRY,
-            "compensation_response": release_data,
-        })
+            "status": curr_status,
+            "message": "Transaction was concurrently resolved by another process",
+        }, status=409)
 
-    _set_status_with_event(
-        transaction_id,
-        to_status=Transaction.Status.RETRY_COMPENSATION_FAILED,
-        expected_status=txn_status_at_entry,
+    correlation_id = _get_active_correlation_id(getattr(request, "correlation_id", None))
+    outcome = execute_compensation_sweep(
+        transaction_id=transaction_id,
         actor=SagaEvent.ACTOR_RETRY,
-        http_status_code=release_response.status_code,
-        http_payload=release_data,
+        original_status=txn.status,
+        correlation_id=correlation_id,
+        get_func=_http_get,
+        post_func=_http_post,
     )
-    return Response(
-        {
-            "transaction_id": str(transaction_id),
-            "status": Transaction.Status.RETRY_COMPENSATION_FAILED,
-            "compensation_response": release_data,
-        },
-        status=500,
-    )
+
+    response_data = {
+        "transaction_id": str(transaction_id),
+        "status": outcome["status"],
+    }
+    if "compensation_response" in outcome and outcome["compensation_response"]:
+        response_data["compensation_response"] = outcome["compensation_response"]
+    if "refund_response" in outcome and outcome["refund_response"]:
+        response_data["refund_response"] = outcome["refund_response"]
+    if "error" in outcome:
+        response_data["error"] = outcome["error"]
+
+    return Response(response_data, status=outcome["status_code"])
 
 
 # this endpoint allows an authenticated admin or the frontend visualizer to manually trigger an immediate crash-recovery sweep on demand.

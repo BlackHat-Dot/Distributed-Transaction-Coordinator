@@ -66,7 +66,13 @@ class RetryCompensationRaceNewCodeTests(TransactionTestCase):
             finally:
                 connection.close()
 
-        with patch("coordinator.views.requests.post", side_effect=sleeping_post):
+        mock_get_resp = MagicMock()
+        mock_get_resp.status_code = 200
+        mock_get_resp.content = b'{"status": "NOT_CHARGED"}'
+        mock_get_resp.json.return_value = {"status": "NOT_CHARGED"}
+
+        with patch("coordinator.views.requests.post", side_effect=sleeping_post), \
+             patch("coordinator.views.requests.get", return_value=mock_get_resp):
             t1 = threading.Thread(target=lambda: results.append(do_retry(0)))
             t2 = threading.Thread(target=lambda: results.append(do_retry(THREAD_STAGGER)))
             t1.start()
@@ -96,13 +102,18 @@ class RetryCompensationRaceNewCodeTests(TransactionTestCase):
 
         events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
         self.assertEqual(
-            len(events), 1,
-            f"Expected 1 SagaEvent, found {len(events)}: {events}",
+            len(events), 2,
+            f"Expected 2 SagaEvents, found {len(events)}: {events}",
         )
         self.assertEqual(events[0].seq, 1)
-        self.assertEqual(events[0].to_status, Transaction.Status.COMPENSATED_ON_RETRY)
         self.assertEqual(events[0].from_status, Transaction.Status.COMPENSATION_FAILED)
+        self.assertEqual(events[0].to_status, Transaction.Status.RECOVERY_IN_PROGRESS)
         self.assertEqual(events[0].actor, SagaEvent.ACTOR_RETRY)
+
+        self.assertEqual(events[1].seq, 2)
+        self.assertEqual(events[1].from_status, Transaction.Status.RECOVERY_IN_PROGRESS)
+        self.assertEqual(events[1].to_status, Transaction.Status.COMPENSATED_ON_RETRY)
+        self.assertEqual(events[1].actor, SagaEvent.ACTOR_RETRY)
 
 
         txn.refresh_from_db()

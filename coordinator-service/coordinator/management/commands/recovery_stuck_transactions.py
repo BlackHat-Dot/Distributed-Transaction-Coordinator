@@ -5,6 +5,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 from coordinator.models import Transaction, SagaEvent
 from coordinator.saga_log import _set_status_with_event
+from coordinator.recovery import execute_compensation_sweep
 
 import os
 
@@ -53,6 +54,7 @@ class Command(BaseCommand):
         self.recover_timeouts(threshold)
         self.recover_compensating(threshold)
         self.recover_compensation_failed(threshold)
+        self.recover_retry_compensation_failed(threshold)
 
         self.recover_in_progress(threshold)
 
@@ -139,6 +141,14 @@ class Command(BaseCommand):
         for transaction_id in self._claim(Transaction.Status.COMPENSATION_FAILED, threshold):
             self.stdout.write(
                 f"Recovering {transaction_id} claimed from COMPENSATION_FAILED..."
+            )
+            self._compensate(transaction_id)
+
+    def recover_retry_compensation_failed(self, threshold):
+
+        for transaction_id in self._claim(Transaction.Status.RETRY_COMPENSATION_FAILED, threshold):
+            self.stdout.write(
+                f"Recovering {transaction_id} claimed from RETRY_COMPENSATION_FAILED..."
             )
             self._compensate(transaction_id)
 
@@ -284,116 +294,20 @@ class Command(BaseCommand):
         )
 
     def _compensate(self, transaction_id, payment_was_charged=None):
-        _set_status_with_event(
+        outcome = execute_compensation_sweep(
             transaction_id=transaction_id,
-            to_status=Transaction.Status.COMPENSATING,
-            expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
             actor=SagaEvent.ACTOR_RECOVERY,
-            http_status_code=None,
-            http_payload=None,
+            original_status=Transaction.Status.COMPENSATION_FAILED,
+            get_func=requests.get,
+            post_func=requests.post,
         )
-
-        txn = Transaction.objects.filter(transaction_id=transaction_id).first()
-        seat_ids = txn.seat_ids if txn else []
-
-        headers = {
-            "X-Correlation-ID": str(transaction_id),
-            "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
-        }
-        # 1. Attempt Inventory Release
-        release_ok = False
-        release_status_code = None
-        release_payload = None
-        try:
-            resp = requests.post(
-                INVENTORY_RELEASE_URL,
-                json={"transaction_id": str(transaction_id), "seat_ids": seat_ids},
-                headers=headers,
-                timeout=REQUEST_TIMEOUT,
-            )
-            release_status_code = resp.status_code
-            release_ok = (resp.status_code == 200)
-            if release_ok:
-                release_payload = resp.json() if resp.content else None
-            else:
-                self.stdout.write(
-                    self.style.ERROR(
-                        f"  -> {transaction_id}: compensation rejected by inventory (HTTP {resp.status_code})."
-                    )
-                )
-        except requests.exceptions.RequestException:
-            self.stdout.write(
-                self.style.ERROR(
-                    f"  -> {transaction_id}: compensation network error releasing inventory."
-                )
-            )
-
-        # 2. Check if payment was charged and needs refund (regardless of release status)
-        if payment_was_charged is None:
-            try:
-                p_resp = requests.get(
-                    PAYMENT_CHECK_URL,
-                    params={"transaction_id": str(transaction_id)},
-                    headers=headers,
-                    timeout=REQUEST_TIMEOUT,
-                )
-                if p_resp.status_code == 200 and p_resp.json().get("status") == PAYMENT_CHARGED:
-                    payment_was_charged = True
-            except requests.exceptions.RequestException:
-                pass
-
-        refund_ok = not payment_was_charged
-        refund_status_code = None
-        refund_payload = None
-        if payment_was_charged:
-            try:
-                refund_resp = requests.post(
-                    PAYMENT_REFUND_URL,
-                    json={"transaction_id": str(transaction_id)},
-                    headers=headers,
-                    timeout=REQUEST_TIMEOUT,
-                )
-                refund_status_code = refund_resp.status_code
-                refund_ok = (refund_resp.status_code == 200)
-                if refund_ok:
-                    refund_payload = refund_resp.json() if refund_resp.content else None
-                else:
-                    self.stdout.write(
-                        self.style.ERROR(
-                            f"  -> {transaction_id}: refund rejected by payment service (HTTP {refund_resp.status_code})."
-                        )
-                    )
-            except requests.exceptions.RequestException:
-                self.stdout.write(
-                    self.style.ERROR(
-                        f"  -> {transaction_id}: refund failed (network error reaching payment service)."
-                    )
-                )
-
-        # 3. Final State Resolution
-        if release_ok and refund_ok:
-            _set_status_with_event(
-                transaction_id=transaction_id,
-                to_status=Transaction.Status.COMPENSATED,
-                expected_status=Transaction.Status.COMPENSATING,
-                actor=SagaEvent.ACTOR_RECOVERY,
-                http_status_code=release_status_code or 200,
-                http_payload=release_payload,
-            )
+        if outcome.get("success"):
             self.stdout.write(
                 self.style.SUCCESS(
                     f"  -> {transaction_id}: compensated successfully."
                 )
             )
         else:
-            _set_status_with_event(
-                transaction_id=transaction_id,
-                to_status=Transaction.Status.COMPENSATION_FAILED,
-                expected_status=Transaction.Status.COMPENSATING,
-                actor=SagaEvent.ACTOR_RECOVERY,
-                http_status_code=refund_status_code if not refund_ok else release_status_code,
-                http_payload=refund_payload if not refund_ok else release_payload,
-            )
             self.stdout.write(
                 self.style.ERROR(
                     f"  -> {transaction_id}: compensation partially failed; will retry next sweep."
