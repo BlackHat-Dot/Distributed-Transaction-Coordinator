@@ -8,7 +8,8 @@ import time
 import uuid
 from datetime import timedelta
 from django.conf import settings
-from django.db import transaction, connection
+from django.db import transaction, connection, IntegrityError
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -54,37 +55,71 @@ def reclaim_expired_holds():
     """
     now = timezone.now()
 
-    held_seats = list(Seat.objects.filter(status=Seat.Status.HELD))
+    held_seats = list(
+        Seat.objects.filter(status=Seat.Status.HELD).values(
+            "id", "held_until", "user_email", "held_by_transaction_id"
+        )
+    )
     if not held_seats:
         return 0, 0
 
-    expired_ids = set()
+    expired_snapshots = {}  # seat_id -> held_by_transaction_id
     redis_client = get_redis_client()
 
     for seat in held_seats:
+        seat_id = seat["id"]
         # 1. Time-based expiry (10m hold elapsed)
-        if seat.held_until and seat.held_until < now:
-            expired_ids.add(seat.id)
+        if seat["held_until"] and seat["held_until"] < now:
+            expired_snapshots[seat_id] = seat["held_by_transaction_id"]
             continue
 
         # 2. Presence-based expiry (dead-man's switch: user exited browser / logged out)
-        if seat.user_email and redis_client:
+        if seat["user_email"] and redis_client:
             try:
-                if not redis_client.exists(f"dtc:session:{seat.user_email}"):
-                    expired_ids.add(seat.id)
+                if not redis_client.exists(f"dtc:session:{seat['user_email']}"):
+                    expired_snapshots[seat_id] = seat["held_by_transaction_id"]
             except Exception:
                 pass
 
-    if not expired_ids:
+    if not expired_snapshots:
         return 0, 0
 
     with transaction.atomic():
-        released = Reservation.objects.filter(
-            seat_id__in=expired_ids,
-            status=Reservation.Status.RESERVED,
-        ).update(status=Reservation.Status.RELEASED) # reclaimer
+        locked_seats = list(
+            Seat.objects.select_for_update()
+            .filter(id__in=list(expired_snapshots.keys()), status=Seat.Status.HELD)
+            .order_by("id")
+        )
 
-        reclaimed = Seat.objects.filter(id__in=expired_ids).update(
+        verified_reclaim_seats = []
+        for seat in locked_seats:
+            expected_tid = expired_snapshots.get(seat.id)
+            # Compare held_by_transaction_id directly without truthiness
+            if seat.held_by_transaction_id == expected_tid:
+                verified_reclaim_seats.append(seat)
+
+        if not verified_reclaim_seats:
+            return 0, 0
+
+        reclaimed_ids = [s.id for s in verified_reclaim_seats]
+        pair_filter = Q()
+        for s in verified_reclaim_seats:
+            if s.held_by_transaction_id is not None:
+                pair_filter |= Q(seat_id=s.id, transaction_id=s.held_by_transaction_id)
+            else:
+                pair_filter |= Q(seat_id=s.id)
+
+        released = 0
+        if pair_filter:
+            released = Reservation.objects.filter(
+                pair_filter,
+                status=Reservation.Status.RESERVED,
+            ).update(status=Reservation.Status.RELEASED)
+
+        reclaimed = Seat.objects.filter(
+            id__in=reclaimed_ids,
+            status=Seat.Status.HELD,
+        ).update(
             status=Seat.Status.AVAILABLE,
             held_until=None,
             held_by_transaction_id=None,
@@ -410,9 +445,46 @@ def reserve_seat(request):
                         status=429,
                     )
             
+            # If ANY requested seats are already BOOKED by this transaction:
+            has_booked = any(s.status == Seat.Status.BOOKED and str(s.held_by_transaction_id) == str(transaction_id) for s in seats)
+            if has_booked:
+                # If ALL requested seats are BOOKED by this transaction, return idempotent success matching normal reserve shape
+                if all(s.status == Seat.Status.BOOKED and str(s.held_by_transaction_id) == str(transaction_id) for s in seats):
+                    total_amount = sum(s.price for s in seats)
+                    return Response(
+                        {
+                            "message": f"{len(seats)} Seats reserved",
+                            "transaction_id": str(transaction_id),
+                            "seat_ids": [s.id for s in seats],
+                            "held_until": None,
+                            "total_amount": str(total_amount),
+                        },
+                        status=200,
+                    )
+                else:
+                    return Response(
+                        {
+                            "error": "Conflict: Partial reservation mismatch. Some requested seats are already booked for this transaction.",
+                            "code": "PARTIAL_SEATS_BOOKED_CONFLICT",
+                            "transaction_id": str(transaction_id),
+                        },
+                        status=409,
+                    )
+
             for seat in seats:
-                # 1. Is it already held by this transaction? (Idempotent retry)
-                if seat.held_by_transaction_id and str(seat.held_by_transaction_id) == str(transaction_id):
+                # If a seat is BOOKED (and not handled by all-booked check above), it cannot be held
+                if seat.status == Seat.Status.BOOKED:
+                    return Response(
+                        {
+                            "error": f"Seat {seat.row}{seat.seat_number} is already booked",
+                            "code": "SEAT_UNAVAILABLE",
+                            "transaction_id": str(transaction_id),
+                        },
+                        status=409,
+                    )
+
+                # 1. Is it already held by this transaction? (Idempotent retry of active hold)
+                if seat.status == Seat.Status.HELD and seat.held_by_transaction_id and str(seat.held_by_transaction_id) == str(transaction_id):
                     continue
                 
                 # 2. Is it held by the same user? (Transition temporary hold to checkout)
@@ -477,6 +549,16 @@ def reserve_seat(request):
             }
             return Response(resp_data, status=200)
 
+    except IntegrityError as e:
+        return Response(
+            {
+                "error": "Conflict: Seat reservation conflict or concurrent modification.",
+                "code": "SEAT_CONFLICT",
+                "detail": str(e),
+                "transaction_id": str(transaction_id) if "transaction_id" in locals() and transaction_id else None,
+            },
+            status=409,
+        )
     except Exception as e:
         return Response({"error": "Database error", "detail": str(e)}, status=500)
 
@@ -535,9 +617,11 @@ def confirm_seat(request):
                         status=409,
                     )
 
-            Reservation.objects.filter(transaction_id=transaction_id).update(
-                status=Reservation.Status.BOOKED
-            )
+            Reservation.objects.filter(
+                transaction_id=transaction_id,
+                seat_id__in=[s.id for s in seats],
+                status=Reservation.Status.RESERVED,
+            ).update(status=Reservation.Status.BOOKED)
 
             Seat.objects.filter(id__in=[s.id for s in seats]).update(
                 status=Seat.Status.BOOKED,
@@ -555,10 +639,9 @@ def release_seat(request):
     is_staff = _is_staff_request(request)
 
     # 2. Internal service key check (Coordinator Saga rollback)
-    internal_key = request.headers.get("X-Internal-Service-Key")
-    is_internal = bool(
-        internal_key and INTERNAL_SERVICE_KEY and secrets.compare_digest(internal_key, INTERNAL_SERVICE_KEY)
-    )
+    auth_err, is_internal = _verify_internal_service_key(request, allow_client=True)
+    if auth_err:
+        return auth_err
 
     # 3. User JWT verification (Must be authenticated if not staff/internal)
     auth_user_id = None
@@ -570,12 +653,6 @@ def release_seat(request):
                 status=401,
             )
 
-    # 4. Strict payload rule: Reject seat_ids; require only transaction_id
-    if isinstance(request.data, dict) and "seat_ids" in request.data:
-        return Response(
-            {"error": "seat_ids cannot be supplied. Release is performed by transaction_id only.", "code": "INVALID_FIELDS"},
-            status=400,
-        )
 
     raw_tid = request.data.get("transaction_id") if isinstance(request.data, dict) else None
     if not raw_tid:
@@ -606,8 +683,8 @@ def release_seat(request):
                             status=403,
                         )
 
-                # Fail fast 2: Regular user or coordinator attempting to release confirmed/booked ticket
-                if not is_staff and r.status == Reservation.Status.BOOKED:
+                # Fail fast 2: Regular user attempting to release confirmed/booked ticket
+                if not (is_staff or is_internal) and r.status == Reservation.Status.BOOKED:
                     return Response(
                         {
                             "error": "This reservation is already booked and confirmed. Users cannot cancel booked tickets. Please contact staff.",
@@ -618,7 +695,7 @@ def release_seat(request):
                     )
 
                 # Collect active reservations to release
-                if is_staff:
+                if is_staff or is_internal:
                     if r.status in (Reservation.Status.RESERVED, Reservation.Status.BOOKED):
                         active_res.append(r)
                 else:

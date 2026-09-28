@@ -58,6 +58,10 @@ class Seat(models.Model):
     class Meta:
         unique_together = [("event", "row", "seat_number")]
         ordering = ["event", "row", "seat_number"]
+        indexes = [
+            models.Index(fields=["held_by_transaction_id", "status"], name="idx_seat_tx_status"),
+            models.Index(fields=["user_id", "status", "held_until"], name="idx_seat_user_status_until"),
+        ]
 
     @property
     def is_available(self):
@@ -119,6 +123,19 @@ class Reservation(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["seat", "transaction_id"], name="unique_seat_transaction"),
+            models.UniqueConstraint(
+                fields=["seat"],
+                condition=models.Q(status__in=["INVENTORY_RESERVED", "BOOKED"]),
+                name="unique_active_seat_reservation",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["transaction_id", "status"], name="idx_res_tid_status"),
+        ]
 
     def __str__(self):
         return f"Reservation({self.transaction_id}, seat={self.seat_id}, {self.status})"
