@@ -909,6 +909,111 @@ class PaymentTimestampsAndHygieneTests(BasePaymentTestCase):
         self.assertEqual(resp.data.get("status"), Payment.Status.VOIDED)
 
 
+class ConcurrentRefundTests(TransactionTestCase):
+    def tearDown(self):
+        from django.db import connections
+        connections.close_all()
+        super().tearDown()
+
+    def test_concurrent_refund_race(self):
+        tid = str(uuid.uuid4())
+        client = APIClient()
+        client.credentials(HTTP_X_INTERNAL_SERVICE_KEY=DEFAULT_INTERNAL_KEY)
+        c_resp = client.post("/payments/charge/", {"transaction_id": tid, "amount": 100}, format="json")
+        self.assertEqual(c_resp.status_code, 201)
+
+        def do_refund():
+            try:
+                c = APIClient()
+                c.credentials(HTTP_X_INTERNAL_SERVICE_KEY=DEFAULT_INTERNAL_KEY)
+                return c.post("/payments/refund/", {"transaction_id": tid}, format="json")
+            finally:
+                from django.db import connection
+                connection.close()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            f1 = executor.submit(do_refund)
+            f2 = executor.submit(do_refund)
+            r1 = f1.result()
+            r2 = f2.result()
+
+        self.assertEqual(r1.status_code, 200)
+        self.assertEqual(r2.status_code, 200)
+        p = Payment.objects.get(transaction_id=tid)
+        self.assertEqual(p.status, Payment.Status.REFUNDED)
+        self.assertIsNotNone(p.refunded_at)
+
+    def test_concurrent_charge_and_refund_race(self):
+        tid = str(uuid.uuid4())
+
+        def do_charge():
+            try:
+                c = APIClient()
+                c.credentials(HTTP_X_INTERNAL_SERVICE_KEY=DEFAULT_INTERNAL_KEY)
+                return c.post("/payments/charge/", {"transaction_id": tid, "amount": 100}, format="json")
+            finally:
+                from django.db import connection
+                connection.close()
+
+        def do_refund():
+            try:
+                c = APIClient()
+                c.credentials(HTTP_X_INTERNAL_SERVICE_KEY=DEFAULT_INTERNAL_KEY)
+                return c.post("/payments/refund/", {"transaction_id": tid}, format="json")
+            finally:
+                from django.db import connection
+                connection.close()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            f_charge = executor.submit(do_charge)
+            f_refund = executor.submit(do_refund)
+            r_charge = f_charge.result()
+            r_refund = f_refund.result()
+
+        # Neither must fail with 500
+        self.assertNotEqual(r_charge.status_code, 500)
+        self.assertNotEqual(r_refund.status_code, 500)
+
+        # Final state must be valid
+        p = Payment.objects.filter(transaction_id=tid).first()
+        self.assertIsNotNone(p)
+        self.assertIn(p.status, [Payment.Status.CHARGED, Payment.Status.REFUNDED])
+
+
+class DatabaseExceptionMappingTests(BasePaymentTestCase):
+    def test_database_operational_error_mapped_to_503(self):
+        from unittest.mock import patch
+        from django.db import OperationalError
+
+        tid = str(uuid.uuid4())
+        with patch("payments.views.Payment.objects.filter", side_effect=OperationalError("connection timeout")):
+            resp = self.client.get(f"/payments/check/?transaction_id={tid}")
+            self.assertEqual(resp.status_code, 503)
+            self.assertEqual(resp.data.get("code"), "DATABASE_UNAVAILABLE")
+
+    def test_database_generic_error_mapped_to_503(self):
+        from unittest.mock import patch
+        from django.db import DatabaseError
+
+        tid = str(uuid.uuid4())
+        with patch("payments.views.Payment.objects.filter", side_effect=DatabaseError("DB disk full")):
+            resp = self.client.post("/payments/charge/", {"transaction_id": tid, "amount": 100}, format="json")
+            self.assertEqual(resp.status_code, 503)
+            self.assertEqual(resp.data.get("code"), "DATABASE_UNAVAILABLE")
+
+
+class EmailMaskingTests(BasePaymentTestCase):
+    def test_mask_email_functionality(self):
+        from payments.views import _mask_email
+        self.assertIsNone(_mask_email(None))
+        self.assertIsNone(_mask_email(""))
+        self.assertIsNone(_mask_email("not-an-email"))
+        self.assertEqual(_mask_email("a@example.com"), "a***@example.com")
+        self.assertEqual(_mask_email("john.doe@example.com"), "j***e@example.com")
+        self.assertEqual(_mask_email("user@dtc.com"), "u***r@dtc.com")
+
+
+
 
 
 

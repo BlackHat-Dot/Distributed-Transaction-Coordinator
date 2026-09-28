@@ -1,3 +1,4 @@
+import logging
 import uuid
 from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
@@ -14,6 +15,19 @@ from .models import Payment
 from .permissions import verify_internal_service_key, InternalServicePermission
 
 _verify_internal_service_key = verify_internal_service_key
+
+logger = logging.getLogger("payments")
+
+
+def _mask_email(email):
+    if not email or "@" not in email:
+        return None
+    user, domain = email.split("@", 1)
+    if len(user) <= 1:
+        masked_user = user + "***"
+    else:
+        masked_user = user[0] + "***" + user[-1]
+    return f"{masked_user}@{domain}"
 
 
 TESTING_FAILURE_AMOUNT = Decimal("9999")
@@ -157,6 +171,13 @@ def charge_payment(request):
     # Payment decline flag (F2: gated behind ENABLE_TEST_PAYMENT_FAILURE setting)
     enable_test_failure = getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False) or getattr(settings, "IS_TESTING", False)
     if enable_test_failure and amount == TESTING_FAILURE_AMOUNT:
+        logger.info(
+            "Payment simulated decline: transaction_id=%s amount=%s user_id=%s email=%s",
+            transaction_uuid,
+            amount,
+            user_id,
+            _mask_email(user_email),
+        )
         response_data = {
             "error": "Payment declined",
             "transaction_id": str(transaction_uuid),
@@ -192,12 +213,23 @@ def charge_payment(request):
             )
         return _handle_existing_charge(existing, amount, user_id, transaction_uuid)
 
+    logger.info(
+        "Payment charge succeeded: transaction_id=%s amount=%s user_id=%s email=%s",
+        transaction_uuid,
+        amount,
+        user_id,
+        _mask_email(user_email),
+    )
     return _payment_response(payment, status=201)
 
 
 def _handle_existing_charge(existing, amount, user_id, transaction_uuid):
     # F4: Attempt to charge a VOIDED transaction => 409
     if existing.status == Payment.Status.VOIDED:
+        logger.warning(
+            "Payment charge rejected for voided transaction: transaction_id=%s",
+            transaction_uuid,
+        )
         return Response(
             {
                 "error": "Transaction has been voided",
@@ -210,6 +242,10 @@ def _handle_existing_charge(existing, amount, user_id, transaction_uuid):
 
     # F14: Charge replay on a REFUNDED payment => 409
     if existing.status == Payment.Status.REFUNDED:
+        logger.warning(
+            "Payment charge rejected for refunded transaction: transaction_id=%s",
+            transaction_uuid,
+        )
         return Response(
             {
                 "error": "Cannot charge already refunded transaction",
@@ -222,6 +258,14 @@ def _handle_existing_charge(existing, amount, user_id, transaction_uuid):
     # F3: On replay, compare normalized amount and user_id; mismatch => 409
     # A3 contract: Must NOT contain top-level status or payment dict
     if existing.amount != amount or (existing.user_id or None) != (user_id or None):
+        logger.error(
+            "Payment charge replay payload mismatch: transaction_id=%s existing_amount=%s new_amount=%s existing_user=%s new_user=%s",
+            transaction_uuid,
+            existing.amount,
+            amount,
+            existing.user_id,
+            user_id,
+        )
         return Response(
             {
                 "error": "Idempotency key re-used with conflicting payload",
@@ -232,6 +276,12 @@ def _handle_existing_charge(existing, amount, user_id, transaction_uuid):
             status=409,
         )
 
+    logger.info(
+        "Payment charge replay: transaction_id=%s status=%s amount=%s",
+        transaction_uuid,
+        existing.status,
+        existing.amount,
+    )
     return _payment_response(existing, status=200)
 
 
@@ -277,6 +327,11 @@ def void_payment(request):
     with transaction.atomic():
         p = Payment.objects.select_for_update().filter(transaction_id=transaction_uuid).first()
         if p:
+            logger.info(
+                "Payment void processed for existing transaction: transaction_id=%s status=%s",
+                transaction_uuid,
+                p.status,
+            )
             if p.status == Payment.Status.VOIDED:
                 return Response(
                     {
@@ -295,10 +350,19 @@ def void_payment(request):
                     amount=None,
                     status=Payment.Status.VOIDED,
                 )
+                logger.info(
+                    "Payment void tombstone created: transaction_id=%s",
+                    transaction_uuid,
+                )
         except IntegrityError:
             p = Payment.objects.select_for_update().filter(transaction_id=transaction_uuid).first()
             if not p:
                 return Response({"error": "Database integrity constraint violation"}, status=500)
+            logger.info(
+                "Payment void race resolved: transaction_id=%s status=%s",
+                transaction_uuid,
+                p.status,
+            )
             if p.status == Payment.Status.VOIDED:
                 return Response(
                     {
@@ -338,6 +402,10 @@ def refund_payment(request):
         p = Payment.objects.select_for_update().filter(transaction_id=transaction_uuid).first()
 
         if not p:
+            logger.warning(
+                "Payment refund failed: transaction_id=%s not found",
+                transaction_uuid,
+            )
             return Response(
                 {
                     "error": "Payment not found",
@@ -348,10 +416,19 @@ def refund_payment(request):
 
         # Idempotent: multiple refunds for the same transaction return the existing refunded record
         if p.status == Payment.Status.REFUNDED:
+            logger.info(
+                "Payment refund replay: transaction_id=%s",
+                transaction_uuid,
+            )
             return _payment_response(p, status=200)
 
         # Reject refund for transactions that were not charged
         if p.status != Payment.Status.CHARGED:
+            logger.warning(
+                "Payment refund rejected for non-charged state: transaction_id=%s status=%s",
+                transaction_uuid,
+                p.status,
+            )
             return Response(
                 {
                     "error": f"Cannot refund transaction with status {p.status}",
@@ -364,4 +441,9 @@ def refund_payment(request):
         p.status = Payment.Status.REFUNDED
         p.refunded_at = timezone.now()
         p.save(update_fields=["status", "refunded_at", "updated_at"])
+        logger.info(
+            "Payment refund succeeded: transaction_id=%s amount=%s",
+            transaction_uuid,
+            p.amount,
+        )
         return _payment_response(p, status=200)

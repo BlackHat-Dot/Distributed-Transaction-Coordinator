@@ -70,6 +70,10 @@ INSTALLED_APPS = [
     'payments'
 ]
 
+REST_FRAMEWORK = {
+    "EXCEPTION_HANDLER": "payments.exceptions.custom_exception_handler",
+}
+
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'payments.middleware.CorrelationIdMiddleware',
