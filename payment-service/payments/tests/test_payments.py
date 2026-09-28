@@ -682,12 +682,189 @@ class InternalServiceKeyAuthTests(TestCase):
         self.assertEqual(resp.data.get("status"), "healthy")
 
     def test_app_config_ready_refuses_empty_key_when_not_testing(self):
+        import sys
+        from unittest import mock
         from django.apps import apps
         from django.core.exceptions import ImproperlyConfigured
         app_config = apps.get_app_config("payments")
-        with self.settings(IS_TESTING=False, INTERNAL_SERVICE_KEY=""):
-            with self.assertRaises(ImproperlyConfigured):
+        with mock.patch.object(sys, "argv", ["gunicorn", "payment_service.wsgi:application"]):
+            with self.settings(IS_TESTING=False, INTERNAL_SERVICE_KEY=""):
+                with self.assertRaises(ImproperlyConfigured):
+                    app_config.ready()
+
+    def test_app_config_ready_skips_key_check_for_non_serving_commands(self):
+        import sys
+        from unittest import mock
+        from django.apps import apps
+        app_config = apps.get_app_config("payments")
+        with mock.patch.object(sys, "argv", ["manage.py", "migrate"]):
+            with self.settings(IS_TESTING=False, INTERNAL_SERVICE_KEY=""):
+                # Non-serving commands like migrate should not raise ImproperlyConfigured
                 app_config.ready()
+
+
+class VoidPaymentTests(BasePaymentTestCase):
+    def setUp(self):
+        super().setUp()
+        self.url = "/payments/void/"
+
+    def test_void_creates_tombstone(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(self.url, {"transaction_id": tid}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data.get("transaction_id"), tid)
+        self.assertEqual(resp.data.get("status"), "NOT_CHARGED")
+        self.assertTrue(resp.data.get("voided"))
+
+        payment = Payment.objects.get(transaction_id=tid)
+        self.assertEqual(payment.status, Payment.Status.VOIDED)
+        self.assertIsNone(payment.amount)
+
+    def test_void_then_charge_returns_409(self):
+        tid = str(uuid.uuid4())
+        v_resp = self.client.post(self.url, {"transaction_id": tid}, format="json")
+        self.assertEqual(v_resp.status_code, 200)
+
+        c_resp = self.client.post(
+            "/payments/charge/",
+            {"transaction_id": tid, "amount": 100},
+            format="json",
+        )
+        self.assertEqual(c_resp.status_code, 409)
+        self.assertEqual(c_resp.data.get("code"), "TRANSACTION_VOIDED")
+        self.assertEqual(c_resp.data.get("status"), "NOT_CHARGED")
+
+    def test_charge_then_void_returns_charged_status(self):
+        tid = str(uuid.uuid4())
+        c_resp = self.client.post(
+            "/payments/charge/",
+            {"transaction_id": tid, "amount": "150.00"},
+            format="json",
+        )
+        self.assertEqual(c_resp.status_code, 201)
+
+        v_resp = self.client.post(self.url, {"transaction_id": tid}, format="json")
+        self.assertEqual(v_resp.status_code, 200)
+        self.assertEqual(v_resp.data.get("status"), "CHARGED")
+        self.assertEqual(v_resp.data.get("amount"), "150.00")
+        self.assertFalse(v_resp.data.get("voided", False))
+
+        # Confirm DB still has CHARGED
+        payment = Payment.objects.get(transaction_id=tid)
+        self.assertEqual(payment.status, Payment.Status.CHARGED)
+        self.assertEqual(payment.amount, Decimal("150.00"))
+
+    def test_void_is_idempotent(self):
+        tid = str(uuid.uuid4())
+        resp1 = self.client.post(self.url, {"transaction_id": tid}, format="json")
+        self.assertEqual(resp1.status_code, 200)
+        self.assertEqual(resp1.data.get("status"), "NOT_CHARGED")
+
+        resp2 = self.client.post(self.url, {"transaction_id": tid}, format="json")
+        self.assertEqual(resp2.status_code, 200)
+        self.assertEqual(resp2.data.get("status"), "NOT_CHARGED")
+        self.assertTrue(resp2.data.get("voided"))
+        self.assertEqual(Payment.objects.filter(transaction_id=tid).count(), 1)
+
+    def test_payment_check_returns_not_charged_and_voided_true(self):
+        tid = str(uuid.uuid4())
+        self.client.post(self.url, {"transaction_id": tid}, format="json")
+
+        check_resp = self.client.get(f"/payments/check/?transaction_id={tid}")
+        self.assertEqual(check_resp.status_code, 200)
+        self.assertEqual(check_resp.data.get("status"), "NOT_CHARGED")
+        self.assertTrue(check_resp.data.get("voided"))
+
+    def test_charge_mismatch_payload_contract_a3(self):
+        tid = str(uuid.uuid4())
+        self.client.post(
+            "/payments/charge/",
+            {"transaction_id": tid, "amount": 100, "user_id": "usr_1"},
+            format="json",
+        )
+
+        replay_resp = self.client.post(
+            "/payments/charge/",
+            {"transaction_id": tid, "amount": 200, "user_id": "usr_1"},
+            format="json",
+        )
+        self.assertEqual(replay_resp.status_code, 409)
+        self.assertEqual(replay_resp.data.get("code"), "IDEMPOTENCY_PAYLOAD_MISMATCH")
+        self.assertEqual(replay_resp.data.get("existing_status"), "CHARGED")
+        # Ensure contract: NO top-level 'status' key and NO 'payment' dict
+        self.assertNotIn("status", replay_resp.data)
+        self.assertNotIn("payment", replay_resp.data)
+
+    def test_refund_on_voided_transaction_returns_400(self):
+        tid = str(uuid.uuid4())
+        self.client.post(self.url, {"transaction_id": tid}, format="json")
+
+        resp = self.client.post("/payments/refund/", {"transaction_id": tid}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Cannot refund transaction with status VOIDED", resp.data.get("error"))
+
+    def test_void_requires_auth(self):
+        tid = str(uuid.uuid4())
+        unauth_client = APIClient()
+        resp = unauth_client.post(self.url, {"transaction_id": tid}, format="json")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_void_requires_valid_body_and_transaction_id(self):
+        resp1 = self.client.post(self.url, "not a mapping", content_type="application/json")
+        self.assertEqual(resp1.status_code, 400)
+
+        resp2 = self.client.post(self.url, {}, format="json")
+        self.assertEqual(resp2.status_code, 400)
+
+        resp3 = self.client.post(self.url, {"transaction_id": "not-a-uuid"}, format="json")
+        self.assertEqual(resp3.status_code, 400)
+
+
+class ConcurrentVoidChargeTests(TransactionTestCase):
+    def tearDown(self):
+        from django.db import connections
+        connections.close_all()
+        super().tearDown()
+
+    def test_concurrent_void_vs_charge_race(self):
+        tid = str(uuid.uuid4())
+
+        def do_void():
+            try:
+                c = APIClient()
+                c.credentials(HTTP_X_INTERNAL_SERVICE_KEY=DEFAULT_INTERNAL_KEY)
+                return c.post("/payments/void/", {"transaction_id": tid}, format="json")
+            finally:
+                from django.db import connection
+                connection.close()
+
+        def do_charge():
+            try:
+                c = APIClient()
+                c.credentials(HTTP_X_INTERNAL_SERVICE_KEY=DEFAULT_INTERNAL_KEY)
+                return c.post("/payments/charge/", {"transaction_id": tid, "amount": 100}, format="json")
+            finally:
+                from django.db import connection
+                connection.close()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            f_void = executor.submit(do_void)
+            f_charge = executor.submit(do_charge)
+            r_void = f_void.result()
+            r_charge = f_charge.result()
+
+        payment = Payment.objects.get(transaction_id=tid)
+        if payment.status == Payment.Status.VOIDED:
+            self.assertEqual(r_void.status_code, 200)
+            self.assertEqual(r_void.data.get("status"), "NOT_CHARGED")
+            self.assertEqual(r_charge.status_code, 409)
+            self.assertEqual(r_charge.data.get("code"), "TRANSACTION_VOIDED")
+        else:
+            self.assertEqual(payment.status, Payment.Status.CHARGED)
+            self.assertEqual(r_charge.status_code, 201)
+            self.assertEqual(r_void.status_code, 200)
+            self.assertEqual(r_void.data.get("status"), "CHARGED")
+
 
 
 

@@ -127,7 +127,7 @@ def _payment_response(payment, status=None):
             "transaction_id": str(payment.transaction_id),
             "user_id": payment.user_id,
             "user_email": payment.user_email,
-            "amount": str(payment.amount),
+            "amount": str(payment.amount) if payment.amount is not None else None,
             "status": payment.status,
         },
         status=status,
@@ -197,6 +197,18 @@ def charge_payment(request):
 
 
 def _handle_existing_charge(existing, amount, user_id, transaction_uuid):
+    # F4: Attempt to charge a VOIDED transaction => 409
+    if existing.status == Payment.Status.VOIDED:
+        return Response(
+            {
+                "error": "Transaction has been voided",
+                "code": "TRANSACTION_VOIDED",
+                "status": NOT_CHARGED,
+                "transaction_id": str(transaction_uuid),
+            },
+            status=409,
+        )
+
     # F14: Charge replay on a REFUNDED payment => 409
     if existing.status == Payment.Status.REFUNDED:
         return Response(
@@ -209,12 +221,14 @@ def _handle_existing_charge(existing, amount, user_id, transaction_uuid):
         )
 
     # F3: On replay, compare normalized amount and user_id; mismatch => 409
+    # A3 contract: Must NOT contain top-level status or payment dict
     if existing.amount != amount or (existing.user_id or None) != (user_id or None):
         return Response(
             {
                 "error": "Idempotency key re-used with conflicting payload",
                 "code": "IDEMPOTENCY_PAYLOAD_MISMATCH",
                 "transaction_id": str(transaction_uuid),
+                "existing_status": existing.status,
             },
             status=409,
         )
@@ -234,9 +248,77 @@ def payment_check(request):
 
     payment = Payment.objects.filter(transaction_id=transaction_uuid).first()
     if payment:
+        if payment.status == Payment.Status.VOIDED:
+            return Response(
+                {
+                    "transaction_id": str(transaction_uuid),
+                    "status": NOT_CHARGED,
+                    "voided": True,
+                },
+                status=200,
+            )
         return _payment_response(payment, status=200)
 
     return Response({"transaction_id": str(transaction_uuid), "status": NOT_CHARGED})
+
+
+@api_view(["POST"])
+def void_payment(request):
+    auth_err = _verify_internal_service_key(request)
+    if auth_err:
+        return auth_err
+
+    if not isinstance(request.data, Mapping):
+        return Response({"error": "Request body must be a valid JSON object"}, status=400)
+
+    transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
+    if error_response:
+        return error_response
+
+    with transaction.atomic():
+        p = Payment.objects.select_for_update().filter(transaction_id=transaction_uuid).first()
+        if p:
+            if p.status == Payment.Status.VOIDED:
+                return Response(
+                    {
+                        "transaction_id": str(transaction_uuid),
+                        "status": NOT_CHARGED,
+                        "voided": True,
+                    },
+                    status=200,
+                )
+            return _payment_response(p, status=200)
+
+        try:
+            with transaction.atomic():
+                p = Payment.objects.create(
+                    transaction_id=transaction_uuid,
+                    amount=None,
+                    status=Payment.Status.VOIDED,
+                )
+        except IntegrityError:
+            p = Payment.objects.select_for_update().filter(transaction_id=transaction_uuid).first()
+            if not p:
+                return Response({"error": "Database integrity constraint violation"}, status=500)
+            if p.status == Payment.Status.VOIDED:
+                return Response(
+                    {
+                        "transaction_id": str(transaction_uuid),
+                        "status": NOT_CHARGED,
+                        "voided": True,
+                    },
+                    status=200,
+                )
+            return _payment_response(p, status=200)
+
+    return Response(
+        {
+            "transaction_id": str(transaction_uuid),
+            "status": NOT_CHARGED,
+            "voided": True,
+        },
+        status=200,
+    )
 
 
 @api_view(["POST"])
