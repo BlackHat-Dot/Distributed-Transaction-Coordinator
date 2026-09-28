@@ -1463,6 +1463,63 @@ def _charge_payment(
             seat_ids=seat_ids,
         )
 
+    if payment_response.status_code >= 500:
+        uncertain_status = Transaction.Status.PAYMENT_TIMEOUT
+        transitioned = _set_status_with_event(
+            transaction_id,
+            uncertain_status,
+            expected_status=Transaction.Status.PAYMENT_PROCESSING,
+            actor=SagaEvent.ACTOR_REQUEST,
+            http_status_code=payment_response.status_code,
+            http_payload=_parse_json_response(payment_response),
+        )
+        if not transitioned:
+            return Response(
+                {
+                    "error": "Transaction was concurrently modified or resolved",
+                    "transaction_id": str(transaction_id),
+                },
+                status=409,
+            )
+
+        try:
+            payment_check = _http_get(
+                PAYMENT_CHECK_URL,
+                params={"transaction_id": str(transaction_id)},
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
+            )
+        except (Timeout, ConnectionError):
+            return Response(
+                {
+                    "transaction_id": str(transaction_id),
+                    "status": uncertain_status,
+                    "error": "Payment outcome could not be determined",
+                },
+                status=503,
+            )
+
+        check_data = _parse_json_response(payment_check) if payment_check.status_code == 200 else None
+
+        if payment_check.status_code == 200:
+            return _finalize_payment_outcome(
+                transaction_id,
+                fail_compensation,
+                check_data or {},
+                payment_status_code=payment_check.status_code,
+                correlation_id=correlation_id,
+                seat_ids=seat_ids,
+            )
+        else:
+            return Response(
+                {
+                    "transaction_id": str(transaction_id),
+                    "status": uncertain_status,
+                    "error": "Payment outcome could not be determined",
+                },
+                status=503,
+            )
+
     resp_data = _parse_json_response(payment_response)
 
     return _finalize_payment_outcome(
