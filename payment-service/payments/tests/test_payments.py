@@ -9,10 +9,19 @@ from rest_framework.test import APIClient
 from payments.models import Payment
 from payments.views import NOT_CHARGED
 
+DEFAULT_INTERNAL_KEY = "dtc-internal-coordinator-secret-key-2026"
 
-class ChargePaymentValidationTests(TestCase):
+
+class BasePaymentTestCase(TestCase):
     def setUp(self):
+        super().setUp()
         self.client = APIClient()
+        self.client.credentials(HTTP_X_INTERNAL_SERVICE_KEY=DEFAULT_INTERNAL_KEY)
+
+
+class ChargePaymentValidationTests(BasePaymentTestCase):
+    def setUp(self):
+        super().setUp()
         self.url = "/payments/charge/"
 
     def test_missing_transaction_id(self):
@@ -72,9 +81,9 @@ class ChargePaymentValidationTests(TestCase):
         self.assertIn("valid number", resp.data["error"])
 
 
-class ChargePaymentSuccessTests(TestCase):
+class ChargePaymentSuccessTests(BasePaymentTestCase):
     def setUp(self):
-        self.client = APIClient()
+        super().setUp()
         self.url = "/payments/charge/"
 
     def test_successful_charge(self):
@@ -148,9 +157,9 @@ class ChargePaymentSuccessTests(TestCase):
         )
 
 
-class ChargePaymentIntentionalFailureTests(TestCase):
+class ChargePaymentIntentionalFailureTests(BasePaymentTestCase):
     def setUp(self):
-        self.client = APIClient()
+        super().setUp()
         self.url = "/payments/charge/"
 
     def test_intentional_failure_returns_422(self):
@@ -183,9 +192,9 @@ class ChargePaymentIntentionalFailureTests(TestCase):
         self.assertIn("transaction_id", resp.data["error"])
 
 
-class PaymentCheckTests(TestCase):
+class PaymentCheckTests(BasePaymentTestCase):
     def setUp(self):
-        self.client = APIClient()
+        super().setUp()
         self.charge_url = "/payments/charge/"
         self.check_url = "/payments/check/"
 
@@ -247,6 +256,7 @@ class ConcurrentChargeTests(TransactionTestCase):
 
         def do_charge(_):
             client = APIClient()
+            client.credentials(HTTP_X_INTERNAL_SERVICE_KEY=DEFAULT_INTERNAL_KEY)
             try:
                 resp = client.post(
                     url,
@@ -307,9 +317,9 @@ class PaymentCorrelationIdMiddlewareTests(TestCase):
         uuid.UUID(cid)
 
 
-class RefundPaymentTests(TestCase):
+class RefundPaymentTests(BasePaymentTestCase):
     def setUp(self):
-        self.client = APIClient()
+        super().setUp()
         self.refund_url = "/payments/refund/"
         self.charge_url = "/payments/charge/"
 
@@ -380,9 +390,10 @@ class InternalServiceKeyAuthTests(TestCase):
         self.valid_key = "dtc-internal-coordinator-secret-key-2026"
         self.invalid_key = "attacker-unauthorized-key"
 
-    def test_production_rejects_missing_internal_service_key(self):
+    def test_missing_internal_service_key_rejected_with_403(self):
         tid = str(uuid.uuid4())
-        with self.settings(DEBUG=False, IS_TESTING=False, INTERNAL_SERVICE_KEY=self.valid_key):
+        # Even with DEBUG=True and IS_TESTING=True, missing header must be rejected
+        with self.settings(DEBUG=True, IS_TESTING=True, INTERNAL_SERVICE_KEY=self.valid_key):
             resp = self.client.post("/payments/charge/", {"transaction_id": tid, "amount": 100}, format="json")
             self.assertEqual(resp.status_code, 403)
             self.assertIn("missing", resp.data.get("error", "").lower())
@@ -393,9 +404,41 @@ class InternalServiceKeyAuthTests(TestCase):
             resp = self.client.post("/payments/refund/", {"transaction_id": tid}, format="json")
             self.assertEqual(resp.status_code, 403)
 
+    def test_empty_header_rejected_with_403(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(
+            "/payments/charge/",
+            {"transaction_id": tid, "amount": 100},
+            format="json",
+            HTTP_X_INTERNAL_SERVICE_KEY="",
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn("missing", resp.data.get("error", "").lower())
+
+    def test_whitespace_header_rejected_with_403(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(
+            "/payments/charge/",
+            {"transaction_id": tid, "amount": 100},
+            format="json",
+            HTTP_X_INTERNAL_SERVICE_KEY="   ",
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn("missing", resp.data.get("error", "").lower())
+
+    def test_non_ascii_header_rejected_without_500(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(
+            "/payments/charge/",
+            {"transaction_id": tid, "amount": 100},
+            format="json",
+            HTTP_X_INTERNAL_SERVICE_KEY="secret-\u2603-unicode",
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn("invalid", resp.data.get("error", "").lower())
+
     def test_rejects_invalid_internal_service_key(self):
         tid = str(uuid.uuid4())
-        # Both in production and debug mode, an invalid key must be rejected
         resp = self.client.post(
             "/payments/charge/",
             {"transaction_id": tid, "amount": 100},
@@ -407,7 +450,7 @@ class InternalServiceKeyAuthTests(TestCase):
 
     def test_accepts_valid_internal_service_key(self):
         tid = str(uuid.uuid4())
-        with self.settings(DEBUG=False, IS_TESTING=False, INTERNAL_SERVICE_KEY=self.valid_key):
+        with self.settings(INTERNAL_SERVICE_KEY=self.valid_key):
             resp = self.client.post(
                 "/payments/charge/",
                 {"transaction_id": tid, "amount": 100},
@@ -416,5 +459,85 @@ class InternalServiceKeyAuthTests(TestCase):
             )
             self.assertEqual(resp.status_code, 201)
             self.assertEqual(resp.data.get("status"), "CHARGED")
+
+    def test_dynamic_key_update_at_call_time(self):
+        tid = str(uuid.uuid4())
+        new_key = "brand-new-rotated-secret-key-2026"
+        with self.settings(INTERNAL_SERVICE_KEY=new_key):
+            # Old key must be rejected now
+            resp_old = self.client.post(
+                "/payments/charge/",
+                {"transaction_id": tid, "amount": 100},
+                format="json",
+                HTTP_X_INTERNAL_SERVICE_KEY=self.valid_key,
+            )
+            self.assertEqual(resp_old.status_code, 403)
+
+            # New key must be accepted dynamically
+            resp_new = self.client.post(
+                "/payments/charge/",
+                {"transaction_id": tid, "amount": 100},
+                format="json",
+                HTTP_X_INTERNAL_SERVICE_KEY=new_key,
+            )
+            self.assertEqual(resp_new.status_code, 201)
+
+    def test_key_rotation_with_fallback(self):
+        tid1 = str(uuid.uuid4())
+        tid2 = str(uuid.uuid4())
+        primary = "primary-key-alpha"
+        fallback = "fallback-key-beta"
+        with self.settings(INTERNAL_SERVICE_KEY=primary, INTERNAL_SERVICE_KEY_FALLBACK=fallback):
+            # Primary key accepted
+            resp1 = self.client.post(
+                "/payments/charge/",
+                {"transaction_id": tid1, "amount": 100},
+                format="json",
+                HTTP_X_INTERNAL_SERVICE_KEY=primary,
+            )
+            self.assertEqual(resp1.status_code, 201)
+
+            # Fallback key accepted during rotation
+            resp2 = self.client.post(
+                "/payments/charge/",
+                {"transaction_id": tid2, "amount": 100},
+                format="json",
+                HTTP_X_INTERNAL_SERVICE_KEY=fallback,
+            )
+            self.assertEqual(resp2.status_code, 201)
+
+            # Random key rejected
+            resp3 = self.client.post(
+                "/payments/charge/",
+                {"transaction_id": str(uuid.uuid4()), "amount": 100},
+                format="json",
+                HTTP_X_INTERNAL_SERVICE_KEY="some-other-key",
+            )
+            self.assertEqual(resp3.status_code, 403)
+
+    def test_unconfigured_key_fails_closed(self):
+        tid = str(uuid.uuid4())
+        with self.settings(INTERNAL_SERVICE_KEY="", INTERNAL_SERVICE_KEY_FALLBACK=None):
+            resp = self.client.post(
+                "/payments/charge/",
+                {"transaction_id": tid, "amount": 100},
+                format="json",
+                HTTP_X_INTERNAL_SERVICE_KEY="",
+            )
+            self.assertEqual(resp.status_code, 403)
+
+    def test_health_check_unauthenticated(self):
+        resp = self.client.get("/health/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data.get("status"), "healthy")
+
+    def test_app_config_ready_refuses_empty_key_when_not_testing(self):
+        from django.apps import apps
+        from django.core.exceptions import ImproperlyConfigured
+        app_config = apps.get_app_config("payments")
+        with self.settings(IS_TESTING=False, INTERNAL_SERVICE_KEY=""):
+            with self.assertRaises(ImproperlyConfigured):
+                app_config.ready()
+
 
 

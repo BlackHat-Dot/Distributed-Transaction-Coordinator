@@ -1,5 +1,3 @@
-import os
-import secrets
 import uuid
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
@@ -9,32 +7,10 @@ from rest_framework.response import Response
 from django.db import IntegrityError, transaction
 
 from .models import Payment
+from .permissions import verify_internal_service_key, InternalServicePermission
 
-INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
+_verify_internal_service_key = verify_internal_service_key
 
-
-def _verify_internal_service_key(request):
-    """
-    Ensures internal payment endpoints (charge, check, refund) can only be called
-    by internal services (e.g. coordinator) presenting the shared secret.
-    Uses constant-time comparison to prevent timing side-channels (SEC-04).
-    """
-    key = request.headers.get("X-Internal-Service-Key")
-    if key is not None:
-        if not secrets.compare_digest(key, INTERNAL_SERVICE_KEY or ""):
-            return Response(
-                {"error": "Forbidden: invalid internal service key."},
-                status=403,
-            )
-        return None
-
-    if getattr(settings, "IS_TESTING", False) or getattr(settings, "DEBUG", False):
-        return None
-
-    return Response(
-        {"error": "Forbidden: missing internal service key."},
-        status=403,
-    )
 
 
 TESTING_FAILURE_AMOUNT = Decimal("9999")
