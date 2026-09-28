@@ -909,39 +909,49 @@ def _handle_create_transaction(request):
                         },
                         status=409,
                     )
-                try:
-                    from .tasks import execute_saga_task
-                    execute_saga_task.delay(
-                        str(transaction_id),
-                        seat_ids=seat_ids,
-                        amount=str(amount),
-                        fail_compensation=fail_compensation,
-                        correlation_id=correlation_id,
-                        user_id=pay_user_id,
-                        user_email=pay_user_email,
-                        skip_reserve=True,
-                    )
-                    return Response(
-                        {
-                            "transaction_id": str(transaction_id),
-                            "status": "PENDING",
-                            "poll_url": f"/transactions/{transaction_id}/",
-                            "stream_url": f"/transactions/{transaction_id}/stream/",
-                            "message": "Saga dispatched to Celery worker",
-                        },
-                        status=202,
-                        headers={"Location": f"/transactions/{transaction_id}/"},
-                    )
-                except Exception:
-                    logger.exception("Failed to dispatch Saga task for pay action")
-                    return Response(
-                        {
-                            "transaction_id": str(transaction_id),
-                            "status": txn.status,
-                            "error": "Saga could not be dispatched",
-                        },
-                        status=503,
-                    )
+
+        if not is_sync:
+            try:
+                from .tasks import execute_saga_task
+                execute_saga_task.delay(
+                    str(transaction_id),
+                    seat_ids=seat_ids,
+                    amount=str(amount),
+                    fail_compensation=fail_compensation,
+                    correlation_id=correlation_id,
+                    user_id=pay_user_id,
+                    user_email=pay_user_email,
+                    skip_reserve=True,
+                )
+                return Response(
+                    {
+                        "transaction_id": str(transaction_id),
+                        "status": "PENDING",
+                        "poll_url": f"/transactions/{transaction_id}/",
+                        "stream_url": f"/transactions/{transaction_id}/stream/",
+                        "message": "Saga dispatched to Celery worker",
+                    },
+                    status=202,
+                    headers={"Location": f"/transactions/{transaction_id}/"},
+                )
+            except Exception:
+                logger.exception("Failed to dispatch Saga task for pay action")
+                _set_status_with_event(
+                    transaction_id,
+                    to_status=Transaction.Status.HOLDING,
+                    expected_status=Transaction.Status.INVENTORY_RESERVED,
+                    actor=SagaEvent.ACTOR_REQUEST,
+                    http_status_code=None,
+                    http_payload={"error": "Celery dispatch failed; reverted to HOLDING"},
+                )
+                return Response(
+                    {
+                        "transaction_id": str(transaction_id),
+                        "status": Transaction.Status.HOLDING,
+                        "error": "Saga could not be dispatched",
+                    },
+                    status=503,
+                )
 
         return _run_saga_pipeline(
             transaction_id=transaction_id,
