@@ -213,6 +213,11 @@ function updateBottomPayBar() {
     if (draftCount > 0 && draftCount === requestedQuantity) {
       DOM.bottomPayBar.classList.remove("hidden");
       DOM.bottomPayBar.classList.add("show");
+      if (!DOM.btnBottomPay) DOM.btnBottomPay = document.getElementById("btn-bottom-pay");
+      if (DOM.btnBottomPay) {
+        DOM.btnBottomPay.disabled = false;
+        DOM.btnBottomPay.textContent = "Pay Amount";
+      }
     } else {
       DOM.bottomPayBar.classList.remove("show");
       DOM.bottomPayBar.classList.add("hidden");
@@ -1215,6 +1220,12 @@ function initEventListeners() {
   if (DOM.btnModalClose) {
     DOM.btnModalClose.addEventListener("click", () => {
       DOM.sagaModal.classList.add("hidden");
+      if (!DOM.btnBottomPay) DOM.btnBottomPay = document.getElementById("btn-bottom-pay");
+      if (DOM.btnBottomPay) {
+        DOM.btnBottomPay.disabled = false;
+        DOM.btnBottomPay.textContent = "Pay Amount";
+      }
+      STATE.isActionInProgress = false;
       loadCatalog(false);
     });
   }
@@ -2407,6 +2418,12 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
   }
 
   if (DOM.btnProceedPay) DOM.btnProceedPay.disabled = false;
+  if (!DOM.btnBottomPay) DOM.btnBottomPay = document.getElementById("btn-bottom-pay");
+  if (DOM.btnBottomPay) {
+    DOM.btnBottomPay.disabled = false;
+    DOM.btnBottomPay.textContent = "Pay Amount";
+  }
+  STATE.isActionInProgress = false;
 }
 
 /* ==========================================================================
