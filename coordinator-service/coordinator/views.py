@@ -806,7 +806,7 @@ def _handle_create_transaction(request):
         if not created:
             return dup_response
 
-        _set_status_with_event(
+        transitioned = _set_status_with_event(
             transaction_id,
             Transaction.Status.HOLDING,
             expected_status=Transaction.Status.STARTED,
@@ -814,6 +814,14 @@ def _handle_create_transaction(request):
             http_status_code=response.status_code,
             http_payload=resp_json,
         )
+        if not transitioned:
+            return Response(
+                {
+                    "error": "Transaction was concurrently modified or resolved",
+                    "transaction_id": str(transaction_id),
+                },
+                status=409,
+            )
 
         held_until = resp_json.get("held_until") if resp_json else None
         return Response(
@@ -880,7 +888,7 @@ def _handle_create_transaction(request):
 
             if not is_sync:
                 # Atomically mark as INVENTORY_RESERVED so parallel duplicate requests are rejected
-                _set_status_with_event(
+                transitioned = _set_status_with_event(
                     transaction_id,
                     Transaction.Status.INVENTORY_RESERVED,
                     expected_status=Transaction.Status.HOLDING,
@@ -892,6 +900,15 @@ def _handle_create_transaction(request):
                         "transaction_id": str(transaction_id),
                     },
                 )
+                if not transitioned:
+                    return Response(
+                        {
+                            "error": "Transaction is already being processed or is not in an eligible state for payment.",
+                            "code": "CONCURRENT_PAYMENT_IN_PROGRESS",
+                            "transaction_id": str(transaction_id),
+                        },
+                        status=409,
+                    )
                 try:
                     from .tasks import execute_saga_task
                     execute_saga_task.delay(
@@ -1165,7 +1182,7 @@ def _run_saga_pipeline(
                 },
                 status=409,
             )
-        _set_status_with_event(
+        transitioned_pay = _set_status_with_event(
             transaction_id,
             Transaction.Status.PAYMENT_PROCESSING,
             expected_status=Transaction.Status.INVENTORY_RESERVED,
@@ -1173,6 +1190,15 @@ def _run_saga_pipeline(
             http_status_code=None,
             http_payload=None,
         )
+        if not transitioned_pay:
+            return Response(
+                {
+                    "error": "Transaction was concurrently modified or resolved",
+                    "code": "CONCURRENT_PAYMENT_IN_PROGRESS",
+                    "transaction_id": str(transaction_id),
+                },
+                status=409,
+            )
         return _charge_payment(
             transaction_id,
             amount,
@@ -1197,7 +1223,7 @@ def _run_saga_pipeline(
         resp_json = None
         resp_json = _parse_json_response(response)
 
-        _set_status_with_event(
+        transitioned = _set_status_with_event(
             transaction_id,
             Transaction.Status.INVENTORY_RESERVE_FAILED,
             expected_status=Transaction.Status.STARTED,
@@ -1205,6 +1231,14 @@ def _run_saga_pipeline(
             http_status_code=response.status_code,
             http_payload=resp_json,
         )
+        if not transitioned:
+            return Response(
+                {
+                    "error": "Transaction was concurrently modified or resolved",
+                    "transaction_id": str(transaction_id),
+                },
+                status=409,
+            )
         return Response(
             {
                 "transaction_id": str(transaction_id),
@@ -1246,7 +1280,7 @@ def _run_saga_pipeline(
         except (ValueError, TypeError):
             pass
 
-    _set_status_with_event(
+    transitioned_res = _set_status_with_event(
         transaction_id,
         Transaction.Status.INVENTORY_RESERVED, # to
         expected_status=Transaction.Status.STARTED, # from
@@ -1254,7 +1288,15 @@ def _run_saga_pipeline(
         http_status_code=response.status_code,
         http_payload=resp_json,
     )
-    _set_status_with_event(
+    if not transitioned_res:
+        return Response(
+            {
+                "error": "Transaction was concurrently modified or resolved",
+                "transaction_id": str(transaction_id),
+            },
+            status=409,
+        )
+    transitioned_pay = _set_status_with_event(
         transaction_id,
         Transaction.Status.PAYMENT_PROCESSING, # to 
         expected_status=Transaction.Status.INVENTORY_RESERVED, # from
@@ -1262,6 +1304,14 @@ def _run_saga_pipeline(
         http_status_code=None,
         http_payload=None,
     )
+    if not transitioned_pay:
+        return Response(
+            {
+                "error": "Transaction was concurrently modified or resolved",
+                "transaction_id": str(transaction_id),
+            },
+            status=409,
+        )
 
     return _charge_payment(
         transaction_id,
@@ -1303,7 +1353,7 @@ def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=No
             e, Transaction.Status.INVENTORY_TIMEOUT, Transaction.Status.INVENTORY_CONNECTION_ERROR
         )
 
-        _set_status_with_event(
+        transitioned = _set_status_with_event(
             transaction_id,
             status,
             expected_status=Transaction.Status.STARTED,
@@ -1311,6 +1361,14 @@ def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=No
             http_status_code=None,
             http_payload=None,
         )
+        if not transitioned:
+            return None, Response(
+                {
+                    "error": "Transaction was concurrently modified or resolved",
+                    "transaction_id": str(transaction_id),
+                },
+                status=409,
+            )
         return None, Response({"transaction_id": str(transaction_id), "status": status}, status=504)
 
 
@@ -1346,7 +1404,7 @@ def _charge_payment(
             e, Transaction.Status.PAYMENT_TIMEOUT, Transaction.Status.PAYMENT_CONNECTION_ERROR
         )
     
-        _set_status_with_event(
+        transitioned = _set_status_with_event(
             transaction_id,
             uncertain_status, # to
             expected_status=Transaction.Status.PAYMENT_PROCESSING, # from
@@ -1354,6 +1412,14 @@ def _charge_payment(
             http_status_code=None,
             http_payload=None,
         )
+        if not transitioned:
+            return Response(
+                {
+                    "error": "Transaction was concurrently modified or resolved",
+                    "transaction_id": str(transaction_id),
+                },
+                status=409,
+            )
 
         try:
             payment_check = _http_get(
@@ -1431,7 +1497,7 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
             except Exception:
                 pass
 
-            _set_status_with_event(
+            transitioned = _set_status_with_event(
                 transaction_id,
                 Transaction.Status.COMPLETED,
                 expected_status=(
@@ -1443,6 +1509,17 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
                 http_status_code=payment_status_code,
                 http_payload={"payment": payment_data, "inventory": confirm_json},
             )
+            if not transitioned:
+                current = Transaction.objects.filter(transaction_id=transaction_id).first()
+                curr_status = current.status if current else "UNKNOWN"
+                return Response(
+                    {
+                        "error": "Transaction was concurrently modified or resolved",
+                        "status": curr_status,
+                        "transaction_id": str(transaction_id),
+                    },
+                    status=409,
+                )
             txn = Transaction.objects.filter(transaction_id=transaction_id).first()
             data = _serialize_transaction(txn) if txn else {
                 "transaction_id": str(transaction_id),
@@ -1492,7 +1569,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
 
-    _set_status_with_event(
+    claimed = _set_status_with_event(
         transaction_id,
         Transaction.Status.COMPENSATING, # to
         expected_status=( # from
@@ -1504,6 +1581,17 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
         http_status_code=payment_status_code,
         http_payload=payment_data,
     )
+    if not claimed:
+        current = Transaction.objects.filter(transaction_id=transaction_id).first()
+        curr_status = current.status if current else "UNKNOWN"
+        return Response(
+            {
+                "error": "Transaction was concurrently modified or resolved",
+                "status": curr_status,
+                "transaction_id": str(transaction_id),
+            },
+            status=409,
+        )
 
     # Check if payment was charged and needs a refund
     was_charged = False
@@ -1554,7 +1642,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
 
     # 3. Resolve Overall Compensation State
     if release_ok and refund_ok:
-        _set_status_with_event(
+        transitioned = _set_status_with_event(
             transaction_id,
             Transaction.Status.COMPENSATED,
             expected_status=Transaction.Status.COMPENSATING,
@@ -1562,6 +1650,17 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             http_status_code=release_status_code or 200,
             http_payload=release_data,
         )
+        if not transitioned:
+            current = Transaction.objects.filter(transaction_id=transaction_id).first()
+            curr_status = current.status if current else "UNKNOWN"
+            return Response(
+                {
+                    "error": "Transaction was concurrently modified or resolved",
+                    "status": curr_status,
+                    "transaction_id": str(transaction_id),
+                },
+                status=409,
+            )
         txn = Transaction.objects.filter(transaction_id=transaction_id).first()
         data = _serialize_transaction(txn) if txn else {
             "transaction_id": str(transaction_id),
@@ -1576,7 +1675,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
         return Response(data, status=400)
 
     # Partial or full failure during compensation
-    _set_status_with_event(
+    transitioned = _set_status_with_event(
         transaction_id,
         Transaction.Status.COMPENSATION_FAILED,
         expected_status=Transaction.Status.COMPENSATING,
@@ -1584,6 +1683,17 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
         http_status_code=refund_status_code if not refund_ok else release_status_code,
         http_payload=refund_data if not refund_ok else release_data,
     )
+    if not transitioned:
+        current = Transaction.objects.filter(transaction_id=transaction_id).first()
+        curr_status = current.status if current else "UNKNOWN"
+        return Response(
+            {
+                "error": "Transaction was concurrently modified or resolved",
+                "status": curr_status,
+                "transaction_id": str(transaction_id),
+            },
+            status=409,
+        )
     txn = Transaction.objects.filter(transaction_id=transaction_id).first()
     data = _serialize_transaction(txn) if txn else {
         "transaction_id": str(transaction_id),
