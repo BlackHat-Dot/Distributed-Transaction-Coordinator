@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
+from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.db import IntegrityError, transaction
@@ -27,8 +28,6 @@ def _get_max_amount():
 
 
 MAX_PAYMENT_AMOUNT = _get_max_amount()
-
-NOT_CHARGED = "NOT_CHARGED"
 
 
 @api_view(["GET"])
@@ -163,7 +162,7 @@ def charge_payment(request):
             "transaction_id": str(transaction_uuid),
             "user_id": user_id,
             "user_email": user_email,
-            "status": NOT_CHARGED,
+            "status": Payment.Status.NOT_CHARGED,
         }
         if getattr(settings, "IS_TESTING", False) or getattr(settings, "DEBUG", False):
             response_data["_testing"] = "Intentional failure for compensation testing"
@@ -203,7 +202,7 @@ def _handle_existing_charge(existing, amount, user_id, transaction_uuid):
             {
                 "error": "Transaction has been voided",
                 "code": "TRANSACTION_VOIDED",
-                "status": NOT_CHARGED,
+                "status": Payment.Status.NOT_CHARGED,
                 "transaction_id": str(transaction_uuid),
             },
             status=409,
@@ -252,14 +251,14 @@ def payment_check(request):
             return Response(
                 {
                     "transaction_id": str(transaction_uuid),
-                    "status": NOT_CHARGED,
+                    "status": Payment.Status.NOT_CHARGED,
                     "voided": True,
                 },
                 status=200,
             )
         return _payment_response(payment, status=200)
 
-    return Response({"transaction_id": str(transaction_uuid), "status": NOT_CHARGED})
+    return Response({"transaction_id": str(transaction_uuid), "status": Payment.Status.NOT_CHARGED})
 
 
 @api_view(["POST"])
@@ -282,7 +281,7 @@ def void_payment(request):
                 return Response(
                     {
                         "transaction_id": str(transaction_uuid),
-                        "status": NOT_CHARGED,
+                        "status": Payment.Status.NOT_CHARGED,
                         "voided": True,
                     },
                     status=200,
@@ -304,7 +303,7 @@ def void_payment(request):
                 return Response(
                     {
                         "transaction_id": str(transaction_uuid),
-                        "status": NOT_CHARGED,
+                        "status": Payment.Status.NOT_CHARGED,
                         "voided": True,
                     },
                     status=200,
@@ -314,7 +313,7 @@ def void_payment(request):
     return Response(
         {
             "transaction_id": str(transaction_uuid),
-            "status": NOT_CHARGED,
+            "status": Payment.Status.NOT_CHARGED,
             "voided": True,
         },
         status=200,
@@ -363,5 +362,6 @@ def refund_payment(request):
             )
 
         p.status = Payment.Status.REFUNDED
-        p.save(update_fields=["status"])
+        p.refunded_at = timezone.now()
+        p.save(update_fields=["status", "refunded_at", "updated_at"])
         return _payment_response(p, status=200)

@@ -7,7 +7,8 @@ from django.db import connection
 from rest_framework.test import APIClient
 
 from payments.models import Payment
-from payments.views import NOT_CHARGED
+
+NOT_CHARGED = Payment.Status.NOT_CHARGED
 
 DEFAULT_INTERNAL_KEY = "dtc-internal-coordinator-secret-key-2026"
 
@@ -864,6 +865,49 @@ class ConcurrentVoidChargeTests(TransactionTestCase):
             self.assertEqual(r_charge.status_code, 201)
             self.assertEqual(r_void.status_code, 200)
             self.assertEqual(r_void.data.get("status"), "CHARGED")
+
+
+class PaymentTimestampsAndHygieneTests(BasePaymentTestCase):
+    def test_payment_timestamps_on_charge(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(
+            "/payments/charge/",
+            {"transaction_id": tid, "amount": "100.00"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
+
+        p = Payment.objects.get(transaction_id=tid)
+        self.assertIsNotNone(p.created_at)
+        self.assertIsNotNone(p.updated_at)
+        self.assertIsNone(p.refunded_at)
+
+    def test_refund_sets_refunded_at_and_updates_updated_at(self):
+        tid = str(uuid.uuid4())
+        self.client.post(
+            "/payments/charge/",
+            {"transaction_id": tid, "amount": "100.00"},
+            format="json",
+        )
+        p_initial = Payment.objects.get(transaction_id=tid)
+        initial_updated_at = p_initial.updated_at
+
+        resp = self.client.post("/payments/refund/", {"transaction_id": tid}, format="json")
+        self.assertEqual(resp.status_code, 200)
+
+        p_refunded = Payment.objects.get(transaction_id=tid)
+        self.assertEqual(p_refunded.status, Payment.Status.REFUNDED)
+        self.assertIsNotNone(p_refunded.refunded_at)
+        self.assertGreaterEqual(p_refunded.updated_at, initial_updated_at)
+
+    def test_refund_invalid_state_returns_400(self):
+        tid = str(uuid.uuid4())
+        # Try refunding a voided transaction
+        self.client.post("/payments/void/", {"transaction_id": tid}, format="json")
+        resp = self.client.post("/payments/refund/", {"transaction_id": tid}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("status"), Payment.Status.VOIDED)
+
 
 
 

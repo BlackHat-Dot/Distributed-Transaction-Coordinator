@@ -18,6 +18,8 @@ class Payment(models.Model):
         choices=Status.choices,
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    refunded_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
