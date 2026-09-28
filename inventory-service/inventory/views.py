@@ -130,8 +130,23 @@ def seat_list(request):
 
 
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
-DEFAULT_STAFF_KEY = "dtc-staff-secret-key-2026"
-STAFF_API_KEY = os.getenv("STAFF_API_KEY") or DEFAULT_STAFF_KEY
+STAFF_API_KEY = os.getenv("STAFF_API_KEY")
+
+
+def _is_staff_request(request):
+    """
+    Verifies staff/admin identity using constant-time comparison against STAFF_API_KEY.
+    In production (DEBUG=False, IS_TESTING=False), it strictly fails closed if
+    STAFF_API_KEY is not configured in the environment.
+    """
+    staff_key = request.headers.get("X-Staff-Key")
+    if not staff_key:
+        return False
+    if STAFF_API_KEY:
+        return secrets.compare_digest(staff_key, STAFF_API_KEY)
+    if settings.DEBUG or getattr(settings, "IS_TESTING", False):
+        return secrets.compare_digest(staff_key, "dtc-staff-secret-key-2026")
+    return False
 
 
 def _get_authenticated_user_id(request):
@@ -537,11 +552,7 @@ def confirm_seat(request):
 @api_view(["POST"])
 def release_seat(request):
     # 1. Staff key check (Full admin override)
-    staff_key = request.headers.get("X-Staff-Key")
-    is_staff = bool(
-        (staff_key and STAFF_API_KEY and secrets.compare_digest(staff_key, STAFF_API_KEY))
-        or (staff_key and secrets.compare_digest(staff_key, DEFAULT_STAFF_KEY))
-    )
+    is_staff = _is_staff_request(request)
 
     # 2. Internal service key check (Coordinator Saga rollback)
     internal_key = request.headers.get("X-Internal-Service-Key")
@@ -684,12 +695,7 @@ def check_reservation(request):
 @api_view(["POST"])
 def reset_seats(request):
     if not settings.DEBUG:
-        staff_key = request.headers.get("X-Staff-Key")
-        has_valid_staff = bool(
-            (staff_key and STAFF_API_KEY and secrets.compare_digest(staff_key, STAFF_API_KEY))
-            or (staff_key and secrets.compare_digest(staff_key, DEFAULT_STAFF_KEY))
-        )
-        if not (has_valid_staff):
+        if not _is_staff_request(request):
             return Response(
                 {"error": "Resetting venue seats is restricted."},
                 status=403,
