@@ -1,7 +1,10 @@
 import uuid
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from collections.abc import Mapping
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.db import IntegrityError, transaction
@@ -12,10 +15,18 @@ from .permissions import verify_internal_service_key, InternalServicePermission
 _verify_internal_service_key = verify_internal_service_key
 
 
-
 TESTING_FAILURE_AMOUNT = Decimal("9999")
 
 TWO_PLACES = Decimal("0.01")
+
+
+def _get_max_amount():
+    field = Payment._meta.get_field("amount")
+    max_int_digits = field.max_digits - field.decimal_places
+    return Decimal("9" * max_int_digits + "." + "9" * field.decimal_places)
+
+
+MAX_PAYMENT_AMOUNT = _get_max_amount()
 
 NOT_CHARGED = "NOT_CHARGED"
 
@@ -28,7 +39,7 @@ def health_check(request):
 def _validate_uuid(value):
     try:
         return uuid.UUID(str(value))
-    except (ValueError, AttributeError):
+    except (ValueError, TypeError):
         return None
 
 
@@ -48,45 +59,66 @@ def _validate_amount(raw_amount):
         return None, Response({"error": "amount is required"}, status=400)
 
     try:
-        """
-        .quantize(TWO_PLACES) Setting 2 Decimal Places
-        rounding=ROUND_HALD_UP means If the deciding digit is 5 or higher, round UP(add TWO_PLACES(0.01)) and round DOWN otherwise(remove extra part and keep upto TWO PLACES).
-        """
-        # >>> Decimal(0.1)
-        # Decimal('0.1000000000000000055511151231257827021181583404541015625') # bug
-
-        # >>> Decimal(str(0.1))
-        # Decimal('0.1')  # Clean and exact
-
-        # Example:
-        # raw_amount = 150
-        # 1. str(150)           -> "150"
-        # 2. Decimal("150")     -> Decimal('150')
-        # 3. quantize to "0.01" -> Decimal('150.00')
-
-        # TWO_PLACES adds a boundary to the raw_amount:
-        # If raw_amount = 19.933
-        #  1 9 . 9 3  |  3
-        #             ▲
-        #        Cutoff line
-        # Keep two places, and deciding digit is 3rd digit, Deciding Digit = Target Places + 1
-        # 3 < 5, so keep the '19.93'
-
-        # If raw_amount = 8.347
-        # 8 . 3 4  |  7
-        #          ▲
-        # 7 > 5, so add 0.01 to 8.34 => 8.35
-
-        # If raw_amount = 25.125
-        # 5 >= 5, so add 0.01 to 25.12 => 25.13 
-        amount = Decimal(str(raw_amount)).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
+        amount = Decimal(str(raw_amount))
     except (InvalidOperation, TypeError):
         return None, Response({"error": "amount must be a valid number"}, status=400)
+
+    if not amount.is_finite():
+        return None, Response({"error": "amount must be a finite number"}, status=400)
+
+    # F7: Reject inputs with more than 2 decimal places (do not silently round)
+    exponent = amount.as_tuple().exponent
+    if isinstance(exponent, int) and exponent < -2:
+        return None, Response({"error": "amount cannot have more than 2 decimal places"}, status=400)
 
     if amount <= 0:
         return None, Response({"error": "amount must be greater than zero"}, status=400)
 
-    return amount, None
+    # F8: Upper bound check derived dynamically from Payment model field definition
+    if amount > MAX_PAYMENT_AMOUNT:
+        return None, Response(
+            {"error": f"amount exceeds maximum allowable limit of {MAX_PAYMENT_AMOUNT}"},
+            status=400,
+        )
+
+    return amount.quantize(TWO_PLACES), None
+
+
+def _validate_user_info(data):
+    user_id = None
+    if "user_id" in data and data["user_id"] is not None:
+        raw_uid = data["user_id"]
+        uid_str = str(raw_uid).strip()
+        if uid_str != "":
+            max_uid_len = Payment._meta.get_field("user_id").max_length
+            if len(uid_str) > max_uid_len:
+                return None, None, Response(
+                    {"error": f"user_id exceeds maximum length of {max_uid_len}"},
+                    status=400,
+                )
+            user_id = uid_str
+
+    user_email = None
+    if "user_email" in data and data["user_email"] is not None:
+        raw_email = data["user_email"]
+        email_str = str(raw_email).strip()
+        if email_str != "":
+            max_email_len = Payment._meta.get_field("user_email").max_length
+            if len(email_str) > max_email_len:
+                return None, None, Response(
+                    {"error": f"user_email exceeds maximum length of {max_email_len}"},
+                    status=400,
+                )
+            try:
+                validate_email(email_str)
+            except ValidationError:
+                return None, None, Response(
+                    {"error": "user_email must be a valid email address"},
+                    status=400,
+                )
+            user_email = email_str
+
+    return user_id, user_email, None
 
 
 def _payment_response(payment, status=None):
@@ -108,6 +140,9 @@ def charge_payment(request):
     if auth_err:
         return auth_err
 
+    if not isinstance(request.data, Mapping):
+        return Response({"error": "Request body must be a valid JSON object"}, status=400)
+
     transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response
@@ -116,8 +151,9 @@ def charge_payment(request):
     if error_response:
         return error_response
 
-    user_id = request.data.get("user_id") or None
-    user_email = request.data.get("user_email") or None
+    user_id, user_email, error_response = _validate_user_info(request.data)
+    if error_response:
+        return error_response
 
     # Payment decline flag
     if amount == TESTING_FAILURE_AMOUNT:
@@ -176,6 +212,9 @@ def refund_payment(request):
     if auth_err:
         return auth_err
 
+    if not isinstance(request.data, Mapping):
+        return Response({"error": "Request body must be a valid JSON object"}, status=400)
+
     transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response
@@ -207,27 +246,7 @@ def refund_payment(request):
         )
 
     with transaction.atomic():
-        """
-        select_for_update() — Database Row-Level Locking Definition:
-
-        Executes a SQL `SELECT ... FOR UPDATE` query to acquire an exclusive row-level 
-        lock on the matching database records.
-
-        Core Mechanics:
-        1. Transaction Boundary: Must run within an atomic block (`transaction.atomic()`).
-           The lock is held continuously until the current transaction commits or rolls back.
-
-        2. Mutex for Writers: Blocks any concurrent transaction attempting to UPDATE, 
-           DELETE, or execute another `select_for_update()` on the same rows, forcing 
-           them to queue up until the lock is released.
-
-        3. Non-Blocking for Readers: Does NOT block standard read queries (`SELECT`).
-           Under MVCC (Multi-Version Concurrency Control), standard readers continue to read 
-           the last committed snapshot immediately without waiting.
-
-        4. Primary Purpose: Guarantees serialization for Read-Modify-Write cycles to eliminate 
-           race conditions (e.g. preventing two users from reserving the same seat simultaneously).
-        """
+        # Acquire row-level lock to serialize concurrent refund attempts
         p = Payment.objects.select_for_update().get(id=payment.id)
 
         if p.status == Payment.Status.REFUNDED:

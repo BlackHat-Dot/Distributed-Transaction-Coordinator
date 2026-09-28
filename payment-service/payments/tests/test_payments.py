@@ -80,6 +80,91 @@ class ChargePaymentValidationTests(BasePaymentTestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn("valid number", resp.data["error"])
 
+    def test_amount_with_more_than_two_decimal_places_rejected_with_400(self):
+        tid = str(uuid.uuid4())
+        for raw in ("19.999", "8.347", "25.125", 19.999):
+            resp = self.client.post(
+                self.url,
+                {"transaction_id": tid, "amount": raw},
+                format="json",
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertIn("more than 2 decimal places", resp.data["error"])
+
+    def test_amount_exceeding_model_limit_rejected_with_400(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": "100000000.00"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("exceeds maximum allowable limit", resp.data["error"])
+
+    def test_non_finite_amounts_rejected_with_400(self):
+        tid = str(uuid.uuid4())
+        for raw in ("NaN", "Infinity", "-Infinity", "sNaN"):
+            resp = self.client.post(
+                self.url,
+                {"transaction_id": tid, "amount": raw},
+                format="json",
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertIn("finite number", resp.data["error"])
+
+    def test_non_mapping_body_rejected_with_400(self):
+        resp = self.client.post(self.url, [1, 2, 3], format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("valid JSON object", resp.data["error"])
+
+        resp_refund = self.client.post("/payments/refund/", [1, 2, 3], format="json")
+        self.assertEqual(resp_refund.status_code, 400)
+        self.assertIn("valid JSON object", resp_refund.data["error"])
+
+    def test_user_id_zero_is_preserved_not_coerced_to_none(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": 100, "user_id": 0},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["user_id"], "0")
+        payment = Payment.objects.get(transaction_id=tid)
+        self.assertEqual(payment.user_id, "0")
+
+    def test_user_id_exceeding_max_length_rejected_with_400(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": 100, "user_id": "u" * 65},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("user_id exceeds maximum length", resp.data["error"])
+
+    def test_user_email_invalid_format_rejected_with_400(self):
+        tid = str(uuid.uuid4())
+        resp = self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": 100, "user_email": "invalid-email-address"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("valid email address", resp.data["error"])
+
+    def test_user_email_exceeding_max_length_rejected_with_400(self):
+        tid = str(uuid.uuid4())
+        too_long_email = ("a" * 250) + "@example.com"
+        resp = self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": 100, "user_email": too_long_email},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("user_email exceeds maximum length", resp.data["error"])
+
+
 
 class ChargePaymentSuccessTests(BasePaymentTestCase):
     def setUp(self):
