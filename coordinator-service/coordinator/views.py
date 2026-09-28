@@ -1,3 +1,4 @@
+import hmac
 import json
 import logging
 import os
@@ -53,6 +54,33 @@ PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
 
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "5"))
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
+
+
+def _verify_staff_key(header_val):
+    """
+    Validates the X-Staff-Key header using constant-time comparison (F-19).
+    Strictly rejects empty or whitespace-only keys and secrets.
+    """
+    if not header_val or not isinstance(header_val, str) or not header_val.strip():
+        return False
+    staff_key = os.getenv("STAFF_API_KEY", "").strip()
+    if not staff_key:
+        return False
+    return hmac.compare_digest(header_val.strip().encode("utf-8"), staff_key.encode("utf-8"))
+
+
+def _fault_injection_allowed():
+    """
+    Central helper for fault injection access control (F-24, F-45).
+    Returns True ONLY when DEBUG=True and ENABLE_FAULT_INJECTION is enabled.
+    Strictly denies all fault injection in production (when DEBUG=False).
+    """
+    if not getattr(settings, "DEBUG", False):
+        return False
+    flag = getattr(settings, "ENABLE_FAULT_INJECTION", False)
+    if not flag:
+        flag = os.getenv("ENABLE_FAULT_INJECTION", "").lower() in ("true", "1", "yes", "t")
+    return bool(flag)
 
 from requests.adapters import HTTPAdapter
 
@@ -646,9 +674,9 @@ def _request_payload_verify(request):
         # One-shot legacy path: client must only send seat_ids
         allowed_fields = {"seat_ids"}
 
-    # Dev/test flags allowed in every mode
-    if getattr(settings, "DEBUG", False):
-        allowed_fields = allowed_fields | {"fail_compensation", "coordinator"}
+    # Dev/test flags allowed ONLY when fault injection is enabled
+    if _fault_injection_allowed():
+        allowed_fields = allowed_fields | {"fail_compensation", "coordinator", "fail_at_step"}
 
     for k in request.data.keys():
         if k not in allowed_fields:
@@ -716,12 +744,7 @@ def _handle_create_transaction(request):
 
     # ── Auth ─────────────────────────────────────────────────────────────────
     # Priority 1: Staff/machine-to-machine via X-Staff-Key header
-    staff_api_key = os.getenv("STAFF_API_KEY")
-    has_staff_key = bool(
-        staff_api_key
-        and request.headers.get("X-Staff-Key")
-        and secrets.compare_digest(request.headers.get("X-Staff-Key"), staff_api_key)
-    )
+    has_staff_key = _verify_staff_key(request.headers.get("X-Staff-Key"))
 
     is_staff = False
     if has_staff_key:
@@ -752,12 +775,16 @@ def _handle_create_transaction(request):
     if not correlation_id:
         raise RuntimeError("CorrelationIdMiddleware is missing or misconfigured.")
 
-    fail_compensation = request.data.get("fail_compensation", False) if request.data else False
+    fail_compensation = False
+    if _fault_injection_allowed() and request.data:
+        fail_compensation = bool(request.data.get("fail_compensation", False))
 
-    simulate_decline = (
-        request.query_params.get("simulate_payment_decline") == "true"
-        or request.headers.get("X-Simulate-Payment-Decline") == "true"
-    )
+    simulate_decline = False
+    if _fault_injection_allowed():
+        simulate_decline = (
+            request.query_params.get("simulate_payment_decline") == "true"
+            or request.headers.get("X-Simulate-Payment-Decline") == "true"
+        )
 
     is_sync = request.query_params.get("sync") == "true"
 
@@ -1056,7 +1083,7 @@ def _handle_create_transaction(request):
         return dup_response
 
     # Dev/test flag: simulate coordinator crash after transaction row is created
-    if request.data.get("coordinator"):
+    if _fault_injection_allowed() and request.data and (request.data.get("coordinator") or request.data.get("fail_at_step") == "coordinator"):
         return Response(
             {
                 "transaction_id": str(transaction_id),
@@ -1895,10 +1922,7 @@ def _get_requester_identity(request):
     """
 
     # Machine-to-Machine: Internal Staff Secret Key (Priority 1)
-    staff_key = os.getenv("STAFF_API_KEY")
-    
-    if staff_key and request.headers.get("X-Staff-Key") and secrets.compare_digest(request.headers.get("X-Staff-Key"), staff_key):
-
+    if _verify_staff_key(request.headers.get("X-Staff-Key")):
         return True, "system_staff", True
 
     # JWT Bearer Token
