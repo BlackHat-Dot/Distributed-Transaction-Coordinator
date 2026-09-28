@@ -155,23 +155,23 @@ def charge_payment(request):
     if error_response:
         return error_response
 
-    # Payment decline flag
-    if amount == TESTING_FAILURE_AMOUNT:
-        return Response(
-            {
-                "error": "Payment declined",
-                "transaction_id": str(transaction_uuid),
-                "user_id": user_id,
-                "user_email": user_email,
-                "status": NOT_CHARGED,
-                "_testing": "Intentional failure for compensation testing",
-            },
-            status=422,
-        )
+    # Payment decline flag (F2: gated behind ENABLE_TEST_PAYMENT_FAILURE setting)
+    enable_test_failure = getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False) or getattr(settings, "IS_TESTING", False)
+    if enable_test_failure and amount == TESTING_FAILURE_AMOUNT:
+        response_data = {
+            "error": "Payment declined",
+            "transaction_id": str(transaction_uuid),
+            "user_id": user_id,
+            "user_email": user_email,
+            "status": NOT_CHARGED,
+        }
+        if getattr(settings, "IS_TESTING", False) or getattr(settings, "DEBUG", False):
+            response_data["_testing"] = "Intentional failure for compensation testing"
+        return Response(response_data, status=422)
 
     existing = Payment.objects.filter(transaction_id=transaction_uuid).first()
     if existing:
-        return _payment_response(existing)
+        return _handle_existing_charge(existing, amount, user_id, transaction_uuid)
 
     try:
         with transaction.atomic():
@@ -183,10 +183,43 @@ def charge_payment(request):
                 status=Payment.Status.CHARGED,
             )
     except IntegrityError:
-        existing = Payment.objects.get(transaction_id=transaction_uuid)
-        return _payment_response(existing)
+        # F10: Catch DoesNotExist in case integrity error was triggered by a non-PK constraint
+        try:
+            existing = Payment.objects.get(transaction_id=transaction_uuid)
+        except Payment.DoesNotExist:
+            return Response(
+                {"error": "Database integrity constraint violation"},
+                status=500,
+            )
+        return _handle_existing_charge(existing, amount, user_id, transaction_uuid)
 
     return _payment_response(payment, status=201)
+
+
+def _handle_existing_charge(existing, amount, user_id, transaction_uuid):
+    # F14: Charge replay on a REFUNDED payment => 409
+    if existing.status == Payment.Status.REFUNDED:
+        return Response(
+            {
+                "error": "Cannot charge already refunded transaction",
+                "transaction_id": str(transaction_uuid),
+                "status": Payment.Status.REFUNDED,
+            },
+            status=409,
+        )
+
+    # F3: On replay, compare normalized amount and user_id; mismatch => 409
+    if existing.amount != amount or (existing.user_id or None) != (user_id or None):
+        return Response(
+            {
+                "error": "Idempotency key re-used with conflicting payload",
+                "code": "IDEMPOTENCY_PAYLOAD_MISMATCH",
+                "transaction_id": str(transaction_uuid),
+            },
+            status=409,
+        )
+
+    return _payment_response(existing, status=200)
 
 
 @api_view(["GET"])
@@ -219,39 +252,24 @@ def refund_payment(request):
     if error_response:
         return error_response
 
-    payment = Payment.objects.filter(transaction_id=transaction_uuid).first()
-
-    if not payment:
-        return Response(
-            {
-                "error": "Payment not found",
-                "transaction_id": str(transaction_uuid),
-            },
-            status=404,
-        )
-
-    # Idempotent: multiple refunds for the same transaction return the existing refunded record
-    if payment.status == Payment.Status.REFUNDED:
-        return _payment_response(payment, status=200)
-
-    # Reject refund for transactions that were not charged
-    if payment.status != Payment.Status.CHARGED:
-        return Response(
-            {
-                "error": f"Cannot refund transaction with status {payment.status}",
-                "transaction_id": str(transaction_uuid),
-                "status": payment.status,
-            },
-            status=400,
-        )
-
+    # F20: Single lookup under select_for_update inside one atomic block
     with transaction.atomic():
-        # Acquire row-level lock to serialize concurrent refund attempts
-        p = Payment.objects.select_for_update().get(id=payment.id)
+        p = Payment.objects.select_for_update().filter(transaction_id=transaction_uuid).first()
 
+        if not p:
+            return Response(
+                {
+                    "error": "Payment not found",
+                    "transaction_id": str(transaction_uuid),
+                },
+                status=404,
+            )
+
+        # Idempotent: multiple refunds for the same transaction return the existing refunded record
         if p.status == Payment.Status.REFUNDED:
             return _payment_response(p, status=200)
-        
+
+        # Reject refund for transactions that were not charged
         if p.status != Payment.Status.CHARGED:
             return Response(
                 {
@@ -264,5 +282,4 @@ def refund_payment(request):
 
         p.status = Payment.Status.REFUNDED
         p.save(update_fields=["status"])
-        
         return _payment_response(p, status=200)

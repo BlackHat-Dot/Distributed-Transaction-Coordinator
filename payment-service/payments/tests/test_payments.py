@@ -222,7 +222,7 @@ class ChargePaymentSuccessTests(BasePaymentTestCase):
             Payment.objects.filter(transaction_id=tid).count(), 1
         )
 
-    def test_duplicate_with_different_amount_returns_original(self):
+    def test_duplicate_with_different_amount_returns_409_conflict(self):
         tid = str(uuid.uuid4())
 
         self.client.post(
@@ -235,11 +235,52 @@ class ChargePaymentSuccessTests(BasePaymentTestCase):
             {"transaction_id": tid, "amount": 999},
             format="json",
         )
-        self.assertEqual(resp2.status_code, 200)
-        self.assertEqual(resp2.data["amount"], "500.00")
+        self.assertEqual(resp2.status_code, 409)
+        self.assertEqual(resp2.data.get("code"), "IDEMPOTENCY_PAYLOAD_MISMATCH")
         self.assertEqual(
             Payment.objects.filter(transaction_id=tid).count(), 1
         )
+
+    def test_duplicate_with_different_user_id_returns_409_conflict(self):
+        tid = str(uuid.uuid4())
+
+        self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": 500, "user_id": "alice"},
+            format="json",
+        )
+        resp2 = self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": 500, "user_id": "bob"},
+            format="json",
+        )
+        self.assertEqual(resp2.status_code, 409)
+        self.assertEqual(resp2.data.get("code"), "IDEMPOTENCY_PAYLOAD_MISMATCH")
+
+    def test_charge_replay_on_refunded_payment_returns_409(self):
+        tid = str(uuid.uuid4())
+        resp1 = self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": 500},
+            format="json",
+        )
+        self.assertEqual(resp1.status_code, 201)
+
+        refund_resp = self.client.post(
+            "/payments/refund/",
+            {"transaction_id": tid},
+            format="json",
+        )
+        self.assertEqual(refund_resp.status_code, 200)
+
+        # Replay charge on refunded transaction
+        resp2 = self.client.post(
+            self.url,
+            {"transaction_id": tid, "amount": 500},
+            format="json",
+        )
+        self.assertEqual(resp2.status_code, 409)
+        self.assertIn("already refunded", resp2.data.get("error", "").lower())
 
 
 class ChargePaymentIntentionalFailureTests(BasePaymentTestCase):
@@ -275,6 +316,30 @@ class ChargePaymentIntentionalFailureTests(BasePaymentTestCase):
         )
         self.assertEqual(resp.status_code, 400)
         self.assertIn("transaction_id", resp.data["error"])
+
+    def test_intentional_failure_disabled_in_production_processes_normally(self):
+        tid = str(uuid.uuid4())
+        with self.settings(ENABLE_TEST_PAYMENT_FAILURE=False, IS_TESTING=False):
+            resp = self.client.post(
+                self.url,
+                {"transaction_id": tid, "amount": 9999},
+                format="json",
+            )
+            self.assertEqual(resp.status_code, 201)
+            self.assertEqual(resp.data["status"], "CHARGED")
+            self.assertEqual(resp.data["amount"], "9999.00")
+
+    def test_intentional_failure_does_not_leak_testing_hook_in_production(self):
+        tid = str(uuid.uuid4())
+        with self.settings(DEBUG=False, IS_TESTING=False, ENABLE_TEST_PAYMENT_FAILURE=True):
+            resp = self.client.post(
+                self.url,
+                {"transaction_id": tid, "amount": 9999},
+                format="json",
+            )
+            self.assertEqual(resp.status_code, 422)
+            self.assertNotIn("_testing", resp.data)
+
 
 
 class PaymentCheckTests(BasePaymentTestCase):
