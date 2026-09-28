@@ -666,17 +666,15 @@ def _request_payload_verify(request):
     if getattr(settings, "DEBUG", False):
         allowed_fields = allowed_fields | {"fail_compensation", "coordinator"}
 
-    invalid_fields = [k for k in request.data.keys() if k not in allowed_fields]
-    if invalid_fields:
-        return None, None, None, Response(
-            {
-                "error": f"Invalid field(s) in payload: {', '.join(sorted(invalid_fields))}. "
-                         "These fields cannot be supplied by the client.",
-                "code": "INVALID_FIELDS",
-                "invalid_fields": sorted(invalid_fields),
-            },
-            status=400,
-        )
+    for k in request.data.keys():
+        if k not in allowed_fields:
+            return None, None, None, Response(
+                {
+                    "error": "Invalid field(s) sent in payload. These fields cannot be supplied by the client.",
+                    "code": "INVALID_FIELDS",
+                },
+                status=400,
+            )
 
     # --- PAY path: validate transaction_id, seat_ids optional ---
     if action == "pay":
