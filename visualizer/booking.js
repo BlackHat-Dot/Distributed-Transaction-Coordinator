@@ -807,11 +807,15 @@ function handleLogout(opts = {}) {
     try { holdData = JSON.parse(holdDataRaw); } catch(e) {}
   }
   if (holdData && (holdData.seatIds || holdData.seatId) && holdData.txId) {
-    const targetIds = holdData.seatIds || [holdData.seatId];
+    const curToken = (STATE.user && STATE.user.token) || localStorage.getItem("dtc_auth_token");
+    const authHeaders = { "Content-Type": "application/json" };
+    if (curToken) {
+      authHeaders["Authorization"] = `Bearer ${curToken}`;
+    }
     fetch(`${CONFIG.inventoryUrl}/seats/release/`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transaction_id: holdData.txId, seat_ids: targetIds }),
+      headers: authHeaders,
+      body: JSON.stringify({ transaction_id: holdData.txId }),
       keepalive: true,
     }).catch(() => {});
     targetIds.forEach(id => applySeatTileDOMState(id, "AVAILABLE"));
@@ -883,15 +887,17 @@ function handleTabExitCleanup() {
   if (!holdData && holdDataRaw) {
     try { holdData = JSON.parse(holdDataRaw); } catch(e) {}
   }
-  if (holdData && (holdData.seatIds || holdData.seatId) && holdData.txId) {
-    const targetIds = holdData.seatIds || [holdData.seatId];
+    const curToken = (STATE.user && STATE.user.token) || localStorage.getItem("dtc_auth_token");
+    const authHeaders = { "Content-Type": "application/json" };
+    if (curToken) {
+      authHeaders["Authorization"] = `Bearer ${curToken}`;
+    }
     fetch(`${CONFIG.inventoryUrl}/seats/release/`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transaction_id: holdData.txId, seat_ids: targetIds }),
+      headers: authHeaders,
+      body: JSON.stringify({ transaction_id: holdData.txId }),
       keepalive: true
     }).catch(() => {});
-  }
   clearHoldFromStorage();
 
   // 2. Clear coordinator session
@@ -1844,7 +1850,7 @@ async function releaseActiveHold() {
   try {
     await fetchJson(`${CONFIG.inventoryUrl}/seats/release/`, {
       method: "POST",
-      body: JSON.stringify({ transaction_id: txId, seat_ids: targetIds }),
+      body: JSON.stringify({ transaction_id: txId }),
     });
 
     targetIds.forEach(id => {

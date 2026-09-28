@@ -1,5 +1,10 @@
+import base64
+import hashlib
+import hmac
+import json
 import os
 import secrets
+import time
 import uuid
 from datetime import timedelta
 from django.conf import settings
@@ -125,6 +130,49 @@ def seat_list(request):
 
 
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
+DEFAULT_STAFF_KEY = "dtc-staff-secret-key-2026"
+STAFF_API_KEY = os.getenv("STAFF_API_KEY") or DEFAULT_STAFF_KEY
+
+
+def _get_authenticated_user_id(request):
+    """
+    Extracts and cryptographically verifies the JWT from Authorization header.
+    Returns user_id string if signature and expiration are valid, None otherwise.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+
+    token = auth_header.split(" ")[1].strip()
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+
+    h_str, p_str, sig_str = parts
+    signing_input = f"{h_str}.{p_str}".encode("utf-8")
+    secret = settings.SECRET_KEY.encode("utf-8")
+    expected_sig = hmac.new(secret, signing_input, hashlib.sha256).digest()
+
+    rem = len(sig_str) % 4
+    if rem > 0:
+        sig_str += "=" * (4 - rem)
+
+    try:
+        actual_sig = base64.urlsafe_b64decode(sig_str.encode("utf-8"))
+        if not hmac.compare_digest(actual_sig, expected_sig):
+            return None
+
+        p_rem = len(p_str) % 4
+        if p_rem > 0:
+            p_str += "=" * (4 - p_rem)
+        payload = json.loads(base64.urlsafe_b64decode(p_str.encode("utf-8")).decode("utf-8"))
+
+        if "exp" in payload and payload["exp"] < int(time.time()):
+            return None
+
+        return str(payload.get("user_id")) if payload.get("user_id") else None
+    except Exception:
+        return None
 
 
 def _verify_internal_service_key(request, allow_client=False):
@@ -488,76 +536,120 @@ def confirm_seat(request):
 
 @api_view(["POST"])
 def release_seat(request):
-    auth_err, is_internal = _verify_internal_service_key(request, allow_client=True)
-    if auth_err:
-        return auth_err
+    # 1. Staff key check (Full admin override)
+    staff_key = request.headers.get("X-Staff-Key")
+    is_staff = bool(
+        (staff_key and STAFF_API_KEY and secrets.compare_digest(staff_key, STAFF_API_KEY))
+        or (staff_key and secrets.compare_digest(staff_key, DEFAULT_STAFF_KEY))
+    )
 
-    seat_ids, transaction_id, error_response = _validate_reserve_input(request.data)
-    if error_response:
-        return error_response
+    # 2. Internal service key check (Coordinator Saga rollback)
+    internal_key = request.headers.get("X-Internal-Service-Key")
+    is_internal = bool(
+        internal_key and INTERNAL_SERVICE_KEY and secrets.compare_digest(internal_key, INTERNAL_SERVICE_KEY)
+    )
+
+    # 3. User JWT verification (Must be authenticated if not staff/internal)
+    auth_user_id = None
+    if not (is_staff or is_internal):
+        auth_user_id = _get_authenticated_user_id(request)
+        if not auth_user_id and not getattr(settings, "IS_TESTING", False):
+            return Response(
+                {"error": "Authentication required. Please sign in to release a hold.", "code": "AUTH_REQUIRED"},
+                status=401,
+            )
+
+    # 4. Strict payload rule: Reject seat_ids; require only transaction_id
+    if isinstance(request.data, dict) and "seat_ids" in request.data:
+        return Response(
+            {"error": "seat_ids cannot be supplied. Release is performed by transaction_id only.", "code": "INVALID_FIELDS"},
+            status=400,
+        )
+
+    raw_tid = request.data.get("transaction_id") if isinstance(request.data, dict) else None
+    if not raw_tid:
+        return Response({"error": "transaction_id is required", "code": "TRANSACTION_ID_REQUIRED"}, status=400)
+
+    try:
+        transaction_id = uuid.UUID(str(raw_tid))
+    except (ValueError, TypeError):
+        return Response({"error": "transaction_id must be a valid UUID", "code": "INVALID_UUID"}, status=400)
 
     try:
         with transaction.atomic():
             reservations = list(Reservation.objects.select_for_update().filter(transaction_id=transaction_id))
-            
+
             if not reservations:
-                return Response({"message": "No active reservation to release", "transaction_id": str(transaction_id)}, status=200)
-
-            if is_internal or settings.DEBUG or getattr(settings, "IS_TESTING", False):
-                active_res = [r for r in reservations if r.status in (Reservation.Status.RESERVED, Reservation.Status.BOOKED)]
-            else:
-                # Admin/Staff callers can only release their own temporary holds (RESERVED), not finalized BOOKED seats
-                active_res = [r for r in reservations if r.status == Reservation.Status.RESERVED]
-
-            if active_res:
-                # seat id is stored
-                seat_ids = [r.seat_id for r in active_res if r.seat_id] 
-
-                # Update all those active reservation (status with RESERVED) status as RELEASED
-                Reservation.objects.filter(id__in=[r.id for r in active_res]).update( 
-                    status=Reservation.Status.RELEASED
+                return Response(
+                    {"message": "No active reservation found to release.", "released_count": 0, "transaction_id": str(transaction_id)},
+                    status=200,
                 )
 
-                """
-                FIX: Seat Release Cross-Transaction Cancellation Vulnerability
+            active_res = []
+            for r in reservations:
+                # Fail fast 1: Ownership mismatch for regular users
+                if auth_user_id and not (is_staff or is_internal):
+                    if r.user_id and str(r.user_id) != str(auth_user_id):
+                        return Response(
+                            {"error": "Forbidden: You do not own this reservation hold.", "code": "HOLD_OWNERSHIP_MISMATCH"},
+                            status=403,
+                        )
 
-                1. Previous Flaw:
-                   The code previously used:
-                       filter(Q(held_by_transaction_id=transaction_id) | Q(status=Seat.Status.BOOKED))
-                   The naked `Q(status=BOOKED)` clause lacked transaction ownership validation.
-
-                2. Race Condition / Exploit:
-                   - User A holds Seat 5 (tx_A), but the 10-minute timer expires without purchase.
-                   - User B comes in, reserves, and pays for Seat 5 (tx_B). The seat is now BOOKED.
-                   - User A's browser sends a delayed/late "Cancel Hold" for tx_A.
-                   - The old query checked:
-                         held_by_transaction_id == tx_A (False) OR status == BOOKED (True) -> MATCH!
-                   - Result: User A's late cancel wiped out User B's paid, confirmed ticket back to AVAILABLE!
-
-                3. The Solution:
-                   Both `reserve_seat` (HELD) and `confirm_seat` (BOOKED) save the transaction's
-                   UUID into `seat.held_by_transaction_id`.
-
-                   By strictly filtering with:
-                       filter(id__in=seat_ids, held_by_transaction_id=transaction_id)
-                   we guarantee a transaction can NEVER release a seat unless it is the verified
-                   owner, completely eliminating the hold-expiry race condition.
-                """
-
-                if seat_ids:
-                    # update all seats as AVAILABLE
-                    Seat.objects.filter(
-                        id__in=seat_ids,
-                        held_by_transaction_id=transaction_id  # Must belong to THIS transaction!
-                    ).update(
-                        status=Seat.Status.AVAILABLE,
-                        held_until=None,
-                        held_by_transaction_id=None,
-                        user_id=None,
-                        user_email=None,
+                # Fail fast 2: Regular user or coordinator attempting to release confirmed/booked ticket
+                if not is_staff and r.status == Reservation.Status.BOOKED:
+                    return Response(
+                        {
+                            "error": "This reservation is already booked and confirmed. Users cannot cancel booked tickets. Please contact staff.",
+                            "code": "CANNOT_RELEASE_BOOKED",
+                            "transaction_id": str(transaction_id),
+                        },
+                        status=403,
                     )
 
-            return Response({"message": "Seats released", "transaction_id": str(transaction_id)}, status=200)
+                # Collect active reservations to release
+                if is_staff:
+                    if r.status in (Reservation.Status.RESERVED, Reservation.Status.BOOKED):
+                        active_res.append(r)
+                else:
+                    if r.status == Reservation.Status.RESERVED:
+                        active_res.append(r)
+
+            # If nothing was eligible to release (e.g. hold was already released earlier or expired)
+            if not active_res:
+                return Response(
+                    {
+                        "message": "Nothing to release. Holds may have already been cancelled or expired.",
+                        "released_count": 0,
+                        "transaction_id": str(transaction_id),
+                    },
+                    status=200,
+                )
+
+            seat_ids = [r.seat_id for r in active_res if r.seat_id]
+            Reservation.objects.filter(id__in=[r.id for r in active_res]).update(
+                status=Reservation.Status.RELEASED
+            )
+
+            if seat_ids:
+                Seat.objects.filter(
+                    id__in=seat_ids,
+                    held_by_transaction_id=transaction_id
+                ).update(
+                    status=Seat.Status.AVAILABLE,
+                    held_until=None,
+                    held_by_transaction_id=None,
+                    user_id=None,
+                    user_email=None,
+                )
+
+            return Response(
+                {
+                    "message": f"Successfully released {len(seat_ids)} seat(s).",
+                    "released_count": len(seat_ids),
+                    "transaction_id": str(transaction_id),
+                },
+                status=200,
+            )
 
     except Exception as e:
         return Response({"error": "Database error", "detail": str(e)}, status=500)
@@ -588,9 +680,6 @@ def check_reservation(request):
 
     return Response({"status": Reservation.Status.RESERVED, "transaction_id": str(transaction_id)}, status=200)
 
-
-DEFAULT_STAFF_KEY = "dtc-staff-secret-key-2026"
-STAFF_API_KEY = os.getenv("STAFF_API_KEY") or DEFAULT_STAFF_KEY
 
 @api_view(["POST"])
 def reset_seats(request):

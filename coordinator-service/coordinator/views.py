@@ -354,7 +354,7 @@ def retry_compensation(request, transaction_id):
     try:
         release_response = _http_post(
             INVENTORY_RELEASE_URL,
-            json={"transaction_id": str(transaction_id), "seat_ids": txn.seat_ids},
+            json={"transaction_id": str(transaction_id)},
             headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
@@ -1546,7 +1546,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
     try:
         release_response = _http_post(
             INVENTORY_RELEASE_URL,
-            json={"transaction_id": release_transaction_id, "seat_ids": seat_ids},
+            json={"transaction_id": release_transaction_id},
             headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
