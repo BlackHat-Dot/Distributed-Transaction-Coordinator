@@ -765,35 +765,6 @@ def _handle_create_transaction(request):
 
         quantity = len(seat_ids)
 
-        # Reserve in inventory, this is the ONE and only reserve call for this booking.
-        response, reserve_error = _reserve_inventory(
-            transaction_id,
-            seat_ids,
-            correlation_id=correlation_id,
-            user_id=user_id,
-            user_email=user_email,
-        )
-        if reserve_error:
-            return reserve_error
-
-        resp_json = _parse_json_response(response)
-
-        if response.status_code != 200:
-            return Response(
-                resp_json or {
-                    "error": "Inventory reserve failed",
-                    "code": "INVENTORY_RESERVE_FAILED",
-                },
-                status=response.status_code if response.status_code in (400, 404, 409, 429) else 400,
-            )
-
-        # Use Inventory's authoritative price if returned
-        if resp_json and "total_amount" in resp_json:
-            try:
-                amount = Decimal(str(resp_json["total_amount"]))
-            except (ValueError, TypeError):
-                pass
-
         created, dup_response = _create_transaction(
             transaction_id=transaction_id,
             seat_ids=seat_ids,
@@ -805,6 +776,84 @@ def _handle_create_transaction(request):
         )
         if not created:
             return dup_response
+
+        # Reserve in inventory, this is the ONE and only reserve call for this booking.
+        response, reserve_error = _reserve_inventory(
+            transaction_id,
+            seat_ids,
+            correlation_id=correlation_id,
+            user_id=user_id,
+            user_email=user_email,
+        )
+        if reserve_error:
+            headers = {
+                "X-Correlation-ID": correlation_id,
+                "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+            }
+            try:
+                _http_post(
+                    INVENTORY_RELEASE_URL,
+                    json={"transaction_id": str(transaction_id), "seat_ids": seat_ids},
+                    headers=headers,
+                    timeout=REQUEST_TIMEOUT,
+                )
+            except RequestException:
+                pass
+
+            _set_status_with_event(
+                transaction_id,
+                Transaction.Status.INVENTORY_RESERVE_FAILED,
+                expected_status=[
+                    Transaction.Status.STARTED,
+                    Transaction.Status.INVENTORY_TIMEOUT,
+                    Transaction.Status.INVENTORY_CONNECTION_ERROR,
+                ],
+                actor=SagaEvent.ACTOR_REQUEST,
+            )
+            return reserve_error
+
+        resp_json = _parse_json_response(response)
+
+        if response.status_code != 200:
+            headers = {
+                "X-Correlation-ID": correlation_id,
+                "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+            }
+            try:
+                _http_post(
+                    INVENTORY_RELEASE_URL,
+                    json={"transaction_id": str(transaction_id), "seat_ids": seat_ids},
+                    headers=headers,
+                    timeout=REQUEST_TIMEOUT,
+                )
+            except RequestException:
+                pass
+
+            _set_status_with_event(
+                transaction_id,
+                Transaction.Status.INVENTORY_RESERVE_FAILED,
+                expected_status=Transaction.Status.STARTED,
+                actor=SagaEvent.ACTOR_REQUEST,
+                http_status_code=response.status_code,
+                http_payload=resp_json,
+            )
+            return Response(
+                resp_json or {
+                    "error": "Inventory reserve failed",
+                    "code": "INVENTORY_RESERVE_FAILED",
+                },
+                status=response.status_code if response.status_code in (400, 404, 409, 429) else 400,
+            )
+
+        # Use Inventory's authoritative price if returned
+        if resp_json and "total_amount" in resp_json:
+            try:
+                new_amount = Decimal(str(resp_json["total_amount"]))
+                if new_amount != amount:
+                    amount = new_amount
+                    Transaction.objects.filter(transaction_id=transaction_id).update(amount=amount)
+            except (ValueError, TypeError):
+                pass
 
         transitioned = _set_status_with_event(
             transaction_id,
@@ -1870,6 +1919,15 @@ def _create_transaction(
                 "status": existing.status,
             },
             status=200,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create transaction record: {e}", exc_info=True)
+        return False, Response(
+            {
+                "error": "Database error creating transaction record",
+                "code": "DB_ERROR",
+            },
+            status=500,
         )
 
 
