@@ -421,15 +421,11 @@ def trigger_recovery_sweep(request):
     import io
     from django.core.management import call_command
 
-    is_dev = getattr(settings, "DEBUG", False)
-    is_testing = bool(getattr(settings, "IS_TESTING", False))
-
-    if not (is_dev or is_testing):
-        is_authenticated, auth_user_id, is_staff = _get_requester_identity(request)
-        if not is_authenticated:
-            return Response({"error": "Authentication required to trigger recovery sweep."}, status=401)
-        if not is_staff:
-            return Response({"error": "Staff privileges required to trigger recovery sweep."}, status=403)
+    is_authenticated, auth_user_id, is_staff = _get_requester_identity(request)
+    if not is_authenticated:
+        return Response({"error": "Authentication required to trigger recovery sweep."}, status=401)
+    if not is_staff:
+        return Response({"error": "Staff privileges required to trigger recovery sweep."}, status=403)
 
     """
     1. Management commands normally print their logs directly to the command line terminal (stdout).
@@ -1903,6 +1899,10 @@ def _get_requester_identity(request):
 
     # Local Development Mode (DEBUG=True)
     is_dev = getattr(settings, "DEBUG", False)
+    allow_dev_staff_bypass = getattr(settings, "ALLOW_DEV_STAFF_BYPASS", False) or (
+        os.getenv("ALLOW_DEV_STAFF_BYPASS", "").lower() in ("true", "1", "yes", "t")
+    )
+    is_dev_staff = bool(is_dev and allow_dev_staff_bypass)
 
     if is_dev:
         dev_uid = (
@@ -1910,7 +1910,7 @@ def _get_requester_identity(request):
             or (user_info.get("user_id") if user_info else "system_dev")
         )
 
-        return True, dev_uid, True
+        return True, dev_uid, is_dev_staff
 
     # Default: Unauthenticated
     return False, None, False

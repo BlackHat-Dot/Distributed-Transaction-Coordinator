@@ -61,6 +61,12 @@ elif not (DEBUG or IS_TESTING) and INTERNAL_SERVICE_KEY == "dtc-internal-coordin
         "You must configure a strong, unique INTERNAL_SERVICE_KEY for production."
     )
 
+ALLOW_DEV_STAFF_BYPASS = os.getenv("ALLOW_DEV_STAFF_BYPASS", "False").lower() in ("true", "1", "t", "yes")
+if ALLOW_DEV_STAFF_BYPASS and not (DEBUG or IS_TESTING):
+    raise RuntimeError(
+        "CRITICAL SECURITY ERROR: ALLOW_DEV_STAFF_BYPASS cannot be enabled in production (DEBUG=False)!"
+    )
+
 # coordinator_service/settings.py
 
 if DEBUG:
