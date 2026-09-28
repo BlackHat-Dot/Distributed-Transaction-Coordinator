@@ -429,7 +429,6 @@ def retry_compensation(request, transaction_id):
 def trigger_recovery_sweep(request):
     import io
     from django.core.management import call_command
-    from django.conf import settings
 
     is_dev = getattr(settings, "DEBUG", False)
     is_testing = bool(getattr(settings, "IS_TESTING", False))
@@ -661,7 +660,6 @@ def _request_payload_verify(request):
         allowed_fields = {"seat_ids"}
 
     # Dev/test flags allowed in every mode
-    from django.conf import settings
     if getattr(settings, "DEBUG", False):
         allowed_fields = allowed_fields | {"fail_compensation", "coordinator"}
 
@@ -725,7 +723,6 @@ def _handle_create_transaction(request):
     if invalid:
         return invalid
 
-    from django.conf import settings
 
     is_testing = bool(getattr(settings, "IS_TESTING", False))
     is_dev = getattr(settings, "DEBUG", False)
@@ -802,11 +799,7 @@ def _handle_create_transaction(request):
         if reserve_error:
             return reserve_error
 
-        resp_json = None
-        try:
-            resp_json = response.json()
-        except Exception:
-            pass
+        resp_json = _parse_json_response(response)
 
         if response.status_code != 200:
             return Response(
@@ -1225,10 +1218,7 @@ def _run_saga_pipeline(
 
     if response.status_code != 200:
         resp_json = None
-        try:
-            resp_json = response.json()
-        except Exception:
-            pass
+        resp_json = _parse_json_response(response)
 
         _set_status_with_event(
             transaction_id,
@@ -1250,22 +1240,19 @@ def _run_saga_pipeline(
     # If reponse is 200:
     resp_json = None
 
-    try:
-        resp_json = response.json()
-        """
-        Ex:
-        {
-          "message": "1 Seats reserved",
-          "seat_ids": [
-            55
-          ],
-          "held_until": "2026-09-02T07:21:32.111744Z",
-          "total_amount": "350.00",
-          "transaction_id": "e6420fe2-144c-4d17-88d8-e1528f227d8c"
-        }
-        """
-    except Exception:
-        pass
+    resp_json = _parse_json_response(response)
+    """
+    Ex:
+    {
+      "message": "1 Seats reserved",
+      "seat_ids": [
+        55
+      ],
+      "held_until": "2026-09-02T07:21:32.111744Z",
+      "total_amount": "350.00",
+      "transaction_id": "e6420fe2-144c-4d17-88d8-e1528f227d8c"
+    }
+    """
 
     if resp_json and "total_amount" in resp_json:
         try:
@@ -1423,11 +1410,7 @@ def _charge_payment(
             seat_ids=seat_ids,
         )
 
-    resp_data = None
-    try:
-        resp_data = payment_response.json()
-    except Exception:
-        pass
+    resp_data = _parse_json_response(payment_response)
 
     return _finalize_payment_outcome(
         transaction_id,
@@ -1569,10 +1552,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
         )
         release_status_code = release_response.status_code
         release_ok = (release_status_code == 200)
-        try:
-            release_data = release_response.json()
-        except Exception:
-            pass
+        release_data = _parse_json_response(release_response)
     except (Timeout, ConnectionError) as e:
         release_transport_error = e
 
@@ -1591,10 +1571,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             )
             refund_status_code = refund_response.status_code
             refund_ok = (refund_status_code == 200)
-            try:
-                refund_data = refund_response.json()
-            except Exception:
-                pass
+            refund_data = _parse_json_response(refund_response)
         except (Timeout, ConnectionError) as e:
             refund_transport_error = e
 
@@ -1669,7 +1646,6 @@ def _get_requester_identity(request):
       3. Automated Test Runner Environment (Preserves test suite execution)
       4. Local Development Fallback (DEBUG=True demo user)
     """
-    from django.conf import settings
 
     # Machine-to-Machine: Internal Staff Secret Key (Priority 1)
     staff_key = os.getenv("STAFF_API_KEY")
