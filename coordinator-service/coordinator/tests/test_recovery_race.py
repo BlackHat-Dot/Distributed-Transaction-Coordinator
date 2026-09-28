@@ -95,8 +95,15 @@ class RecoveryAndRetryCompensationRaceTests(TransactionTestCase):
                 connection.close()
 
 
+        mock_get_resp = MagicMock()
+        mock_get_resp.status_code = 200
+        mock_get_resp.json.return_value = {"status": "NOT_CHARGED"}
+
         with patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=mock_post), \
-             patch("coordinator.views.requests.post", side_effect=mock_post):
+             patch("coordinator.views.requests.post", side_effect=mock_post), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", return_value=mock_get_resp), \
+             patch("coordinator.views.requests.get", return_value=mock_get_resp), \
+             patch("coordinator.recovery.requests.get", return_value=mock_get_resp):
             t_rec = threading.Thread(target=run_recovery)
             t_ret = threading.Thread(target=lambda: run_retry(THREAD_STAGGER))
             t_rec.start()
@@ -251,7 +258,12 @@ class RecoveryClaimTests(TransactionTestCase):
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"message": "Inventory released"}
 
-        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", return_value=mock_resp):
+        mock_get_resp = MagicMock()
+        mock_get_resp.status_code = 200
+        mock_get_resp.json.return_value = {"status": "NOT_CHARGED"}
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", return_value=mock_resp), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", return_value=mock_get_resp):
             call_command("recovery_stuck_transactions")
 
         txn.refresh_from_db()
@@ -300,7 +312,12 @@ class RecoveryClaimTests(TransactionTestCase):
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"message": "Inventory released"}
 
-        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", return_value=mock_resp):
+        mock_get_resp = MagicMock()
+        mock_get_resp.status_code = 200
+        mock_get_resp.json.return_value = {"status": "NOT_CHARGED"}
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", return_value=mock_resp), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", return_value=mock_get_resp):
             call_command("recovery_stuck_transactions")
 
         txn.refresh_from_db()
@@ -345,7 +362,12 @@ class RecoveryClaimTests(TransactionTestCase):
         mock_resp.status_code = 500
         mock_resp.json.return_value = {"error": "Release error"}
 
-        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", return_value=mock_resp):
+        mock_get_resp = MagicMock()
+        mock_get_resp.status_code = 200
+        mock_get_resp.json.return_value = {"status": "NOT_CHARGED"}
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", return_value=mock_resp), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", return_value=mock_get_resp):
             call_command("recovery_stuck_transactions")
 
         txn.refresh_from_db()

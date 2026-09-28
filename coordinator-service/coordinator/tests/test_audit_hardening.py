@@ -74,9 +74,10 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         txn = Transaction.objects.get(transaction_id=tx_id)
         self.assertEqual(txn.status, Transaction.Status.COMPENSATION_FAILED)
 
+    @patch("coordinator.views.requests.get")
     @patch("coordinator.views.requests.post")
     @patch("coordinator.views._get_requester_identity")
-    def test_sec01_retry_compensation_idor_rejected(self, mock_identity, mock_post):
+    def test_sec01_retry_compensation_idor_rejected(self, mock_identity, mock_post, mock_get):
         """
         SEC-01: Proves that a non-staff caller cannot trigger retry-compensation
         on a transaction owned by another user (BOLA/IDOR protection).
@@ -96,6 +97,11 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         mock_resp.json.return_value = {"status": "RELEASED"}
         mock_post.return_value = mock_resp
 
+        mock_get_resp = MagicMock()
+        mock_get_resp.status_code = 200
+        mock_get_resp.json.return_value = {"status": "NOT_CHARGED"}
+        mock_get.return_value = mock_get_resp
+
         # 1. Attacker (non-staff, different user_id) tries to trigger retry_compensation
         mock_identity.return_value = (True, "usr_attacker_666", False)
         request = self.factory.post(f"/transactions/{tx_id}/retry-compensation/")
@@ -105,11 +111,11 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         self.assertIn("error", response.data)
         self.assertIn("permission", response.data["error"].lower())
 
-        # 2. Owner (non-staff, matching user_id) triggers retry_compensation -> Allowed
+        # 2. Owner (non-staff, matching user_id) triggers retry_compensation -> Forbidden (staff required per A1)
         mock_identity.return_value = (True, "usr_victim_123", False)
         request = self.factory.post(f"/transactions/{tx_id}/retry-compensation/")
         response = retry_compensation(request, tx_id)
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 403)
 
         # Reset transaction status back to COMPENSATION_FAILED for staff test
         Transaction.objects.filter(transaction_id=tx_id).update(status=Transaction.Status.COMPENSATION_FAILED)

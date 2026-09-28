@@ -118,7 +118,8 @@ class CorrelationIdOutboundPropagationTests(TransactionTestCase):
              patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=mock_post):
             call_command("recovery_stuck_transactions")
 
-        self.assertEqual(len(captured_probe_headers), 2)
+        # 3 probes: 1) payment check in _resolve_transaction, 2) inventory check in _resolve_transaction, 3) payment check in execute_compensation_sweep
+        self.assertEqual(len(captured_probe_headers), 3)
         for url, headers in captured_probe_headers:
             self.assertEqual(
                 headers.get("X-Correlation-ID"),
