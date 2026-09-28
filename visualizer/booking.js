@@ -1306,17 +1306,14 @@ async function loadCatalog(isInitial = false) {
       
       if (STATE.user && (STATE.user.email || STATE.user.userId)) {
         if (seat.status === "HELD") {
-          const isOwner = (seat.user_email && STATE.user.email && seat.user_email === STATE.user.email) || 
-                          (seat.user_id && STATE.user.userId && seat.user_id === STATE.user.userId) ||
-                          (STATE.myHold && seat.held_by_transaction_id === STATE.myHold.txId);
+          const isOwner = Boolean(seat.is_mine) ||
+                          (STATE.myHold && STATE.myHold.txId && (STATE.myHold.seatIds || [STATE.myHold.seatId]).includes(seat.id));
           if (isOwner) {
-            if (!ownerTxId) ownerTxId = seat.held_by_transaction_id;
+            if (!ownerTxId && STATE.myHold && STATE.myHold.txId) ownerTxId = STATE.myHold.txId;
             if (!ownerHeldUntil) ownerHeldUntil = seat.held_until;
-            
-            if (seat.held_by_transaction_id === ownerTxId) {
-              ownerSeatIds.push(seat.id);
-              ownerSeatLabels.push(`${seat.row}${seat.seat_number}`);
-            }
+
+            ownerSeatIds.push(seat.id);
+            ownerSeatLabels.push(`${seat.row}${seat.seat_number}`);
           }
         }
       }
@@ -2469,10 +2466,8 @@ function reconcileSeatStates(newSeats) {
 
     STATE.seatsMap.set(seatId, newSeat);
 
-    const isUserHold = STATE.myHold && (STATE.myHold.seatIds || [STATE.myHold.seatId]).includes(seatId) &&
-                       (newSeat.held_by_transaction_id === STATE.myHold.txId ||
-                        newSeat.status === "HELD" ||
-                        (STATE.user && newSeat.user_id === STATE.user.userId));
+    const isUserHold = Boolean(newSeat.is_mine) ||
+                       (STATE.myHold && (STATE.myHold.seatIds || [STATE.myHold.seatId]).includes(seatId) && newSeat.status === "HELD");
 
     const isDrafted = STATE.draftSeatIds && STATE.draftSeatIds.includes(seatId);
 

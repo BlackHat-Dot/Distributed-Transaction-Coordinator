@@ -43,7 +43,7 @@ services:
       DB_HOST: ${POSTGRES_HOST:-postgres}
       DB_PORT: ${POSTGRES_PORT:-5432}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      DEBUG: ${DEBUG:-True}
+      DEBUG: ${DEBUG:-False}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
       SECRET_KEY: ${SECRET_KEY:-django-insecure-inventory-secret}
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-dtc-internal-coordinator-secret-key-2026}
@@ -74,7 +74,7 @@ services:
       DB_HOST: ${POSTGRES_HOST:-postgres}
       DB_PORT: ${POSTGRES_PORT:-5432}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      DEBUG: ${DEBUG:-True}
+      DEBUG: ${DEBUG:-False}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
       SECRET_KEY: ${SECRET_KEY:-django-insecure-payment-secret}
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-dtc-internal-coordinator-secret-key-2026}
@@ -106,7 +106,7 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       INVENTORY_SERVICE_URL: ${INVENTORY_SERVICE_URL:-http://inventory:8000}
       PAYMENT_SERVICE_URL: ${PAYMENT_SERVICE_URL:-http://payment:8001}
-      DEBUG: ${DEBUG:-True}
+      DEBUG: ${DEBUG:-False}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
       SECRET_KEY: ${SECRET_KEY:-django-insecure-coordinator-secret}
       REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-5}

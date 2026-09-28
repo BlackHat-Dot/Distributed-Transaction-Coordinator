@@ -17,7 +17,7 @@ from rest_framework.response import Response
 import redis
 
 from .models import Event, Seat, Reservation
-from .serializers import EventSerializer, SeatSerializer
+from .serializers import EventSerializer, SeatSerializer, PublicSeatSerializer, InternalSeatSerializer
 
 
 _redis_client_instance = None
@@ -197,7 +197,7 @@ def seat_list(request):
         settings._SEATS_SEEDED = True
 
     seats = Seat.objects.all().order_by("id")
-    serializer = SeatSerializer(seats, many=True)
+    serializer = PublicSeatSerializer(seats, many=True, context={"request": request})
     return Response(serializer.data)
 
 
@@ -221,45 +221,75 @@ def _is_staff_request(request):
     return False
 
 
+def _get_authenticated_user(request):
+    """
+    Extracts and cryptographically verifies the JWT from Authorization header.
+    Returns dict {"user_id": ..., "user_email": ..., "sid": ...} if valid, else None.
+    If header verification fails and ALLOW_UNVERIFIED_IDENTITY_HEADERS is True (e.g. in test env),
+    falls back to unverified request headers.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1].strip()
+        parts = token.split(".")
+        if len(parts) == 3:
+            h_str, p_str, sig_str = parts
+            try:
+                # 1. Header validation
+                h_rem = len(h_str) % 4
+                if h_rem > 0:
+                    h_str += "=" * (4 - h_rem)
+                header_data = json.loads(base64.urlsafe_b64decode(h_str.encode("utf-8")).decode("utf-8"))
+                if header_data.get("alg") == "HS256":
+                    # 2. Signature validation
+                    signing_input = f"{parts[0]}.{parts[1]}".encode("utf-8")
+                    secret = settings.SECRET_KEY.encode("utf-8")
+                    expected_sig = hmac.new(secret, signing_input, hashlib.sha256).digest()
+
+                    sig_rem = len(sig_str) % 4
+                    if sig_rem > 0:
+                        sig_str += "=" * (4 - sig_rem)
+                    actual_sig = base64.urlsafe_b64decode(sig_str.encode("utf-8"))
+
+                    if hmac.compare_digest(actual_sig, expected_sig):
+                        # 3. Payload validation
+                        p_rem = len(p_str) % 4
+                        if p_rem > 0:
+                            p_str += "=" * (4 - p_rem)
+                        payload = json.loads(base64.urlsafe_b64decode(p_str.encode("utf-8")).decode("utf-8"))
+
+                        if "exp" not in payload or payload["exp"] >= int(time.time()):
+                            uid = payload.get("user_id")
+                            uemail = payload.get("user_email")
+                            if uid or uemail:
+                                return {
+                                    "user_id": str(uid) if uid is not None else None,
+                                    "user_email": str(uemail) if uemail is not None else None,
+                                    "sid": payload.get("sid"),
+                                }
+            except Exception:
+                pass
+
+    if getattr(settings, "ALLOW_UNVERIFIED_IDENTITY_HEADERS", False):
+        uid = request.headers.get("X-User-ID")
+        uemail = request.headers.get("X-User-Email")
+        if uid or uemail:
+            return {
+                "user_id": str(uid) if uid else None,
+                "user_email": str(uemail) if uemail else None,
+                "sid": None,
+            }
+
+    return None
+
+
 def _get_authenticated_user_id(request):
     """
     Extracts and cryptographically verifies the JWT from Authorization header.
     Returns user_id string if signature and expiration are valid, None otherwise.
     """
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return None
-
-    token = auth_header.split(" ")[1].strip()
-    parts = token.split(".")
-    if len(parts) != 3:
-        return None
-
-    h_str, p_str, sig_str = parts
-    signing_input = f"{h_str}.{p_str}".encode("utf-8")
-    secret = settings.SECRET_KEY.encode("utf-8")
-    expected_sig = hmac.new(secret, signing_input, hashlib.sha256).digest()
-
-    rem = len(sig_str) % 4
-    if rem > 0:
-        sig_str += "=" * (4 - rem)
-
-    try:
-        actual_sig = base64.urlsafe_b64decode(sig_str.encode("utf-8"))
-        if not hmac.compare_digest(actual_sig, expected_sig):
-            return None
-
-        p_rem = len(p_str) % 4
-        if p_rem > 0:
-            p_str += "=" * (4 - p_rem)
-        payload = json.loads(base64.urlsafe_b64decode(p_str.encode("utf-8")).decode("utf-8"))
-
-        if "exp" in payload and payload["exp"] < int(time.time()):
-            return None
-
-        return str(payload.get("user_id")) if payload.get("user_id") else None
-    except Exception:
-        return None
+    auth_user = _get_authenticated_user(request)
+    return auth_user.get("user_id") if auth_user else None
 
 
 def _verify_internal_service_key(request, allow_client=False):
@@ -272,8 +302,10 @@ def _verify_internal_service_key(request, allow_client=False):
     Returns (auth_err, is_internal).
     """
     key = request.headers.get("X-Internal-Service-Key")
+    configured_key = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
+
     if key is not None:
-        if not secrets.compare_digest(key, INTERNAL_SERVICE_KEY or ""):
+        if not configured_key or not secrets.compare_digest(str(key), str(configured_key)):
             return Response(
                 {"error": "Forbidden: invalid internal service key."},
                 status=403,
@@ -281,6 +313,9 @@ def _verify_internal_service_key(request, allow_client=False):
         return None, True
 
     if getattr(settings, "IS_TESTING", False):
+        auth_header = request.headers.get("Authorization", "")
+        if allow_client and auth_header.startswith("Bearer "):
+            return None, False
         return None, True
 
     if allow_client:
@@ -323,7 +358,7 @@ def seat_pricing(request):
     # but because many=True DRF wraps SeatSerializer inside a ListSerializer,
     # it save the variable pointer: self.instance = seats,
     # it sits idle, waiting for instructions.
-    serializer = SeatSerializer(seats, many=True) # Think this line as `Gun`.
+    serializer = InternalSeatSerializer(seats, many=True)
 
     # .data is a Python @property:
 
@@ -399,18 +434,24 @@ def reserve_seat(request):
     except (ValueError):
         transaction_id = uuid.uuid4()
 
-    # Read identity from request headers first (injected by fetchJson on every browser call),
-    # falling back to body fields for coordinator / internal service calls.
-    user_id = (
-        request.headers.get("X-User-ID")
-        or request.data.get("user_id")
-        or None
-    )
-    user_email = (
-        request.headers.get("X-User-Email")
-        or request.data.get("user_email")
-        or None
-    )
+    # Authenticate user:
+    # 1. Cryptographically verify JWT from Authorization header
+    # 2. If internal key is present (coordinator saga), trust user_id/user_email from body
+    # 3. If ALLOW_UNVERIFIED_IDENTITY_HEADERS is True (e.g. testing), fall back to headers/body
+    auth_user = _get_authenticated_user(request)
+
+    if has_internal_key:
+        user_id = request.data.get("user_id") or (auth_user.get("user_id") if auth_user else None)
+        user_email = request.data.get("user_email") or (auth_user.get("user_email") if auth_user else None)
+    elif auth_user:
+        user_id = auth_user.get("user_id")
+        user_email = auth_user.get("user_email")
+    elif getattr(settings, "ALLOW_UNVERIFIED_IDENTITY_HEADERS", False) or getattr(settings, "IS_TESTING", False):
+        user_id = request.headers.get("X-User-ID") or request.data.get("user_id") or None
+        user_email = request.headers.get("X-User-Email") or request.data.get("user_email") or None
+    else:
+        user_id = None
+        user_email = None
 
     is_testing = bool(getattr(settings, "IS_TESTING", False))
     is_dev = getattr(settings, "DEBUG", False)
@@ -829,10 +870,11 @@ def check_reservation(request):
 
 @api_view(["POST"])
 def reset_seats(request):
-    if not settings.DEBUG:
+    allow_unauth = getattr(settings, "ALLOW_UNAUTHENTICATED_RESET", False)
+    if not allow_unauth:
         if not _is_staff_request(request):
             return Response(
-                {"error": "Resetting venue seats is restricted."},
+                {"error": "Resetting venue seats is restricted. Staff key required."},
                 status=403,
             )
 
@@ -855,7 +897,14 @@ def sweep_expired_holds(request):
     """
     Sweeps expired and abandoned seat holds and marks them as AVAILABLE.
     Pure background management / maintenance endpoint.
+    Requires internal service key or staff key.
     """
+    auth_err, is_internal = _verify_internal_service_key(request)
+    if auth_err and not _is_staff_request(request):
+        return Response(
+            {"error": "Forbidden: Requires internal service key or staff key."},
+            status=403,
+        )
     reclaimed_count, _ = reclaim_expired_holds()
     return Response({
         "message": f"Swept {reclaimed_count} expired seat hold(s).",

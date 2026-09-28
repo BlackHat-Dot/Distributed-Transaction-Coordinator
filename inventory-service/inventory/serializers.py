@@ -4,14 +4,64 @@ from .models import Event, Seat, Reservation
 
 from django.utils import timezone
 
-class SeatSerializer(serializers.ModelSerializer):
-    # class Meta(data about data) tells DRF how to automatically build the serializer from database model
-    class Meta:
-        model = Seat    # tells DRF which database model to inspect
+class PublicSeatSerializer(serializers.ModelSerializer):
+    """
+    Public seat representation. Does NOT leak sensitive fields
+    (held_by_transaction_id, user_id, user_email).
+    Includes computed is_mine boolean based on the caller's JWT identity.
+    """
+    is_mine = serializers.SerializerMethodField()
 
-        # tells DRF which fields to include in the JSON payload
-        # Inclusion: Only the 10 fields listed will be converted to JSOn when reading seats,
-        # or accepted when writing/updating seats.
+    class Meta:
+        model = Seat
+        fields = [
+            "id",
+            "event",
+            "row",
+            "seat_number",
+            "price",
+            "status",
+            "held_until",
+            "is_mine",
+        ]
+
+    def get_is_mine(self, obj):
+        request = self.context.get("request")
+        if not request:
+            return False
+
+        auth_user = getattr(request, "_auth_user", None)
+        if auth_user is None:
+            from .views import _get_authenticated_user
+            auth_user = _get_authenticated_user(request)
+            request._auth_user = auth_user
+
+        user_id = auth_user.get("user_id") if auth_user else None
+        if not user_id:
+            return False
+
+        if obj.status == Seat.Status.HELD and obj.user_id and str(obj.user_id) == str(user_id):
+            if obj.held_until and obj.held_until > timezone.now():
+                return True
+        return False
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        # Lazy Read-Time Shedding: Treat expired holds as AVAILABLE on read
+        if rep.get("status") == "HELD" and instance.held_until and instance.held_until < timezone.now():
+            rep["status"] = "AVAILABLE"
+            rep["held_until"] = None
+            rep["is_mine"] = False
+        return rep
+
+
+class InternalSeatSerializer(serializers.ModelSerializer):
+    """
+    Internal seat representation. Includes all audit/tracking fields
+    (held_by_transaction_id, user_id, user_email) for Coordinator/Admin service consumers.
+    """
+    class Meta:
+        model = Seat
         fields = [
             "id",
             "event",
@@ -25,50 +75,9 @@ class SeatSerializer(serializers.ModelSerializer):
             "user_email",
         ]
 
-    # assume timezone.now() is 2026-09-23 19:15:00 UTC
     def to_representation(self, instance):
-        """
-        instance = Seat(
-            id=42,
-            event_id=1,
-            row="B",
-            seat_number="12",
-            price=Decimal("150.00"),
-            status="HELD",
-            held_until=datetime(2026, 9, 23, 19, 5, 0, tzinfo=timezone.utc),  # Expired 10 min ago!
-            held_by_transaction_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
-            user_id="usr_9a8b",
-            user_email="vijay@gmail.com",
-        )
-        """
-        
-        # DRF's base ModelSerializer maps the model instance's database fields into primitive Python data types (strings, ints, floats, etc.)
         rep = super().to_representation(instance)
-
-        """
-        If instance is missing an attribute listed in Meta.fields, Python crashes right inside super().to_representation(instance) with:
-
-        AttributeError: Got AttributeError when attempting to get a value for field 'xyz' on serializer 'SeatSerializer'...
-        """
-        
-        """
-        rep =
-        {
-            "id": 42,
-            "event": 1,
-            "row": "B",
-            "seat_number": "12",
-            "price": "150.00",
-            "status": "HELD",
-            "held_until": "2026-09-23T19:05:00Z",
-            "held_by_transaction_id": "550e8400-e29b-41d4-a716-446655440000",
-            "user_id": "usr_9a8b",
-            "user_email": "vijay@gmail.com"
-        }
-        """
         # Lazy Read-Time Shedding: Treat expired holds as AVAILABLE on read
-        # held_until is extracted from instance because inside instance held_util is native Python datetime object
-        # but inside rep["held_until"], DRF's DateTimeField is already converted it into a string.
         if rep.get("status") == "HELD" and instance.held_until and instance.held_until < timezone.now():
             rep["status"] = "AVAILABLE"
             rep["held_until"] = None
@@ -78,8 +87,12 @@ class SeatSerializer(serializers.ModelSerializer):
         return rep
 
 
+# Backward compatibility alias
+SeatSerializer = InternalSeatSerializer
+
+
 class EventSerializer(serializers.ModelSerializer):
-    seats = SeatSerializer(many=True, read_only=True)
+    seats = PublicSeatSerializer(many=True, read_only=True)
     # 1. How django knows about seats?
 
     # The Event models doesnt have a `seats` column, However when Django
