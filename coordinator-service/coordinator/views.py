@@ -178,6 +178,16 @@ def transaction_stream(request, transaction_id):
         Transaction.Status.PAYMENT_CONNECTION_ERROR,
     }
 
+    if txn.status in terminal_statuses:
+        def terminal_generator():
+            initial_msg = json.dumps({
+                "transaction_id": str(txn.transaction_id),
+                "status": txn.status,
+                "is_terminal": True,
+            })
+            yield f"data: {initial_msg}\n\n"
+        return StreamingHttpResponse(terminal_generator(), content_type="text/event-stream")
+
     def event_generator():
         channel_name = f"dtc:tx_stream:{transaction_id}"
         broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://localhost:6379/0")
@@ -663,15 +673,16 @@ def _request_payload_verify(request):
     if getattr(settings, "DEBUG", False):
         allowed_fields = allowed_fields | {"fail_compensation", "coordinator"}
 
-    for k in request.data.keys():
-        if k not in allowed_fields:
-            return None, None, None, Response(
-                {
-                    "error": "Invalid field(s) sent in payload. These fields cannot be supplied by the client.",
-                    "code": "INVALID_FIELDS",
-                },
-                status=400,
-            )
+    invalid_fields = [k for k in request.data.keys() if k not in allowed_fields]
+    if invalid_fields:
+        return None, None, None, Response(
+            {
+                "error": f"Invalid field(s) sent in payload: {', '.join(invalid_fields)}. These fields cannot be supplied by the client.",
+                "code": "INVALID_FIELDS",
+                "invalid_fields": invalid_fields,
+            },
+            status=400,
+        )
 
     # --- PAY path: validate transaction_id, seat_ids optional ---
     if action == "pay":
@@ -764,10 +775,13 @@ def _handle_create_transaction(request):
 
     fail_compensation = request.data.get("fail_compensation", False) if request.data else False
 
-    simulate_decline = (
-        request.query_params.get("simulate_payment_decline") == "true"
-        or request.headers.get("X-Simulate-Payment-Decline") == "true"
-    )
+    enable_test_payment_failure = getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False) or is_testing
+    simulate_decline = False
+    if enable_test_payment_failure and (is_dev or is_testing or has_staff_key):
+        simulate_decline = (
+            request.query_params.get("simulate_payment_decline") == "true"
+            or request.headers.get("X-Simulate-Payment-Decline") == "true"
+        )
 
     is_sync = request.query_params.get("sync") == "true"
 
@@ -898,7 +912,7 @@ def _handle_create_transaction(request):
             pay_user_id = txn.user_id
             pay_user_email = txn.user_email
 
-            if simulate_decline:
+            if simulate_decline and enable_test_payment_failure:
                 amount = Decimal("9999")
 
             if not is_sync:
@@ -975,7 +989,7 @@ def _handle_create_transaction(request):
 
     quantity = len(seat_ids)
 
-    if simulate_decline:
+    if simulate_decline and enable_test_payment_failure:
         amount = Decimal("9999")
 
     created, dup_response = _create_transaction(
@@ -1254,13 +1268,14 @@ def _run_saga_pipeline(
     }
     """
 
+    enable_test_payment_failure = getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False) or bool(getattr(settings, "IS_TESTING", False))
     if resp_json and "total_amount" in resp_json:
         try:
             from decimal import Decimal
 
             actual_amount = Decimal(str(resp_json["total_amount"]))
-            # Preserve intentional payment failure simulation amount (9999) for compensation scenarios
-            if str(amount).split(".")[0] != "9999":
+            # Preserve intentional payment failure simulation amount (9999) only if ENABLE_TEST_PAYMENT_FAILURE is active
+            if not (enable_test_payment_failure and str(amount).split(".")[0] == "9999"):
                 amount = actual_amount
                 txn = Transaction.objects.filter(transaction_id=transaction_id).first()
                 if txn:
@@ -1444,6 +1459,20 @@ def _confirm_inventory(transaction_id, seat_ids=None, correlation_id=None):
 
 
 def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, payment_status_code=200, correlation_id=None, seat_ids=None):
+    if payment_status_code == 409:
+        code = payment_data.get("code") if isinstance(payment_data, dict) else None
+        if code == "IDEMPOTENCY_PAYLOAD_MISMATCH":
+            logger.critical(
+                "Idempotency conflict detected for transaction %s: %s",
+                transaction_id,
+                payment_data.get("error"),
+            )
+        elif code == "TRANSACTION_VOIDED":
+            logger.warning(
+                "Payment rejected because transaction %s was previously voided.",
+                transaction_id,
+            )
+
     if payment_data.get("status") == "CHARGED":
         confirm_resp, confirm_err = _confirm_inventory(transaction_id, seat_ids=seat_ids, correlation_id=correlation_id)
 
@@ -1537,6 +1566,23 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             was_charged = True
     elif payment_status_code == 200:
         was_charged = True
+
+    if not was_charged:
+        # Priority 2: Void payment in-flight before compensating inventory
+        try:
+            void_url = f"{PAYMENT_SERVICE_URL.rstrip('/')}/payments/void/"
+            void_resp = _http_post(
+                void_url,
+                json={"transaction_id": str(transaction_id)},
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
+            )
+            if void_resp.status_code == 200:
+                v_data = _parse_json_response(void_resp)
+                if v_data and v_data.get("status") == "CHARGED":
+                    was_charged = True
+        except (Timeout, ConnectionError):
+            pass
 
     # 1. Attempt Inventory Release
     release_ok = False

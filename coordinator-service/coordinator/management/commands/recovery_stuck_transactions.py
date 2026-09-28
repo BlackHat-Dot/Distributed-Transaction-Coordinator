@@ -240,6 +240,27 @@ class Command(BaseCommand):
             )
             return
 
+        # Ensure payment is voided so an in-flight charge cannot land after inventory release
+        try:
+            void_resp = requests.post(
+                f"{PAYMENT_SERVICE_URL.rstrip('/')}/payments/void/",
+                json={"transaction_id": str(transaction_id)},
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
+            )
+            if void_resp.status_code == 200:
+                v_data = void_resp.json()
+                if v_data.get("status") == "CHARGED":
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f"  -> {transaction_id}: payment was charged before void; routing to refund."
+                        )
+                    )
+                    self._compensate(transaction_id, payment_was_charged=True)
+                    return
+        except requests.exceptions.RequestException:
+            pass
+
         try:
             inventory_resp = requests.get(
                 INVENTORY_CHECK_URL,
