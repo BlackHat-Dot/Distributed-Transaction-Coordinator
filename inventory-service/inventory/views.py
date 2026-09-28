@@ -1,3 +1,5 @@
+from decimal import Decimal
+import logging
 import base64
 import hashlib
 import hmac
@@ -8,7 +10,7 @@ import time
 import uuid
 from datetime import timedelta
 from django.conf import settings
-from django.db import transaction, connection, IntegrityError
+from django.db import transaction, connection, IntegrityError, DatabaseError
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework.decorators import api_view
@@ -18,6 +20,8 @@ import redis
 
 from .models import Event, Seat, Reservation
 from .serializers import EventSerializer, SeatSerializer, PublicSeatSerializer, InternalSeatSerializer
+
+logger = logging.getLogger(__name__)
 
 
 _redis_client_instance = None
@@ -187,7 +191,7 @@ def seat_list(request):
 
             seats_to_create = []
 
-            for r, price in [('A', 750.00), ('B', 500.00), ('C', 350.00)]:
+            for r, price in [('A', Decimal("750.00")), ('B', Decimal("500.00")), ('C', Decimal("350.00"))]:
                 for num in range(1, 11):
                     seats_to_create.append(
                         Seat(event=event, row=r, seat_number=str(num), price=price, status=Seat.Status.AVAILABLE)
@@ -398,6 +402,11 @@ def _validate_reserve_input(data):
     except (ValueError, TypeError):
         return None, None, Response({"error": "seat_ids must be a list of integers"}, status=400)
 
+    # Finding 18: Dedupe seat_ids while preserving order, and cap at 50
+    seat_ids = list(dict.fromkeys(seat_ids))
+    if len(seat_ids) > 50:
+        return None, None, Response({"error": "Cannot reserve more than 50 seats at once", "code": "MAX_SEATS_EXCEEDED"}, status=400)
+
     raw_tid = data.get("transaction_id")
     if raw_tid:
         tid = _validate_uuid(raw_tid)
@@ -466,7 +475,7 @@ def reserve_seat(request):
                 status=401,
             )
     # Enforce MAX_USER_HOLDS (D-5)
-    max_user_holds = getattr(settings, "MAX_USER_HOLDS")
+    max_user_holds = getattr(settings, "MAX_USER_HOLDS", None) or 10
     
     if len(seat_ids) > max_user_holds:
         return Response(
@@ -600,8 +609,8 @@ def reserve_seat(request):
                 seat.held_by_transaction_id = transaction_id
                 seat.user_id = user_id
                 seat.user_email = user_email
-                seat.save()
-                
+                seat.save(update_fields=["status", "held_until", "held_by_transaction_id", "user_id", "user_email"])
+
                 res, created = Reservation.objects.get_or_create(
                     seat=seat, # used lookup
                     transaction_id=transaction_id, # used lookup
@@ -612,12 +621,14 @@ def reserve_seat(request):
 
                 if not created:
                     res.status = Reservation.Status.RESERVED
-                    res.save()
-                    
+                    res.user_id = user_id
+                    res.user_email = user_email
+                    res.save(update_fields=["status", "user_id", "user_email"])
+
                 reservations.append(res)
-            
+
             total_amount = sum(seat.price for seat in seats)
-            
+
             resp_data = {
                 "message": f"{len(seats)} Seats reserved",
                 "transaction_id": str(transaction_id),
@@ -628,17 +639,21 @@ def reserve_seat(request):
             return Response(resp_data, status=200)
 
     except IntegrityError as e:
+        logger.warning("IntegrityError in reserve_seat: %s", e)
         return Response(
             {
                 "error": "Conflict: Seat reservation conflict or concurrent modification.",
                 "code": "SEAT_CONFLICT",
-                "detail": str(e),
                 "transaction_id": str(transaction_id) if "transaction_id" in locals() and transaction_id else None,
             },
             status=409,
         )
+    except DatabaseError as e:
+        logger.exception("DatabaseError in reserve_seat: %s", e)
+        return Response({"error": "Internal server error occurred.", "code": "DATABASE_ERROR"}, status=500)
     except Exception as e:
-        return Response({"error": "Database error", "detail": str(e)}, status=500)
+        logger.exception("Unexpected error in reserve_seat: %s", e)
+        return Response({"error": "Internal server error occurred.", "code": "INTERNAL_ERROR"}, status=500)
 
 @api_view(["POST"])
 def confirm_seat(request):
@@ -708,8 +723,12 @@ def confirm_seat(request):
             )
 
             return Response({"message": "Seats confirmed", "transaction_id": str(transaction_id)}, status=200)
+    except DatabaseError as e:
+        logger.exception("DatabaseError in confirm_seat: %s", e)
+        return Response({"error": "Internal server error occurred.", "code": "DATABASE_ERROR"}, status=500)
     except Exception as e:
-        return Response({"error": "Database error", "detail": str(e)}, status=500)
+        logger.exception("Unexpected error in confirm_seat: %s", e)
+        return Response({"error": "Internal server error occurred.", "code": "INTERNAL_ERROR"}, status=500)
 
 @api_view(["POST"])
 def release_seat(request):
@@ -838,8 +857,12 @@ def release_seat(request):
                 status=200,
             )
 
+    except DatabaseError as e:
+        logger.exception("DatabaseError in release_seat: %s", e)
+        return Response({"error": "Internal server error occurred.", "code": "DATABASE_ERROR"}, status=500)
     except Exception as e:
-        return Response({"error": "Database error", "detail": str(e)}, status=500)
+        logger.exception("Unexpected error in release_seat: %s", e)
+        return Response({"error": "Internal server error occurred.", "code": "INTERNAL_ERROR"}, status=500)
 
 @api_view(["GET"])
 def check_reservation(request):
@@ -878,8 +901,19 @@ def reset_seats(request):
                 status=403,
             )
 
+    event_id = request.data.get("event_id") if isinstance(request.data, dict) else None
     with transaction.atomic():
-        Seat.objects.update(
+        seat_qs = Seat.objects.all()
+        res_qs = Reservation.objects.all()
+        if event_id:
+            try:
+                event_id_int = int(event_id)
+                seat_qs = seat_qs.filter(event_id=event_id_int)
+                res_qs = res_qs.filter(seat__event_id=event_id_int)
+            except (ValueError, TypeError):
+                return Response({"error": "event_id must be an integer"}, status=400)
+
+        seat_qs.update(
             status=Seat.Status.AVAILABLE,
             held_until=None,
             held_by_transaction_id=None,
@@ -887,9 +921,10 @@ def reset_seats(request):
             user_email=None,
         )
 
-        Reservation.objects.all().delete() # must
+        res_qs.delete()
 
-    return Response({"message": "All seats reset to AVAILABLE."})
+    msg = f"Seats for event {event_id} reset to AVAILABLE." if event_id else "All seats reset to AVAILABLE."
+    return Response({"message": msg})
 
 
 @api_view(["POST"])

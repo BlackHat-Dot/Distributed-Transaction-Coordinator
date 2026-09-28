@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.db import models
 from django.utils import timezone
 
@@ -22,7 +23,7 @@ class Seat(models.Model):
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="seats")
     row = models.CharField(max_length=10)
     seat_number = models.CharField(max_length=10)
-    price = models.DecimalField(max_digits=10, decimal_places=2, default=500.00)
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("500.00"))
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
