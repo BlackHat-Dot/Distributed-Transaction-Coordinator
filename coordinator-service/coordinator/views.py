@@ -35,10 +35,9 @@ def _get_active_correlation_id(correlation_id=None):
 
 
 
-# ==============================================================================
 # SECTION 1: CONFIGURATION & SERVICE ENDPOINTS
 # URLs, timeouts, and authentication keys used to communicate with peer services.
-# ==============================================================================>
+
 
 INVENTORY_BASE_URL = os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000").rstrip("/")
 PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rstrip("/")
@@ -80,10 +79,10 @@ def _http_get(url, **kwargs):
     return _get_http_session().get(url, **kwargs)
 
 
-# ==============================================================================
+
 # SECTION 2: PUBLIC API ENDPOINTS (URL VIEW TARGETS)
 # These endpoints are mapped directly in urls.py for incoming HTTP requests.
-# ==============================================================================
+
 
 @api_view(["GET"])
 def health_check(request):
@@ -522,10 +521,10 @@ def recovery_status(request):
     }, status=200)
 
 
-# ==============================================================================
+
 # SECTION 3: CONTROLLER REQUEST HANDLERS
 # Internal handlers that authenticate, parse, and validate incoming requests.
-# ==============================================================================
+
 
 def _resolve_seat_pricing(seat_ids=None, correlation_id=None):
     """
@@ -775,12 +774,11 @@ def _handle_create_transaction(request):
 
     is_sync = request.query_params.get("sync") == "true"
 
-    # =========================================================================
-    # ACTION: HOLD — Phase 1
+    # ACTION: HOLD (Phase 1)
     # Browser → POST /transactions/ {seat_ids, action:"hold"}
     # Coordinator generates ONE UUID, reserves seats, stores HOLDING record.
     # Returns {transaction_id, held_until} — browser shows yellow seats.
-    # =========================================================================
+
     if action == "hold":
         transaction_id = str(uuid.uuid4())
 
@@ -793,7 +791,7 @@ def _handle_create_transaction(request):
 
         quantity = len(seat_ids)
 
-        # Reserve in inventory — this is the ONE and only reserve call for this booking.
+        # Reserve in inventory, this is the ONE and only reserve call for this booking.
         response, reserve_error = _reserve_inventory(
             transaction_id,
             seat_ids,
@@ -864,11 +862,10 @@ def _handle_create_transaction(request):
             status=200,
         )
 
-    # =========================================================================
-    # ACTION: PAY — Phase 2
+    # ACTION: PAY (Phase 2)
     # Browser → POST /transactions/ {transaction_id, action:"pay"}
     # Coordinator looks up the HOLDING record, skips reserve, runs charge+confirm.
-    # =========================================================================
+
     if action == "pay":
         with transaction.atomic():
             txn = Transaction.objects.select_for_update().filter(transaction_id=pay_tid).first()
@@ -970,11 +967,10 @@ def _handle_create_transaction(request):
             skip_reserve=True,
         )
 
-    # =========================================================================
     # DEFAULT: One-shot full saga (legacy path — backward compatible)
     # Browser or staff → POST /transactions/ {seat_ids}
     # Coordinator generates UUID, reserves, charges, confirms in one go.
-    # =========================================================================
+
     transaction_id = str(uuid.uuid4())
 
     amount, seat_ids, seat_numbers, price_error = _resolve_seat_pricing(
@@ -1159,11 +1155,10 @@ def _handle_list_transactions(request):
     )
 
 
-# ==============================================================================
 # SECTION 4: SAGA ORCHESTRATOR PIPELINE
 # Coordinates the distributed transaction workflow:
 # 1. Reserve Inventory -> 2. Charge Payment -> 3. Confirm Inventory or Compensate
-# ==============================================================================
+
 
 def _run_saga_pipeline(
     transaction_id,
@@ -1315,10 +1310,9 @@ def _run_saga_pipeline(
     )
 
 
-# ==============================================================================
 # SECTION 5: SAGA MICROSERVICE REMOTE CALLS
 # Individual remote HTTP interactions with Inventory and Payment microservices.
-# ==============================================================================
+
 
 def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=None, user_email=None):
 
@@ -1659,11 +1653,11 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
     return Response(data, status=500)
 
 
-# ==============================================================================
+
 # SECTION 6: SERIALIZATION, IDENTITY & INFRASTRUCTURE HELPERS
 # Utility functions for auth identity extraction, database creation, serialization,
 # and exception-to-status mapping.
-# ==============================================================================
+
 
 def _get_requester_identity(request):
     """
