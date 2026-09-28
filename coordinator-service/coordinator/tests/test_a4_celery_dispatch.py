@@ -21,6 +21,7 @@ class CeleryDispatchA4Tests(TransactionTestCase):
             seat_ids=[1],
             quantity=1,
             amount=Decimal("100"),
+            user_id="system_test",
         )
 
         with patch("coordinator.tasks.execute_saga_task.delay", side_effect=Exception("RabbitMQ connection failure")):

@@ -104,6 +104,20 @@ def list_transactions(request):
     return _handle_list_transactions(request)
 
 
+def _can_access(txn, user_id, is_staff=False):
+    """
+    Central helper for transaction ownership and access control (F-16, F-44).
+    - Staff callers are granted access unconditionally.
+    - Non-staff callers are denied if txn.user_id or user_id is null/empty.
+    - String coercion is applied to both sides so integer user IDs match string representations.
+    """
+    if is_staff:
+        return True
+    if not txn or not txn.user_id or not user_id:
+        return False
+    return str(txn.user_id) == str(user_id)
+
+
 @api_view(["GET"])
 def get_transaction(request, transaction_id):
     is_authenticated, auth_user_id, is_staff = _get_requester_identity(request)
@@ -116,7 +130,7 @@ def get_transaction(request, transaction_id):
         return Response({"detail": "Transaction not found"}, status=404)
 
     # IDOR protection: Non-staff users may only view their own transactions
-    if not is_staff and (not auth_user_id or (txn.user_id and txn.user_id != auth_user_id)):
+    if not _can_access(txn, auth_user_id, is_staff):
         return Response({"error": "You do not have permission to view this transaction."}, status=403)
 
     return Response(_serialize_transaction(txn))
@@ -134,7 +148,7 @@ def list_transaction_events(request, transaction_id):
         return Response({"detail": "Transaction not found", "events": []}, status=404)
 
     # IDOR protection: Non-staff users may only view their own transaction events
-    if not is_staff and (not auth_user_id or (txn.user_id and txn.user_id != auth_user_id)):
+    if not _can_access(txn, auth_user_id, is_staff):
         return Response({"error": "You do not have permission to view this transaction's events."}, status=403)
 
     events = txn.events.order_by("seq")
@@ -163,7 +177,7 @@ def transaction_stream(request, transaction_id):
         return JsonResponse({"detail": "Transaction not found"}, status=404)
 
     # IDOR protection: Non-staff users may only stream their own transactions
-    if not is_staff and (not auth_user_id or (txn.user_id and txn.user_id != auth_user_id)):
+    if not _can_access(txn, auth_user_id, is_staff):
         return JsonResponse({"error": "You do not have permission to view this transaction."}, status=403)
 
     terminal_statuses = {
@@ -713,9 +727,11 @@ def _handle_create_transaction(request):
         and secrets.compare_digest(request.headers.get("X-Staff-Key"), staff_api_key)
     )
 
+    is_staff = False
     if has_staff_key:
         user_id = request.headers.get("X-User-ID") or os.getenv("STAFF_USER_ID") or "system_staff"
         user_email = request.headers.get("X-User-Email") or os.getenv("STAFF_EMAIL_ID") or "admin@dtc.internal"
+        is_staff = True
     else:
         # Priority 2: Regular user authenticated via JWT Bearer token
         user_info = get_user_from_request(request)
@@ -723,8 +739,11 @@ def _handle_create_transaction(request):
         if user_info and user_info.get("is_authenticated"):
             user_id = user_info.get("user_id")
             user_email = user_info.get("user_email")
+            admin_domain = os.getenv("ADMIN_DOMAIN")
+            if user_email and admin_domain and user_email.endswith(admin_domain):
+                is_staff = True
         elif is_testing or is_dev:
-            user_id = request.headers.get("X-User-ID") or None
+            user_id = request.headers.get("X-User-ID") or ("system_test" if is_testing else "system_dev")
             user_email = request.headers.get("X-User-Email") or None
         else:
             return Response(
@@ -903,12 +922,11 @@ def _handle_create_transaction(request):
                 )
 
             # Ownership check — non-staff users can only pay their own holds
-            if not (has_staff_key or is_dev or is_testing):
-                if txn.user_id and txn.user_id != user_id:
-                    return Response(
-                        {"error": "You do not have permission to pay for this transaction.", "code": "FORBIDDEN"},
-                        status=403,
-                    )
+            if not _can_access(txn, user_id, is_staff=is_staff):
+                return Response(
+                    {"error": "You do not have permission to pay for this transaction.", "code": "FORBIDDEN"},
+                    status=403,
+                )
 
             # Idempotent: already completed → return it
             if txn.status == Transaction.Status.COMPLETED:
