@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 from unittest.mock import patch, MagicMock
 from django.test import TestCase
 from django.utils import timezone
@@ -22,7 +22,7 @@ class SessionHoldClearanceTests(TestCase):
             seat_number="1",
             price="100.00",
             status=Seat.Status.HELD,
-            held_until=timezone.now() + timedelta(minutes=10),
+            held_until=timezone.now() + timedelta(minutes=5),
             held_by_transaction_id=uuid.uuid4(),
             user_id="usr_vijay",
             user_email="vijay@gmail.com",

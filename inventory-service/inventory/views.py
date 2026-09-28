@@ -20,12 +20,22 @@ from .models import Event, Seat, Reservation
 from .serializers import EventSerializer, SeatSerializer
 
 
+_redis_client_instance = None
+
+
 def get_redis_client():
-    broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://localhost:6379/0")
+    global _redis_client_instance
+    if _redis_client_instance is not None:
+        return _redis_client_instance
+
+    redis_url = getattr(settings, "REDIS_URL", None) or getattr(settings, "CELERY_BROKER_URL", "redis://localhost:6379/0")
     try:
-        return redis.Redis.from_url(
-            broker_url, socket_connect_timeout=0.05, socket_timeout=0.05
+        client = redis.Redis.from_url(
+            redis_url, socket_connect_timeout=0.2, socket_timeout=0.2, decode_responses=True
         )
+        client.ping()
+        _redis_client_instance = client
+        return _redis_client_instance
     except Exception:
         return None
 
@@ -52,6 +62,7 @@ def reclaim_expired_holds():
     """
     Reclaims seats that are expired by time (held_until < now) OR abandoned by user
     (user exited browser/website, causing their Redis heartbeat session dtc:session:{email} to expire).
+    Presence-based reclaim only applies after a grace period of HOLD_PRESENCE_GRACE_SECONDS (default 120s).
     """
     now = timezone.now()
 
@@ -66,20 +77,46 @@ def reclaim_expired_holds():
     expired_snapshots = {}  # seat_id -> held_by_transaction_id
     redis_client = get_redis_client()
 
+    grace_seconds = getattr(settings, "HOLD_PRESENCE_GRACE_SECONDS", 120)
+    hold_duration_minutes = getattr(settings, "HOLD_DURATION_MINUTES", 10)
+
+    presence_candidates = []
+
     for seat in held_seats:
         seat_id = seat["id"]
-        # 1. Time-based expiry (10m hold elapsed)
+        # 1. Time-based expiry (10m hold elapsed) - stays unchanged
         if seat["held_until"] and seat["held_until"] < now:
             expired_snapshots[seat_id] = seat["held_by_transaction_id"]
             continue
 
-        # 2. Presence-based expiry (dead-man's switch: user exited browser / logged out)
-        if seat["user_email"] and redis_client:
-            try:
-                if not redis_client.exists(f"dtc:session:{seat['user_email']}"):
-                    expired_snapshots[seat_id] = seat["held_by_transaction_id"]
-            except Exception:
-                pass
+        # 2. Candidate for presence-based expiry: only if hold age >= grace_seconds
+        if seat["held_until"] and seat["user_email"] and redis_client:
+            hold_start = seat["held_until"] - timedelta(minutes=hold_duration_minutes)
+            hold_age = (now - hold_start).total_seconds()
+            if hold_age >= grace_seconds:
+                presence_candidates.append(seat)
+
+    # Pipeline Redis EXISTS per unique email for presence candidates
+    if presence_candidates and redis_client:
+        unique_emails = list({s["user_email"] for s in presence_candidates if s.get("user_email")})
+        active_emails = set()
+        try:
+            pipe = redis_client.pipeline()
+            for email in unique_emails:
+                pipe.exists(f"dtc:session:{email}")
+            results = pipe.execute()
+            if not isinstance(results, (list, tuple)) or len(results) != len(unique_emails):
+                results = [redis_client.exists(f"dtc:session:{email}") for email in unique_emails]
+            for email, exists in zip(unique_emails, results):
+                if exists:
+                    active_emails.add(email)
+
+            for seat in presence_candidates:
+                if seat["user_email"] not in active_emails:
+                    expired_snapshots[seat["id"]] = seat["held_by_transaction_id"]
+        except Exception:
+            # If Redis errors, skip presence expiry (fail safe)
+            pass
 
     if not expired_snapshots:
         return 0, 0
@@ -577,15 +614,15 @@ def confirm_seat(request):
 
     try:
         with transaction.atomic():
-            reservations = list(Reservation.objects.select_for_update().filter(transaction_id=transaction_id))
-
-            if not reservations:
-                return Response({"error": "Reservations not found", "transaction_id": str(transaction_id)}, status=404)
-
             seats = list(Seat.objects.select_for_update().filter(id__in=seat_ids).order_by('id'))
 
             if len(seats) != len(seat_ids):
                 return Response({"error": "One or more seats not found", "transaction_id": str(transaction_id)}, status=404)
+
+            reservations = list(Reservation.objects.select_for_update().filter(transaction_id=transaction_id))
+
+            if not reservations:
+                return Response({"error": "Reservations not found", "transaction_id": str(transaction_id)}, status=404)
 
             now = timezone.now()
 
@@ -664,7 +701,22 @@ def release_seat(request):
         return Response({"error": "transaction_id must be a valid UUID", "code": "INVALID_UUID"}, status=400)
 
     try:
+        candidate_res = list(Reservation.objects.filter(transaction_id=transaction_id))
+        if not candidate_res:
+            return Response(
+                {"message": "No active reservation found to release.", "released_count": 0, "transaction_id": str(transaction_id)},
+                status=200,
+            )
+
+        candidate_seat_ids = sorted(list({r.seat_id for r in candidate_res if r.seat_id}))
+
         with transaction.atomic():
+            # Step 1: Lock Seats first in ascending ID order
+            locked_seats = []
+            if candidate_seat_ids:
+                locked_seats = list(Seat.objects.select_for_update().filter(id__in=candidate_seat_ids).order_by("id"))
+
+            # Step 2: Lock Reservations second
             reservations = list(Reservation.objects.select_for_update().filter(transaction_id=transaction_id))
 
             if not reservations:
@@ -715,26 +767,31 @@ def release_seat(request):
 
             seat_ids = [r.seat_id for r in active_res if r.seat_id]
 
+            Reservation.objects.filter(id__in=[r.id for r in active_res]).update(
+                status=Reservation.Status.RELEASED
+            )
 
+            reclaimed_seat_count = 0
             if seat_ids:
-                Reservation.objects.filter(id__in=[r.id for r in active_res]).update(
-                    status=Reservation.Status.RELEASED
-                )
-                Seat.objects.filter(
-                    id__in=seat_ids,
-                    held_by_transaction_id=transaction_id
-                ).update(
-                    status=Seat.Status.AVAILABLE,
-                    held_until=None,
-                    held_by_transaction_id=None,
-                    user_id=None,
-                    user_email=None,
-                )
+                seats_to_update = [
+                    s.id for s in locked_seats
+                    if s.id in seat_ids and s.held_by_transaction_id == transaction_id
+                ]
+                if seats_to_update:
+                    reclaimed_seat_count = Seat.objects.filter(
+                        id__in=seats_to_update
+                    ).update(
+                        status=Seat.Status.AVAILABLE,
+                        held_until=None,
+                        held_by_transaction_id=None,
+                        user_id=None,
+                        user_email=None,
+                    )
 
             return Response(
                 {
-                    "message": f"Successfully released {len(seat_ids)} seat(s).",
-                    "released_count": len(seat_ids),
+                    "message": f"Successfully released {reclaimed_seat_count} seat(s).",
+                    "released_count": reclaimed_seat_count,
                     "transaction_id": str(transaction_id),
                 },
                 status=200,
