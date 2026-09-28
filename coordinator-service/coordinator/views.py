@@ -1657,7 +1657,7 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
         decline_payload = {
             "error": "Seat hold expired or confirmation failed",
             "payment": payment_data,
-            "inventory_confirm": confirm_json or str(confirm_err),
+            "inventory_confirm": confirm_json if confirm_json is not None else {"error": "Inventory confirmation failed"},
         }
         return _compensate(
             transaction_id,
@@ -1716,8 +1716,6 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             was_charged = True
         elif isinstance(payment_data.get("payment"), dict) and payment_data["payment"].get("status") == "CHARGED":
             was_charged = True
-    elif payment_status_code == 200:
-        was_charged = True
 
     # 1. Attempt Inventory Release
     release_ok = False
@@ -1732,8 +1730,18 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             timeout=REQUEST_TIMEOUT,
         )
         release_status_code = release_response.status_code
-        release_ok = (release_status_code == 200)
         release_data = _parse_json_response(release_response)
+        release_ok = (release_status_code == 200)
+        if not release_ok and isinstance(release_data, dict):
+            msg = str(release_data.get("message", "")).lower() + " " + str(release_data.get("error", "")).lower()
+            code = str(release_data.get("code", "")).upper()
+            if (
+                "already released" in msg
+                or "nothing to release" in msg
+                or "holds may have already been cancelled or expired" in msg
+                or code in ("ALREADY_RELEASED", "NOTHING_TO_RELEASE", "NOT_FOUND")
+            ):
+                release_ok = True
     except RequestException as e:
         release_transport_error = e
 

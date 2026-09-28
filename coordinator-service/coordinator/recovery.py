@@ -136,12 +136,22 @@ def execute_compensation_sweep(
             timeout=REQUEST_TIMEOUT,
         )
         release_status_code = rel_resp.status_code
-        release_ok = (rel_resp.status_code == 200)
         if rel_resp.content:
             try:
                 release_payload = rel_resp.json()
             except Exception:
                 pass
+        release_ok = (rel_resp.status_code == 200)
+        if not release_ok and isinstance(release_payload, dict):
+            msg = str(release_payload.get("message", "")).lower() + " " + str(release_payload.get("error", "")).lower()
+            code = str(release_payload.get("code", "")).upper()
+            if (
+                "already released" in msg
+                or "nothing to release" in msg
+                or "holds may have already been cancelled or expired" in msg
+                or code in ("ALREADY_RELEASED", "NOTHING_TO_RELEASE", "NOT_FOUND")
+            ):
+                release_ok = True
     except (requests.exceptions.RequestException, Exception):
         release_ok = False
 
