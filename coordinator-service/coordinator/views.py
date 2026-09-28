@@ -735,9 +735,7 @@ def _handle_create_transaction(request):
         if user_info and user_info.get("is_authenticated"):
             user_id = user_info.get("user_id")
             user_email = user_info.get("user_email")
-            admin_domain = os.getenv("ADMIN_DOMAIN")
-            if user_email and admin_domain and user_email.endswith(admin_domain):
-                is_staff = True
+            is_staff = _is_admin_email(user_email)
         elif is_testing or is_dev:
             user_id = request.headers.get("X-User-ID") or ("system_test" if is_testing else "system_dev")
             user_email = request.headers.get("X-User-Email") or None
@@ -1861,6 +1859,30 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
 # and exception-to-status mapping.
 
 
+def _is_admin_email(email):
+    """
+    Validates if an email belongs to the configured ADMIN_DOMAIN (F-18).
+    - Case-insensitive comparison.
+    - Enforces exact '@' boundary.
+    - If ADMIN_DOMAIN is unset or empty, nobody is staff via domain.
+    """
+    if not email or not isinstance(email, str):
+        return False
+    admin_domain = os.getenv("ADMIN_DOMAIN", "").strip().lower()
+    if not admin_domain:
+        return False
+    if admin_domain.startswith("@"):
+        admin_domain = admin_domain[1:]
+    if not admin_domain:
+        return False
+
+    parts = email.strip().lower().split("@")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        return False
+
+    return parts[1] == admin_domain
+
+
 def _get_requester_identity(request):
     """
     Resolves caller identity and permissions (is_authenticated, auth_user_id, is_staff).
@@ -1881,11 +1903,10 @@ def _get_requester_identity(request):
 
     # JWT Bearer Token
     user_info = get_user_from_request(request)
-    admin_domain = os.getenv("ADMIN_DOMAIN")
     
     if user_info and user_info.get("is_authenticated"):
         user_email = user_info.get("user_email")
-        is_staff = (user_email and user_email.endswith(admin_domain))
+        is_staff = _is_admin_email(user_email)
 
         return True, user_info.get("user_id"), is_staff
 
