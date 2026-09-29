@@ -30,18 +30,7 @@ def _get_pub_client():
     return _pub_client
 
 
-TERMINAL_STATUSES = {
-    Transaction.Status.COMPLETED,
-    Transaction.Status.COMPENSATED,
-    Transaction.Status.COMPENSATION_FAILED,
-    Transaction.Status.INVENTORY_RESERVE_FAILED,
-    Transaction.Status.COMPENSATED_ON_RETRY,
-    Transaction.Status.RETRY_COMPENSATION_FAILED,
-    Transaction.Status.TIMEOUT,
-    Transaction.Status.PAYMENT_TIMEOUT,
-    Transaction.Status.PAYMENT_FAILED,
-    Transaction.Status.PAYMENT_CONNECTION_ERROR,
-}
+TERMINAL_STATUSES = Transaction.TERMINAL_STATUSES
 
 
 def _publish_transaction_update(transaction_id, to_status, from_status=None):
@@ -53,7 +42,8 @@ def _publish_transaction_update(transaction_id, to_status, from_status=None):
             "transaction_id": str(transaction_id),
             "status": to_status,
             "from_status": from_status,
-            "is_terminal": to_status in TERMINAL_STATUSES,
+            "is_terminal": to_status in Transaction.TERMINAL_STATUSES,
+            "needs_recovery": to_status in Transaction.RECOVERABLE_STATUSES,
         })
         client.publish(f"dtc:tx_stream:{transaction_id}", payload)
     except Exception as exc:

@@ -1,5 +1,6 @@
 import os
 import uuid
+import json
 from decimal import Decimal
 from unittest.mock import patch, MagicMock
 from django.test import TestCase
@@ -623,6 +624,62 @@ class SecurityAndReliabilityHardeningTests(TestCase):
                     Decimal("9999.50"),
                     "Real order with amount 9999 was not updated from inventory!",
                 )
+
+    def test_h5_h6_centralized_terminal_and_recoverable_statuses(self):
+        """
+        H5/H6: Centralize terminal and recoverable statuses on Transaction model.
+        Verify both sets, ensure INVENTORY_TIMEOUT / INVENTORY_CONNECTION_ERROR are present in TERMINAL_STATUSES,
+        and ensure needs_recovery is present in _serialize_transaction and SSE events.
+        """
+        from coordinator.views import _serialize_transaction
+        from coordinator.saga_log import _publish_transaction_update
+
+        # 1. Model constants exist and are non-empty sets
+        self.assertIsInstance(Transaction.TERMINAL_STATUSES, set)
+        self.assertIsInstance(Transaction.RECOVERABLE_STATUSES, set)
+
+        # 2. Key statuses verified in TERMINAL_STATUSES
+        self.assertIn(Transaction.Status.INVENTORY_TIMEOUT, Transaction.TERMINAL_STATUSES)
+        self.assertIn(Transaction.Status.INVENTORY_CONNECTION_ERROR, Transaction.TERMINAL_STATUSES)
+        self.assertIn(Transaction.Status.PAYMENT_TIMEOUT, Transaction.TERMINAL_STATUSES)
+        self.assertIn(Transaction.Status.COMPLETED, Transaction.TERMINAL_STATUSES)
+
+        # 3. Key statuses verified in RECOVERABLE_STATUSES
+        self.assertIn(Transaction.Status.PAYMENT_PROCESSING, Transaction.RECOVERABLE_STATUSES)
+        self.assertIn(Transaction.Status.PAYMENT_TIMEOUT, Transaction.RECOVERABLE_STATUSES)
+        self.assertIn(Transaction.Status.COMPENSATION_FAILED, Transaction.RECOVERABLE_STATUSES)
+        self.assertIn(Transaction.Status.RETRY_COMPENSATION_FAILED, Transaction.RECOVERABLE_STATUSES)
+        self.assertNotIn(Transaction.Status.COMPLETED, Transaction.RECOVERABLE_STATUSES)
+
+        # 4. _serialize_transaction includes is_terminal and needs_recovery
+        tx_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=tx_id,
+            status=Transaction.Status.PAYMENT_TIMEOUT,
+            amount=Decimal("50.00"),
+        )
+        serialized = _serialize_transaction(txn)
+        self.assertTrue(serialized["is_terminal"])
+        self.assertTrue(serialized["needs_recovery"])
+
+        txn.status = Transaction.Status.COMPLETED
+        serialized_completed = _serialize_transaction(txn)
+        self.assertTrue(serialized_completed["is_terminal"])
+        self.assertFalse(serialized_completed["needs_recovery"])
+
+        # 5. SSE event publishing includes needs_recovery
+        published_payloads = []
+        mock_client = MagicMock()
+        def mock_publish(channel, payload):
+            published_payloads.append(json.loads(payload))
+        mock_client.publish = mock_publish
+
+        with patch("coordinator.saga_log._get_pub_client", return_value=mock_client):
+            _publish_transaction_update(tx_id, Transaction.Status.PAYMENT_TIMEOUT, Transaction.Status.PAYMENT_PROCESSING)
+            self.assertEqual(len(published_payloads), 1)
+            self.assertTrue(published_payloads[0]["is_terminal"])
+            self.assertTrue(published_payloads[0]["needs_recovery"])
+
 
 
 

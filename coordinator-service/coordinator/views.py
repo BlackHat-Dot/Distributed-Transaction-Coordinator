@@ -211,18 +211,7 @@ def transaction_stream(request, transaction_id):
     if not _can_access(txn, auth_user_id, is_staff):
         return JsonResponse({"error": "You do not have permission to view this transaction."}, status=403)
 
-    terminal_statuses = {
-        Transaction.Status.COMPLETED,
-        Transaction.Status.COMPENSATED,
-        Transaction.Status.COMPENSATION_FAILED,
-        Transaction.Status.INVENTORY_RESERVE_FAILED,
-        Transaction.Status.COMPENSATED_ON_RETRY,
-        Transaction.Status.RETRY_COMPENSATION_FAILED,
-        Transaction.Status.TIMEOUT,
-        Transaction.Status.PAYMENT_TIMEOUT,
-        Transaction.Status.PAYMENT_FAILED,
-        Transaction.Status.PAYMENT_CONNECTION_ERROR,
-    }
+    terminal_statuses = Transaction.TERMINAL_STATUSES
 
     if txn.status in terminal_statuses:
         def terminal_generator():
@@ -230,6 +219,7 @@ def transaction_stream(request, transaction_id):
                 "transaction_id": str(txn.transaction_id),
                 "status": txn.status,
                 "is_terminal": True,
+                "needs_recovery": txn.status in Transaction.RECOVERABLE_STATUSES,
             })
             yield f"data: {initial_msg}\n\n"
         return StreamingHttpResponse(terminal_generator(), content_type="text/event-stream")
@@ -281,6 +271,7 @@ def transaction_stream(request, transaction_id):
                     "transaction_id": str(current_txn.transaction_id),
                     "status": current_txn.status,
                     "is_terminal": is_term,
+                    "needs_recovery": current_txn.status in Transaction.RECOVERABLE_STATUSES,
                 })
                 yield f"data: {initial_msg}\n\n"
                 if is_term:
@@ -298,6 +289,7 @@ def transaction_stream(request, transaction_id):
                         "transaction_id": str(transaction_id),
                         "status": "TIMEOUT",
                         "is_terminal": True,
+                        "needs_recovery": True,
                     })
                     yield f"data: {timeout_msg}\n\n"
                     break
@@ -331,6 +323,7 @@ def transaction_stream(request, transaction_id):
                                 "transaction_id": str(db_txn.transaction_id),
                                 "status": db_txn.status,
                                 "is_terminal": True,
+                                "needs_recovery": db_txn.status in Transaction.RECOVERABLE_STATUSES,
                             })
                             yield f"data: {term_msg}\n\n"
                             break
@@ -373,6 +366,8 @@ ALLOWED_RETRY_STATUSES = (
     Transaction.Status.RETRY_COMPENSATION_FAILED,
     Transaction.Status.PAYMENT_TIMEOUT,
     Transaction.Status.PAYMENT_CONNECTION_ERROR,
+    Transaction.Status.INVENTORY_TIMEOUT,
+    Transaction.Status.INVENTORY_CONNECTION_ERROR,
 )
 
 
@@ -2119,26 +2114,13 @@ _create_transaction_idempotent = _create_transaction
 
 
 def _serialize_transaction(txn):
-    terminal_statuses = {
-        Transaction.Status.COMPLETED,
-        Transaction.Status.COMPENSATED,
-        Transaction.Status.COMPENSATION_FAILED,
-        Transaction.Status.INVENTORY_RESERVE_FAILED,
-        Transaction.Status.COMPENSATED_ON_RETRY,
-        Transaction.Status.RETRY_COMPENSATION_FAILED,
-        Transaction.Status.TIMEOUT,
-        Transaction.Status.PAYMENT_TIMEOUT,
-        Transaction.Status.PAYMENT_FAILED,
-        Transaction.Status.PAYMENT_CONNECTION_ERROR,
-        Transaction.Status.INVENTORY_TIMEOUT,
-        Transaction.Status.INVENTORY_CONNECTION_ERROR,
-    }
     return {
         "transaction_id": str(txn.transaction_id),
         "user_id": txn.user_id,
         "user_email": txn.user_email,
         "status": txn.status,
-        "is_terminal": txn.status in terminal_statuses,
+        "is_terminal": txn.status in Transaction.TERMINAL_STATUSES,
+        "needs_recovery": txn.status in Transaction.RECOVERABLE_STATUSES,
         "seat_ids": txn.seat_ids,
         "seat_numbers": txn.seat_numbers,
         "quantity": txn.quantity,

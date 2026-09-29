@@ -27,6 +27,34 @@ class Transaction(models.Model):
         CHARGED = "CHARGED"
         TIMEOUT = "TIMEOUT"
 
+    TERMINAL_STATUSES = {
+        Status.COMPLETED,
+        Status.COMPENSATED,
+        Status.COMPENSATION_FAILED,
+        Status.INVENTORY_RESERVE_FAILED,
+        Status.COMPENSATED_ON_RETRY,
+        Status.RETRY_COMPENSATION_FAILED,
+        Status.TIMEOUT,
+        Status.PAYMENT_TIMEOUT,
+        Status.PAYMENT_FAILED,
+        Status.PAYMENT_CONNECTION_ERROR,
+        Status.INVENTORY_TIMEOUT,
+        Status.INVENTORY_CONNECTION_ERROR,
+    }
+
+    RECOVERABLE_STATUSES = {
+        Status.PAYMENT_PROCESSING,
+        Status.INVENTORY_RESERVED,
+        Status.STARTED,
+        Status.INVENTORY_TIMEOUT,
+        Status.PAYMENT_TIMEOUT,
+        Status.INVENTORY_CONNECTION_ERROR,
+        Status.PAYMENT_CONNECTION_ERROR,
+        Status.COMPENSATING,
+        Status.COMPENSATION_FAILED,
+        Status.RETRY_COMPENSATION_FAILED,
+    }
+
     transaction_id = models.UUIDField(unique=True)
     user_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
     user_email = models.CharField(max_length=255, null=True, blank=True, db_index=True)
