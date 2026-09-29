@@ -1015,6 +1015,56 @@ class SecurityAndReliabilityHardeningTests(TestCase):
             self.assertEqual(call_kwargs["headers"].get("X-Idempotency-Key"), str(tx_id))
             self.assertEqual(call_kwargs.get("timeout"), REQUEST_TIMEOUT)
 
+    def test_h22_allowed_transitions_validation(self):
+        """
+        H22: _set_status_with_event validates transitions against ALLOWED_TRANSITIONS.
+        Rejects illegal CAS transitions and accepts valid transitions.
+        """
+        from coordinator.saga_log import _set_status_with_event, ALLOWED_TRANSITIONS
+        self.assertIsInstance(ALLOWED_TRANSITIONS, dict)
+
+        tx_id = uuid.uuid4()
+        Transaction.objects.create(
+            transaction_id=tx_id,
+            status=Transaction.Status.STARTED,
+            amount=Decimal("500.00"),
+            seat_ids=[1],
+        )
+
+        # 1. Illegal transition: STARTED -> COMPLETED is NOT allowed
+        with self.assertLogs("coordinator.saga_log", level="WARNING") as cm:
+            ok = _set_status_with_event(
+                tx_id,
+                to_status=Transaction.Status.COMPLETED,
+                expected_status=Transaction.Status.STARTED,
+            )
+            self.assertFalse(ok)
+            self.assertTrue(any("Illegal CAS state transition" in msg for msg in cm.output))
+
+        # Transaction status unchanged
+        txn = Transaction.objects.get(transaction_id=tx_id)
+        self.assertEqual(txn.status, Transaction.Status.STARTED)
+
+        # 2. Legal transition: STARTED -> INVENTORY_RESERVED is allowed
+        ok = _set_status_with_event(
+            tx_id,
+            to_status=Transaction.Status.INVENTORY_RESERVED,
+            expected_status=Transaction.Status.STARTED,
+        )
+        self.assertTrue(ok)
+        txn.refresh_from_db()
+        self.assertEqual(txn.status, Transaction.Status.INVENTORY_RESERVED)
+
+        # 3. Illegal transition: INVENTORY_RESERVED -> COMPENSATED is NOT allowed
+        with self.assertLogs("coordinator.saga_log", level="WARNING"):
+            ok = _set_status_with_event(
+                tx_id,
+                to_status=Transaction.Status.COMPENSATED,
+                expected_status=Transaction.Status.INVENTORY_RESERVED,
+            )
+            self.assertFalse(ok)
+
+
 
 
 

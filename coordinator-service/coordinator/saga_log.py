@@ -32,6 +32,92 @@ def _get_pub_client():
 
 TERMINAL_STATUSES = Transaction.TERMINAL_STATUSES
 
+ALLOWED_TRANSITIONS = {
+    Transaction.Status.STARTED: {
+        Transaction.Status.INVENTORY_RESERVED,
+        Transaction.Status.HOLDING,
+        Transaction.Status.INVENTORY_RESERVE_FAILED,
+        Transaction.Status.INVENTORY_TIMEOUT,
+        Transaction.Status.INVENTORY_CONNECTION_ERROR,
+        Transaction.Status.TIMEOUT,
+        Transaction.Status.RECOVERY_IN_PROGRESS,
+    },
+    Transaction.Status.HOLDING: {
+        Transaction.Status.INVENTORY_RESERVED,
+        Transaction.Status.TIMEOUT,
+        Transaction.Status.RECOVERY_IN_PROGRESS,
+    },
+    Transaction.Status.INVENTORY_RESERVED: {
+        Transaction.Status.PAYMENT_PROCESSING,
+        Transaction.Status.HOLDING,
+        Transaction.Status.INVENTORY_RESERVED,
+        Transaction.Status.INVENTORY_RESERVE_FAILED,
+        Transaction.Status.TIMEOUT,
+        Transaction.Status.RECOVERY_IN_PROGRESS,
+    },
+    Transaction.Status.PAYMENT_PROCESSING: {
+        Transaction.Status.COMPLETED,
+        Transaction.Status.PAYMENT_FAILED,
+        Transaction.Status.PAYMENT_TIMEOUT,
+        Transaction.Status.PAYMENT_CONNECTION_ERROR,
+        Transaction.Status.COMPENSATING,
+        Transaction.Status.RECOVERY_IN_PROGRESS,
+    },
+    Transaction.Status.PAYMENT_TIMEOUT: {
+        Transaction.Status.COMPENSATING,
+        Transaction.Status.COMPLETED,
+        Transaction.Status.RECOVERY_IN_PROGRESS,
+        Transaction.Status.TIMEOUT,
+    },
+    Transaction.Status.PAYMENT_CONNECTION_ERROR: {
+        Transaction.Status.COMPENSATING,
+        Transaction.Status.COMPLETED,
+        Transaction.Status.RECOVERY_IN_PROGRESS,
+        Transaction.Status.TIMEOUT,
+    },
+    Transaction.Status.INVENTORY_TIMEOUT: {
+        Transaction.Status.INVENTORY_RESERVE_FAILED,
+        Transaction.Status.RECOVERY_IN_PROGRESS,
+        Transaction.Status.TIMEOUT,
+    },
+    Transaction.Status.INVENTORY_CONNECTION_ERROR: {
+        Transaction.Status.INVENTORY_RESERVE_FAILED,
+        Transaction.Status.RECOVERY_IN_PROGRESS,
+        Transaction.Status.TIMEOUT,
+    },
+    Transaction.Status.COMPENSATING: {
+        Transaction.Status.COMPENSATED,
+        Transaction.Status.COMPENSATION_FAILED,
+        Transaction.Status.RECOVERY_IN_PROGRESS,
+        Transaction.Status.COMPENSATED_ON_RETRY,
+        Transaction.Status.RETRY_COMPENSATION_FAILED,
+    },
+    Transaction.Status.COMPENSATION_FAILED: {
+        Transaction.Status.RECOVERY_IN_PROGRESS,
+    },
+    Transaction.Status.RETRY_COMPENSATION_FAILED: {
+        Transaction.Status.RECOVERY_IN_PROGRESS,
+    },
+    Transaction.Status.RECOVERY_IN_PROGRESS: {
+        Transaction.Status.COMPENSATING,
+        Transaction.Status.COMPLETED,
+        Transaction.Status.COMPENSATED,
+        Transaction.Status.COMPENSATED_ON_RETRY,
+        Transaction.Status.COMPENSATION_FAILED,
+        Transaction.Status.RETRY_COMPENSATION_FAILED,
+        Transaction.Status.TIMEOUT,
+        # Reversion targets when sweeper or retry encounters transport error
+        Transaction.Status.STARTED,
+        Transaction.Status.HOLDING,
+        Transaction.Status.INVENTORY_RESERVED,
+        Transaction.Status.PAYMENT_PROCESSING,
+        Transaction.Status.PAYMENT_TIMEOUT,
+        Transaction.Status.PAYMENT_CONNECTION_ERROR,
+        Transaction.Status.INVENTORY_TIMEOUT,
+        Transaction.Status.INVENTORY_CONNECTION_ERROR,
+    },
+}
+
 
 def _publish_transaction_update(transaction_id, to_status, from_status=None):
     try:
@@ -83,8 +169,22 @@ def _set_status_with_event(
         txn_pk = rows[0]["id"] # 42
         from_status = rows[0]["status"] # "PAYMENT_PROCESSING"
 
+        # Validate CAS transition against ALLOWED_TRANSITIONS
+        if expected_status is not None and to_status != from_status:
+            allowed = ALLOWED_TRANSITIONS.get(from_status, set())
+            if to_status not in allowed:
+                logger.warning(
+                    "Illegal CAS state transition rejected for tx %s: %s -> %s (allowed: %s)",
+                    transaction_id,
+                    from_status,
+                    to_status,
+                    allowed,
+                )
+                return False
+
         Transaction.objects.filter(pk=txn_pk).update(
             status=to_status,
+            updated_at=timezone.now(),
         )
 
     # filter(transaction_id=txn_pk): Filters the SagaEvent table to only include events belonging to this specific transaction.
