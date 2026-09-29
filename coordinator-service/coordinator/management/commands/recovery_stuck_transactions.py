@@ -112,11 +112,64 @@ class Command(BaseCommand):
             )
             self._resolve_transaction(transaction_id)
 
-    def recover_holding(self, threshold):
+    def recover_holding(self, threshold=None):
+        from django.utils.dateparse import parse_datetime
+        now = timezone.now()
+        candidates = []
+        for txn in Transaction.objects.filter(status=Transaction.Status.HOLDING):
+            holding_event = (
+                SagaEvent.objects.filter(
+                    transaction=txn,
+                    to_status=Transaction.Status.HOLDING,
+                )
+                .order_by("-seq")
+                .first()
+            )
+            held_until_dt = None
+            if holding_event and holding_event.http_payload:
+                raw_held_until = holding_event.http_payload.get("held_until")
+                if raw_held_until:
+                    try:
+                        dt = (
+                            parse_datetime(raw_held_until)
+                            if isinstance(raw_held_until, str)
+                            else raw_held_until
+                        )
+                        if dt and timezone.is_naive(dt):
+                            dt = timezone.make_aware(dt)
+                        held_until_dt = dt
+                    except Exception:
+                        pass
 
-        for transaction_id in self._claim(Transaction.Status.HOLDING, threshold):
+            if held_until_dt is not None:
+                # Explicit hold expiry from inventory: only recover if now >= held_until_dt
+                if now >= held_until_dt:
+                    candidates.append(txn.transaction_id)
+            else:
+                # Fallback hold TTL (default 10 minutes) from created_at
+                hold_ttl = getattr(settings, "SEAT_HOLD_DURATION", timedelta(minutes=10))
+                if isinstance(hold_ttl, (int, float)):
+                    hold_ttl = timedelta(seconds=hold_ttl)
+                if now >= txn.created_at + hold_ttl:
+                    candidates.append(txn.transaction_id)
+
+        claimed_ids = []
+        for transaction_id in candidates:
+            claimed = _set_status_with_event(
+                transaction_id=transaction_id,
+                to_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+                expected_status=Transaction.Status.HOLDING,
+                actor=SagaEvent.ACTOR_RECOVERY,
+                http_status_code=None,
+                http_payload=None,
+            )
+            if not claimed:
+                continue
+            claimed_ids.append(transaction_id)
+
+        for transaction_id in claimed_ids:
             self.stdout.write(
-                f"Recovering {transaction_id} claimed from HOLDING..."
+                f"Recovering {transaction_id} claimed from HOLDING (expired hold)..."
             )
             self._resolve_transaction(transaction_id)
 

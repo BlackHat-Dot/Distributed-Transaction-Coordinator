@@ -1355,8 +1355,19 @@ class FinalClosureGapsTest(TestCase):
             seat_ids=[1],
             user_id="u-hold-abandon",
         )
+        expired_dt = (timezone.now() - timedelta(minutes=1)).isoformat()
+        SagaEvent.objects.create(
+            transaction=txn,
+            seq=1,
+            from_status=Transaction.Status.STARTED,
+            to_status=Transaction.Status.HOLDING,
+            actor=SagaEvent.ACTOR_REQUEST,
+            http_status_code=200,
+            http_payload={"held_until": expired_dt},
+        )
         Transaction.objects.filter(transaction_id=txn_id).update(
-            updated_at=timezone.now() - timedelta(minutes=10)
+            updated_at=timezone.now() - timedelta(minutes=10),
+            created_at=timezone.now() - timedelta(minutes=11),
         )
 
         void_called = [False]
@@ -1379,4 +1390,165 @@ class FinalClosureGapsTest(TestCase):
         txn.refresh_from_db()
         self.assertTrue(void_called[0], "Void fence must be called before setting TIMEOUT")
         self.assertEqual(txn.status, Transaction.Status.TIMEOUT)
+
+    def test_q4_holding_future_held_until_untouched_and_expired_swept(self):
+        """
+        Test: A HOLDING txn older than sweep threshold but with held_until in the future
+        remains UNTOUCHED. An expired HOLDING txn is voided + released -> terminal.
+        """
+        import uuid
+        from django.core.management import call_command
+        from io import StringIO
+
+        now = timezone.now()
+        # Txn 1: Older than sweep threshold (updated 2 mins ago), but held_until is 5 mins in future
+        txn1_id = uuid.uuid4()
+        txn1 = Transaction.objects.create(
+            transaction_id=txn1_id,
+            status=Transaction.Status.HOLDING,
+            amount=Decimal("100.00"),
+            seat_ids=[101],
+            user_id="user-future-hold",
+        )
+        future_held_until = (now + timedelta(minutes=5)).isoformat()
+        SagaEvent.objects.create(
+            transaction=txn1,
+            seq=1,
+            from_status=Transaction.Status.STARTED,
+            to_status=Transaction.Status.HOLDING,
+            actor=SagaEvent.ACTOR_REQUEST,
+            http_status_code=200,
+            http_payload={"held_until": future_held_until},
+        )
+        Transaction.objects.filter(transaction_id=txn1_id).update(
+            updated_at=now - timedelta(minutes=2),
+            created_at=now - timedelta(minutes=2),
+        )
+
+        # Txn 2: Expired held_until (1 min in past)
+        txn2_id = uuid.uuid4()
+        txn2 = Transaction.objects.create(
+            transaction_id=txn2_id,
+            status=Transaction.Status.HOLDING,
+            amount=Decimal("100.00"),
+            seat_ids=[102],
+            user_id="user-expired-hold",
+        )
+        past_held_until = (now - timedelta(minutes=1)).isoformat()
+        SagaEvent.objects.create(
+            transaction=txn2,
+            seq=1,
+            from_status=Transaction.Status.STARTED,
+            to_status=Transaction.Status.HOLDING,
+            actor=SagaEvent.ACTOR_REQUEST,
+            http_status_code=200,
+            http_payload={"held_until": past_held_until},
+        )
+        Transaction.objects.filter(transaction_id=txn2_id).update(
+            updated_at=now - timedelta(minutes=2),
+            created_at=now - timedelta(minutes=11),
+        )
+
+        void_called_ids = []
+        release_called_ids = []
+
+        def fake_get(url, *a, **kw):
+            # Payment was not charged
+            if "payment" in url:
+                return _ok_mock({"status": "NOT_CHARGED"})
+            # Inventory check returns RESERVED so it releases seats
+            return _ok_mock({"status": "INVENTORY_RESERVED"})
+
+        def fake_post(url, *a, **kw):
+            json_body = kw.get("json", {})
+            tx_id_str = str(json_body.get("transaction_id", ""))
+            if "void" in url:
+                void_called_ids.append(tx_id_str)
+                return _ok_mock({"status": "VOIDED"})
+            if "release" in url:
+                release_called_ids.append(tx_id_str)
+                return _ok_mock({"status": "RELEASED"})
+            return _ok_mock({})
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=fake_get), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=fake_post), \
+             patch("coordinator.recovery.requests.post", side_effect=fake_post), \
+             patch("coordinator.recovery.requests.get", side_effect=fake_get):
+            call_command("recovery_stuck_transactions", stdout=StringIO())
+
+        txn1.refresh_from_db()
+        txn2.refresh_from_db()
+
+        # Txn 1: Future held_until must remain completely untouched in HOLDING
+        self.assertEqual(txn1.status, Transaction.Status.HOLDING)
+        self.assertNotIn(str(txn1_id), void_called_ids)
+        self.assertNotIn(str(txn1_id), release_called_ids)
+
+        # Txn 2: Expired held_until must be voided + released -> terminal COMPENSATED
+        self.assertEqual(txn2.status, Transaction.Status.COMPENSATED)
+        self.assertIn(str(txn2_id), void_called_ids)
+        self.assertIn(str(txn2_id), release_called_ids)
+
+    def test_unmocked_compensate_charged_confirm_409_refunds_and_releases(self):
+        """
+        Unmocked _compensate test:
+        When payment is known to be CHARGED and inventory confirm returns 409,
+        _compensate MUST NOT call /payments/void/ or abort;
+        it must issue inventory release, issue payment refund, and transition to COMPENSATED.
+        """
+        import uuid
+        from coordinator.views import _finalize_payment_outcome
+
+        txn_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=txn_id,
+            status=Transaction.Status.PAYMENT_PROCESSING,
+            amount=Decimal("150.00"),
+            seat_ids=[42],
+            user_id="u-unmocked-comp",
+        )
+        SagaEvent.objects.create(
+            transaction=txn,
+            seq=1,
+            from_status=Transaction.Status.HOLDING,
+            to_status=Transaction.Status.PAYMENT_PROCESSING,
+            actor=SagaEvent.ACTOR_REQUEST,
+            http_status_code=200,
+            http_payload={"status": "CHARGED"},
+        )
+
+        mock_409 = MagicMock(status_code=409)
+        mock_409.json.return_value = {"error": "hold expired"}
+
+        release_called = [False]
+        refund_called = [False]
+        void_called = [False]
+
+        def fake_post(url, *a, **kw):
+            if "void" in url:
+                void_called[0] = True
+                return MagicMock(status_code=200, content=b'{"status":"VOIDED"}', json=lambda: {"status": "VOIDED"})
+            if "release" in url:
+                release_called[0] = True
+                return MagicMock(status_code=200, content=b'{"status":"RELEASED"}', json=lambda: {"status": "RELEASED"})
+            if "refund" in url:
+                refund_called[0] = True
+                return MagicMock(status_code=200, content=b'{"status":"REFUNDED"}', json=lambda: {"status": "REFUNDED"})
+            return MagicMock(status_code=200, content=b'{}', json=lambda: {})
+
+        with patch("coordinator.views._confirm_inventory", return_value=(mock_409, None)), \
+             patch("coordinator.views._http_post", side_effect=fake_post):
+            resp = _finalize_payment_outcome(
+                txn_id,
+                fail_compensation=False,
+                payment_data={"status": "CHARGED"},
+            )
+
+        txn.refresh_from_db()
+
+        self.assertFalse(void_called[0], "Payment void must NOT be called when payment is already known to be CHARGED!")
+        self.assertTrue(release_called[0], "Inventory release must be called")
+        self.assertTrue(refund_called[0], "Payment refund must be called")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(txn.status, Transaction.Status.COMPENSATED)
 
