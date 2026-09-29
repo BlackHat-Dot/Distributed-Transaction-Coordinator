@@ -1,4 +1,5 @@
 import time
+import uuid
 import jwt
 from django.conf import settings
 from django.test import TestCase, override_settings
@@ -131,4 +132,56 @@ class TestA2StaffAndInternalKeySettings(TestCase):
         err, is_internal = _verify_internal_service_key(req)
         self.assertIsNone(err)
         self.assertTrue(is_internal)
+
+
+class TestA3BypassFlagsAndResetSeats(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+
+    def test_a3_system_check_detects_unsafe_flags_when_debug_false(self):
+        from inventory.checks import check_bypass_flags
+        with override_settings(DEBUG=False, IS_TESTING=True):
+            errors = check_bypass_flags(None)
+            self.assertTrue(any("IS_TESTING" in e.msg for e in errors))
+
+        with override_settings(DEBUG=False, IS_TESTING=False, ALLOW_UNVERIFIED_IDENTITY_HEADERS=True):
+            errors = check_bypass_flags(None)
+            self.assertTrue(any("ALLOW_UNVERIFIED_IDENTITY_HEADERS" in e.msg for e in errors))
+
+        with override_settings(DEBUG=False, IS_TESTING=False, ALLOW_UNAUTHENTICATED_RESET=True):
+            errors = check_bypass_flags(None)
+            self.assertTrue(any("ALLOW_UNAUTHENTICATED_RESET" in e.msg for e in errors))
+
+        with override_settings(DEBUG=False, IS_TESTING=False, ALLOW_UNVERIFIED_IDENTITY_HEADERS=False, ALLOW_UNAUTHENTICATED_RESET=False):
+            errors = check_bypass_flags(None)
+            self.assertEqual(errors, [])
+
+    @override_settings(DEBUG=False, ALLOW_UNAUTHENTICATED_RESET=True, STAFF_API_KEY="staff-key-123")
+    def test_a3_reset_seats_in_non_debug_requires_staff_key(self):
+        from inventory.views import reset_seats
+        # In non-DEBUG, staff key is required even if ALLOW_UNAUTHENTICATED_RESET is True
+        req = self.factory.post("/seats/reset/")
+        resp = reset_seats(req)
+        self.assertEqual(resp.status_code, 403)
+
+    @override_settings(DEBUG=False, STAFF_API_KEY="staff-key-123")
+    def test_a3_reset_seats_logs_audit_trail(self):
+        import logging
+        from inventory.views import reset_seats
+        from inventory.models import Event, Seat, Reservation
+        event = Event.objects.create(name="Audit Test Event")
+        seat = Seat.objects.create(event=event, row="Z", seat_number="1", status=Seat.Status.BOOKED)
+        Reservation.objects.create(seat=seat, transaction_id=uuid.uuid4(), status=Reservation.Status.BOOKED)
+
+        req = self.factory.post("/seats/reset/", HTTP_X_STAFF_KEY="staff-key-123")
+        with self.assertLogs("inventory", level="INFO") as log_cm:
+            resp = reset_seats(req)
+        self.assertEqual(resp.status_code, 200)
+        audit_logs = [m for m in log_cm.output if "AUDIT" in m and "reset_seats" in m]
+        self.assertTrue(len(audit_logs) > 0, "Audit log must be emitted on reset_seats")
+        log_line = audit_logs[0]
+        self.assertIn("who", log_line)
+        self.assertIn("rows_affected", log_line)
+        self.assertIn("before_counts", log_line)
+
 

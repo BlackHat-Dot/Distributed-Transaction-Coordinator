@@ -166,7 +166,8 @@ class Phase4HygieneAndHardeningTests(TestCase):
         )
 
         # Reset only event1
-        req = self.factory.post("/seats/reset/", {"event_id": self.event1.id}, format="json")
+        staff_key = getattr(settings, "STAFF_API_KEY", None) or "dtc-staff-secret-key-2026"
+        req = self.factory.post("/seats/reset/", {"event_id": self.event1.id}, format="json", HTTP_X_STAFF_KEY=staff_key)
         resp = reset_seats(req)
         self.assertEqual(resp.status_code, 200)
 

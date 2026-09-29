@@ -871,8 +871,9 @@ def check_reservation(request):
 
 @api_view(["POST"])
 def reset_seats(request):
+    is_debug = getattr(settings, "DEBUG", False)
     allow_unauth = getattr(settings, "ALLOW_UNAUTHENTICATED_RESET", False)
-    if not allow_unauth:
+    if not is_debug or not allow_unauth:
         if not _is_staff_request(request):
             return Response(
                 {"error": "Resetting venue seats is restricted. Staff key required."},
@@ -891,7 +892,13 @@ def reset_seats(request):
             except (ValueError, TypeError):
                 return Response({"error": "event_id must be an integer"}, status=400)
 
-        seat_qs.update(
+        before_counts = {
+            "seats": seat_qs.count(),
+            "reservations": res_qs.count(),
+            "booked_reservations": res_qs.filter(status=Reservation.Status.BOOKED).count(),
+        }
+
+        updated_seats = seat_qs.update(
             status=Seat.Status.AVAILABLE,
             held_until=None,
             held_by_transaction_id=None,
@@ -899,10 +906,21 @@ def reset_seats(request):
             user_email=None,
         )
 
-        res_qs.delete()
+        deleted_res, _ = res_qs.delete()
+        rows_affected = updated_seats + deleted_res
+
+        who = "staff" if _is_staff_request(request) else "unauthenticated"
+        logger.info(
+            "AUDIT: reset_seats executed by who=%s, event_id=%s, rows_affected=%s, before_counts=%s",
+            who,
+            event_id,
+            rows_affected,
+            before_counts,
+        )
 
     msg = f"Seats for event {event_id} reset to AVAILABLE." if event_id else "All seats reset to AVAILABLE."
     return Response({"message": msg})
+
 
 
 @api_view(["POST"])
