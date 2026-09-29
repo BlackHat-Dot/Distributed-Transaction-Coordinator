@@ -858,8 +858,13 @@ def _handle_create_transaction(request):
                     headers=headers,
                     timeout=REQUEST_TIMEOUT,
                 )
-            except RequestException:
-                pass
+            except RequestException as e:
+                logger.warning(
+                    "Failed to release hold for tx %s on reserve failure: %s [correlation_id=%s]",
+                    transaction_id,
+                    e,
+                    correlation_id,
+                )
 
             _set_status_with_event(
                 transaction_id,
@@ -887,8 +892,13 @@ def _handle_create_transaction(request):
                     headers=headers,
                     timeout=REQUEST_TIMEOUT,
                 )
-            except RequestException:
-                pass
+            except RequestException as e:
+                logger.warning(
+                    "Failed to release hold for tx %s on reserve non-200: %s [correlation_id=%s]",
+                    transaction_id,
+                    e,
+                    correlation_id,
+                )
 
             _set_status_with_event(
                 transaction_id,
@@ -1024,8 +1034,13 @@ def _handle_create_transaction(request):
                                     headers=rel_headers,
                                     timeout=REQUEST_TIMEOUT,
                                 )
-                            except Exception:
-                                pass
+                            except RequestException as e:
+                                logger.warning(
+                                    "Failed to release expired hold inventory for tx %s: %s [correlation_id=%s]",
+                                    txn.transaction_id,
+                                    e,
+                                    correlation_id,
+                                )
 
                             return Response(
                                 {

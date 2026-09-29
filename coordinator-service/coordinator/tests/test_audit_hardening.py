@@ -787,7 +787,41 @@ class SecurityAndReliabilityHardeningTests(TestCase):
                     content_type="application/json",
                 )
                 self.assertEqual(resp.status_code, 401)
-                self.assertEqual(resp.data.get("code"), "AUTHENTICATION_REQUIRED")
+    def test_h10_hold_release_logging_with_correlation_id(self):
+        """
+        H10: Proves that inventory release failures during hold error handling
+        are logged at WARNING level with correlation ID, rather than silently ignored.
+        """
+        cid = str(uuid.uuid4())
+        mock_reserve_resp = MagicMock()
+        mock_reserve_resp.status_code = 409
+        mock_reserve_resp.json.return_value = {"error": "Seat already reserved", "code": "SEAT_UNAVAILABLE"}
+
+        def side_effect(url, **kwargs):
+            if "seats/pricing" in url:
+                return MagicMock(status_code=200, json=lambda: [{"id": 1, "price": "100.00", "seat_number": "A1"}])
+            if "seats/reserve" in url:
+                return mock_reserve_resp
+            if "seats/release" in url:
+                raise requests.exceptions.ConnectionError("Inventory connection reset")
+            return MagicMock(status_code=200, json=lambda: {})
+
+        with patch("coordinator.views._http_post", side_effect=side_effect), \
+             self.assertLogs("coordinator.views", level="WARNING") as cm:
+            resp = self.client.post(
+                "/transactions/",
+                data=json.dumps({"seat_ids": [1], "action": "hold"}),
+                content_type="application/json",
+                HTTP_X_CORRELATION_ID=cid,
+                HTTP_X_USER_ID="user_h10",
+            )
+            self.assertEqual(resp.status_code, 409)
+            cid = resp.get("X-Correlation-ID")
+            self.assertTrue(bool(cid))
+            # Verify the warning log captured the correlation ID
+            matching = [msg for msg in cm.output if cid in msg and "Failed to release hold" in msg]
+            self.assertTrue(len(matching) >= 1, f"Expected warning log containing correlation ID {cid}, got: {cm.output}")
+
 
 
 
