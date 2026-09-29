@@ -3,7 +3,7 @@ import uuid
 import json
 from decimal import Decimal
 from unittest.mock import patch, MagicMock
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 import requests
 
 from coordinator.models import Transaction, SagaEvent
@@ -1135,6 +1135,66 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         )
         txn.refresh_from_db()
         self.assertGreater(txn.updated_at, past)
+
+
+class ConcurrentPayRaceTests(TransactionTestCase):
+    @patch("coordinator.tasks.execute_saga_task.delay")
+    def test_parallel_pay_race_only_one_winner(self, mock_delay):
+        """
+        Concurrency Step 4: When two parallel requests invoke action='pay' on the same
+        HOLDING transaction simultaneously, exactly ONE succeeds (202) and transitions
+        to INVENTORY_RESERVED, while the other is rejected with HTTP 409 CONCURRENT_PAYMENT_IN_PROGRESS.
+        """
+        import uuid
+        from datetime import timedelta
+        from django.utils import timezone
+        from concurrent.futures import ThreadPoolExecutor
+        from rest_framework.test import APIClient
+        from coordinator.models import Transaction, SagaEvent
+
+        tx_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=tx_id,
+            status=Transaction.Status.HOLDING,
+            amount=Decimal("200.00"),
+            seat_ids=[1, 2],
+            user_id="user_concurrent",
+            user_email="concurrent@test.io",
+        )
+        SagaEvent.objects.create(
+            transaction=txn,
+            seq=1,
+            from_status=Transaction.Status.STARTED,
+            to_status=Transaction.Status.HOLDING,
+            actor=SagaEvent.ACTOR_REQUEST,
+            http_payload={"held_until": (timezone.now() + timedelta(minutes=10)).isoformat()},
+        )
+
+        def send_pay():
+            from django.db import connection
+            connection.close()  # Get clean connection in thread
+            try:
+                client = APIClient()
+                return client.post(
+                    "/transactions/",
+                    data=json.dumps({"action": "pay", "transaction_id": str(tx_id)}),
+                    content_type="application/json",
+                    HTTP_X_USER_ID="user_concurrent",
+                )
+            finally:
+                connection.close()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            f1 = executor.submit(send_pay)
+            f2 = executor.submit(send_pay)
+            r1 = f1.result()
+            r2 = f2.result()
+
+        status_codes = sorted([r1.status_code, r2.status_code])
+        self.assertEqual(status_codes, [202, 409], f"Expected one 202 and one 409, got: {status_codes}")
+        error_resp = r1 if r1.status_code == 409 else r2
+        self.assertEqual(error_resp.data.get("code"), "INVALID_TRANSACTION_STATUS")
+
 
 
 
