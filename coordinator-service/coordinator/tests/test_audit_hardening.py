@@ -563,6 +563,68 @@ class SecurityAndReliabilityHardeningTests(TestCase):
             txn.refresh_from_db()
             self.assertNotEqual(txn.status, Transaction.Status.HOLDING)
 
+    def test_h4_explicit_simulate_decline_flag_allows_real_9999_amount_update(self):
+        """
+        H4: A real transaction with an amount around 9999 must get its authoritative amount
+        updated from inventory even when ENABLE_TEST_PAYMENT_FAILURE is True, provided
+        simulate_decline is False.
+        """
+        from coordinator.views import _run_saga_pipeline
+
+        tx_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=tx_id,
+            user_id="user_david",
+            status=Transaction.Status.STARTED,
+            amount=Decimal("9999.00"),
+            seat_ids=[1],
+        )
+
+        mock_reserve_resp = MagicMock()
+        mock_reserve_resp.status_code = 200
+        mock_reserve_resp.json.return_value = {
+            "message": "1 Seats reserved",
+            "seat_ids": [1],
+            "total_amount": "9999.50",
+            "transaction_id": str(tx_id),
+        }
+
+        mock_charge_resp = MagicMock()
+        mock_charge_resp.status_code = 200
+        mock_charge_resp.json.return_value = {"status": "CHARGED"}
+
+        mock_confirm_resp = MagicMock()
+        mock_confirm_resp.status_code = 200
+        mock_confirm_resp.json.return_value = {"status": "CONFIRMED"}
+
+        def mock_post(url, *args, **kwargs):
+            if "reserve" in url:
+                return mock_reserve_resp
+            if "charge" in url:
+                return mock_charge_resp
+            if "confirm" in url:
+                return mock_confirm_resp
+            raise ValueError(f"Unexpected url: {url}")
+
+        with self.settings(ENABLE_TEST_PAYMENT_FAILURE=True):
+            with patch("coordinator.views._http_post", side_effect=mock_post):
+                _run_saga_pipeline(
+                    transaction_id=tx_id,
+                    seat_ids=[1],
+                    amount=Decimal("9999.00"),
+                    user_id="user_david",
+                    user_email="david@test.io",
+                    simulate_decline=False,
+                )
+
+                txn.refresh_from_db()
+                self.assertEqual(
+                    txn.amount,
+                    Decimal("9999.50"),
+                    "Real order with amount 9999 was not updated from inventory!",
+                )
+
+
 
 
 

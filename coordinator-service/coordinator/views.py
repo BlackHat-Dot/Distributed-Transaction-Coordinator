@@ -1078,6 +1078,7 @@ def _handle_create_transaction(request):
                     user_id=pay_user_id,
                     user_email=pay_user_email,
                     skip_reserve=True,
+                    simulate_decline=simulate_decline,
                 )
                 return Response(
                     {
@@ -1118,6 +1119,7 @@ def _handle_create_transaction(request):
             user_id=pay_user_id,
             user_email=pay_user_email,
             skip_reserve=True,
+            simulate_decline=simulate_decline,
         )
 
     # DEFAULT: One-shot full saga (legacy path — backward compatible)
@@ -1204,6 +1206,7 @@ def _handle_create_transaction(request):
                 correlation_id=correlation_id,
                 user_id=user_id,
                 user_email=user_email,
+                simulate_decline=simulate_decline,
             )
             return Response(
                 {
@@ -1238,6 +1241,7 @@ def _handle_create_transaction(request):
         actor=SagaEvent.ACTOR_REQUEST,
         user_id=user_id,
         user_email=user_email,
+        simulate_decline=simulate_decline,
     )
 
 
@@ -1324,6 +1328,7 @@ def _run_saga_pipeline(
     user_id=None,
     user_email=None,
     skip_reserve=False,
+    simulate_decline=False,
     **kwargs,
 ):
     if skip_reserve:
@@ -1431,14 +1436,13 @@ def _run_saga_pipeline(
     }
     """
 
-    enable_test_payment_failure = bool(getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False))
     if resp_json and "total_amount" in resp_json:
         try:
             from decimal import Decimal
 
             actual_amount = Decimal(str(resp_json["total_amount"]))
-            # Preserve intentional payment failure simulation amount (9999) only if ENABLE_TEST_PAYMENT_FAILURE is active
-            if not (enable_test_payment_failure and str(amount).split(".")[0] == "9999"):
+            # Preserve intentional payment failure simulation amount (9999) only if simulate_decline is active
+            if not simulate_decline:
                 amount = actual_amount
                 txn = Transaction.objects.filter(transaction_id=transaction_id).first()
                 if txn:
