@@ -142,3 +142,62 @@ class TestC5RedisNegativeCaching(TestCase):
             client2 = views.get_redis_client()
             self.assertIsNone(client2)
             self.assertEqual(mock_redis.call_count, 1, "Redis reconnect should not be attempted within TTL")
+
+
+class TestC6EmailNormalization(TestCase):
+    def test_reclaim_normalizes_email_to_lowercase_for_presence_check(self):
+        """
+        C6: If seat has uppercase email, presence check must check dtc:session:{lowercase}
+        so an active session with lowercase key prevents premature reclaim.
+        """
+        import inventory.views as views
+        from datetime import timedelta
+        event = Event.objects.create(name="C6 Event")
+        now = timezone.now()
+        tid = uuid.uuid4()
+
+        # Hold started 3 minutes ago, held_until is 7 minutes in future (age = 180s >= 120s grace)
+        held_until = now + timedelta(minutes=7)
+        seat = Seat.objects.create(
+            event=event,
+            row="I",
+            seat_number="1",
+            status=Seat.Status.HELD,
+            held_until=held_until,
+            held_by_transaction_id=tid,
+            user_id="usr_c6",
+            user_email="ALICE@EXAMPLE.COM",  # uppercase in DB
+            price=100.0,
+        )
+        Reservation.objects.create(
+            seat=seat,
+            transaction_id=tid,
+            status=Reservation.Status.RESERVED,
+            user_id="usr_c6",
+            user_email="ALICE@EXAMPLE.COM",
+        )
+
+        class MockPipeline:
+            def __init__(self):
+                self.keys = []
+            def exists(self, key):
+                self.keys.append(key)
+                return self
+            def execute(self):
+                # Only lowercase session key exists!
+                return [1 if k == "dtc:session:alice@example.com" else 0 for k in self.keys]
+
+        class MockRedis:
+            def pipeline(self):
+                return MockPipeline()
+            def exists(self, key):
+                return 1 if key == "dtc:session:alice@example.com" else 0
+
+        with patch("inventory.views.get_redis_client", return_value=MockRedis()):
+            reclaimed, released = views.reclaim_expired_holds()
+
+        # In un-fixed code, checked dtc:session:ALICE@EXAMPLE.COM -> 0 -> reclaimed == 1
+        # In fixed code, checks dtc:session:alice@example.com -> 1 -> reclaimed == 0
+        self.assertEqual(reclaimed, 0, "Active lowercase session must protect uppercase email hold from reclaim")
+        seat.refresh_from_db()
+        self.assertEqual(seat.status, Seat.Status.HELD)

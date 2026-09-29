@@ -127,7 +127,7 @@ def reclaim_expired_holds():
 
     # Pipeline Redis EXISTS per unique email and unique transaction_id for presence candidates
     if presence_candidates and redis_client:
-        unique_emails = list({s["user_email"] for s in presence_candidates if s.get("user_email")})
+        unique_emails = list({s["user_email"].strip().lower() for s in presence_candidates if s.get("user_email")})
         unique_tids = list({str(s["held_by_transaction_id"]) for s in presence_candidates if s.get("held_by_transaction_id")})
         active_emails = set()
         active_checkouts = set()
@@ -157,7 +157,10 @@ def reclaim_expired_holds():
                 if exists:
                     active_emails.add(email)
 
-            inactive_candidates = [s for s in presence_candidates if s["user_email"] not in active_emails]
+            inactive_candidates = [
+                s for s in presence_candidates
+                if (s["user_email"].strip().lower() if s.get("user_email") else "") not in active_emails
+            ]
             if inactive_candidates and unique_tids:
                 if not tid_results and not isinstance(results, (list, tuple)):
                     tid_results = [redis_client.exists(f"dtc:checkout:{tid}") for tid in unique_tids]
@@ -170,7 +173,8 @@ def reclaim_expired_holds():
                 # Skip presence-based reclaim if checkout key exists (user is actively paying in coordinator)
                 if tid_str and tid_str in active_checkouts:
                     continue
-                if seat["user_email"] not in active_emails:
+                seat_email = seat["user_email"].strip().lower() if seat.get("user_email") else ""
+                if seat_email not in active_emails:
                     expired_snapshots[seat["id"]] = {
                         "tid": seat["held_by_transaction_id"],
                         "held_until": seat["held_until"],
@@ -522,7 +526,7 @@ def reserve_seat(request):
     if user_id is not None:
         user_id = str(user_id)
     if user_email is not None:
-        user_email = str(user_email)
+        user_email = str(user_email).strip().lower()
 
     is_testing = bool(getattr(settings, "IS_TESTING", False))
     is_dev = getattr(settings, "DEBUG", False)
