@@ -48,6 +48,10 @@ ALLOW_UNAUTHENTICATED_RESET = DEBUG or IS_TESTING or (os.getenv("ALLOW_UNAUTHENT
 STAFF_API_KEY = os.getenv("STAFF_API_KEY")
 if not STAFF_API_KEY and IS_TESTING:
     STAFF_API_KEY = "dtc-staff-secret-key-2026"
+elif not (DEBUG or IS_TESTING) and STAFF_API_KEY == "dtc-staff-secret-key-2026":
+    raise RuntimeError(
+        "CRITICAL SECURITY ERROR: Insecure default STAFF_API_KEY detected in production (DEBUG=False)!"
+    )
 JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY")
 
 INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY")
