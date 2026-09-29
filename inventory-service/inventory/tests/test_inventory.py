@@ -333,7 +333,11 @@ class ConcurrencySeatStressTests(TransactionTestCase):
             try:
                 resp = client.post(
                     RESERVE_URL,
-                    {"seat_ids": [self.seat.id], "transaction_id": tid},
+                    {
+                        "seat_ids": [self.seat.id],
+                        "transaction_id": tid,
+                        "user_id": f"usr_stress_{worker_id}",
+                    },
                     format="json",
                 )
                 return resp.status_code, resp.data
