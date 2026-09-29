@@ -70,7 +70,7 @@ autostart=true
 autorestart=true
 stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
-stderr_logfile=/dev/stderr
+stderr_logfile=/dev/stdout
 stderr_logfile_maxbytes=0
 
 [program:celery_worker]
@@ -83,7 +83,7 @@ startsecs=5
 startretries=3
 stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
-stderr_logfile=/dev/stderr
+stderr_logfile=/dev/stdout
 stderr_logfile_maxbytes=0
 
 [program:celery_beat]
@@ -96,7 +96,7 @@ startsecs=5
 startretries=3
 stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
-stderr_logfile=/dev/stderr
+stderr_logfile=/dev/stdout
 stderr_logfile_maxbytes=0
 SUPEOF
 
