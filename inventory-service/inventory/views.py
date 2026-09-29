@@ -386,18 +386,19 @@ def seat_pricing(request):
     if auth_err:
         return auth_err
 
+    if not isinstance(request.data, dict):
+        return Response({"error": "Request body must be a JSON object", "code": "INVALID_BODY"}, status=400)
+
     seat_ids = request.data.get("seat_ids")
 
     if not seat_ids or not isinstance(seat_ids, list):
         return Response({"error": "seat_ids is required and must be a list"}, status=400)
 
-    # defensive check for seat_ids type, coordinator already checked this and that is why the request reached here,
-    # though it feels redudant, it protect the staff/admin from sending invalid seat_ids (because they have service key to reach the endpoint manually),
-    # and this process wont take much time (approx. 300 ns ~  0.0003 ms)
-    try:
-        target_ids = list({int(x) for x in seat_ids})
-    except (ValueError, TypeError):
-        return Response({"error": "seaSeatSerializert_ids must be a list of integers"}, status=400)
+    for s in seat_ids:
+        if type(s) is not int or isinstance(s, bool):
+            return Response({"error": "seat_ids must be a list of integers"}, status=400)
+
+    target_ids = list(dict.fromkeys(seat_ids))
 
     seats = Seat.objects.filter(id__in=target_ids).order_by("id")
 
@@ -430,6 +431,9 @@ def _validate_uuid(val):
         return None
 
 def _validate_reserve_input(data):
+    if not isinstance(data, dict):
+        return None, None, Response({"error": "Request body must be a JSON object", "code": "INVALID_BODY"}, status=400)
+
     if not data:
         return None, None, Response({"message": "no input values"}, status=400)
 
@@ -440,10 +444,9 @@ def _validate_reserve_input(data):
     if not isinstance(seat_ids, (list, tuple)):
         return None, None, Response({"error": "seat_ids must be a list of integers"}, status=400)
 
-    try:
-        seat_ids = [int(s) for s in seat_ids]
-    except (ValueError, TypeError):
-        return None, None, Response({"error": "seat_ids must be a list of integers"}, status=400)
+    for s in seat_ids:
+        if type(s) is not int or isinstance(s, bool):
+            return None, None, Response({"error": "seat_ids must be a list of integers"}, status=400)
 
     # Finding 18: Dedupe seat_ids while preserving order, and cap at 50
     seat_ids = list(dict.fromkeys(seat_ids))

@@ -161,3 +161,41 @@ class TestB3ConfirmReservationDesync(TestCase):
             HTTP_X_INTERNAL_SERVICE_KEY=getattr(settings, "INTERNAL_SERVICE_KEY", "dtc-internal-coordinator-secret-key-2026"),
         )
         self.assertEqual(resp.status_code, 200)
+
+
+class TestB4InputValidation(TestCase):
+    def test_non_dict_body_returns_400(self):
+        from rest_framework.test import APIClient
+        client = APIClient()
+        resp = client.post(
+            "/seats/reserve/",
+            [1, 2, 3],
+            format="json",
+            HTTP_X_USER_ID="usr_b4",
+            HTTP_X_USER_EMAIL="b4@example.com",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_seat_ids_with_boolean_returns_400(self):
+        from rest_framework.test import APIClient
+        client = APIClient()
+        resp = client.post(
+            "/seats/reserve/",
+            {"seat_ids": [True, 1], "transaction_id": str(uuid.uuid4())},
+            format="json",
+            HTTP_X_USER_ID="usr_b4",
+            HTTP_X_USER_EMAIL="b4@example.com",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_seat_ids_with_float_returns_400(self):
+        from rest_framework.test import APIClient
+        client = APIClient()
+        resp = client.post(
+            "/seats/reserve/",
+            {"seat_ids": [1.5], "transaction_id": str(uuid.uuid4())},
+            format="json",
+            HTTP_X_USER_ID="usr_b4",
+            HTTP_X_USER_EMAIL="b4@example.com",
+        )
+        self.assertEqual(resp.status_code, 400)
