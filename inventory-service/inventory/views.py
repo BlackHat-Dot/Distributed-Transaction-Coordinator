@@ -63,6 +63,11 @@ def event_list(request):
 
     return Response(serializer.data)
 
+def get_hold_duration() -> timedelta:
+    """Return configured hold duration as a timedelta, defaulting to 10 minutes."""
+    return timedelta(minutes=getattr(settings, "HOLD_DURATION_MINUTES", 10))
+
+
 def reclaim_expired_holds():
     """
     Reclaims seats that are expired by time (held_until < now) OR abandoned by user
@@ -91,13 +96,13 @@ def reclaim_expired_holds():
     redis_client = get_redis_client()
 
     grace_seconds = getattr(settings, "HOLD_PRESENCE_GRACE_SECONDS", 120)
-    hold_duration_minutes = getattr(settings, "HOLD_DURATION_MINUTES", 10)
+    hold_duration = get_hold_duration()
 
     presence_candidates = []
 
     for seat in held_seats:
         seat_id = seat["id"]
-        # 1. Time-based expiry (10m hold elapsed) - stays unchanged
+        # 1. Time-based expiry (hold elapsed) - stays unchanged
         if seat["held_until"] and seat["held_until"] < now:
             expired_snapshots[seat_id] = {
                 "tid": seat["held_by_transaction_id"],
@@ -108,7 +113,7 @@ def reclaim_expired_holds():
 
         # 2. Candidate for presence-based expiry: only if hold age >= grace_seconds
         if seat["held_until"] and seat["user_email"] and redis_client:
-            hold_start = seat["held_until"] - timedelta(minutes=hold_duration_minutes)
+            hold_start = seat["held_until"] - hold_duration
             hold_age = (now - hold_start).total_seconds()
             if hold_age >= grace_seconds:
                 presence_candidates.append(seat)
@@ -630,7 +635,7 @@ def reserve_seat(request):
                     status=409,
                 )
 
-            held_until_dt = now + timedelta(minutes=10)
+            held_until_dt = now + get_hold_duration()
             
             reservations = []
             for seat in seats:

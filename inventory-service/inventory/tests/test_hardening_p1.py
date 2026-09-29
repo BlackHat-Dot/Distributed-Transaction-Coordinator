@@ -2,7 +2,7 @@ import uuid
 from datetime import timedelta
 from unittest.mock import patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from inventory.models import Event, Seat, Reservation
@@ -58,3 +58,30 @@ class TestB1ReclaimRaceCondition(TestCase):
         seat.refresh_from_db()
         self.assertEqual(seat.status, Seat.Status.HELD)
         self.assertTrue(seat.held_until > timezone.now())
+
+
+class TestB2HoldDurationHelper(TestCase):
+    @override_settings(HOLD_DURATION_MINUTES=5)
+    def test_b2_hold_duration_setting_respected(self):
+        from rest_framework.test import APIClient
+        client = APIClient()
+        event = Event.objects.create(name="B2 Event")
+        seat = Seat.objects.create(
+            event=event, row="B", seat_number="1", status=Seat.Status.AVAILABLE, price=50.00
+        )
+        tid = str(uuid.uuid4())
+        resp = client.post(
+            "/seats/reserve/",
+            {"seat_ids": [seat.id], "transaction_id": tid},
+            format="json",
+            HTTP_X_USER_ID="usr_b2",
+            HTTP_X_USER_EMAIL="b2@example.com",
+        )
+        self.assertEqual(resp.status_code, 200)
+        seat.refresh_from_db()
+        now = timezone.now()
+        remaining_seconds = (seat.held_until - now).total_seconds()
+        self.assertLessEqual(
+            remaining_seconds, 305, f"Expected hold duration <= 305s (5m), got {remaining_seconds}s"
+        )
+        self.assertGreaterEqual(remaining_seconds, 290)
