@@ -1463,19 +1463,52 @@ def _run_saga_pipeline(
     **kwargs,
 ):
     if skip_reserve:
-        transitioned = _set_status_with_event(
-            transaction_id,
-            Transaction.Status.INVENTORY_RESERVED,
-            expected_status=[Transaction.Status.HOLDING, Transaction.Status.INVENTORY_RESERVED],
-            actor=actor,
-            http_status_code=200,
-            http_payload={
-                "message": f"{len(seat_ids) if seat_ids else 1} Seats reserved via coordinator hold",
-                "seat_ids": seat_ids,
-                "transaction_id": str(transaction_id),
-            },
+        # Read the current status first so we only write a saga event when a
+        # real HOLDING→INVENTORY_RESERVED transition is needed.  When the HTTP
+        # request handler already advanced the status (the common case), the
+        # Celery task must NOT write a duplicate INVENTORY_RESERVED event.
+        current_status = (
+            Transaction.objects.filter(transaction_id=transaction_id)
+            .values_list("status", flat=True)
+            .first()
         )
-        if not transitioned:
+        if current_status is None:
+            # Transaction has been deleted or was never created; bail out.
+            return Response(
+                {
+                    "error": "Transaction not found.",
+                    "code": "TRANSACTION_NOT_FOUND",
+                    "transaction_id": str(transaction_id),
+                },
+                status=404,
+            )
+
+        if current_status == Transaction.Status.HOLDING:
+            # Request handler hasn't advanced the status yet (rare: async race
+            # or Celery-only invocation path). Do the transition now and log it.
+            transitioned = _set_status_with_event(
+                transaction_id,
+                Transaction.Status.INVENTORY_RESERVED,
+                expected_status=Transaction.Status.HOLDING,
+                actor=actor,
+                http_status_code=200,
+                http_payload={
+                    "message": f"{len(seat_ids) if seat_ids else 1} Seats reserved via coordinator hold",
+                    "seat_ids": seat_ids,
+                    "transaction_id": str(transaction_id),
+                },
+            )
+            if not transitioned:
+                return Response(
+                    {
+                        "error": "Transaction is already being processed or is not in an eligible state for payment.",
+                        "code": "CONCURRENT_PAYMENT_IN_PROGRESS",
+                        "transaction_id": str(transaction_id),
+                    },
+                    status=409,
+                )
+        elif current_status != Transaction.Status.INVENTORY_RESERVED:
+            # Status is something unexpected (e.g. already COMPLETED or COMPENSATING).
             return Response(
                 {
                     "error": "Transaction is already being processed or is not in an eligible state for payment.",
@@ -1484,6 +1517,7 @@ def _run_saga_pipeline(
                 },
                 status=409,
             )
+        # else: already INVENTORY_RESERVED — no event needed, fall through to payment.
         transitioned_pay = _set_status_with_event(
             transaction_id,
             Transaction.Status.PAYMENT_PROCESSING,

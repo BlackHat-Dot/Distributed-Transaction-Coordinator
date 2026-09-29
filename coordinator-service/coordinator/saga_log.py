@@ -53,7 +53,6 @@ ALLOWED_TRANSITIONS = {
     Transaction.Status.INVENTORY_RESERVED: {
         Transaction.Status.PAYMENT_PROCESSING,
         Transaction.Status.HOLDING,
-        Transaction.Status.INVENTORY_RESERVED,
         Transaction.Status.INVENTORY_RESERVE_FAILED,
         Transaction.Status.TIMEOUT,
         Transaction.Status.COMPENSATING,
