@@ -1,10 +1,15 @@
+import sys
 from django.conf import settings
 from django.core.checks import Error, Tags, register
 
 
-@register(Tags.security, deploy=True)
+@register(Tags.security)
 def check_bypass_flags(app_configs, **kwargs):
     errors = []
+    cmd = sys.argv[1] if len(sys.argv) > 1 else None
+    if cmd == "test":
+        return errors
+
     if not getattr(settings, "DEBUG", False):
         if getattr(settings, "IS_TESTING", False):
             errors.append(

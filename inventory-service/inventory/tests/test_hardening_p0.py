@@ -139,22 +139,51 @@ class TestA3BypassFlagsAndResetSeats(TestCase):
         self.factory = APIRequestFactory()
 
     def test_a3_system_check_detects_unsafe_flags_when_debug_false(self):
+        import sys
+        from unittest import mock
         from inventory.checks import check_bypass_flags
-        with override_settings(DEBUG=False, IS_TESTING=True):
-            errors = check_bypass_flags(None)
-            self.assertTrue(any("IS_TESTING" in e.msg for e in errors))
+        with mock.patch.object(sys, "argv", ["manage.py", "check"]):
+            with override_settings(DEBUG=False, IS_TESTING=True):
+                errors = check_bypass_flags(None)
+                self.assertTrue(any("IS_TESTING" in e.msg for e in errors))
 
-        with override_settings(DEBUG=False, IS_TESTING=False, ALLOW_UNVERIFIED_IDENTITY_HEADERS=True):
-            errors = check_bypass_flags(None)
-            self.assertTrue(any("ALLOW_UNVERIFIED_IDENTITY_HEADERS" in e.msg for e in errors))
+            with override_settings(DEBUG=False, IS_TESTING=False, ALLOW_UNVERIFIED_IDENTITY_HEADERS=True):
+                errors = check_bypass_flags(None)
+                self.assertTrue(any("ALLOW_UNVERIFIED_IDENTITY_HEADERS" in e.msg for e in errors))
 
-        with override_settings(DEBUG=False, IS_TESTING=False, ALLOW_UNAUTHENTICATED_RESET=True):
-            errors = check_bypass_flags(None)
-            self.assertTrue(any("ALLOW_UNAUTHENTICATED_RESET" in e.msg for e in errors))
+            with override_settings(DEBUG=False, IS_TESTING=False, ALLOW_UNAUTHENTICATED_RESET=True):
+                errors = check_bypass_flags(None)
+                self.assertTrue(any("ALLOW_UNAUTHENTICATED_RESET" in e.msg for e in errors))
 
-        with override_settings(DEBUG=False, IS_TESTING=False, ALLOW_UNVERIFIED_IDENTITY_HEADERS=False, ALLOW_UNAUTHENTICATED_RESET=False):
-            errors = check_bypass_flags(None)
-            self.assertEqual(errors, [])
+            with override_settings(DEBUG=False, IS_TESTING=False, ALLOW_UNVERIFIED_IDENTITY_HEADERS=False, ALLOW_UNAUTHENTICATED_RESET=False):
+                errors = check_bypass_flags(None)
+                self.assertEqual(errors, [])
+
+    def test_f2_app_config_ready_raises_improperly_configured_when_debug_false_and_bypass_flags(self):
+        import sys
+        from unittest import mock
+        from django.apps import apps
+        from django.core.exceptions import ImproperlyConfigured
+        app_config = apps.get_app_config("inventory")
+
+        for server_argv in (["manage.py", "runserver"], ["gunicorn", "inventory_service.wsgi:application"]):
+            with mock.patch.object(sys, "argv", server_argv):
+                for flag in ("IS_TESTING", "ALLOW_UNVERIFIED_IDENTITY_HEADERS", "ALLOW_UNAUTHENTICATED_RESET"):
+                    with self.subTest(server=server_argv[0], flag=flag):
+                        kwargs = {"DEBUG": False, "IS_TESTING": False, "ALLOW_UNVERIFIED_IDENTITY_HEADERS": False, "ALLOW_UNAUTHENTICATED_RESET": False}
+                        kwargs[flag] = True
+                        with override_settings(**kwargs):
+                            with self.assertRaises(ImproperlyConfigured):
+                                app_config.ready()
+
+    def test_f2_security_check_runs_on_normal_check_without_deploy(self):
+        import sys
+        from unittest import mock
+        from django.core.checks import run_checks, Tags
+        with mock.patch.object(sys, "argv", ["manage.py", "check"]):
+            with override_settings(DEBUG=False, IS_TESTING=True):
+                errors = run_checks(tags=[Tags.security])
+                self.assertTrue(any("IS_TESTING" in e.msg for e in errors), "Tags.security check must run on standard check without deploy=True")
 
     @override_settings(DEBUG=False, ALLOW_UNAUTHENTICATED_RESET=True, STAFF_API_KEY="staff-key-123")
     def test_a3_reset_seats_in_non_debug_requires_staff_key(self):
