@@ -1,9 +1,7 @@
 import uuid
-from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 from django.test import TestCase, override_settings
-from django.utils import timezone
 from rest_framework.test import APIClient
 
 from coordinator.models import Transaction, SagaEvent

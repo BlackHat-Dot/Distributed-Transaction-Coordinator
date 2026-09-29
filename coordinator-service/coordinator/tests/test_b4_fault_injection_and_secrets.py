@@ -1,10 +1,8 @@
 import os
 from unittest.mock import patch
-from decimal import Decimal
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient, APIRequestFactory
 
-from coordinator.models import Transaction
 from coordinator.views import _fault_injection_allowed, _verify_staff_key
 
 

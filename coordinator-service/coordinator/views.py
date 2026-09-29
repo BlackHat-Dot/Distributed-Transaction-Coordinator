@@ -2,11 +2,11 @@ import hmac
 import json
 import logging
 import os
-import secrets
 import time
 import uuid
 import redis
 import requests
+from requests.adapters import HTTPAdapter
 from decimal import Decimal
 
 from rest_framework.decorators import api_view
@@ -15,6 +15,8 @@ from requests.exceptions import Timeout, ConnectionError, RequestException
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.http import StreamingHttpResponse, JsonResponse, HttpResponse
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from .models import Transaction, SagaEvent
 from .saga_log import _set_status_with_event
@@ -51,8 +53,11 @@ INVENTORY_PRICING_URL = f"{INVENTORY_BASE_URL}/seats/pricing/"
 PAYMENT_CHARGE_URL = f"{PAYMENT_BASE_URL}/payments/charge/"
 PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
 PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
+PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
 
-REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "5"))
+REQUEST_CONNECT_TIMEOUT = float(os.getenv("REQUEST_CONNECT_TIMEOUT", "2.0"))
+REQUEST_READ_TIMEOUT = float(os.getenv("REQUEST_READ_TIMEOUT", os.getenv("REQUEST_TIMEOUT", "5.0")))
+REQUEST_TIMEOUT = (REQUEST_CONNECT_TIMEOUT, REQUEST_READ_TIMEOUT)
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 
 
@@ -82,8 +87,6 @@ def _fault_injection_allowed():
         flag = os.getenv("ENABLE_FAULT_INJECTION", "").lower() in ("true", "1", "yes", "t")
     return bool(flag)
 
-from requests.adapters import HTTPAdapter
-
 _HTTP_SESSION = None
 
 def _get_http_session():
@@ -96,16 +99,16 @@ def _get_http_session():
     return _HTTP_SESSION
 
 def _http_post(url, **kwargs):
-    # Support unittest.mock patches in test suite
-    if hasattr(requests.post, "mock_calls") or hasattr(requests.post, "assert_called"):
-        return requests.post(url, **kwargs)
-    return _get_http_session().post(url, **kwargs)
+    timeout = kwargs.pop("timeout", REQUEST_TIMEOUT)
+    if getattr(settings, "IS_TESTING", False) or hasattr(requests.post, "mock_calls") or hasattr(requests.post, "assert_called"):
+        return requests.post(url, timeout=timeout, **kwargs)
+    return _get_http_session().post(url, timeout=timeout, **kwargs)
 
 def _http_get(url, **kwargs):
-    # Support unittest.mock patches in test suite
-    if hasattr(requests.get, "mock_calls") or hasattr(requests.get, "assert_called"):
-        return requests.get(url, **kwargs)
-    return _get_http_session().get(url, **kwargs)
+    timeout = kwargs.pop("timeout", REQUEST_TIMEOUT)
+    if getattr(settings, "IS_TESTING", False) or hasattr(requests.get, "mock_calls") or hasattr(requests.get, "assert_called"):
+        return requests.get(url, timeout=timeout, **kwargs)
+    return _get_http_session().get(url, timeout=timeout, **kwargs)
 
 
 
@@ -208,18 +211,25 @@ def transaction_stream(request, transaction_id):
     if not _can_access(txn, auth_user_id, is_staff):
         return JsonResponse({"error": "You do not have permission to view this transaction."}, status=403)
 
-    terminal_statuses = {
-        Transaction.Status.COMPLETED,
-        Transaction.Status.COMPENSATED,
-        Transaction.Status.COMPENSATION_FAILED,
-        Transaction.Status.INVENTORY_RESERVE_FAILED,
-        Transaction.Status.COMPENSATED_ON_RETRY,
-        Transaction.Status.RETRY_COMPENSATION_FAILED,
-        Transaction.Status.TIMEOUT,
-        Transaction.Status.PAYMENT_TIMEOUT,
-        Transaction.Status.PAYMENT_FAILED,
-        Transaction.Status.PAYMENT_CONNECTION_ERROR,
-    }
+    terminal_statuses = Transaction.TERMINAL_STATUSES
+
+    if txn.status in terminal_statuses:
+        def terminal_generator():
+            try:
+                initial_msg = json.dumps({
+                    "transaction_id": str(txn.transaction_id),
+                    "status": txn.status,
+                    "is_terminal": True,
+                    "needs_recovery": txn.status in Transaction.RECOVERABLE_STATUSES,
+                })
+                yield f"data: {initial_msg}\n\n"
+            finally:
+                try:
+                    from django.db import close_old_connections
+                    close_old_connections()
+                except Exception:
+                    pass
+        return StreamingHttpResponse(terminal_generator(), content_type="text/event-stream")
 
     def event_generator():
         channel_name = f"dtc:tx_stream:{transaction_id}"
@@ -268,6 +278,7 @@ def transaction_stream(request, transaction_id):
                     "transaction_id": str(current_txn.transaction_id),
                     "status": current_txn.status,
                     "is_terminal": is_term,
+                    "needs_recovery": current_txn.status in Transaction.RECOVERABLE_STATUSES,
                 })
                 yield f"data: {initial_msg}\n\n"
                 if is_term:
@@ -283,8 +294,9 @@ def transaction_stream(request, transaction_id):
                 if now - start_time > max_duration:
                     timeout_msg = json.dumps({
                         "transaction_id": str(transaction_id),
-                        "status": "TIMEOUT",
-                        "is_terminal": True,
+                        "status": "STREAM_TIMEOUT",
+                        "is_terminal": False,
+                        "needs_recovery": False,
                     })
                     yield f"data: {timeout_msg}\n\n"
                     break
@@ -318,6 +330,7 @@ def transaction_stream(request, transaction_id):
                                 "transaction_id": str(db_txn.transaction_id),
                                 "status": db_txn.status,
                                 "is_terminal": True,
+                                "needs_recovery": db_txn.status in Transaction.RECOVERABLE_STATUSES,
                             })
                             yield f"data: {term_msg}\n\n"
                             break
@@ -343,6 +356,11 @@ def transaction_stream(request, transaction_id):
                     redis_client.close()
                 except Exception:
                     pass
+            try:
+                from django.db import close_old_connections
+                close_old_connections()
+            except Exception:
+                pass
 
     # Regular HttpResponse / JsonResponse: Takes an entire payload, computes its Content-Length, sends it all at once in a single network packet, and closes the TCP connection.
     # StreamingHttpResponse: Takes a Python generator / iterator (a function with yield). It does not close the connection immediately. Instead, whenever the generator yields a chunk of text, Django flushes that chunk down the open HTTP socket to the browser in real time.
@@ -360,6 +378,8 @@ ALLOWED_RETRY_STATUSES = (
     Transaction.Status.RETRY_COMPENSATION_FAILED,
     Transaction.Status.PAYMENT_TIMEOUT,
     Transaction.Status.PAYMENT_CONNECTION_ERROR,
+    Transaction.Status.INVENTORY_TIMEOUT,
+    Transaction.Status.INVENTORY_CONNECTION_ERROR,
 )
 
 
@@ -420,14 +440,38 @@ def retry_compensation(request, transaction_id):
         }, status=409)
 
     correlation_id = _get_active_correlation_id(getattr(request, "correlation_id", None))
-    outcome = execute_compensation_sweep(
-        transaction_id=transaction_id,
-        actor=SagaEvent.ACTOR_RETRY,
-        original_status=txn.status,
-        correlation_id=correlation_id,
-        get_func=_http_get,
-        post_func=_http_post,
-    )
+    try:
+        outcome = execute_compensation_sweep(
+            transaction_id=transaction_id,
+            actor=SagaEvent.ACTOR_RETRY,
+            original_status=txn.status,
+            correlation_id=correlation_id,
+            get_func=_http_get,
+            post_func=_http_post,
+        )
+    except Exception as exc:
+        logger.error(
+            "execute_compensation_sweep raised unexpectedly in retry_compensation for tx %s: %s; reverting claim",
+            transaction_id,
+            exc,
+            exc_info=True,
+        )
+        _set_status_with_event(
+            transaction_id=transaction_id,
+            to_status=txn.status,
+            expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+            actor=SagaEvent.ACTOR_RETRY,
+            http_status_code=None,
+            http_payload={"error": f"Internal error during compensation retry: {str(exc)}"},
+        )
+        return Response(
+            {
+                "transaction_id": str(transaction_id),
+                "status": txn.status,
+                "error": "Compensation retry encountered an unexpected error; claim released for retry",
+            },
+            status=500,
+        )
 
     response_data = {
         "transaction_id": str(transaction_id),
@@ -460,36 +504,77 @@ def trigger_recovery_sweep(request):
 
     2. io.StringIO() creates an in-memory text buffer.
 
-    3. When passed to stdout=out, all the text that would normally be printed in the terminal is redirected into 
+    3. When passed to stdout=out, all the text that would normally be printed in the terminal is redirected into
     this buffer so it can be sent back in the HTTP JSON response!
     """
     out = io.StringIO()
 
     # threshold_seconds => How long a transaction must be sitting in an unfinished state before the sweeper considers it "abandoned/crashed" (default: 60 seconds).
-    raw_threshold = int(request.data.get("threshold_seconds", 60) if request.data else 60)
-
+    raw_threshold = 60
+    if request.data and "threshold_seconds" in request.data:
+        val = request.data["threshold_seconds"]
+        if isinstance(val, bool) or not isinstance(val, (int, str)):
+            return Response(
+                {"error": "threshold_seconds must be a valid integer.", "code": "INVALID_THRESHOLD_SECONDS"},
+                status=400,
+            )
+        try:
+            raw_threshold = int(val)
+            if raw_threshold < 0:
+                return Response(
+                    {"error": "threshold_seconds must be a non-negative integer.", "code": "INVALID_THRESHOLD_SECONDS"},
+                    status=400,
+                )
+        except (ValueError, TypeError):
+            return Response(
+                {"error": "threshold_seconds must be a valid integer.", "code": "INVALID_THRESHOLD_SECONDS"},
+                status=400,
+            )
 
     # What if a caller sends threshold_seconds = 0 or 1
     # The sweeper would mistakenly abort and kill legitimate transactions that are actively processing payments right now.
-    # This enforces a minimum floor of atleast 30 seconds.    
+    # This enforces a minimum floor of atleast 30 seconds.
     min_floor = 5 if getattr(settings, "DEBUG", False) else int(os.getenv("RECOVERY_MIN_THRESHOLD_SECONDS", "30"))
-
 
     threshold_seconds = max(raw_threshold, min_floor)
 
-    # This is Django’s programmatic way of running:
-    #   python manage.py recovery_stuck_transactions --threshold_seconds=30
-    call_command("recovery_stuck_transactions", threshold_seconds=threshold_seconds, stdout=out)
+    from coordinator.tasks import get_redis_client, LOCK_KEY, RELEASE_LOCK_SCRIPT
+    redis_client = None
+    lock_token = None
+    lock_acquired = False
+    try:
+        redis_client = get_redis_client()
+        lock_token = str(uuid.uuid4())
+        lock_acquired = bool(redis_client.set(LOCK_KEY, lock_token, nx=True, ex=120))
+        if not lock_acquired:
+            return Response(
+                {
+                    "error": "Recovery sweep is already in progress.",
+                    "code": "RECOVERY_ALREADY_IN_PROGRESS",
+                },
+                status=409,
+            )
+    except (redis.ConnectionError, redis.TimeoutError, ConnectionRefusedError, OSError) as e:
+        logger.warning("Redis unavailable for recovery lock check: %s", e)
+        redis_client = None
+    except Exception as e:
+        logger.warning("Redis lock check failed in trigger_recovery_sweep: %s", e)
 
     try:
-        import time
-        from coordinator.tasks import get_redis_client
-        client = get_redis_client()
+        call_command("recovery_stuck_transactions", threshold_seconds=threshold_seconds, stdout=out)
 
-        # Update timestamp because a sweep just finished.
-        client.set("dtc:recovery:last_run_timestamp", str(time.time()))
-    except Exception:
-        pass
+        if redis_client:
+            try:
+                import time
+                redis_client.set("dtc:recovery:last_run_timestamp", str(time.time()))
+            except Exception:
+                pass
+    finally:
+        if redis_client and lock_acquired and lock_token:
+            try:
+                redis_client.eval(RELEASE_LOCK_SCRIPT, 1, LOCK_KEY, lock_token)
+            except Exception as exc:
+                logger.error("Failed to release lock '%s': %s", LOCK_KEY, exc)
 
     return Response({
         "message": "Recovery sweep complete",
@@ -500,6 +585,12 @@ def trigger_recovery_sweep(request):
 
 @api_view(["GET"])
 def recovery_status(request):
+    is_authenticated, auth_user_id, is_staff = _get_requester_identity(request)
+    if not is_authenticated:
+        return Response({"error": "Authentication required to view recovery status."}, status=401)
+    if not is_staff:
+        return Response({"error": "Staff privileges required to view recovery status."}, status=403)
+
     import time
     from coordinator.tasks import get_redis_client
 
@@ -678,15 +769,16 @@ def _request_payload_verify(request):
     if _fault_injection_allowed():
         allowed_fields = allowed_fields | {"fail_compensation", "coordinator", "fail_at_step"}
 
-    for k in request.data.keys():
-        if k not in allowed_fields:
-            return None, None, None, Response(
-                {
-                    "error": "Invalid field(s) sent in payload. These fields cannot be supplied by the client.",
-                    "code": "INVALID_FIELDS",
-                },
-                status=400,
-            )
+    invalid_fields = [k for k in request.data.keys() if k not in allowed_fields]
+    if invalid_fields:
+        return None, None, None, Response(
+            {
+                "error": f"Invalid field(s) sent in payload: {', '.join(invalid_fields)}. These fields cannot be supplied by the client.",
+                "code": "INVALID_FIELDS",
+                "invalid_fields": invalid_fields,
+            },
+            status=400,
+        )
 
     # --- PAY path: validate transaction_id, seat_ids optional ---
     if action == "pay":
@@ -709,6 +801,25 @@ def _request_payload_verify(request):
                 },
                 status=400,
             )
+        # If seat_ids is optionally passed to pay, validate it as well if present
+        pay_seats = request.data.get("seat_ids")
+        if pay_seats is not None:
+            if not isinstance(pay_seats, list) or any(type(s) is not int for s in pay_seats):
+                return None, None, None, Response(
+                    {"error": "seat_ids must be a list of integers.", "code": "INVALID_SEAT_IDS"},
+                    status=400,
+                )
+            if len(pay_seats) != len(set(pay_seats)):
+                return None, None, None, Response(
+                    {"error": "Duplicate seat_ids are not allowed.", "code": "DUPLICATE_SEATS"},
+                    status=400,
+                )
+            max_seats = int(os.getenv("MAX_SEATS_PER_TRANSACTION", "10"))
+            if len(pay_seats) > max_seats:
+                return None, None, None, Response(
+                    {"error": f"Cannot reserve more than {max_seats} seats in a single transaction.", "code": "EXCEEDED_MAX_SEATS"},
+                    status=400,
+                )
         return None, action, pay_tid, None
 
     # --- HOLD or one-shot path: seat_ids is mandatory ---
@@ -730,6 +841,25 @@ def _request_payload_verify(request):
             status=400,
         )
 
+    if len(raw_seats) != len(set(raw_seats)):
+        return None, None, None, Response(
+            {
+                "error": "Duplicate seat_ids are not allowed.",
+                "code": "DUPLICATE_SEATS",
+            },
+            status=400,
+        )
+
+    max_seats = int(os.getenv("MAX_SEATS_PER_TRANSACTION", "10"))
+    if len(raw_seats) > max_seats:
+        return None, None, None, Response(
+            {
+                "error": f"Cannot reserve more than {max_seats} seats in a single transaction.",
+                "code": "EXCEEDED_MAX_SEATS",
+            },
+            status=400,
+        )
+
     return list(raw_seats), action, None, None
 
 
@@ -743,33 +873,20 @@ def _handle_create_transaction(request):
     is_dev = getattr(settings, "DEBUG", False)
 
     # ── Auth ─────────────────────────────────────────────────────────────────
-    # Priority 1: Staff/machine-to-machine via X-Staff-Key header
+    ident = _get_requester_identity(request)
+    if not ident[0]:
+        return Response(
+            {
+                "error": "Authentication required. Your session has expired or you are not signed in. Please sign in to book seats.",
+                "code": "AUTHENTICATION_REQUIRED",
+            },
+            status=401,
+        )
+
+    user_id = ident[1]
+    is_staff = ident[2]
+    user_email = getattr(ident, "user_email", None) or (ident[3] if len(ident) > 3 else None)
     has_staff_key = _verify_staff_key(request.headers.get("X-Staff-Key"))
-
-    is_staff = False
-    if has_staff_key:
-        user_id = request.headers.get("X-User-ID") or os.getenv("STAFF_USER_ID") or "system_staff"
-        user_email = request.headers.get("X-User-Email") or os.getenv("STAFF_EMAIL_ID") or "admin@dtc.internal"
-        is_staff = True
-    else:
-        # Priority 2: Regular user authenticated via JWT Bearer token
-        user_info = get_user_from_request(request)
-
-        if user_info and user_info.get("is_authenticated"):
-            user_id = user_info.get("user_id")
-            user_email = user_info.get("user_email")
-            is_staff = _is_admin_email(user_email)
-        elif is_testing or is_dev:
-            user_id = request.headers.get("X-User-ID") or ("system_test" if is_testing else "system_dev")
-            user_email = request.headers.get("X-User-Email") or None
-        else:
-            return Response(
-                {
-                    "error": "Authentication required. Your session has expired or you are not signed in. Please sign in to book seats.",
-                    "code": "AUTHENTICATION_REQUIRED",
-                },
-                status=401,
-            )
 
     correlation_id = request.correlation_id
     if not correlation_id:
@@ -779,8 +896,9 @@ def _handle_create_transaction(request):
     if _fault_injection_allowed() and request.data:
         fail_compensation = bool(request.data.get("fail_compensation", False))
 
+    enable_test_payment_failure = bool(getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False))
     simulate_decline = False
-    if _fault_injection_allowed():
+    if enable_test_payment_failure and (_fault_injection_allowed() or is_dev or is_testing or has_staff_key):
         simulate_decline = (
             request.query_params.get("simulate_payment_decline") == "true"
             or request.headers.get("X-Simulate-Payment-Decline") == "true"
@@ -829,6 +947,7 @@ def _handle_create_transaction(request):
             headers = {
                 "X-Correlation-ID": correlation_id,
                 "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+                "X-Idempotency-Key": str(transaction_id),
             }
             try:
                 _http_post(
@@ -837,8 +956,13 @@ def _handle_create_transaction(request):
                     headers=headers,
                     timeout=REQUEST_TIMEOUT,
                 )
-            except RequestException:
-                pass
+            except RequestException as e:
+                logger.warning(
+                    "Failed to release hold for tx %s on reserve failure: %s [correlation_id=%s]",
+                    transaction_id,
+                    e,
+                    correlation_id,
+                )
 
             _set_status_with_event(
                 transaction_id,
@@ -858,6 +982,7 @@ def _handle_create_transaction(request):
             headers = {
                 "X-Correlation-ID": correlation_id,
                 "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+                "X-Idempotency-Key": str(transaction_id),
             }
             try:
                 _http_post(
@@ -866,8 +991,13 @@ def _handle_create_transaction(request):
                     headers=headers,
                     timeout=REQUEST_TIMEOUT,
                 )
-            except RequestException:
-                pass
+            except RequestException as e:
+                logger.warning(
+                    "Failed to release hold for tx %s on reserve non-200: %s [correlation_id=%s]",
+                    transaction_id,
+                    e,
+                    correlation_id,
+                )
 
             _set_status_with_event(
                 transaction_id,
@@ -891,7 +1021,10 @@ def _handle_create_transaction(request):
                 new_amount = Decimal(str(resp_json["total_amount"]))
                 if new_amount != amount:
                     amount = new_amount
-                    Transaction.objects.filter(transaction_id=transaction_id).update(amount=amount)
+                    Transaction.objects.filter(transaction_id=transaction_id).update(
+                        amount=amount,
+                        updated_at=timezone.now(),
+                    )
             except (ValueError, TypeError):
                 pass
 
@@ -965,38 +1098,96 @@ def _handle_create_transaction(request):
                     status=409,
                 )
 
+            # H3: Validate hold expiry (held_until) before charging payment
+            holding_event = (
+                SagaEvent.objects.filter(
+                    transaction=txn,
+                    to_status=Transaction.Status.HOLDING,
+                )
+                .order_by("-seq")
+                .first()
+            )
+            if holding_event and holding_event.http_payload:
+                held_until_raw = holding_event.http_payload.get("held_until")
+                if held_until_raw:
+                    try:
+                        held_until_dt = parse_datetime(held_until_raw) if isinstance(held_until_raw, str) else held_until_raw
+                        if held_until_dt and timezone.is_naive(held_until_dt):
+                            held_until_dt = timezone.make_aware(held_until_dt)
+                        if held_until_dt and held_until_dt < timezone.now():
+                            # Hold has expired. Transition to TIMEOUT so it cannot be paid
+                            _set_status_with_event(
+                                txn.transaction_id,
+                                Transaction.Status.TIMEOUT,
+                                expected_status=Transaction.Status.HOLDING,
+                                actor=SagaEvent.ACTOR_REQUEST,
+                                http_status_code=409,
+                                http_payload={"error": "Seat hold expired before payment attempt"},
+                            )
+                            # Best-effort release to inventory
+                            try:
+                                rel_headers = {
+                                    "X-Correlation-ID": correlation_id,
+                                    "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+                                    "X-Idempotency-Key": str(txn.transaction_id),
+                                }
+                                _http_post(
+                                    INVENTORY_RELEASE_URL,
+                                    json={"transaction_id": str(txn.transaction_id), "seat_ids": txn.seat_ids},
+                                    headers=rel_headers,
+                                    timeout=REQUEST_TIMEOUT,
+                                )
+                            except RequestException as e:
+                                logger.warning(
+                                    "Failed to release expired hold inventory for tx %s: %s [correlation_id=%s]",
+                                    txn.transaction_id,
+                                    e,
+                                    correlation_id,
+                                )
+
+                            return Response(
+                                {
+                                    "error": "Seat hold has expired. Please select seats and try again.",
+                                    "code": "HOLD_EXPIRED",
+                                    "status": Transaction.Status.TIMEOUT,
+                                    "transaction_id": str(txn.transaction_id),
+                                },
+                                status=409,
+                            )
+                    except Exception:
+                        pass
+
             transaction_id = txn.transaction_id
             seat_ids = txn.seat_ids
             amount = txn.amount
             pay_user_id = txn.user_id
             pay_user_email = txn.user_email
 
-            if simulate_decline:
+            if simulate_decline and enable_test_payment_failure:
                 amount = Decimal("9999")
 
-            if not is_sync:
-                # Atomically mark as INVENTORY_RESERVED so parallel duplicate requests are rejected
-                transitioned = _set_status_with_event(
-                    transaction_id,
-                    Transaction.Status.INVENTORY_RESERVED,
-                    expected_status=Transaction.Status.HOLDING,
-                    actor=SagaEvent.ACTOR_REQUEST,
-                    http_status_code=200,
-                    http_payload={
-                        "message": f"{len(seat_ids) if seat_ids else 1} Seats reserved via coordinator hold",
-                        "seat_ids": seat_ids,
+            # Atomically mark as INVENTORY_RESERVED so parallel duplicate requests (sync or async) are rejected
+            transitioned = _set_status_with_event(
+                transaction_id,
+                Transaction.Status.INVENTORY_RESERVED,
+                expected_status=Transaction.Status.HOLDING,
+                actor=SagaEvent.ACTOR_REQUEST,
+                http_status_code=200,
+                http_payload={
+                    "message": f"{len(seat_ids) if seat_ids else 1} Seats reserved via coordinator hold",
+                    "seat_ids": seat_ids,
+                    "transaction_id": str(transaction_id),
+                },
+            )
+            if not transitioned:
+                return Response(
+                    {
+                        "error": "Transaction is already being processed or is not in an eligible state for payment.",
+                        "code": "CONCURRENT_PAYMENT_IN_PROGRESS",
                         "transaction_id": str(transaction_id),
                     },
+                    status=409,
                 )
-                if not transitioned:
-                    return Response(
-                        {
-                            "error": "Transaction is already being processed or is not in an eligible state for payment.",
-                            "code": "CONCURRENT_PAYMENT_IN_PROGRESS",
-                            "transaction_id": str(transaction_id),
-                        },
-                        status=409,
-                    )
 
         if not is_sync:
             try:
@@ -1010,6 +1201,7 @@ def _handle_create_transaction(request):
                     user_id=pay_user_id,
                     user_email=pay_user_email,
                     skip_reserve=True,
+                    simulate_decline=simulate_decline,
                 )
                 return Response(
                     {
@@ -1050,6 +1242,7 @@ def _handle_create_transaction(request):
             user_id=pay_user_id,
             user_email=pay_user_email,
             skip_reserve=True,
+            simulate_decline=simulate_decline,
         )
 
     # DEFAULT: One-shot full saga (legacy path — backward compatible)
@@ -1067,7 +1260,7 @@ def _handle_create_transaction(request):
 
     quantity = len(seat_ids)
 
-    if simulate_decline:
+    if simulate_decline and enable_test_payment_failure:
         amount = Decimal("9999")
 
     created, dup_response = _create_transaction(
@@ -1105,10 +1298,10 @@ def _handle_create_transaction(request):
 
             1. WHAT '.delay(...)' DOES:
                - Shortcut for 'execute_saga_task.apply_async(args=..., kwargs=...)'.
-               - Instead of running Python code immediately, Celery packages the task name and 
+               - Instead of running Python code immediately, Celery packages the task name and
                  parameters into a JSON message and pushes it to Redis (CELERY_BROKER_URL).
                - Returns immediately in ~1-2ms without waiting for downstream microservices(Inventory, Payment, ..).
-               - The web server responds instantly with HTTP 202 Accepted + poll_url, freeing 
+               - The web server responds instantly with HTTP 202 Accepted + poll_url, freeing
                  Gunicorn/Django web workers to handle thousands of concurrent incoming requests.
                - An independent background Celery worker daemon ('celery -A coordinator_service worker')
                  pops the task from Redis, executes the full Saga pipeline (Inventory -> Payment -> Confirm),
@@ -1123,9 +1316,9 @@ def _handle_create_transaction(request):
                    * Charge payment (/payments/charge/): ~200ms
                    * Confirm seats (/seats/confirm/):   ~50ms
                    Total latency: 300ms - 1500ms+ instead of 2ms.
-               - WORKER STARVATION: In production with 4 web workers, capacity drops from ~2000 req/s 
+               - WORKER STARVATION: In production with 4 web workers, capacity drops from ~2000 req/s
                  down to ~8 req/s. Concurrent users quickly get connection drops or 504 Gateway Timeouts.
-               - CLIENT TIMEOUTS: If Payment or Inventory has a slow network spike, browser/Nginx 
+               - CLIENT TIMEOUTS: If Payment or Inventory has a slow network spike, browser/Nginx
                  timeouts sever the connection before completion, risking orphaned states.
             """
             execute_saga_task.delay(
@@ -1136,6 +1329,7 @@ def _handle_create_transaction(request):
                 correlation_id=correlation_id,
                 user_id=user_id,
                 user_email=user_email,
+                simulate_decline=simulate_decline,
             )
             return Response(
                 {
@@ -1152,10 +1346,18 @@ def _handle_create_transaction(request):
             )
         except Exception:
             logger.exception("Failed to dispatch Saga task")
+            _set_status_with_event(
+                transaction_id,
+                to_status=Transaction.Status.TIMEOUT,
+                expected_status=Transaction.Status.STARTED,
+                actor=SagaEvent.ACTOR_REQUEST,
+                http_status_code=None,
+                http_payload={"error": "Celery dispatch failed; marked TIMEOUT"},
+            )
             return Response(
                 {
                     "transaction_id": str(transaction_id),
-                    "status": Transaction.Status.STARTED,
+                    "status": Transaction.Status.TIMEOUT,
                     "error": "Saga could not be dispatched",
                 },
                 status=503,
@@ -1170,6 +1372,7 @@ def _handle_create_transaction(request):
         actor=SagaEvent.ACTOR_REQUEST,
         user_id=user_id,
         user_email=user_email,
+        simulate_decline=simulate_decline,
     )
 
 
@@ -1256,6 +1459,7 @@ def _run_saga_pipeline(
     user_id=None,
     user_email=None,
     skip_reserve=False,
+    simulate_decline=False,
     **kwargs,
 ):
     if skip_reserve:
@@ -1368,8 +1572,8 @@ def _run_saga_pipeline(
             from decimal import Decimal
 
             actual_amount = Decimal(str(resp_json["total_amount"]))
-            # Preserve intentional payment failure simulation amount (9999) for compensation scenarios
-            if str(amount).split(".")[0] != "9999":
+            # Preserve intentional payment failure simulation amount (9999) only if simulate_decline is active
+            if not simulate_decline:
                 amount = actual_amount
                 txn = Transaction.objects.filter(transaction_id=transaction_id).first()
                 if txn:
@@ -1396,7 +1600,7 @@ def _run_saga_pipeline(
         )
     transitioned_pay = _set_status_with_event(
         transaction_id,
-        Transaction.Status.PAYMENT_PROCESSING, # to 
+        Transaction.Status.PAYMENT_PROCESSING, # to
         expected_status=Transaction.Status.INVENTORY_RESERVED, # from
         actor=actor,
         http_status_code=None,
@@ -1429,8 +1633,9 @@ def _run_saga_pipeline(
 def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=None, user_email=None):
 
     headers = {
-        "X-Correlation-ID": correlation_id,
+        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+        "X-Idempotency-Key": str(transaction_id),
     }
 
     try:
@@ -1481,8 +1686,9 @@ def _charge_payment(
 ):
 
     headers = {
-        "X-Correlation-ID": correlation_id,
+        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+        "X-Idempotency-Key": str(transaction_id),
     }
 
     try:
@@ -1501,7 +1707,7 @@ def _charge_payment(
         uncertain_status = _transport_status(
             e, Transaction.Status.PAYMENT_TIMEOUT, Transaction.Status.PAYMENT_CONNECTION_ERROR
         )
-    
+
         transitioned = _set_status_with_event(
             transaction_id,
             uncertain_status, # to
@@ -1626,8 +1832,9 @@ def _confirm_inventory(transaction_id, seat_ids=None, correlation_id=None):
         if txn and txn.seat_ids:
             seat_ids = txn.seat_ids
     headers = {
-        "X-Correlation-ID": correlation_id,
+        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+        "X-Idempotency-Key": str(transaction_id),
     }
     try:
         response = _http_post(
@@ -1642,8 +1849,31 @@ def _confirm_inventory(transaction_id, seat_ids=None, correlation_id=None):
 
 
 def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, payment_status_code=200, correlation_id=None, seat_ids=None):
+    if payment_status_code == 409:
+        code = payment_data.get("code") if isinstance(payment_data, dict) else None
+        if code == "IDEMPOTENCY_PAYLOAD_MISMATCH":
+            logger.critical(
+                "Idempotency conflict detected for transaction %s: %s",
+                transaction_id,
+                payment_data.get("error"),
+            )
+        elif code == "TRANSACTION_VOIDED":
+            logger.warning(
+                "Payment rejected because transaction %s was previously voided.",
+                transaction_id,
+            )
+
     if payment_data.get("status") == "CHARGED":
         confirm_resp, confirm_err = _confirm_inventory(transaction_id, seat_ids=seat_ids, correlation_id=correlation_id)
+
+        # H2: Retry confirm on transport timeout or 5xx before giving up / compensating
+        if (confirm_resp is None and confirm_err) or (confirm_resp and confirm_resp.status_code in (502, 503, 504)):
+            logger.warning(
+                "Inventory confirm timed out or returned gateway error for tx %s (%s); retrying confirm...",
+                transaction_id,
+                confirm_err or getattr(confirm_resp, "status_code", None),
+            )
+            confirm_resp, confirm_err = _confirm_inventory(transaction_id, seat_ids=seat_ids, correlation_id=correlation_id)
 
         if confirm_resp and confirm_resp.status_code == 200:
             confirm_json = None
@@ -1686,6 +1916,27 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
             })
             return Response(data)
 
+        # H2: If both confirms were transport failures (no response at all), do NOT compensate.
+        # Payment charged but confirm outcome unknown — leave in PAYMENT_PROCESSING (recoverable)
+        # so the recovery sweep will re-attempt idempotent confirm via execute_compensation_sweep.
+        if confirm_resp is None:
+            logger.warning(
+                "Inventory confirm timed out twice for tx %s; leaving in PAYMENT_PROCESSING for sweep retry.",
+                transaction_id,
+            )
+            # Status already PAYMENT_PROCESSING (or PAYMENT_TIMEOUT/CONNECTION_ERROR from check path);
+            # no transition needed — sweep will pick it up.
+            return Response(
+                {
+                    "transaction_id": str(transaction_id),
+                    "status": Transaction.Status.PAYMENT_PROCESSING,
+                    "error": "Inventory confirm timed out; will be retried by recovery sweep.",
+                    "needs_recovery": True,
+                },
+                status=503,
+            )
+
+        # Definitive inventory answer (4xx: hold expired, seats not found, etc.) → compensate
         confirm_json = None
         if confirm_resp is not None:
             try:
@@ -1702,7 +1953,7 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
             transaction_id,
             fail_compensation,
             decline_payload,
-            payment_status_code=confirm_resp.status_code if confirm_resp else 504,
+            payment_status_code=confirm_resp.status_code,
             correlation_id=correlation_id,
             seat_ids=seat_ids,
         )
@@ -1722,6 +1973,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
     headers = {
         "X-Correlation-ID": _get_active_correlation_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+        "X-Idempotency-Key": str(transaction_id),
     }
 
     claimed = _set_status_with_event(
@@ -1755,6 +2007,41 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             was_charged = True
         elif isinstance(payment_data.get("payment"), dict) and payment_data["payment"].get("status") == "CHARGED":
             was_charged = True
+
+    if not was_charged:
+        # Priority 2: Void payment in-flight before compensating inventory (fence)
+        void_ok = False
+        try:
+            void_url = PAYMENT_VOID_URL
+            void_resp = _http_post(
+                void_url,
+                json={"transaction_id": str(transaction_id)},
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
+            )
+            if void_resp.status_code == 200:
+                v_data = _parse_json_response(void_resp)
+                if v_data and v_data.get("status") == "CHARGED":
+                    was_charged = True
+                void_ok = True
+        except (Timeout, ConnectionError, RequestException):
+            void_ok = False
+
+        if not void_ok and not was_charged:
+            logger.warning(
+                "Payment void failed for tx %s during compensation; aborting seat release to prevent unfenced release.",
+                transaction_id,
+            )
+            return Response(
+                {
+                    "transaction_id": str(transaction_id),
+                    "status": Transaction.Status.COMPENSATING,
+                    "error": "Payment void failed; compensation will be retried by recovery sweep.",
+                    "needs_recovery": True,
+                },
+                status=503,
+            )
+
 
     # 1. Attempt Inventory Release
     release_ok = False
@@ -1910,39 +2197,58 @@ def _is_admin_email(email):
     return parts[1] == admin_domain
 
 
+class RequesterIdentity(tuple):
+    """
+    Caller identity tuple: (is_authenticated, user_id, is_staff).
+    Provides full backward compatibility with 3-tuple unpacking while exposing typed attributes
+    including .user_email.
+    """
+    def __new__(cls, is_authenticated, user_id, is_staff, user_email=None):
+        return super().__new__(cls, (is_authenticated, user_id, is_staff))
+
+    def __init__(self, is_authenticated, user_id, is_staff, user_email=None):
+        self.is_authenticated = is_authenticated
+        self.user_id = user_id
+        self.is_staff = is_staff
+        self.user_email = user_email
+
+
 def _get_requester_identity(request):
     """
     Resolves caller identity and permissions (is_authenticated, auth_user_id, is_staff).
-    
+    Returns a RequesterIdentity 3-tuple with .user_email attribute.
+
     Priority of Authentication:
-      1. JWT Bearer Token (Primary mechanism for Visualizer & API clients)
-      2. Service API Key (Machine-to-Machine / Admin scripts via X-Staff-Key)
+      1. Machine-to-Machine / Service API Key (Admin scripts via X-Staff-Key)
+      2. JWT Bearer Token (Primary mechanism for Visualizer & API clients)
       3. Automated Test Runner Environment (Preserves test suite execution)
       4. Local Development Fallback (DEBUG=True demo user)
     """
 
     # Machine-to-Machine: Internal Staff Secret Key (Priority 1)
     if _verify_staff_key(request.headers.get("X-Staff-Key")):
-        return True, "system_staff", True
+        user_id = request.headers.get("X-User-ID") or os.getenv("STAFF_USER_ID") or "system_staff"
+        user_email = request.headers.get("X-User-Email") or os.getenv("STAFF_EMAIL_ID") or "admin@dtc.internal"
+        return RequesterIdentity(True, user_id, True, user_email=user_email)
 
-    # JWT Bearer Token
+    # JWT Bearer Token (Priority 2)
     user_info = get_user_from_request(request)
-    
+
     if user_info and user_info.get("is_authenticated"):
         user_email = user_info.get("user_email")
         is_staff = _is_admin_email(user_email)
+        return RequesterIdentity(True, user_info.get("user_id"), is_staff, user_email=user_email)
 
-        return True, user_info.get("user_id"), is_staff
-
-    # Automated Test Runner Environment
+    # Automated Test Runner Environment (Priority 3)
     is_testing = bool(getattr(settings, "IS_TESTING", False))
 
     if is_testing:
         test_uid = request.headers.get("X-User-ID") or "system_test"
+        test_email = request.headers.get("X-User-Email") or None
+        is_staff = _is_admin_email(test_email) if test_email else True
+        return RequesterIdentity(True, test_uid, is_staff, user_email=test_email)
 
-        return True, test_uid, True
-
-    # Local Development Mode (DEBUG=True)
+    # Local Development Mode (DEBUG=True) (Priority 4)
     is_dev = getattr(settings, "DEBUG", False)
     allow_dev_staff_bypass = getattr(settings, "ALLOW_DEV_STAFF_BYPASS", False) or (
         os.getenv("ALLOW_DEV_STAFF_BYPASS", "").lower() in ("true", "1", "yes", "t")
@@ -1954,11 +2260,14 @@ def _get_requester_identity(request):
             request.headers.get("X-User-ID")
             or (user_info.get("user_id") if user_info else "system_dev")
         )
-
-        return True, dev_uid, is_dev_staff
+        dev_email = (
+            request.headers.get("X-User-Email")
+            or (user_info.get("user_email") if user_info else None)
+        )
+        return RequesterIdentity(True, dev_uid, is_dev_staff, user_email=dev_email)
 
     # Default: Unauthenticated
-    return False, None, False
+    return RequesterIdentity(False, None, False, user_email=None)
 
 
 def _create_transaction(
@@ -2006,26 +2315,13 @@ _create_transaction_idempotent = _create_transaction
 
 
 def _serialize_transaction(txn):
-    terminal_statuses = {
-        Transaction.Status.COMPLETED,
-        Transaction.Status.COMPENSATED,
-        Transaction.Status.COMPENSATION_FAILED,
-        Transaction.Status.INVENTORY_RESERVE_FAILED,
-        Transaction.Status.COMPENSATED_ON_RETRY,
-        Transaction.Status.RETRY_COMPENSATION_FAILED,
-        Transaction.Status.TIMEOUT,
-        Transaction.Status.PAYMENT_TIMEOUT,
-        Transaction.Status.PAYMENT_FAILED,
-        Transaction.Status.PAYMENT_CONNECTION_ERROR,
-        Transaction.Status.INVENTORY_TIMEOUT,
-        Transaction.Status.INVENTORY_CONNECTION_ERROR,
-    }
     return {
         "transaction_id": str(txn.transaction_id),
         "user_id": txn.user_id,
         "user_email": txn.user_email,
         "status": txn.status,
-        "is_terminal": txn.status in terminal_statuses,
+        "is_terminal": txn.status in Transaction.TERMINAL_STATUSES,
+        "needs_recovery": txn.status in Transaction.RECOVERABLE_STATUSES,
         "seat_ids": txn.seat_ids,
         "seat_numbers": txn.seat_numbers,
         "quantity": txn.quantity,

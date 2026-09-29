@@ -14,10 +14,12 @@ PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rst
 
 PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
 PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
+PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
 INVENTORY_CHECK_URL = f"{INVENTORY_BASE_URL}/reserve/check/"
 INVENTORY_CONFIRM_URL = f"{INVENTORY_BASE_URL}/seats/confirm/"
-INVENTORY_RELEASE_URL = f"{INVENTORY_BASE_URL}/seats/release/"
-REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "5"))
+REQUEST_CONNECT_TIMEOUT = float(os.getenv("REQUEST_CONNECT_TIMEOUT", "2.0"))
+REQUEST_READ_TIMEOUT = float(os.getenv("REQUEST_READ_TIMEOUT", os.getenv("REQUEST_TIMEOUT", "5.0")))
+REQUEST_TIMEOUT = (REQUEST_CONNECT_TIMEOUT, REQUEST_READ_TIMEOUT)
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 
 
@@ -27,6 +29,10 @@ PAYMENT_NOT_CHARGED = "NOT_CHARGED"
 INVENTORY_RESERVED = Transaction.Status.INVENTORY_RESERVED
 INVENTORY_RELEASED = Transaction.Status.INVENTORY_RELEASED
 INVENTORY_NOT_RESERVED = Transaction.Status.NOT_RESERVED
+
+# Single source of truth from Transaction model
+TERMINAL_STATUSES = Transaction.TERMINAL_STATUSES
+RECOVERABLE_STATUSES = Transaction.RECOVERABLE_STATUSES
 
 
 
@@ -50,6 +56,7 @@ class Command(BaseCommand):
 
         self.recover_payment_processing(threshold)
         self.recover_reserved(threshold)
+        self.recover_holding(threshold)
         self.recover_started(threshold)
         self.recover_timeouts(threshold)
         self.recover_compensating(threshold)
@@ -98,16 +105,85 @@ class Command(BaseCommand):
             self._resolve_transaction(transaction_id)
 
     def recover_reserved(self, threshold):
-    
+
         for transaction_id in self._claim(Transaction.Status.INVENTORY_RESERVED, threshold):
             self.stdout.write(
                 f"Recovering {transaction_id} claimed from INVENTORY_RESERVED..."
             )
             self._resolve_transaction(transaction_id)
 
+    def recover_holding(self, threshold=None):
+        from django.utils.dateparse import parse_datetime
+        from django.db.models import Prefetch
+        now = timezone.now()
+        HOLD_GRACE = timedelta(seconds=30)
+        # Default hold TTL matches inventory service real hold TTL: 10 minutes
+        hold_ttl = getattr(settings, "SEAT_HOLD_DURATION", timedelta(minutes=10))
+        if isinstance(hold_ttl, (int, float)):
+            hold_ttl = timedelta(seconds=hold_ttl)
+
+        # (c) Fetch held_until with one single prefetch query across all HOLDING rows
+        holding_txns = Transaction.objects.filter(
+            status=Transaction.Status.HOLDING
+        ).prefetch_related(
+            Prefetch(
+                "events",
+                queryset=SagaEvent.objects.filter(to_status=Transaction.Status.HOLDING).order_by("-seq"),
+                to_attr="holding_events",
+            )
+        )
+
+        candidates = []
+        for txn in holding_txns:
+            holding_event = txn.holding_events[0] if getattr(txn, "holding_events", None) else None
+            held_until_dt = None
+            if holding_event and holding_event.http_payload:
+                raw_held_until = holding_event.http_payload.get("held_until")
+                if raw_held_until:
+                    try:
+                        dt = (
+                            parse_datetime(raw_held_until)
+                            if isinstance(raw_held_until, str)
+                            else raw_held_until
+                        )
+                        if dt and timezone.is_naive(dt):
+                            dt = timezone.make_aware(dt)
+                        held_until_dt = dt
+                    except Exception:
+                        pass
+
+            if held_until_dt is not None:
+                # (b) Add 30s grace: treated as expired only at held_until + 30s
+                if now >= held_until_dt + HOLD_GRACE:
+                    candidates.append(txn.transaction_id)
+            else:
+                # Fallback hold TTL (10m) from created_at + 30s grace
+                if now >= txn.created_at + hold_ttl + HOLD_GRACE:
+                    candidates.append(txn.transaction_id)
+
+        claimed_ids = []
+        for transaction_id in candidates:
+            claimed = _set_status_with_event(
+                transaction_id=transaction_id,
+                to_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+                expected_status=Transaction.Status.HOLDING,
+                actor=SagaEvent.ACTOR_RECOVERY,
+                http_status_code=None,
+                http_payload=None,
+            )
+            if not claimed:
+                continue
+            claimed_ids.append(transaction_id)
+
+        for transaction_id in claimed_ids:
+            self.stdout.write(
+                f"Recovering {transaction_id} claimed from HOLDING (expired hold)..."
+            )
+            self._resolve_transaction(transaction_id)
+
 
     def recover_started(self, threshold):
-   
+
         for transaction_id in self._claim(Transaction.Status.STARTED, threshold):
             self.stdout.write(
                 f"Recovering {transaction_id} claimed from STARTED..."
@@ -190,6 +266,7 @@ class Command(BaseCommand):
         headers = {
             "X-Correlation-ID": str(transaction_id),
             "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+            "X-Idempotency-Key": str(transaction_id),
         }
         try:
             payment_resp = requests.get(
@@ -208,6 +285,49 @@ class Command(BaseCommand):
             txn = Transaction.objects.filter(transaction_id=transaction_id).first()
             seat_ids = txn.seat_ids if txn else []
 
+            # Check attempt counter or age cap for confirm retries
+            retry_count = SagaEvent.objects.filter(
+                transaction=txn,
+                actor=SagaEvent.ACTOR_RECOVERY,
+            ).count() if txn else 0
+            age_minutes = ((timezone.now() - txn.created_at).total_seconds() / 60.0) if txn and txn.created_at else 0.0
+            max_attempts = getattr(settings, "MAX_CONFIRM_RETRY_ATTEMPTS", 5)
+            max_age_minutes = getattr(settings, "MAX_CONFIRM_RETRY_MINUTES", 60)
+
+            if retry_count >= max_attempts or age_minutes >= max_age_minutes:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.critical(
+                    "CRITICAL ALERT: Transaction %s exceeded confirm retry limits (attempts=%d/%d, age=%.1fm/%dm). "
+                    "Marked for MANUAL_REVIEW. Payment is CHARGED; NO auto-refund issued.",
+                    transaction_id,
+                    retry_count,
+                    max_attempts,
+                    age_minutes,
+                    max_age_minutes,
+                )
+                self.stdout.write(
+                    self.style.ERROR(
+                        f"CRITICAL: {transaction_id} exceeded confirm retry limit (attempts={retry_count}/{max_attempts}, age={age_minutes:.1f}m/{max_age_minutes}m). "
+                        "Marked for MANUAL REVIEW; NO auto-refund issued."
+                    )
+                )
+                _set_status_with_event(
+                    transaction_id=transaction_id,
+                    to_status=Transaction.Status.PAYMENT_PROCESSING,
+                    expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+                    actor=SagaEvent.ACTOR_RECOVERY,
+                    http_status_code=None,
+                    http_payload={
+                        "error": "Exceeded confirm retry limit; marked for manual review.",
+                        "manual_review_required": True,
+                        "retry_count": retry_count,
+                        "age_minutes": age_minutes,
+                        "payment_status": "CHARGED",
+                    },
+                )
+                return
+
             # Before completing, confirm inventory
             try:
                 confirm_resp = requests.post(
@@ -217,7 +337,20 @@ class Command(BaseCommand):
                     timeout=REQUEST_TIMEOUT,
                 )
             except requests.exceptions.RequestException:
-                self._leave_in_progress(transaction_id, "inventory confirm network error during recovery")
+                # Confirm transport error (Timeout/ConnectionError): leave recoverable, revert claim
+                _set_status_with_event(
+                    transaction_id=transaction_id,
+                    to_status=Transaction.Status.PAYMENT_PROCESSING,
+                    expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+                    actor=SagaEvent.ACTOR_RECOVERY,
+                    http_status_code=None,
+                    http_payload={"error": "Inventory confirm transport error during recovery; claim reverted."},
+                )
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"  -> {transaction_id}: inventory confirm network/timeout error; claim reverted to PAYMENT_PROCESSING for retry."
+                    )
+                )
                 return
 
             if confirm_resp.status_code == 200:
@@ -235,10 +368,27 @@ class Command(BaseCommand):
                     )
                 )
                 return
-            else:
+            elif confirm_resp.status_code >= 500:
+                # 5xx Server error: not definitive, do NOT compensate! Revert claim so next sweep retries.
+                _set_status_with_event(
+                    transaction_id=transaction_id,
+                    to_status=Transaction.Status.PAYMENT_PROCESSING,
+                    expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+                    actor=SagaEvent.ACTOR_RECOVERY,
+                    http_status_code=confirm_resp.status_code,
+                    http_payload=confirm_resp.json() if confirm_resp.content else None,
+                )
                 self.stdout.write(
                     self.style.WARNING(
-                        f"  -> {transaction_id}: inventory confirm failed (HTTP {confirm_resp.status_code}); routing to compensation."
+                        f"  -> {transaction_id}: inventory confirm returned 5xx ({confirm_resp.status_code}); claim reverted to PAYMENT_PROCESSING."
+                    )
+                )
+                return
+            else:
+                # Definitive 4xx error (hold expired, seats not found) -> route to compensation
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"  -> {transaction_id}: inventory confirm failed definitively (HTTP {confirm_resp.status_code}); routing to compensation."
                     )
                 )
                 self._compensate(transaction_id, payment_was_charged=True)
@@ -266,6 +416,27 @@ class Command(BaseCommand):
         if inventory_status == INVENTORY_RESERVED:
             self._compensate(transaction_id, payment_was_charged=False)
         elif inventory_status in (INVENTORY_RELEASED, INVENTORY_NOT_RESERVED):
+            # Ensure payment is voided so an in-flight charge cannot land after marking TIMEOUT
+            try:
+                void_resp = requests.post(
+                    PAYMENT_VOID_URL,
+                    json={"transaction_id": str(transaction_id)},
+                    headers=headers,
+                    timeout=REQUEST_TIMEOUT,
+                )
+                if void_resp.status_code == 200:
+                    v_data = void_resp.json()
+                    if v_data.get("status") == "CHARGED":
+                        self.stdout.write(
+                            self.style.WARNING(
+                                f"  -> {transaction_id}: payment was charged before void; routing to refund."
+                            )
+                        )
+                        self._compensate(transaction_id, payment_was_charged=True)
+                        return
+            except requests.exceptions.RequestException:
+                pass
+
             _set_status_with_event(
                 transaction_id=transaction_id,
                 to_status=Transaction.Status.TIMEOUT,

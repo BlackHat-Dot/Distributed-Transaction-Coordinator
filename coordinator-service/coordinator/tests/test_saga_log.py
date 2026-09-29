@@ -42,7 +42,7 @@ class SagaEventModelConstraintTests(TestCase):
             )
 
     def test_different_seq_same_transaction_is_fine(self):
-    
+
         txn = _make_transaction()
 
         SagaEvent.objects.create(
@@ -60,7 +60,7 @@ class SagaEventModelConstraintTests(TestCase):
         self.assertEqual(SagaEvent.objects.filter(transaction=txn).count(), 2)
 
     def test_same_seq_different_transactions_is_fine(self):
-    
+
         txn1 = _make_transaction()
         txn2 = _make_transaction()
 
@@ -122,7 +122,7 @@ class SetStatusWithEventHappyPathTests(TestCase):
         self.assertEqual(event.http_payload, {"message": "Inventory reserved"})
 
     def test_sequential_calls_produce_incrementing_seq(self):
-        
+
         txn = _make_transaction(Transaction.Status.STARTED)
 
         _set_status_with_event(
@@ -164,7 +164,7 @@ class SetStatusWithEventCasMissTests(TestCase):
         self.assertEqual(SagaEvent.objects.filter(transaction=txn).count(), 0)
 
     def test_no_expected_status_always_succeeds(self):
-    
+
         txn = _make_transaction(Transaction.Status.STARTED)
 
         result = _set_status_with_event(
@@ -179,7 +179,7 @@ class SetStatusWithEventCasMissTests(TestCase):
         self.assertEqual(SagaEvent.objects.filter(transaction=txn).count(), 1)
 
     def test_nonexistent_transaction_id_returns_false(self):
-    
+
         result = _set_status_with_event(
             transaction_id=uuid.uuid4(),
             to_status=Transaction.Status.COMPLETED,
@@ -191,7 +191,7 @@ class SetStatusWithEventCasMissTests(TestCase):
 class SetStatusWithEventConcurrencyTests(TransactionTestCase):
 
     def test_concurrent_same_expected_status_exactly_one_wins(self):
-    
+
         txn = Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=Transaction.Status.STARTED,
@@ -224,13 +224,13 @@ class SetStatusWithEventConcurrencyTests(TransactionTestCase):
             for f in as_completed(futures):
                 results.append(f.result())
 
-        
+
         self.assertEqual(
             errors, [],
             f"Unexpected exceptions in threads: {errors}",
         )
 
-    
+
         self.assertEqual(
             results.count(True),
             1,
@@ -243,7 +243,7 @@ class SetStatusWithEventConcurrencyTests(TransactionTestCase):
             f"Expected exactly 1 False but got results={results}.",
         )
 
-    
+
         events = list(SagaEvent.objects.filter(transaction_id=txn.pk).order_by("seq"))
         self.assertEqual(
             len(events),
@@ -255,7 +255,7 @@ class SetStatusWithEventConcurrencyTests(TransactionTestCase):
         self.assertEqual(events[0].from_status, Transaction.Status.STARTED)
         self.assertEqual(events[0].to_status, Transaction.Status.INVENTORY_RESERVED)
 
-    
+
         txn.refresh_from_db()
         self.assertEqual(txn.status, Transaction.Status.INVENTORY_RESERVED)
 

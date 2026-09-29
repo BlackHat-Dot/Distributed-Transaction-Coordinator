@@ -42,7 +42,7 @@ class CleanupA8Tests(TestCase):
             mock_http_post.side_effect = side_effect
 
             # payment_data is a decline or non-dict, but payment_status_code is 200
-            resp = _compensate(
+            _compensate(
                 txn.transaction_id,
                 fail_compensation=False,
                 payment_data={"status": "DECLINED"},
@@ -64,16 +64,29 @@ class CleanupA8Tests(TestCase):
         )
         raw_error_text = "Connection refused to http://internal-inventory:8000/seats/confirm/ [SECRET_SOCKET_FD_99]"
 
+        # 1. Transport error (ConnectionError): per H2, do NOT compensate; return 503 and do not leak
         with patch("coordinator.views._confirm_inventory", return_value=(None, requests.exceptions.ConnectionError(raw_error_text))), \
              patch("coordinator.views._compensate") as mock_compensate:
-            mock_compensate.return_value = MagicMock(status_code=200)
+            resp = _finalize_payment_outcome(
+                txn.transaction_id,
+                fail_compensation=False,
+                payment_data={"status": "CHARGED"},
+            )
+            self.assertFalse(mock_compensate.called, "Must not compensate on transport error (H2)")
+            self.assertEqual(resp.status_code, 503)
+            self.assertNotIn(raw_error_text, str(resp.data), "Raw exception details leaked into 503 response!")
 
+        # 2. Definitive inventory answer (409): route to compensation and do not leak
+        mock_409 = MagicMock(status_code=409)
+        mock_409.json.return_value = {"error": "hold expired"}
+        with patch("coordinator.views._confirm_inventory", return_value=(mock_409, None)), \
+             patch("coordinator.views._compensate") as mock_compensate:
+            mock_compensate.return_value = MagicMock(status_code=200)
             _finalize_payment_outcome(
                 txn.transaction_id,
                 fail_compensation=False,
                 payment_data={"status": "CHARGED"},
             )
-
             self.assertTrue(mock_compensate.called)
             decline_payload = mock_compensate.call_args.args[2]
             inv_confirm = decline_payload.get("inventory_confirm")
@@ -98,12 +111,21 @@ class CleanupA8Tests(TestCase):
         mock_release.content = b'{"error": "Reservation already released"}'
         mock_release.json.return_value = {"error": "Reservation already released"}
 
+        def mock_post(url, *args, **kwargs):
+            if "void" in url:
+                mock_v = MagicMock()
+                mock_v.status_code = 200
+                mock_v.content = b'{"status": "VOIDED"}'
+                mock_v.json.return_value = {"status": "VOIDED"}
+                return mock_v
+            return mock_release
+
         outcome = execute_compensation_sweep(
             transaction_id=txn.transaction_id,
             actor=SagaEvent.ACTOR_RETRY,
             original_status=Transaction.Status.COMPENSATION_FAILED,
             get_func=lambda *args, **kwargs: mock_check,
-            post_func=lambda *args, **kwargs: mock_release,
+            post_func=mock_post,
         )
 
         self.assertTrue(outcome["success"], f"Outcome was expected to succeed but failed: {outcome}")

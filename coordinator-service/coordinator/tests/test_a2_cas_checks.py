@@ -2,9 +2,8 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
-from rest_framework.test import APIClient
 
-from coordinator.models import Transaction, SagaEvent
+from coordinator.models import Transaction
 from coordinator.views import _compensate, _finalize_payment_outcome
 
 
@@ -42,7 +41,7 @@ class CasChecksA2Tests(TestCase):
     def test_finalize_payment_outcome_lost_cas_returns_409(self):
         """F-42: If _finalize_payment_outcome loses CAS claim to COMPLETED, it must return 409 instead of 200."""
         # Transaction is already moved to COMPENSATION_FAILED
-        txn = Transaction.objects.create(
+        _txn = Transaction.objects.create(
             transaction_id=self.tx_id,
             status=Transaction.Status.COMPENSATION_FAILED,
             seat_ids=[1],

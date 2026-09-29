@@ -9,9 +9,17 @@ PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rst
 
 PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
 PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
+PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
 INVENTORY_RELEASE_URL = f"{INVENTORY_BASE_URL}/seats/release/"
-REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "5"))
+INVENTORY_CONFIRM_URL = f"{INVENTORY_BASE_URL}/seats/confirm/"
+REQUEST_CONNECT_TIMEOUT = float(os.getenv("REQUEST_CONNECT_TIMEOUT", "2.0"))
+REQUEST_READ_TIMEOUT = float(os.getenv("REQUEST_READ_TIMEOUT", os.getenv("REQUEST_TIMEOUT", "5.0")))
+REQUEST_TIMEOUT = (REQUEST_CONNECT_TIMEOUT, REQUEST_READ_TIMEOUT)
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
+
+# Single source of truth from Transaction model
+TERMINAL_STATUSES = Transaction.TERMINAL_STATUSES
+RECOVERABLE_STATUSES = Transaction.RECOVERABLE_STATUSES
 
 
 def execute_compensation_sweep(
@@ -41,6 +49,7 @@ def execute_compensation_sweep(
     headers = {
         "X-Correlation-ID": str(correlation_id or transaction_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+        "X-Idempotency-Key": str(transaction_id),
     }
 
     txn = Transaction.objects.filter(transaction_id=transaction_id).first()
@@ -49,6 +58,7 @@ def execute_compensation_sweep(
     # 1. Payment Check in EVERY status
     payment_check_failed = False
     payment_status = None
+    payment_voided = False
     try:
         p_resp = get_http(
             PAYMENT_CHECK_URL,
@@ -61,6 +71,7 @@ def execute_compensation_sweep(
         elif p_resp.status_code == 200:
             p_data = p_resp.json() if p_resp.content else {}
             payment_status = p_data.get("status")
+            payment_voided = bool(p_data.get("voided", False))
         else:
             payment_check_failed = True
     except (requests.exceptions.RequestException, Exception):
@@ -101,10 +112,115 @@ def execute_compensation_sweep(
     refund_ok = False
     refund_status_code = None
     refund_payload = None
+    # Sentinel: void revealed a late charge → forward-complete instead of compensating
+    void_revealed_charge = False
 
-    if payment_status in ("REFUNDED", "NOT_CHARGED"):
+    if payment_status == "REFUNDED" or (payment_status == "NOT_CHARGED" and payment_voided):
         refund_ok = True
-    elif payment_status == "CHARGED":
+    elif payment_status == "NOT_CHARGED":
+        # Fence against in-flight charge landing after release
+        void_ok = False
+        try:
+            v_resp = post_http(
+                PAYMENT_VOID_URL,
+                json={"transaction_id": str(transaction_id)},
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
+            )
+            if v_resp.status_code == 200:
+                v_data = v_resp.json() if v_resp.content else {}
+                if v_data.get("status") == "CHARGED":
+                    payment_status = "CHARGED"  # Late charge landed; route to confirm below
+                    void_revealed_charge = True
+                else:
+                    void_ok = True
+        except (requests.exceptions.RequestException, Exception):
+            void_ok = False
+
+        if void_ok:
+            refund_ok = True
+        elif payment_status != "CHARGED":
+            # Void failed and payment not confirmed charged -> state uncertain, abort compensation
+            revert_status = original_status or Transaction.Status.COMPENSATION_FAILED
+            _set_status_with_event(
+                transaction_id=transaction_id,
+                to_status=revert_status,
+                expected_status=expected_final_status,
+                actor=actor,
+                http_status_code=None,
+                http_payload={"error": "Payment void failed/timed out. Claim released."},
+            )
+            return {
+                "success": False,
+                "status_code": 503,
+                "status": revert_status,
+                "error": "Payment void failed; claim released for retry",
+            }
+
+    # Before refunding, re-check inventory: if payment is charged, attempt to confirm first
+    if payment_status == "CHARGED" or void_revealed_charge:
+        confirm_ok = False
+        confirm_payload = None
+        confirm_status_code = None
+        confirm_transport_error = False
+        try:
+            c_resp = post_http(
+                INVENTORY_CONFIRM_URL,
+                json={"transaction_id": str(transaction_id), "seat_ids": seat_ids},
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
+            )
+            confirm_status_code = c_resp.status_code
+            if c_resp.status_code == 200:
+                confirm_ok = True
+                try:
+                    confirm_payload = c_resp.json() if c_resp.content else None
+                except Exception:
+                    pass
+        except (requests.exceptions.RequestException, Exception):
+            confirm_transport_error = True
+            confirm_ok = False
+
+        if confirm_ok:
+            _set_status_with_event(
+                transaction_id=transaction_id,
+                to_status=Transaction.Status.COMPLETED,
+                expected_status=expected_final_status,
+                actor=actor,
+                http_status_code=200,
+                http_payload={"payment": {"status": "CHARGED"}, "inventory": confirm_payload},
+            )
+            return {
+                "success": True,
+                "status_code": 200,
+                "status": Transaction.Status.COMPLETED,
+                "forward_completed": True,
+                "compensation_response": confirm_payload,
+                "refund_response": None,
+            }
+
+        # Transport error or 5xx server error: DO NOT refund or release! Revert claim so next sweep retries.
+        if confirm_transport_error or (confirm_status_code and confirm_status_code >= 500):
+            revert_status = original_status or Transaction.Status.COMPENSATION_FAILED
+            _set_status_with_event(
+                transaction_id=transaction_id,
+                to_status=revert_status,
+                expected_status=expected_final_status,
+                actor=actor,
+                http_status_code=confirm_status_code,
+                http_payload={"error": "Inventory confirm transport error/5xx; leaving recoverable for retry."},
+            )
+            return {
+                "success": False,
+                "status_code": 503,
+                "status": revert_status,
+                "error": "Inventory confirm transport error/5xx; claim released for retry",
+            }
+
+        # Definitive 4xx error (hold expired, seats not found) -> route to refund and release seats
+        payment_status = "CHARGED"
+
+    if payment_status == "CHARGED":
         try:
             r_resp = post_http(
                 PAYMENT_REFUND_URL,
@@ -121,7 +237,7 @@ def execute_compensation_sweep(
                     pass
         except (requests.exceptions.RequestException, Exception):
             refund_ok = False
-    else:
+    elif payment_status != "NOT_CHARGED" and payment_status != "REFUNDED":
         refund_ok = False
 
     # 2. Inventory Release

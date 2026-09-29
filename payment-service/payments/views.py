@@ -1,47 +1,47 @@
-import os
-import secrets
+import logging
 import uuid
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from collections.abc import Mapping
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
+from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.db import IntegrityError, transaction
 
 from .models import Payment
+from .permissions import verify_internal_service_key, InternalServicePermission
 
-INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
+_verify_internal_service_key = verify_internal_service_key
+
+logger = logging.getLogger("payments")
 
 
-def _verify_internal_service_key(request):
-    """
-    Ensures internal payment endpoints (charge, check, refund) can only be called
-    by internal services (e.g. coordinator) presenting the shared secret.
-    Uses constant-time comparison to prevent timing side-channels (SEC-04).
-    """
-    key = request.headers.get("X-Internal-Service-Key")
-    if key is not None:
-        if not secrets.compare_digest(key, INTERNAL_SERVICE_KEY or ""):
-            return Response(
-                {"error": "Forbidden: invalid internal service key."},
-                status=403,
-            )
+def _mask_email(email):
+    if not email or "@" not in email:
         return None
-
-    if getattr(settings, "IS_TESTING", False) or getattr(settings, "DEBUG", False):
-        return None
-
-    return Response(
-        {"error": "Forbidden: missing internal service key."},
-        status=403,
-    )
+    user, domain = email.split("@", 1)
+    if len(user) <= 1:
+        masked_user = user + "***"
+    else:
+        masked_user = user[0] + "***" + user[-1]
+    return f"{masked_user}@{domain}"
 
 
 TESTING_FAILURE_AMOUNT = Decimal("9999")
 
 TWO_PLACES = Decimal("0.01")
 
-NOT_CHARGED = "NOT_CHARGED"
+
+def _get_max_amount():
+    field = Payment._meta.get_field("amount")
+    max_int_digits = field.max_digits - field.decimal_places
+    return Decimal("9" * max_int_digits + "." + "9" * field.decimal_places)
+
+
+MAX_PAYMENT_AMOUNT = _get_max_amount()
 
 
 @api_view(["GET"])
@@ -52,7 +52,7 @@ def health_check(request):
 def _validate_uuid(value):
     try:
         return uuid.UUID(str(value))
-    except (ValueError, AttributeError):
+    except (ValueError, TypeError):
         return None
 
 
@@ -72,45 +72,66 @@ def _validate_amount(raw_amount):
         return None, Response({"error": "amount is required"}, status=400)
 
     try:
-        """
-        .quantize(TWO_PLACES) Setting 2 Decimal Places
-        rounding=ROUND_HALD_UP means If the deciding digit is 5 or higher, round UP(add TWO_PLACES(0.01)) and round DOWN otherwise(remove extra part and keep upto TWO PLACES).
-        """
-        # >>> Decimal(0.1)
-        # Decimal('0.1000000000000000055511151231257827021181583404541015625') # bug
-
-        # >>> Decimal(str(0.1))
-        # Decimal('0.1')  # Clean and exact
-
-        # Example:
-        # raw_amount = 150
-        # 1. str(150)           -> "150"
-        # 2. Decimal("150")     -> Decimal('150')
-        # 3. quantize to "0.01" -> Decimal('150.00')
-
-        # TWO_PLACES adds a boundary to the raw_amount:
-        # If raw_amount = 19.933
-        #  1 9 . 9 3  |  3
-        #             ▲
-        #        Cutoff line
-        # Keep two places, and deciding digit is 3rd digit, Deciding Digit = Target Places + 1
-        # 3 < 5, so keep the '19.93'
-
-        # If raw_amount = 8.347
-        # 8 . 3 4  |  7
-        #          ▲
-        # 7 > 5, so add 0.01 to 8.34 => 8.35
-
-        # If raw_amount = 25.125
-        # 5 >= 5, so add 0.01 to 25.12 => 25.13 
-        amount = Decimal(str(raw_amount)).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
+        amount = Decimal(str(raw_amount))
     except (InvalidOperation, TypeError):
         return None, Response({"error": "amount must be a valid number"}, status=400)
+
+    if not amount.is_finite():
+        return None, Response({"error": "amount must be a finite number"}, status=400)
+
+    # F7: Reject inputs with more than 2 decimal places (do not silently round)
+    exponent = amount.as_tuple().exponent
+    if isinstance(exponent, int) and exponent < -2:
+        return None, Response({"error": "amount cannot have more than 2 decimal places"}, status=400)
 
     if amount <= 0:
         return None, Response({"error": "amount must be greater than zero"}, status=400)
 
-    return amount, None
+    # F8: Upper bound check derived dynamically from Payment model field definition
+    if amount > MAX_PAYMENT_AMOUNT:
+        return None, Response(
+            {"error": f"amount exceeds maximum allowable limit of {MAX_PAYMENT_AMOUNT}"},
+            status=400,
+        )
+
+    return amount.quantize(TWO_PLACES), None
+
+
+def _validate_user_info(data):
+    user_id = None
+    if "user_id" in data and data["user_id"] is not None:
+        raw_uid = data["user_id"]
+        uid_str = str(raw_uid).strip()
+        if uid_str != "":
+            max_uid_len = Payment._meta.get_field("user_id").max_length
+            if len(uid_str) > max_uid_len:
+                return None, None, Response(
+                    {"error": f"user_id exceeds maximum length of {max_uid_len}"},
+                    status=400,
+                )
+            user_id = uid_str
+
+    user_email = None
+    if "user_email" in data and data["user_email"] is not None:
+        raw_email = data["user_email"]
+        email_str = str(raw_email).strip()
+        if email_str != "":
+            max_email_len = Payment._meta.get_field("user_email").max_length
+            if len(email_str) > max_email_len:
+                return None, None, Response(
+                    {"error": f"user_email exceeds maximum length of {max_email_len}"},
+                    status=400,
+                )
+            try:
+                validate_email(email_str)
+            except ValidationError:
+                return None, None, Response(
+                    {"error": "user_email must be a valid email address"},
+                    status=400,
+                )
+            user_email = email_str
+
+    return user_id, user_email, None
 
 
 def _payment_response(payment, status=None):
@@ -119,7 +140,7 @@ def _payment_response(payment, status=None):
             "transaction_id": str(payment.transaction_id),
             "user_id": payment.user_id,
             "user_email": payment.user_email,
-            "amount": str(payment.amount),
+            "amount": str(payment.amount) if payment.amount is not None else None,
             "status": payment.status,
         },
         status=status,
@@ -132,6 +153,9 @@ def charge_payment(request):
     if auth_err:
         return auth_err
 
+    if not isinstance(request.data, Mapping):
+        return Response({"error": "Request body must be a valid JSON object"}, status=400)
+
     transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response
@@ -140,26 +164,34 @@ def charge_payment(request):
     if error_response:
         return error_response
 
-    user_id = request.data.get("user_id") or None
-    user_email = request.data.get("user_email") or None
+    user_id, user_email, error_response = _validate_user_info(request.data)
+    if error_response:
+        return error_response
 
-    # Payment decline flag
-    if amount == TESTING_FAILURE_AMOUNT:
-        return Response(
-            {
-                "error": "Payment declined",
-                "transaction_id": str(transaction_uuid),
-                "user_id": user_id,
-                "user_email": user_email,
-                "status": NOT_CHARGED,
-                "_testing": "Intentional failure for compensation testing",
-            },
-            status=422,
+    # Payment decline flag (F2: gated behind ENABLE_TEST_PAYMENT_FAILURE setting)
+    enable_test_failure = getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False) or getattr(settings, "IS_TESTING", False)
+    if enable_test_failure and amount == TESTING_FAILURE_AMOUNT:
+        logger.info(
+            "Payment simulated decline: transaction_id=%s amount=%s user_id=%s email=%s",
+            transaction_uuid,
+            amount,
+            user_id,
+            _mask_email(user_email),
         )
+        response_data = {
+            "error": "Payment declined",
+            "transaction_id": str(transaction_uuid),
+            "user_id": user_id,
+            "user_email": user_email,
+            "status": Payment.Status.NOT_CHARGED,
+        }
+        if getattr(settings, "IS_TESTING", False) or getattr(settings, "DEBUG", False):
+            response_data["_testing"] = "Intentional failure for compensation testing"
+        return Response(response_data, status=422)
 
     existing = Payment.objects.filter(transaction_id=transaction_uuid).first()
     if existing:
-        return _payment_response(existing)
+        return _handle_existing_charge(existing, amount, user_id, transaction_uuid)
 
     try:
         with transaction.atomic():
@@ -171,10 +203,86 @@ def charge_payment(request):
                 status=Payment.Status.CHARGED,
             )
     except IntegrityError:
-        existing = Payment.objects.get(transaction_id=transaction_uuid)
-        return _payment_response(existing)
+        # F10: Catch DoesNotExist in case integrity error was triggered by a non-PK constraint
+        try:
+            existing = Payment.objects.get(transaction_id=transaction_uuid)
+        except Payment.DoesNotExist:
+            return Response(
+                {"error": "Database integrity constraint violation"},
+                status=500,
+            )
+        return _handle_existing_charge(existing, amount, user_id, transaction_uuid)
 
+    logger.info(
+        "Payment charge succeeded: transaction_id=%s amount=%s user_id=%s email=%s",
+        transaction_uuid,
+        amount,
+        user_id,
+        _mask_email(user_email),
+    )
     return _payment_response(payment, status=201)
+
+
+def _handle_existing_charge(existing, amount, user_id, transaction_uuid):
+    # F4: Attempt to charge a VOIDED transaction => 409
+    if existing.status == Payment.Status.VOIDED:
+        logger.warning(
+            "Payment charge rejected for voided transaction: transaction_id=%s",
+            transaction_uuid,
+        )
+        return Response(
+            {
+                "error": "Transaction has been voided",
+                "code": "TRANSACTION_VOIDED",
+                "status": Payment.Status.NOT_CHARGED,
+                "transaction_id": str(transaction_uuid),
+            },
+            status=409,
+        )
+
+    # F14: Charge replay on a REFUNDED payment => 409
+    if existing.status == Payment.Status.REFUNDED:
+        logger.warning(
+            "Payment charge rejected for refunded transaction: transaction_id=%s",
+            transaction_uuid,
+        )
+        return Response(
+            {
+                "error": "Cannot charge already refunded transaction",
+                "transaction_id": str(transaction_uuid),
+                "status": Payment.Status.REFUNDED,
+            },
+            status=409,
+        )
+
+    # F3: On replay, compare normalized amount and user_id; mismatch => 409
+    # A3 contract: Must NOT contain top-level status or payment dict
+    if existing.amount != amount or (existing.user_id or None) != (user_id or None):
+        logger.error(
+            "Payment charge replay payload mismatch: transaction_id=%s existing_amount=%s new_amount=%s existing_user=%s new_user=%s",
+            transaction_uuid,
+            existing.amount,
+            amount,
+            existing.user_id,
+            user_id,
+        )
+        return Response(
+            {
+                "error": "Idempotency key re-used with conflicting payload",
+                "code": "IDEMPOTENCY_PAYLOAD_MISMATCH",
+                "transaction_id": str(transaction_uuid),
+                "existing_status": existing.status,
+            },
+            status=409,
+        )
+
+    logger.info(
+        "Payment charge replay: transaction_id=%s status=%s amount=%s",
+        transaction_uuid,
+        existing.status,
+        existing.amount,
+    )
+    return _payment_response(existing, status=200)
 
 
 @api_view(["GET"])
@@ -189,9 +297,91 @@ def payment_check(request):
 
     payment = Payment.objects.filter(transaction_id=transaction_uuid).first()
     if payment:
+        if payment.status == Payment.Status.VOIDED:
+            return Response(
+                {
+                    "transaction_id": str(transaction_uuid),
+                    "status": Payment.Status.NOT_CHARGED,
+                    "voided": True,
+                },
+                status=200,
+            )
         return _payment_response(payment, status=200)
 
-    return Response({"transaction_id": str(transaction_uuid), "status": NOT_CHARGED})
+    return Response({"transaction_id": str(transaction_uuid), "status": Payment.Status.NOT_CHARGED})
+
+
+@api_view(["POST"])
+def void_payment(request):
+    auth_err = _verify_internal_service_key(request)
+    if auth_err:
+        return auth_err
+
+    if not isinstance(request.data, Mapping):
+        return Response({"error": "Request body must be a valid JSON object"}, status=400)
+
+    transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
+    if error_response:
+        return error_response
+
+    with transaction.atomic():
+        p = Payment.objects.select_for_update().filter(transaction_id=transaction_uuid).first()
+        if p:
+            logger.info(
+                "Payment void processed for existing transaction: transaction_id=%s status=%s",
+                transaction_uuid,
+                p.status,
+            )
+            if p.status == Payment.Status.VOIDED:
+                return Response(
+                    {
+                        "transaction_id": str(transaction_uuid),
+                        "status": Payment.Status.NOT_CHARGED,
+                        "voided": True,
+                    },
+                    status=200,
+                )
+            return _payment_response(p, status=200)
+
+        try:
+            with transaction.atomic():
+                p = Payment.objects.create(
+                    transaction_id=transaction_uuid,
+                    amount=None,
+                    status=Payment.Status.VOIDED,
+                )
+                logger.info(
+                    "Payment void tombstone created: transaction_id=%s",
+                    transaction_uuid,
+                )
+        except IntegrityError:
+            p = Payment.objects.select_for_update().filter(transaction_id=transaction_uuid).first()
+            if not p:
+                return Response({"error": "Database integrity constraint violation"}, status=500)
+            logger.info(
+                "Payment void race resolved: transaction_id=%s status=%s",
+                transaction_uuid,
+                p.status,
+            )
+            if p.status == Payment.Status.VOIDED:
+                return Response(
+                    {
+                        "transaction_id": str(transaction_uuid),
+                        "status": Payment.Status.NOT_CHARGED,
+                        "voided": True,
+                    },
+                    status=200,
+                )
+            return _payment_response(p, status=200)
+
+    return Response(
+        {
+            "transaction_id": str(transaction_uuid),
+            "status": Payment.Status.NOT_CHARGED,
+            "voided": True,
+        },
+        status=200,
+    )
 
 
 @api_view(["POST"])
@@ -200,64 +390,45 @@ def refund_payment(request):
     if auth_err:
         return auth_err
 
+    if not isinstance(request.data, Mapping):
+        return Response({"error": "Request body must be a valid JSON object"}, status=400)
+
     transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response
 
-    payment = Payment.objects.filter(transaction_id=transaction_uuid).first()
-
-    if not payment:
-        return Response(
-            {
-                "error": "Payment not found",
-                "transaction_id": str(transaction_uuid),
-            },
-            status=404,
-        )
-
-    # Idempotent: multiple refunds for the same transaction return the existing refunded record
-    if payment.status == Payment.Status.REFUNDED:
-        return _payment_response(payment, status=200)
-
-    # Reject refund for transactions that were not charged
-    if payment.status != Payment.Status.CHARGED:
-        return Response(
-            {
-                "error": f"Cannot refund transaction with status {payment.status}",
-                "transaction_id": str(transaction_uuid),
-                "status": payment.status,
-            },
-            status=400,
-        )
-
+    # F20: Single lookup under select_for_update inside one atomic block
     with transaction.atomic():
-        """
-        select_for_update() — Database Row-Level Locking Definition:
+        p = Payment.objects.select_for_update().filter(transaction_id=transaction_uuid).first()
 
-        Executes a SQL `SELECT ... FOR UPDATE` query to acquire an exclusive row-level 
-        lock on the matching database records.
+        if not p:
+            logger.warning(
+                "Payment refund failed: transaction_id=%s not found",
+                transaction_uuid,
+            )
+            return Response(
+                {
+                    "error": "Payment not found",
+                    "transaction_id": str(transaction_uuid),
+                },
+                status=404,
+            )
 
-        Core Mechanics:
-        1. Transaction Boundary: Must run within an atomic block (`transaction.atomic()`).
-           The lock is held continuously until the current transaction commits or rolls back.
-
-        2. Mutex for Writers: Blocks any concurrent transaction attempting to UPDATE, 
-           DELETE, or execute another `select_for_update()` on the same rows, forcing 
-           them to queue up until the lock is released.
-
-        3. Non-Blocking for Readers: Does NOT block standard read queries (`SELECT`).
-           Under MVCC (Multi-Version Concurrency Control), standard readers continue to read 
-           the last committed snapshot immediately without waiting.
-
-        4. Primary Purpose: Guarantees serialization for Read-Modify-Write cycles to eliminate 
-           race conditions (e.g. preventing two users from reserving the same seat simultaneously).
-        """
-        p = Payment.objects.select_for_update().get(id=payment.id)
-
+        # Idempotent: multiple refunds for the same transaction return the existing refunded record
         if p.status == Payment.Status.REFUNDED:
+            logger.info(
+                "Payment refund replay: transaction_id=%s",
+                transaction_uuid,
+            )
             return _payment_response(p, status=200)
-        
+
+        # Reject refund for transactions that were not charged
         if p.status != Payment.Status.CHARGED:
+            logger.warning(
+                "Payment refund rejected for non-charged state: transaction_id=%s status=%s",
+                transaction_uuid,
+                p.status,
+            )
             return Response(
                 {
                     "error": f"Cannot refund transaction with status {p.status}",
@@ -268,6 +439,11 @@ def refund_payment(request):
             )
 
         p.status = Payment.Status.REFUNDED
-        p.save(update_fields=["status"])
-        
+        p.refunded_at = timezone.now()
+        p.save(update_fields=["status", "refunded_at", "updated_at"])
+        logger.info(
+            "Payment refund succeeded: transaction_id=%s amount=%s",
+            transaction_uuid,
+            p.amount,
+        )
         return _payment_response(p, status=200)

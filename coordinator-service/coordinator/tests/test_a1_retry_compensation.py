@@ -2,14 +2,13 @@ from datetime import timedelta
 import os
 import uuid
 from unittest.mock import MagicMock, patch
-import requests
 
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.core.management import call_command
 from rest_framework.test import APIClient
 
-from coordinator.models import Transaction, SagaEvent
+from coordinator.models import Transaction
 
 
 class RetryCompensationA1Tests(TestCase):
@@ -28,7 +27,7 @@ class RetryCompensationA1Tests(TestCase):
             "user_id": "regular_user",
             "user_email": "user@customer.com",
         }
-        txn = Transaction.objects.create(
+        _txn = Transaction.objects.create(
             transaction_id=self.tx_id,
             status=Transaction.Status.COMPENSATION_FAILED,
             seat_ids=[1],
@@ -48,7 +47,7 @@ class RetryCompensationA1Tests(TestCase):
 
     def test_retry_compensation_unallowed_status_rejected(self):
         """Transactions not in allowlist must be rejected with 400 Bad Request."""
-        txn = Transaction.objects.create(
+        _txn = Transaction.objects.create(
             transaction_id=self.tx_id,
             status=Transaction.Status.STARTED,
             seat_ids=[1],
@@ -96,7 +95,7 @@ class RetryCompensationA1Tests(TestCase):
         mock_post_obj.content = b'{}'
         mock_post_obj.json.return_value = {}
 
-        with patch("coordinator.views.requests.get", return_value=mock_check) as mock_get, \
+        with patch("coordinator.views.requests.get", return_value=mock_check), \
              patch("coordinator.views.requests.post", return_value=mock_post_obj) as mock_post:
             resp = self.client.post(self.url, format="json")
             self.assertEqual(resp.status_code, 503)

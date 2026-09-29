@@ -30,7 +30,7 @@ class SimulatedInventory:
         with self.lock:
             self.call_count += 1
             if self.released:
-    
+
                 return 200, {
                     "message": "Reservation already released",
                     "transaction_id": str(transaction_id),
@@ -46,7 +46,7 @@ class SimulatedInventory:
 class RecoveryAndRetryCompensationRaceTests(TransactionTestCase):
 
     def test_concurrent_recovery_compensate_and_retry_compensation(self):
-        
+
         txn = Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=Transaction.Status.RECOVERY_IN_PROGRESS,
@@ -114,7 +114,7 @@ class RecoveryAndRetryCompensationRaceTests(TransactionTestCase):
 
         self.assertEqual(errors, [], f"Thread exceptions: {errors}")
 
-       
+
         self.assertGreaterEqual(inventory.call_count, 1)
         self.assertEqual(
             inventory.stock, 10,
@@ -122,7 +122,7 @@ class RecoveryAndRetryCompensationRaceTests(TransactionTestCase):
             "Double-release bug detected!",
         )
 
-      
+
         txn.refresh_from_db()
         self.assertIn(
             txn.status,
@@ -160,20 +160,20 @@ class RecoveryClaimTests(TransactionTestCase):
             quantity=1,
             amount=100,
         )
-       
+
         Transaction.objects.filter(pk=txn.pk).update(updated_at=past_time)
 
         cmd = RecoveryCommand()
         threshold = timezone.now() - timedelta(minutes=5)
 
-    
+
         claimed_ids = cmd._claim(Transaction.Status.INVENTORY_RESERVED, threshold)
         self.assertEqual(claimed_ids, [txn.transaction_id])
 
         txn.refresh_from_db()
         self.assertEqual(txn.status, Transaction.Status.RECOVERY_IN_PROGRESS)
 
-    
+
         events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0].seq, 1)
@@ -219,11 +219,11 @@ class RecoveryClaimTests(TransactionTestCase):
             for f in as_completed(futures):
                 results.append(f.result())
 
-        
+
         winners = [r for r in results if txn.transaction_id in r]
         self.assertEqual(len(winners), 1, f"Expected 1 winner, got: {results}")
 
-       
+
         events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0].seq, 1)
@@ -275,12 +275,12 @@ class RecoveryClaimTests(TransactionTestCase):
         self.assertEqual(events[0].seq, 1)
         self.assertEqual(events[0].from_status, Transaction.Status.STARTED)
         self.assertEqual(events[0].to_status, Transaction.Status.COMPENSATING)
-       
+
         self.assertEqual(events[1].seq, 2)
         self.assertEqual(events[1].from_status, Transaction.Status.COMPENSATING)
         self.assertEqual(events[1].to_status, Transaction.Status.RECOVERY_IN_PROGRESS)
         self.assertEqual(events[1].actor, SagaEvent.ACTOR_RECOVERY)
-       
+
         self.assertEqual(events[2].seq, 3)
         self.assertEqual(events[2].from_status, Transaction.Status.RECOVERY_IN_PROGRESS)
         self.assertEqual(events[2].to_status, Transaction.Status.COMPENSATING)
@@ -325,12 +325,12 @@ class RecoveryClaimTests(TransactionTestCase):
 
         events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
         self.assertEqual(len(events), 3)
-       
+
         self.assertEqual(events[0].seq, 1)
         self.assertEqual(events[0].from_status, Transaction.Status.COMPENSATION_FAILED)
         self.assertEqual(events[0].to_status, Transaction.Status.RECOVERY_IN_PROGRESS)
         self.assertEqual(events[0].actor, SagaEvent.ACTOR_RECOVERY)
-       
+
         self.assertEqual(events[1].seq, 2)
         self.assertEqual(events[1].from_status, Transaction.Status.RECOVERY_IN_PROGRESS)
         self.assertEqual(events[1].to_status, Transaction.Status.COMPENSATING)

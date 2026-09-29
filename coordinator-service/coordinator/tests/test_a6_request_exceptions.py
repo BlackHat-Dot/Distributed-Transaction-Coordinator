@@ -5,7 +5,7 @@ import requests
 
 from django.test import TestCase
 
-from coordinator.models import Transaction, SagaEvent
+from coordinator.models import Transaction
 from coordinator.views import _reserve_inventory, _charge_payment, _confirm_inventory
 
 

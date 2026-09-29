@@ -1,5 +1,5 @@
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient, APIRequestFactory
 

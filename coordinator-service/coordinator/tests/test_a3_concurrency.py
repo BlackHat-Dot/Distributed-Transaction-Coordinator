@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
 
-from coordinator.models import Transaction, SagaEvent
+from coordinator.models import Transaction
 from coordinator.views import _run_saga_pipeline
 
 
@@ -44,10 +44,8 @@ class ConcurrencyA3Tests(TestCase):
             amount=100,
         )
 
-        original_set_status = None
         from coordinator import views
 
-        call_count = [0]
         real_set_status = views._set_status_with_event
 
         def mock_set_status(tid, to_status, **kwargs):

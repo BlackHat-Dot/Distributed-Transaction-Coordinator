@@ -13,7 +13,6 @@ import redis
 import resend
 from django.conf import settings
 from django.core.cache import cache
-from django.core.exceptions import ValidationError
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
@@ -27,16 +26,16 @@ def _get_redis_client():
     global _redis_last_check, _redis_client_instance
 
     # Use time.monotonic() instead of time.time() for interval/cooldown calculations.
-    # Monotonic is immune to system wall-clock shifts (e.g. NTP syncs, leap seconds, 
+    # Monotonic is immune to system wall-clock shifts (e.g. NTP syncs, leap seconds,
     # or manual clock adjustments), guaranteeing the timer never jumps backward.
     now = time.monotonic()
 
     if _redis_client_instance:
         return _redis_client_instance
-    
+
     if now - _redis_last_check < 5.0:
         return None
-    
+
     _redis_last_check = now
     broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
 
@@ -51,12 +50,12 @@ def _get_redis_client():
         # If connection is successful then redis will reply 'PONG'
         # If redis OFF then client.ping() does not return False or None instead, it raises an exception
         client.ping()
-        
+
         _redis_client_instance = client
 
         return client
 
-    except Exception:           
+    except Exception:
         _redis_client_instance = None
 
         return None
@@ -65,7 +64,7 @@ def _get_redis_client():
 def _is_dev_auth_mode():
     if is_testing:
         return False
-    
+
     return bool(getattr(settings, "DEBUG", False))
 
 # remove spaces and lower the email
@@ -74,7 +73,6 @@ def _normalize_email(email_str):
     return str(email_str).strip().lower()
 
 
-import re
 
 """
 1. '^' -> Start of string.
@@ -133,7 +131,7 @@ def validate_email(email):
     parts = email.split("@")
     if len(parts) != 2:
         return False, "Email address must contain exactly one '@' symbol."
-    
+
     local_part, domain_part = parts
 
     if not local_part or len(local_part) < 3 or len(local_part) > 64:
@@ -176,8 +174,8 @@ def _get_client_ip(request):
     X-Forwarded-For is only trusted if the immediate peer (REMOTE_ADDR)
     is in the configured TRUSTED_PROXIES set. Otherwise REMOTE_ADDR is used.
     """
-    remote_addr = request.META.get("REMOTE_ADDR", "0.0.0.0").strip()
-    
+    remote_addr = request.META.get("REMOTE_ADDR", "unknown").strip()
+
     trusted_proxies = getattr(settings, "TRUSTED_PROXIES", None)
     if trusted_proxies is None:
         raw = os.getenv("TRUSTED_PROXIES", "127.0.0.1,::1")
@@ -581,7 +579,7 @@ def send_otp(request):
                 # Hard daily block (set after limit is crossed)
                 if client.exists(daily_block_key):
                     return Response(
-                        {"error": "Daily OTP limit reached. You can request a new code tomorrow.", 
+                        {"error": "Daily OTP limit reached. You can request a new code tomorrow.",
                          "code": "DAILY_LIMIT_REACHED"},
                         status=429,
                     )
@@ -662,7 +660,7 @@ def send_otp(request):
 
     if not is_dev_mode and not is_testing:
         # Non blocking mechanism is used : Threads
-        # daemon=True: Make is as a daemon thread, If servers shutsdown , python will not freeze/hang waiting for this thread to finish, 
+        # daemon=True: Make is as a daemon thread, If servers shutsdown , python will not freeze/hang waiting for this thread to finish,
         # non-daemon block process shutdown , daemon threads exit gracefully with the process.
         # .start(): Immediately creates and starts the OS level thread
 
@@ -935,7 +933,7 @@ def heartbeat(request):
     user_info = get_user_from_request(request)
     if not user_info or not user_info.get("is_authenticated"):
         return Response({"error": "Unauthorized"}, status=401)
-    
+
     email = user_info.get("email")
     if not email:
         return Response({"error": "Missing email"}, status=400)
@@ -950,7 +948,7 @@ def heartbeat(request):
             raw_val = client.get(session_key)
             if raw_val:
                 active_sid = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else raw_val
-                
+
                 if token_sid and active_sid and active_sid != token_sid:
                     return Response({
                         "error": "Session superseded by another login.",
@@ -970,7 +968,7 @@ def heartbeat(request):
         cache.set(session_key, token_sid or cache_sid or "active", timeout=30)
     except Exception:
         pass
-                
+
     return Response({"status": "alive"}, status=200)
 
 
@@ -993,5 +991,5 @@ def logout(request):
             cache.delete(session_key)
         except Exception:
             pass
-                
+
     return Response({"status": "logged_out"}, status=200)

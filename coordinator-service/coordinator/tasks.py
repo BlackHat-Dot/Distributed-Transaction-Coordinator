@@ -83,5 +83,5 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, fail_compensati
     )
 
     logger.info("Async saga task completed for transaction_id=%s with status=%s", transaction_id, getattr(response, 'status_code', 'unknown'))
-    
+
     return "completed"

@@ -1,7 +1,6 @@
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from unittest.mock import MagicMock, patch
 
 from django.db import connection
@@ -10,7 +9,6 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from coordinator.models import Transaction, SagaEvent
-from coordinator.saga_log import _set_status_with_event
 
 
 RETRY_URL = "/transactions/{}/retry-compensation/"

@@ -52,6 +52,10 @@ fi
 
 PORT="${PORT:-8001}"
 if [ $# -eq 0 ]; then
+  if [ -z "$INTERNAL_SERVICE_KEY" ]; then
+    echo "[Payment] FATAL: INTERNAL_SERVICE_KEY environment variable is required and cannot be empty." >&2
+    exit 1
+  fi
   echo "[Payment] Starting Gunicorn on 0.0.0.0:$PORT..."
   exec gunicorn payment_service.wsgi:application --bind "0.0.0.0:$PORT" --workers 4 --threads 4 --worker-class gthread --timeout 30
 else

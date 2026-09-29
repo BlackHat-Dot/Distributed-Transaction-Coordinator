@@ -45,8 +45,8 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DEBUG: ${DEBUG:-False}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
-      SECRET_KEY: ${SECRET_KEY:-django-insecure-inventory-secret}
-      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-dtc-internal-coordinator-secret-key-2026}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY environment variable is required}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY environment variable is required}
       MAX_ACTOR_HOLDS: ${MAX_ACTOR_HOLDS:-10}
     ports:
       - "8000:8000"
@@ -76,8 +76,9 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DEBUG: ${DEBUG:-False}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
-      SECRET_KEY: ${SECRET_KEY:-django-insecure-payment-secret}
-      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-dtc-internal-coordinator-secret-key-2026}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY environment variable is required}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY environment variable is required}
+      ENABLE_TEST_PAYMENT_FAILURE: ${ENABLE_TEST_PAYMENT_FAILURE:-false}
     ports:
       - "8001:8001"
     depends_on:
@@ -108,9 +109,10 @@ services:
       PAYMENT_SERVICE_URL: ${PAYMENT_SERVICE_URL:-http://payment:8001}
       DEBUG: ${DEBUG:-False}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
-      SECRET_KEY: ${SECRET_KEY:-django-insecure-coordinator-secret}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY environment variable is required}
       REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-5}
-      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-dtc-internal-coordinator-secret-key-2026}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY environment variable is required}
+      ENABLE_TEST_PAYMENT_FAILURE: ${ENABLE_TEST_PAYMENT_FAILURE:-false}
       RECOVERY_THRESHOLD_SECONDS: ${RECOVERY_THRESHOLD_SECONDS:-60}
       RECOVERY_MIN_THRESHOLD_SECONDS: ${RECOVERY_MIN_THRESHOLD_SECONDS:-30}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
