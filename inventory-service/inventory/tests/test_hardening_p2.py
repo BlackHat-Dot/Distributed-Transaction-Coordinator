@@ -193,7 +193,7 @@ class TestC6EmailNormalization(TestCase):
             def exists(self, key):
                 return 1 if key == "dtc:session:alice@example.com" else 0
 
-        with patch("inventory.views.get_redis_client", return_value=MockRedis()):
+        with patch("inventory.services.get_redis_client", return_value=MockRedis()):
             reclaimed, released = views.reclaim_expired_holds()
 
         # In un-fixed code, checked dtc:session:ALICE@EXAMPLE.COM -> 0 -> reclaimed == 1

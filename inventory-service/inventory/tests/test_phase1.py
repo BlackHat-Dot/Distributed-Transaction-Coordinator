@@ -129,7 +129,7 @@ class Phase1ComprehensiveTests(TestCase):
 
         mock_redis.exists.side_effect = fake_exists
 
-        with patch("inventory.views.get_redis_client", return_value=mock_redis):
+        with patch("inventory.services.get_redis_client", return_value=mock_redis):
             reclaimed, released = reclaim_expired_holds()
 
         seat.refresh_from_db()

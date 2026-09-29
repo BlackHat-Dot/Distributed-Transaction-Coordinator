@@ -48,7 +48,7 @@ class Phase2PresenceAndPipelineTests(TestCase):
         mock_redis = MagicMock()
         mock_redis.pipeline.return_value.execute.return_value = [False]
 
-        with patch("inventory.views.get_redis_client", return_value=mock_redis):
+        with patch("inventory.services.get_redis_client", return_value=mock_redis):
             reclaimed, released = reclaim_expired_holds()
 
         seat.refresh_from_db()
@@ -89,7 +89,7 @@ class Phase2PresenceAndPipelineTests(TestCase):
         # Session does not exist in redis
         mock_redis.pipeline.return_value.execute.return_value = [False]
 
-        with patch("inventory.views.get_redis_client", return_value=mock_redis):
+        with patch("inventory.services.get_redis_client", return_value=mock_redis):
             reclaimed, released = reclaim_expired_holds()
 
         seat.refresh_from_db()
@@ -129,7 +129,7 @@ class Phase2PresenceAndPipelineTests(TestCase):
         mock_redis = MagicMock()
         mock_redis.pipeline.side_effect = Exception("Redis connection refused")
 
-        with patch("inventory.views.get_redis_client", return_value=mock_redis):
+        with patch("inventory.services.get_redis_client", return_value=mock_redis):
             reclaimed, released = reclaim_expired_holds()
 
         seat.refresh_from_db()

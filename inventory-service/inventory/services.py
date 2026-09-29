@@ -71,9 +71,10 @@ def get_redis_client():
 
 def _get_active_redis_client():
     import sys
+    from unittest.mock import Mock
     views_mod = sys.modules.get("inventory.views")
     if views_mod and hasattr(views_mod, "get_redis_client"):
-        if views_mod.get_redis_client is not get_redis_client:
+        if isinstance(views_mod.get_redis_client, Mock) and not isinstance(get_redis_client, Mock):
             return views_mod.get_redis_client()
     return get_redis_client()
 

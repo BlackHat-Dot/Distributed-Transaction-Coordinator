@@ -40,7 +40,7 @@ class SessionHoldClearanceTests(TestCase):
         # Active session in Redis
         mock_redis.exists.return_value = 1
 
-        with patch("inventory.views.get_redis_client", return_value=mock_redis):
+        with patch("inventory.services.get_redis_client", return_value=mock_redis):
             reclaimed, released = reclaim_expired_holds()
             self.assertEqual(reclaimed, 0)
             self.seat.refresh_from_db()
@@ -52,7 +52,7 @@ class SessionHoldClearanceTests(TestCase):
         # Session expired / user closed browser
         mock_redis.exists.return_value = 0
 
-        with patch("inventory.views.get_redis_client", return_value=mock_redis):
+        with patch("inventory.services.get_redis_client", return_value=mock_redis):
             reclaimed, released = reclaim_expired_holds()
             self.assertEqual(reclaimed, 1)
             self.assertEqual(released, 1)

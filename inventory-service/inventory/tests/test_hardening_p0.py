@@ -298,7 +298,7 @@ class TestA4PresenceCheckoutProtection(TestCase):
 
         mock_pipe.execute.side_effect = pipe_execute
 
-        with patch("inventory.views.get_redis_client", return_value=mock_redis):
+        with patch("inventory.services.get_redis_client", return_value=mock_redis):
             reclaimed, released = reclaim_expired_holds()
 
         self.assertEqual(reclaimed, 0, "Seat must not be reclaimed when checkout key exists")

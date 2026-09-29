@@ -48,7 +48,7 @@ class TestB1ReclaimRaceCondition(TestCase):
             return None
 
         # Hook get_redis_client, which runs right after Seat.objects.filter(...).values(...) snapshot
-        with patch("inventory.views.get_redis_client", side_effect=simulate_idempotent_retry_interleaving):
+        with patch("inventory.services.get_redis_client", side_effect=simulate_idempotent_retry_interleaving):
             reclaimed, released = reclaim_expired_holds()
 
         # In un-fixed code, reclaimed == 1 because held_by_transaction_id matched tid.
