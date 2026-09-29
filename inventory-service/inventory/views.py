@@ -266,7 +266,14 @@ def seat_list(request):
             Seat.objects.bulk_create(seats_to_create)
         settings._SEATS_SEEDED = True
 
-    seats = Seat.objects.all().order_by("id")
+    event_id = request.query_params.get("event_id")
+    seats = Seat.objects.all()
+    if event_id:
+        try:
+            seats = seats.filter(event_id=int(event_id))
+        except (ValueError, TypeError):
+            return Response({"error": "event_id must be an integer"}, status=400)
+    seats = seats.order_by("id")
     serializer = PublicSeatSerializer(seats, many=True, context={"request": request})
     return Response(serializer.data)
 

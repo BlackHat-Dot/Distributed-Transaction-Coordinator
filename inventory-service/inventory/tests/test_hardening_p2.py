@@ -83,3 +83,39 @@ class TestC3MaxUserHolds(TestCase):
             HTTP_X_USER_EMAIL="c3_zero@example.com",
         )
         self.assertEqual(resp.status_code, 429, f"Expected 429 when MAX_USER_HOLDS=0, got {resp.status_code}")
+
+
+class TestC4SeatListEventFilter(TestCase):
+    def test_seat_list_filters_by_event_id(self):
+        """
+        C4: seat_list with ?event_id=X must only return seats for event X.
+        """
+        client = APIClient()
+        event1 = Event.objects.create(name="C4 Event 1")
+        event2 = Event.objects.create(name="C4 Event 2")
+
+        seat1_e1 = Seat.objects.create(event=event1, row="A", seat_number="1", status=Seat.Status.AVAILABLE)
+        seat2_e1 = Seat.objects.create(event=event1, row="A", seat_number="2", status=Seat.Status.AVAILABLE)
+        seat1_e2 = Seat.objects.create(event=event2, row="B", seat_number="1", status=Seat.Status.AVAILABLE)
+        seat2_e2 = Seat.objects.create(event=event2, row="B", seat_number="2", status=Seat.Status.AVAILABLE)
+
+        resp = client.get(f"/seats/?event_id={event1.id}")
+        self.assertEqual(resp.status_code, 200)
+        seat_ids = [s["id"] for s in resp.data]
+        self.assertEqual(len(seat_ids), 2)
+        self.assertIn(seat1_e1.id, seat_ids)
+        self.assertIn(seat2_e1.id, seat_ids)
+        self.assertNotIn(seat1_e2.id, seat_ids)
+        self.assertNotIn(seat2_e2.id, seat_ids)
+
+    def test_seed_demo_seats_command(self):
+        """
+        C4: Management command seed_demo_seats populates events and demo seats.
+        """
+        from django.core.management import call_command
+        # Clear existing seats to test seeding
+        Seat.objects.all().delete()
+        Event.objects.all().delete()
+        call_command("seed_demo_seats")
+        self.assertEqual(Event.objects.count(), 1)
+        self.assertEqual(Seat.objects.count(), 30)
