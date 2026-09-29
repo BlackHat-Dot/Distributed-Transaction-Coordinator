@@ -161,6 +161,8 @@ def execute_compensation_sweep(
     if void_revealed_charge:
         confirm_ok = False
         confirm_payload = None
+        confirm_status_code = None
+        confirm_transport_error = False
         try:
             c_resp = post_http(
                 INVENTORY_CONFIRM_URL,
@@ -168,6 +170,7 @@ def execute_compensation_sweep(
                 headers=headers,
                 timeout=REQUEST_TIMEOUT,
             )
+            confirm_status_code = c_resp.status_code
             if c_resp.status_code == 200:
                 confirm_ok = True
                 try:
@@ -175,6 +178,7 @@ def execute_compensation_sweep(
                 except Exception:
                     pass
         except (requests.exceptions.RequestException, Exception):
+            confirm_transport_error = True
             confirm_ok = False
 
         if confirm_ok:
@@ -194,7 +198,27 @@ def execute_compensation_sweep(
                 "compensation_response": confirm_payload,
                 "refund_response": None,
             }
-        # Confirm failed: fall through to refund+release as best-effort compensation
+
+        # Transport error or 5xx server error: DO NOT refund or release! Revert claim so next sweep retries.
+        if confirm_transport_error or (confirm_status_code and confirm_status_code >= 500):
+            revert_status = original_status or Transaction.Status.COMPENSATION_FAILED
+            _set_status_with_event(
+                transaction_id=transaction_id,
+                to_status=revert_status,
+                expected_status=expected_final_status,
+                actor=actor,
+                http_status_code=confirm_status_code,
+                http_payload={"error": "Inventory confirm transport error/5xx; leaving recoverable for retry."},
+            )
+            return {
+                "success": False,
+                "status_code": 503,
+                "status": revert_status,
+                "error": "Inventory confirm transport error/5xx; claim released for retry",
+            }
+
+        # Definitive 4xx error (hold expired, seats not found) -> route to refund and release seats
+        payment_status = "CHARGED"
 
     if payment_status == "CHARGED":
         try:

@@ -114,17 +114,28 @@ class Command(BaseCommand):
 
     def recover_holding(self, threshold=None):
         from django.utils.dateparse import parse_datetime
+        from django.db.models import Prefetch
         now = timezone.now()
-        candidates = []
-        for txn in Transaction.objects.filter(status=Transaction.Status.HOLDING):
-            holding_event = (
-                SagaEvent.objects.filter(
-                    transaction=txn,
-                    to_status=Transaction.Status.HOLDING,
-                )
-                .order_by("-seq")
-                .first()
+        HOLD_GRACE = timedelta(seconds=30)
+        # Default hold TTL matches inventory service real hold TTL: 10 minutes
+        hold_ttl = getattr(settings, "SEAT_HOLD_DURATION", timedelta(minutes=10))
+        if isinstance(hold_ttl, (int, float)):
+            hold_ttl = timedelta(seconds=hold_ttl)
+
+        # (c) Fetch held_until with one single prefetch query across all HOLDING rows
+        holding_txns = Transaction.objects.filter(
+            status=Transaction.Status.HOLDING
+        ).prefetch_related(
+            Prefetch(
+                "events",
+                queryset=SagaEvent.objects.filter(to_status=Transaction.Status.HOLDING).order_by("-seq"),
+                to_attr="holding_events",
             )
+        )
+
+        candidates = []
+        for txn in holding_txns:
+            holding_event = txn.holding_events[0] if getattr(txn, "holding_events", None) else None
             held_until_dt = None
             if holding_event and holding_event.http_payload:
                 raw_held_until = holding_event.http_payload.get("held_until")
@@ -142,15 +153,12 @@ class Command(BaseCommand):
                         pass
 
             if held_until_dt is not None:
-                # Explicit hold expiry from inventory: only recover if now >= held_until_dt
-                if now >= held_until_dt:
+                # (b) Add 30s grace: treated as expired only at held_until + 30s
+                if now >= held_until_dt + HOLD_GRACE:
                     candidates.append(txn.transaction_id)
             else:
-                # Fallback hold TTL (default 10 minutes) from created_at
-                hold_ttl = getattr(settings, "SEAT_HOLD_DURATION", timedelta(minutes=10))
-                if isinstance(hold_ttl, (int, float)):
-                    hold_ttl = timedelta(seconds=hold_ttl)
-                if now >= txn.created_at + hold_ttl:
+                # Fallback hold TTL (10m) from created_at + 30s grace
+                if now >= txn.created_at + hold_ttl + HOLD_GRACE:
                     candidates.append(txn.transaction_id)
 
         claimed_ids = []
@@ -286,7 +294,20 @@ class Command(BaseCommand):
                     timeout=REQUEST_TIMEOUT,
                 )
             except requests.exceptions.RequestException:
-                self._leave_in_progress(transaction_id, "inventory confirm network error during recovery")
+                # Confirm transport error (Timeout/ConnectionError): leave recoverable, revert claim
+                _set_status_with_event(
+                    transaction_id=transaction_id,
+                    to_status=Transaction.Status.PAYMENT_PROCESSING,
+                    expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+                    actor=SagaEvent.ACTOR_RECOVERY,
+                    http_status_code=None,
+                    http_payload={"error": "Inventory confirm transport error during recovery; claim reverted."},
+                )
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"  -> {transaction_id}: inventory confirm network/timeout error; claim reverted to PAYMENT_PROCESSING for retry."
+                    )
+                )
                 return
 
             if confirm_resp.status_code == 200:
@@ -304,10 +325,27 @@ class Command(BaseCommand):
                     )
                 )
                 return
-            else:
+            elif confirm_resp.status_code >= 500:
+                # 5xx Server error: not definitive, do NOT compensate! Revert claim so next sweep retries.
+                _set_status_with_event(
+                    transaction_id=transaction_id,
+                    to_status=Transaction.Status.PAYMENT_PROCESSING,
+                    expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+                    actor=SagaEvent.ACTOR_RECOVERY,
+                    http_status_code=confirm_resp.status_code,
+                    http_payload=confirm_resp.json() if confirm_resp.content else None,
+                )
                 self.stdout.write(
                     self.style.WARNING(
-                        f"  -> {transaction_id}: inventory confirm failed (HTTP {confirm_resp.status_code}); routing to compensation."
+                        f"  -> {transaction_id}: inventory confirm returned 5xx ({confirm_resp.status_code}); claim reverted to PAYMENT_PROCESSING."
+                    )
+                )
+                return
+            else:
+                # Definitive 4xx error (hold expired, seats not found) -> route to compensation
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"  -> {transaction_id}: inventory confirm failed definitively (HTTP {confirm_resp.status_code}); routing to compensation."
                     )
                 )
                 self._compensate(transaction_id, payment_was_charged=True)

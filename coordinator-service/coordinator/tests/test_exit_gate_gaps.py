@@ -1552,3 +1552,260 @@ class FinalClosureGapsTest(TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(txn.status, Transaction.Status.COMPENSATED)
 
+    def test_q2_recovery_site1_void_revealed_charge_confirm_timeout_no_refund_no_release_recoverable(self):
+        """
+        Site 1 (recovery.py:161-210):
+        When void reveals a late charge and confirm raises Timeout/ConnectionError (or 5xx),
+        recovery sweep MUST NOT issue refund or release.
+        It must revert claim to a recoverable status (e.g. COMPENSATION_FAILED) for retry.
+        """
+        import uuid
+        from coordinator.recovery import execute_compensation_sweep
+
+        txn_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=txn_id,
+            status=Transaction.Status.RECOVERY_IN_PROGRESS,
+            amount=Decimal("120.00"),
+            seat_ids=[55],
+            user_id="u-rec-site1",
+        )
+        SagaEvent.objects.create(
+            transaction=txn,
+            seq=1,
+            from_status=Transaction.Status.COMPENSATION_FAILED,
+            to_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+            actor=SagaEvent.ACTOR_RECOVERY,
+        )
+
+        refund_called = [False]
+        release_called = [False]
+
+        def fake_get(url, *a, **kw):
+            # Payment check says not charged
+            return _ok_mock({"status": "NOT_CHARGED"})
+
+        def fake_post(url, *a, **kw):
+            if "void" in url:
+                # Void reveals late charge!
+                return _ok_mock({"status": "CHARGED"})
+            if "confirm" in url:
+                # Confirm times out!
+                raise requests.exceptions.Timeout("Inventory confirm timed out")
+            if "refund" in url:
+                refund_called[0] = True
+                return _ok_mock({"status": "REFUNDED"})
+            if "release" in url:
+                release_called[0] = True
+                return _ok_mock({"status": "RELEASED"})
+            return _ok_mock({})
+
+        res = execute_compensation_sweep(
+            transaction_id=txn_id,
+            actor=SagaEvent.ACTOR_RECOVERY,
+            original_status=Transaction.Status.COMPENSATION_FAILED,
+            get_func=fake_get,
+            post_func=fake_post,
+        )
+
+        txn.refresh_from_db()
+
+        self.assertFalse(refund_called[0], "Must NOT issue refund on confirm Timeout!")
+        self.assertFalse(release_called[0], "Must NOT release seats on confirm Timeout!")
+        self.assertFalse(res.get("success"), "Sweep must report non-success")
+        self.assertIn(txn.status, Transaction.RECOVERABLE_STATUSES, "Status must remain recoverable")
+        self.assertEqual(txn.status, Transaction.Status.COMPENSATION_FAILED)
+
+    def test_q2_recovery_site2_sweep_payment_charged_confirm_timeout_no_refund_no_release_recoverable(self):
+        """
+        Site 2 (recovery_stuck_transactions.py:280-315):
+        When payment is CHARGED and confirm raises Timeout/ConnectionError,
+        recovery sweep MUST NOT issue refund or release.
+        It must revert the claim to PAYMENT_PROCESSING so the next run retries.
+        """
+        import uuid
+        import requests
+        from django.core.management import call_command
+        from io import StringIO
+
+        txn_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=txn_id,
+            status=Transaction.Status.PAYMENT_PROCESSING,
+            amount=Decimal("200.00"),
+            seat_ids=[77],
+            user_id="u-rec-site2-timeout",
+        )
+        Transaction.objects.filter(transaction_id=txn_id).update(
+            updated_at=timezone.now() - timedelta(minutes=5)
+        )
+
+        refund_called = [False]
+        release_called = [False]
+
+        def fake_get(url, *a, **kw):
+            return _ok_mock({"status": "CHARGED"})
+
+        def fake_post(url, *a, **kw):
+            if "confirm" in url:
+                raise requests.exceptions.Timeout("Inventory confirm timed out")
+            if "refund" in url:
+                refund_called[0] = True
+                return _ok_mock({"status": "REFUNDED"})
+            if "release" in url:
+                release_called[0] = True
+                return _ok_mock({"status": "RELEASED"})
+            return _ok_mock({})
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=fake_get), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=fake_post), \
+             patch("coordinator.recovery.requests.post", side_effect=fake_post), \
+             patch("coordinator.recovery.requests.get", side_effect=fake_get):
+            call_command("recovery_stuck_transactions", stdout=StringIO())
+
+        txn.refresh_from_db()
+
+        self.assertFalse(refund_called[0], "Site 2: Must NOT issue refund on confirm Timeout!")
+        self.assertFalse(release_called[0], "Site 2: Must NOT release seats on confirm Timeout!")
+        self.assertIn(txn.status, Transaction.RECOVERABLE_STATUSES, "Site 2: Status must remain recoverable")
+        self.assertEqual(txn.status, Transaction.Status.PAYMENT_PROCESSING)
+
+    def test_q2_recovery_site2_sweep_payment_charged_confirm_500_no_refund_no_release_recoverable(self):
+        """
+        Site 2 (recovery_stuck_transactions.py:280-315):
+        When payment is CHARGED and confirm returns 5xx (e.g. 500),
+        recovery sweep MUST NOT issue refund or release.
+        It must revert the claim to PAYMENT_PROCESSING so the next run retries.
+        """
+        import uuid
+        from django.core.management import call_command
+        from io import StringIO
+
+        txn_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=txn_id,
+            status=Transaction.Status.PAYMENT_PROCESSING,
+            amount=Decimal("200.00"),
+            seat_ids=[88],
+            user_id="u-rec-site2-500",
+        )
+        Transaction.objects.filter(transaction_id=txn_id).update(
+            updated_at=timezone.now() - timedelta(minutes=5)
+        )
+
+        refund_called = [False]
+        release_called = [False]
+
+        def fake_get(url, *a, **kw):
+            return _ok_mock({"status": "CHARGED"})
+
+        def fake_post(url, *a, **kw):
+            if "confirm" in url:
+                return MagicMock(status_code=500, content=b'{"error": "Internal server error"}', json=lambda: {"error": "Internal server error"})
+            if "refund" in url:
+                refund_called[0] = True
+                return _ok_mock({"status": "REFUNDED"})
+            if "release" in url:
+                release_called[0] = True
+                return _ok_mock({"status": "RELEASED"})
+            return _ok_mock({})
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=fake_get), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=fake_post), \
+             patch("coordinator.recovery.requests.post", side_effect=fake_post), \
+             patch("coordinator.recovery.requests.get", side_effect=fake_get):
+            call_command("recovery_stuck_transactions", stdout=StringIO())
+
+        txn.refresh_from_db()
+
+        self.assertFalse(refund_called[0], "Site 2: Must NOT issue refund on confirm 500!")
+        self.assertFalse(release_called[0], "Site 2: Must NOT release seats on confirm 500!")
+        self.assertIn(txn.status, Transaction.RECOVERABLE_STATUSES, "Site 2: Status must remain recoverable")
+        self.assertEqual(txn.status, Transaction.Status.PAYMENT_PROCESSING)
+
+    def test_q3_recover_holding_30s_grace_untouched(self):
+        """
+        Test: A HOLDING txn with held_until 15s in the past (within the 30s grace period)
+        remains UNTOUCHED. A HOLDING txn with held_until 45s in the past (>30s grace) is swept.
+        """
+        import uuid
+        from django.core.management import call_command
+        from io import StringIO
+
+        now = timezone.now()
+        # Txn within 30s grace: expired 15s ago -> held_until + 30s is still 15s in the future
+        txn_grace_id = uuid.uuid4()
+        txn_grace = Transaction.objects.create(
+            transaction_id=txn_grace_id,
+            status=Transaction.Status.HOLDING,
+            amount=Decimal("100.00"),
+            seat_ids=[201],
+            user_id="user-grace-hold",
+        )
+        grace_held_until = (now - timedelta(seconds=15)).isoformat()
+        SagaEvent.objects.create(
+            transaction=txn_grace,
+            seq=1,
+            from_status=Transaction.Status.STARTED,
+            to_status=Transaction.Status.HOLDING,
+            actor=SagaEvent.ACTOR_REQUEST,
+            http_status_code=200,
+            http_payload={"held_until": grace_held_until},
+        )
+        Transaction.objects.filter(transaction_id=txn_grace_id).update(
+            updated_at=now - timedelta(minutes=2),
+            created_at=now - timedelta(minutes=2),
+        )
+
+        # Txn past 30s grace: expired 45s ago -> held_until + 30s is 15s in the past
+        txn_expired_id = uuid.uuid4()
+        txn_expired = Transaction.objects.create(
+            transaction_id=txn_expired_id,
+            status=Transaction.Status.HOLDING,
+            amount=Decimal("100.00"),
+            seat_ids=[202],
+            user_id="user-expired-hold-45s",
+        )
+        expired_held_until = (now - timedelta(seconds=45)).isoformat()
+        SagaEvent.objects.create(
+            transaction=txn_expired,
+            seq=1,
+            from_status=Transaction.Status.STARTED,
+            to_status=Transaction.Status.HOLDING,
+            actor=SagaEvent.ACTOR_REQUEST,
+            http_status_code=200,
+            http_payload={"held_until": expired_held_until},
+        )
+        Transaction.objects.filter(transaction_id=txn_expired_id).update(
+            updated_at=now - timedelta(minutes=2),
+            created_at=now - timedelta(minutes=11),
+        )
+
+        void_called_ids = []
+
+        def fake_get(url, *a, **kw):
+            return _ok_mock({"status": "NOT_CHARGED"} if "payment" in url else {"status": "NOT_RESERVED"})
+
+        def fake_post(url, *a, **kw):
+            json_body = kw.get("json", {})
+            tx_id_str = str(json_body.get("transaction_id", ""))
+            if "void" in url:
+                void_called_ids.append(tx_id_str)
+                return _ok_mock({"status": "VOIDED"})
+            return _ok_mock({})
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=fake_get), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=fake_post):
+            call_command("recovery_stuck_transactions", stdout=StringIO())
+
+        txn_grace.refresh_from_db()
+        txn_expired.refresh_from_db()
+
+        # Txn within 30s grace must be untouched!
+        self.assertEqual(txn_grace.status, Transaction.Status.HOLDING)
+        self.assertNotIn(str(txn_grace_id), void_called_ids)
+
+        # Txn past 30s grace must be swept!
+        self.assertEqual(txn_expired.status, Transaction.Status.TIMEOUT)
+        self.assertIn(str(txn_expired_id), void_called_ids)
+
