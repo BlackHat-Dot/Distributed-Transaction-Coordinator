@@ -915,6 +915,29 @@ class SecurityAndReliabilityHardeningTests(TestCase):
                 warnings = check_service_keys_and_admin_domain(None)
                 self.assertEqual(len(warnings), 0)
 
+    def test_h15_deduplicate_and_cap_seat_ids(self):
+        """
+        H15: _request_payload_verify rejects duplicate seat_ids and enforces max seat cap.
+        """
+        # 1. Duplicate seat_ids in one-shot / hold
+        resp = self.client.post(
+            "/transactions/",
+            data=json.dumps({"seat_ids": [1, 2, 1]}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data.get("code"), "DUPLICATE_SEATS")
+
+        # 2. Exceeding max seats per transaction
+        resp_cap = self.client.post(
+            "/transactions/",
+            data=json.dumps({"seat_ids": list(range(1, 15))}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp_cap.status_code, 400)
+        self.assertEqual(resp_cap.data.get("code"), "EXCEEDED_MAX_SEATS")
+
+
 
 
 

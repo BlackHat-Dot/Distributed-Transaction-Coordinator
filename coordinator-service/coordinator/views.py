@@ -789,6 +789,25 @@ def _request_payload_verify(request):
                 },
                 status=400,
             )
+        # If seat_ids is optionally passed to pay, validate it as well if present
+        pay_seats = request.data.get("seat_ids")
+        if pay_seats is not None:
+            if not isinstance(pay_seats, list) or any(type(s) is not int for s in pay_seats):
+                return None, None, None, Response(
+                    {"error": "seat_ids must be a list of integers.", "code": "INVALID_SEAT_IDS"},
+                    status=400,
+                )
+            if len(pay_seats) != len(set(pay_seats)):
+                return None, None, None, Response(
+                    {"error": "Duplicate seat_ids are not allowed.", "code": "DUPLICATE_SEATS"},
+                    status=400,
+                )
+            max_seats = int(os.getenv("MAX_SEATS_PER_TRANSACTION", "10"))
+            if len(pay_seats) > max_seats:
+                return None, None, None, Response(
+                    {"error": f"Cannot reserve more than {max_seats} seats in a single transaction.", "code": "EXCEEDED_MAX_SEATS"},
+                    status=400,
+                )
         return None, action, pay_tid, None
 
     # --- HOLD or one-shot path: seat_ids is mandatory ---
@@ -806,6 +825,25 @@ def _request_payload_verify(request):
             {
                 "error": "seat_ids must be a list of integers.",
                 "code": "INVALID_SEAT_IDS",
+            },
+            status=400,
+        )
+
+    if len(raw_seats) != len(set(raw_seats)):
+        return None, None, None, Response(
+            {
+                "error": "Duplicate seat_ids are not allowed.",
+                "code": "DUPLICATE_SEATS",
+            },
+            status=400,
+        )
+
+    max_seats = int(os.getenv("MAX_SEATS_PER_TRANSACTION", "10"))
+    if len(raw_seats) > max_seats:
+        return None, None, None, Response(
+            {
+                "error": f"Cannot reserve more than {max_seats} seats in a single transaction.",
+                "code": "EXCEEDED_MAX_SEATS",
             },
             status=400,
         )
