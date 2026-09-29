@@ -53,6 +53,10 @@ elif not (DEBUG or IS_TESTING) and INTERNAL_SERVICE_KEY == "dtc-internal-coordin
         "You must configure a strong, unique INTERNAL_SERVICE_KEY for production."
     )
 
+ENABLE_TEST_PAYMENT_FAILURE = os.getenv("ENABLE_TEST_PAYMENT_FAILURE", "False").lower() in ("true", "1", "t")
+if IS_TESTING:
+    ENABLE_TEST_PAYMENT_FAILURE = True
+
 
 INSTALLED_APPS = [
     'corsheaders',
@@ -65,6 +69,10 @@ INSTALLED_APPS = [
     'rest_framework',
     'payments'
 ]
+
+REST_FRAMEWORK = {
+    "EXCEPTION_HANDLER": "payments.exceptions.custom_exception_handler",
+}
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',

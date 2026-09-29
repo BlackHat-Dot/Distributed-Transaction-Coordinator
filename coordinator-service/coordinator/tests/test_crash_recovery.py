@@ -155,6 +155,11 @@ class CrashRecoveryTests(TransactionTestCase):
             raise ValueError(f"Unexpected GET url: {url}")
 
         def mock_post_recovery(url, *args, **kwargs):
+            if "void" in url:
+                mock = MagicMock()
+                mock.status_code = 200
+                mock.json.return_value = {"status": "VOIDED"}
+                return mock
             if "release" in url:
                 inventory_released[0] = True
                 mock = MagicMock()

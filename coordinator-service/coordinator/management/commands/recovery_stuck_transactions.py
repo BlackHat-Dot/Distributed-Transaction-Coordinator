@@ -14,6 +14,7 @@ PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rst
 
 PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
 PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
+PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
 INVENTORY_CHECK_URL = f"{INVENTORY_BASE_URL}/reserve/check/"
 INVENTORY_CONFIRM_URL = f"{INVENTORY_BASE_URL}/seats/confirm/"
 INVENTORY_RELEASE_URL = f"{INVENTORY_BASE_URL}/seats/release/"
@@ -249,6 +250,27 @@ class Command(BaseCommand):
                 transaction_id, f"unrecognized payment status ({payment_status!r})"
             )
             return
+
+        # Ensure payment is voided so an in-flight charge cannot land after inventory release
+        try:
+            void_resp = requests.post(
+                PAYMENT_VOID_URL,
+                json={"transaction_id": str(transaction_id)},
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
+            )
+            if void_resp.status_code == 200:
+                v_data = void_resp.json()
+                if v_data.get("status") == "CHARGED":
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f"  -> {transaction_id}: payment was charged before void; routing to refund."
+                        )
+                    )
+                    self._compensate(transaction_id, payment_was_charged=True)
+                    return
+        except requests.exceptions.RequestException:
+            pass
 
         try:
             inventory_resp = requests.get(

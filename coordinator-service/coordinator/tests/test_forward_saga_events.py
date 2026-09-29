@@ -109,6 +109,10 @@ class ForwardSagaEventTests(TransactionTestCase):
                     "status": "NOT_CHARGED",
                 }
                 return mock
+            if "void" in url:
+                mock.status_code = 200
+                mock.json.return_value = {"status": "VOIDED"}
+                return mock
             if "release" in url:
                 mock.status_code = 200
                 mock.json.return_value = {"message": "Seat released"}

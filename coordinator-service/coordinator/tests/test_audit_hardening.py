@@ -346,6 +346,83 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         self.assertEqual(data["status"], "COMPLETED")
         self.assertTrue(data["is_terminal"])
 
+    @patch("coordinator.views._http_post")
+    def test_compensate_calls_void_when_not_charged(self, mock_http_post):
+        """
+        Verify that _compensate invokes POST /payments/void/ when payment was not charged.
+        """
+        from coordinator.views import _compensate
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "NOT_CHARGED", "voided": True}
+        mock_http_post.return_value = mock_response
+
+        tx_id = uuid.uuid4()
+        Transaction.objects.create(
+            transaction_id=tx_id,
+            user_id="user_alice",
+            status=Transaction.Status.PAYMENT_PROCESSING,
+            amount=Decimal("500.00"),
+        )
+
+        _compensate(
+            transaction_id=tx_id,
+            fail_compensation=False,
+            payment_data={"status": "NOT_CHARGED"},
+            payment_status_code=422,
+        )
+
+        # Check that one of the calls was to /payments/void/
+        void_calls = [
+            call for call in mock_http_post.call_args_list
+            if "/payments/void/" in call[0][0]
+        ]
+        self.assertTrue(len(void_calls) >= 1)
+        self.assertEqual(void_calls[0][1]["json"]["transaction_id"], str(tx_id))
+
+    @patch("coordinator.views._http_post")
+    def test_compensate_flips_to_refund_if_void_returns_charged(self, mock_http_post):
+        """
+        Verify that if /payments/void/ reports the charge landed during timeout,
+        was_charged flips to True and refund is dispatched.
+        """
+        from coordinator.views import _compensate
+
+        def side_effect(url, **kwargs):
+            resp = MagicMock()
+            resp.status_code = 200
+            if "/payments/void/" in url:
+                resp.json.return_value = {"status": "CHARGED", "amount": "500.00"}
+            elif "/payments/refund/" in url:
+                resp.json.return_value = {"status": "REFUNDED", "amount": "500.00"}
+            else:
+                resp.json.return_value = {"released_count": 1}
+            return resp
+
+        mock_http_post.side_effect = side_effect
+
+        tx_id = uuid.uuid4()
+        Transaction.objects.create(
+            transaction_id=tx_id,
+            user_id="user_alice",
+            status=Transaction.Status.PAYMENT_PROCESSING,
+            amount=Decimal("500.00"),
+        )
+
+        _compensate(
+            transaction_id=tx_id,
+            fail_compensation=False,
+            payment_data={"status": "NOT_CHARGED"},
+            payment_status_code=504,
+        )
+
+        refund_calls = [
+            call for call in mock_http_post.call_args_list
+            if "/payments/refund/" in call[0][0]
+        ]
+        self.assertTrue(len(refund_calls) >= 1)
+
+
 
 
 
