@@ -725,9 +725,11 @@ def confirm_seat(request):
 
             now = timezone.now()
 
+            already_booked_seats = []
             for seat in seats:
                 # This condition checks whether this seat object is booked by this transaction id
                 if seat.status == Seat.Status.BOOKED and str(seat.held_by_transaction_id) == str(transaction_id):
+                    already_booked_seats.append(seat)
                     continue
 
                 # This condition checks whether this seat object is held by this transaction id
@@ -753,17 +755,51 @@ def confirm_seat(request):
                         status=409,
                     )
 
-            Reservation.objects.filter(
-                transaction_id=transaction_id,
-                seat_id__in=[s.id for s in seats],
-                status=Reservation.Status.RESERVED,
-            ).update(status=Reservation.Status.BOOKED)
+            expected_to_book_seats = [s for s in seats if s not in already_booked_seats]
 
-            Seat.objects.filter(id__in=[s.id for s in seats]).update(
-                status=Seat.Status.BOOKED,
-                held_until=None,
-                held_by_transaction_id=transaction_id,
-            )
+            # For seats already booked by this transaction, verify their reservations are also BOOKED
+            if already_booked_seats:
+                booked_res_count = Reservation.objects.filter(
+                    transaction_id=transaction_id,
+                    seat_id__in=[s.id for s in already_booked_seats],
+                    status=Reservation.Status.BOOKED,
+                ).count()
+                if booked_res_count != len(already_booked_seats):
+                    transaction.set_rollback(True)
+                    return Response(
+                        {
+                            "error": "Reservation state mismatch during confirmation.",
+                            "code": "RESERVATION_STATE_MISMATCH",
+                            "status": "RESERVATION_STATE_MISMATCH",
+                            "transaction_id": str(transaction_id),
+                        },
+                        status=409,
+                    )
+
+            if expected_to_book_seats:
+                updated_count = Reservation.objects.filter(
+                    transaction_id=transaction_id,
+                    seat_id__in=[s.id for s in expected_to_book_seats],
+                    status=Reservation.Status.RESERVED,
+                ).update(status=Reservation.Status.BOOKED)
+
+                if updated_count != len(expected_to_book_seats):
+                    transaction.set_rollback(True)
+                    return Response(
+                        {
+                            "error": "Reservation state mismatch during confirmation.",
+                            "code": "RESERVATION_STATE_MISMATCH",
+                            "status": "RESERVATION_STATE_MISMATCH",
+                            "transaction_id": str(transaction_id),
+                        },
+                        status=409,
+                    )
+
+                Seat.objects.filter(id__in=[s.id for s in expected_to_book_seats]).update(
+                    status=Seat.Status.BOOKED,
+                    held_until=None,
+                    held_by_transaction_id=transaction_id,
+                )
 
             return Response({"message": "Seats confirmed", "transaction_id": str(transaction_id)}, status=200)
     except DatabaseError as e:

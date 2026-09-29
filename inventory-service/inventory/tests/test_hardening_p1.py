@@ -85,3 +85,79 @@ class TestB2HoldDurationHelper(TestCase):
             remaining_seconds, 305, f"Expected hold duration <= 305s (5m), got {remaining_seconds}s"
         )
         self.assertGreaterEqual(remaining_seconds, 290)
+
+
+class TestB3ConfirmReservationDesync(TestCase):
+    def test_b3_confirm_aborts_and_rolls_back_if_reservation_missing(self):
+        """
+        B3: Fabricate scenario where 2 seats are held for a transaction,
+        but only 1 Reservation row exists (the other was deleted/missing).
+        Confirm must fail with 409 RESERVATION_STATE_MISMATCH and roll back both seats.
+        """
+        from rest_framework.test import APIClient
+        from django.conf import settings
+        client = APIClient()
+        event = Event.objects.create(name="B3 Event")
+        now = timezone.now()
+        tid = uuid.uuid4()
+        seat1 = Seat.objects.create(
+            event=event,
+            row="C",
+            seat_number="1",
+            status=Seat.Status.HELD,
+            held_until=now + timedelta(minutes=10),
+            held_by_transaction_id=tid,
+        )
+        seat2 = Seat.objects.create(
+            event=event,
+            row="C",
+            seat_number="2",
+            status=Seat.Status.HELD,
+            held_until=now + timedelta(minutes=10),
+            held_by_transaction_id=tid,
+        )
+        # Only create Reservation for seat1; seat2 reservation is missing
+        Reservation.objects.create(
+            seat=seat1,
+            transaction_id=tid,
+            status=Reservation.Status.RESERVED,
+        )
+
+        resp = client.post(
+            "/seats/confirm/",
+            {"seat_ids": [seat1.id, seat2.id], "transaction_id": str(tid)},
+            format="json",
+            HTTP_X_INTERNAL_SERVICE_KEY=getattr(settings, "INTERNAL_SERVICE_KEY", "dtc-internal-coordinator-secret-key-2026"),
+        )
+
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.data.get("code"), "RESERVATION_STATE_MISMATCH")
+
+        # Verify rollback: neither seat should be BOOKED
+        seat1.refresh_from_db()
+        seat2.refresh_from_db()
+        self.assertEqual(seat1.status, Seat.Status.HELD)
+        self.assertEqual(seat2.status, Seat.Status.HELD)
+
+    def test_b3_confirm_idempotent_retry_when_both_booked(self):
+        """
+        Idempotent retry with both seats already BOOKED and reservations BOOKED succeeds with 200.
+        """
+        from rest_framework.test import APIClient
+        from django.conf import settings
+        client = APIClient()
+        event = Event.objects.create(name="B3 Idempotent Event")
+        tid = uuid.uuid4()
+        seat1 = Seat.objects.create(
+            event=event, row="C", seat_number="3", status=Seat.Status.BOOKED, held_by_transaction_id=tid
+        )
+        Reservation.objects.create(
+            seat=seat1, transaction_id=tid, status=Reservation.Status.BOOKED
+        )
+        resp = client.post(
+            "/seats/confirm/",
+            {"seat_ids": [seat1.id], "transaction_id": str(tid)},
+            format="json",
+            HTTP_X_INTERNAL_SERVICE_KEY=getattr(settings, "INTERNAL_SERVICE_KEY", "dtc-internal-coordinator-secret-key-2026"),
+        )
+        self.assertEqual(resp.status_code, 200)
