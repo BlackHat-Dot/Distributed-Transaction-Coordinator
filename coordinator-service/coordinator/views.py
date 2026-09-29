@@ -1673,6 +1673,15 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
     if payment_data.get("status") == "CHARGED":
         confirm_resp, confirm_err = _confirm_inventory(transaction_id, seat_ids=seat_ids, correlation_id=correlation_id)
 
+        # H2: Retry confirm on transport timeout or 5xx before giving up / compensating
+        if (confirm_resp is None and confirm_err) or (confirm_resp and confirm_resp.status_code in (502, 503, 504)):
+            logger.warning(
+                "Inventory confirm timed out or returned gateway error for tx %s (%s); retrying confirm...",
+                transaction_id,
+                confirm_err or getattr(confirm_resp, "status_code", None),
+            )
+            confirm_resp, confirm_err = _confirm_inventory(transaction_id, seat_ids=seat_ids, correlation_id=correlation_id)
+
         if confirm_resp and confirm_resp.status_code == 200:
             confirm_json = None
             try:

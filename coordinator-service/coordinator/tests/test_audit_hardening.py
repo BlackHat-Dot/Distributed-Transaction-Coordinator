@@ -468,6 +468,49 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         )
         self.assertTrue(outcome["success"])
 
+    def test_h2_confirm_timeout_retried_before_compensating(self):
+        """
+        H2: When payment is CHARGED and _confirm_inventory times out,
+        coordinator must retry _confirm_inventory before giving up / compensating.
+        """
+        from coordinator.views import _finalize_payment_outcome
+        import requests
+
+        tx_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=tx_id,
+            user_id="user_alice",
+            status=Transaction.Status.PAYMENT_PROCESSING,
+            amount=Decimal("100.00"),
+            seat_ids=[1],
+        )
+
+        mock_confirm_ok = MagicMock()
+        mock_confirm_ok.status_code = 200
+        mock_confirm_ok.json.return_value = {"message": "Seats confirmed"}
+
+        confirm_attempts = []
+        def mock_confirm(transaction_id, seat_ids=None, correlation_id=None):
+            confirm_attempts.append(len(confirm_attempts) + 1)
+            if len(confirm_attempts) == 1:
+                return None, requests.exceptions.Timeout("Read timeout on confirm")
+            return mock_confirm_ok, None
+
+        with patch("coordinator.views._confirm_inventory", side_effect=mock_confirm), \
+             patch("coordinator.views._compensate") as mock_compensate:
+            resp = _finalize_payment_outcome(
+                tx_id,
+                fail_compensation=False,
+                payment_data={"status": "CHARGED"},
+            )
+
+            self.assertEqual(len(confirm_attempts), 2, "Expected _confirm_inventory to be retried on timeout")
+            self.assertFalse(mock_compensate.called, "_compensate should not be called when retry succeeds")
+            self.assertEqual(resp.status_code, 200)
+            txn.refresh_from_db()
+            self.assertEqual(txn.status, Transaction.Status.COMPLETED)
+
+
 
 
 
