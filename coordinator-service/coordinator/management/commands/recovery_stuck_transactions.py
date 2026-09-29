@@ -56,6 +56,7 @@ class Command(BaseCommand):
 
         self.recover_payment_processing(threshold)
         self.recover_reserved(threshold)
+        self.recover_holding(threshold)
         self.recover_started(threshold)
         self.recover_timeouts(threshold)
         self.recover_compensating(threshold)
@@ -108,6 +109,14 @@ class Command(BaseCommand):
         for transaction_id in self._claim(Transaction.Status.INVENTORY_RESERVED, threshold):
             self.stdout.write(
                 f"Recovering {transaction_id} claimed from INVENTORY_RESERVED..."
+            )
+            self._resolve_transaction(transaction_id)
+
+    def recover_holding(self, threshold):
+
+        for transaction_id in self._claim(Transaction.Status.HOLDING, threshold):
+            self.stdout.write(
+                f"Recovering {transaction_id} claimed from HOLDING..."
             )
             self._resolve_transaction(transaction_id)
 

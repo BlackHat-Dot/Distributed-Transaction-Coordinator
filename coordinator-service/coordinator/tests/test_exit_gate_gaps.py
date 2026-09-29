@@ -1016,3 +1016,367 @@ class Q5CoordinatorChangeMdChecklistTest(TestCase):
         critical_lines = [entry for entry in log_ctx.output if "CRITICAL" in entry]
         self.assertTrue(any("Idempotency conflict" in entry for entry in critical_lines),
                         f"Expected critical log for IDEMPOTENCY_PAYLOAD_MISMATCH, got: {log_ctx.output}")
+
+
+# ── Final Closure Gaps: Q1, Q2, Q3, Q4 ─────────────────────────────────────────
+
+class FinalClosureGapsTest(TestCase):
+    """
+    Q1: Inline _charge_payment timeout -> payment check not-charged/404 -> void fails -> abort release (503)
+    Q2: recover_timeouts: PAYMENT_TIMEOUT / PAYMENT_CONNECTION_ERROR with CHARGED -> confirm -> COMPLETED.
+        recover_timeouts: INVENTORY_TIMEOUT / INVENTORY_CONNECTION_ERROR with RESERVED -> release -> COMPENSATED.
+    Q3: E2E: Confirm times out twice -> 503 (stays PAYMENT_PROCESSING) -> sweep with CHARGED -> COMPLETED (no refund).
+    Q4: Sweep test for expired HOLDING -> TIMEOUT.
+    """
+
+    def test_q1_inline_charge_timeout_check_not_charged_void_fails_aborts_release(self):
+        """
+        Q1: When charge times out and GET /payments/check/ returns NOT_CHARGED,
+        if POST /payments/void/ fails or times out, coordinator MUST NOT release inventory.
+        It must abort inline compensation and return 503 so the recovery sweep handles it.
+        """
+        import uuid
+        import requests as req_mod
+        from coordinator.views import _charge_payment
+
+        txn_id = uuid.uuid4()
+        Transaction.objects.create(
+            transaction_id=txn_id,
+            status=Transaction.Status.PAYMENT_PROCESSING,
+            amount=Decimal("100.00"),
+            seat_ids=[1],
+            user_id="u1",
+        )
+        SagaEvent.objects.create(
+            transaction=Transaction.objects.get(transaction_id=txn_id),
+            seq=1,
+            from_status=Transaction.Status.STARTED,
+            to_status=Transaction.Status.PAYMENT_PROCESSING,
+            actor=SagaEvent.ACTOR_REQUEST,
+        )
+
+        release_called = [False]
+
+        def fake_post(url, *a, **kw):
+            if "charge" in url:
+                raise req_mod.exceptions.Timeout("charge timed out")
+            if "void" in url:
+                # Void call fails / times out
+                raise req_mod.exceptions.Timeout("void timed out")
+            if "release" in url:
+                release_called[0] = True
+                return _ok_mock({})
+            return _ok_mock({})
+
+        def fake_get(url, *a, **kw):
+            # Check returns NOT_CHARGED
+            return _ok_mock({"status": "NOT_CHARGED"})
+
+        with patch("coordinator.views.requests.post", side_effect=fake_post), \
+             patch("coordinator.views.requests.get", side_effect=fake_get):
+            resp = _charge_payment(txn_id, Decimal("100.00"), False)
+
+        self.assertEqual(resp.status_code, 503)
+        self.assertFalse(release_called[0], "Inventory MUST NOT be released when void fence fails!")
+        txn = Transaction.objects.get(transaction_id=txn_id)
+        self.assertIn(txn.status, (Transaction.Status.COMPENSATING, Transaction.Status.PAYMENT_TIMEOUT))
+
+    def test_q2_recover_timeouts_payment_timeout_charged_confirms_completed(self):
+        """
+        Q2: recover_timeouts for PAYMENT_TIMEOUT: if check says CHARGED,
+        coordinator confirms inventory and rolls forward to COMPLETED.
+        """
+        import uuid
+        from django.core.management import call_command
+        from io import StringIO
+
+        txn_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=txn_id,
+            status=Transaction.Status.PAYMENT_TIMEOUT,
+            amount=Decimal("100.00"),
+            seat_ids=[1],
+            user_id="u1",
+        )
+        Transaction.objects.filter(transaction_id=txn_id).update(
+            updated_at=timezone.now() - timedelta(minutes=10)
+        )
+
+        confirm_called = [False]
+        refund_called = [False]
+
+        def fake_get(url, *a, **kw):
+            return _ok_mock({"status": "CHARGED"})
+
+        def fake_post(url, *a, **kw):
+            if "confirm" in url:
+                confirm_called[0] = True
+                return _ok_mock({"message": "confirmed"})
+            if "refund" in url:
+                refund_called[0] = True
+                return _ok_mock({})
+            return _ok_mock({})
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=fake_get), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=fake_post):
+            call_command("recovery_stuck_transactions", stdout=StringIO())
+
+        txn.refresh_from_db()
+        self.assertTrue(confirm_called[0], "Inventory confirm must be called when payment was charged")
+        self.assertFalse(refund_called[0], "Refund must not be called when forward completing")
+        self.assertEqual(txn.status, Transaction.Status.COMPLETED)
+
+    def test_q2_recover_timeouts_payment_connection_error_charged_confirms_completed(self):
+        """
+        Q2: recover_timeouts for PAYMENT_CONNECTION_ERROR: if check says CHARGED,
+        coordinator confirms inventory and rolls forward to COMPLETED.
+        """
+        import uuid
+        from django.core.management import call_command
+        from io import StringIO
+
+        txn_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=txn_id,
+            status=Transaction.Status.PAYMENT_CONNECTION_ERROR,
+            amount=Decimal("100.00"),
+            seat_ids=[1],
+            user_id="u1",
+        )
+        Transaction.objects.filter(transaction_id=txn_id).update(
+            updated_at=timezone.now() - timedelta(minutes=10)
+        )
+
+        confirm_called = [False]
+
+        def fake_get(url, *a, **kw):
+            return _ok_mock({"status": "CHARGED"})
+
+        def fake_post(url, *a, **kw):
+            if "confirm" in url:
+                confirm_called[0] = True
+                return _ok_mock({"message": "confirmed"})
+            return _ok_mock({})
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=fake_get), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=fake_post):
+            call_command("recovery_stuck_transactions", stdout=StringIO())
+
+        txn.refresh_from_db()
+        self.assertTrue(confirm_called[0])
+        self.assertEqual(txn.status, Transaction.Status.COMPLETED)
+
+    def test_q2_recover_timeouts_inventory_timeout_reserved_compensates_release(self):
+        """
+        Q2: recover_timeouts for INVENTORY_TIMEOUT: if inventory check says INVENTORY_RESERVED,
+        coordinator must call _compensate to release held seats (no hold leak).
+        """
+        import uuid
+        from django.core.management import call_command
+        from io import StringIO
+
+        txn_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=txn_id,
+            status=Transaction.Status.INVENTORY_TIMEOUT,
+            amount=Decimal("100.00"),
+            seat_ids=[1],
+            user_id="u1",
+        )
+        Transaction.objects.filter(transaction_id=txn_id).update(
+            updated_at=timezone.now() - timedelta(minutes=10)
+        )
+
+        release_called = [False]
+
+        def fake_get(url, *a, **kw):
+            if "payment" in url:
+                return _ok_mock({"status": "NOT_CHARGED"})
+            return _ok_mock({"status": "INVENTORY_RESERVED"})
+
+        def fake_post(url, *a, **kw):
+            if "void" in url:
+                return _ok_mock({"status": "VOIDED"})
+            if "release" in url:
+                release_called[0] = True
+                return _ok_mock({"message": "released"})
+            return _ok_mock({})
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=fake_get), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=fake_post), \
+             patch("coordinator.recovery.requests.get", side_effect=fake_get), \
+             patch("coordinator.recovery.requests.post", side_effect=fake_post):
+            call_command("recovery_stuck_transactions", stdout=StringIO())
+
+        txn.refresh_from_db()
+        self.assertTrue(release_called[0], "Inventory release must be called to prevent seat hold leak")
+        self.assertEqual(txn.status, Transaction.Status.COMPENSATED)
+
+    def test_q2_recover_timeouts_inventory_connection_error_reserved_compensates_release(self):
+        """
+        Q2: recover_timeouts for INVENTORY_CONNECTION_ERROR: if inventory check says INVENTORY_RESERVED,
+        coordinator must call _compensate to release held seats.
+        """
+        import uuid
+        from django.core.management import call_command
+        from io import StringIO
+
+        txn_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=txn_id,
+            status=Transaction.Status.INVENTORY_CONNECTION_ERROR,
+            amount=Decimal("100.00"),
+            seat_ids=[1],
+            user_id="u1",
+        )
+        Transaction.objects.filter(transaction_id=txn_id).update(
+            updated_at=timezone.now() - timedelta(minutes=10)
+        )
+
+        release_called = [False]
+
+        def fake_get(url, *a, **kw):
+            if "payment" in url:
+                return _ok_mock({"status": "NOT_CHARGED"})
+            return _ok_mock({"status": "INVENTORY_RESERVED"})
+
+        def fake_post(url, *a, **kw):
+            if "void" in url:
+                return _ok_mock({"status": "VOIDED"})
+            if "release" in url:
+                release_called[0] = True
+                return _ok_mock({"message": "released"})
+            return _ok_mock({})
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=fake_get), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=fake_post), \
+             patch("coordinator.recovery.requests.get", side_effect=fake_get), \
+             patch("coordinator.recovery.requests.post", side_effect=fake_post):
+            call_command("recovery_stuck_transactions", stdout=StringIO())
+
+        txn.refresh_from_db()
+        self.assertTrue(release_called[0], "Inventory release must be called to prevent seat hold leak")
+        self.assertEqual(txn.status, Transaction.Status.COMPENSATED)
+
+    def test_q3_e2e_confirm_timeout_twice_503_sweep_charged_confirms_completed_no_refund(self):
+        """
+        Q3 E2E test:
+        1. Confirm times out twice -> returns 503, status remains PAYMENT_PROCESSING.
+        2. Run recovery sweep: payment is CHARGED and confirm succeeds.
+        3. Transaction moves to COMPLETED with NO refund called.
+        """
+        import uuid
+        import requests as req_mod
+        from django.core.management import call_command
+        from io import StringIO
+        from coordinator.views import _finalize_payment_outcome
+
+        txn_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=txn_id,
+            status=Transaction.Status.PAYMENT_PROCESSING,
+            amount=Decimal("100.00"),
+            seat_ids=[1],
+            user_id="u-e2e",
+        )
+        SagaEvent.objects.create(
+            transaction=txn,
+            seq=1,
+            from_status=Transaction.Status.STARTED,
+            to_status=Transaction.Status.PAYMENT_PROCESSING,
+            actor=SagaEvent.ACTOR_REQUEST,
+        )
+
+        # Step 1: confirm times out twice on inline path
+        def fake_confirm_post(url, *a, **kw):
+            if "confirm" in url:
+                raise req_mod.exceptions.Timeout("confirm timed out")
+            return _ok_mock({})
+
+        with patch("coordinator.views.requests.post", side_effect=fake_confirm_post):
+            resp = _finalize_payment_outcome(
+                txn_id, False,
+                {"status": "CHARGED"},
+                payment_status_code=201,
+                seat_ids=[1],
+            )
+
+        self.assertEqual(resp.status_code, 503)
+        txn.refresh_from_db()
+        self.assertEqual(txn.status, Transaction.Status.PAYMENT_PROCESSING)
+
+        # Step 2: Aging transaction and running sweep
+        Transaction.objects.filter(transaction_id=txn_id).update(
+            updated_at=timezone.now() - timedelta(minutes=10)
+        )
+
+        confirm_called = [False]
+        refund_called = [False]
+
+        def sweep_get(url, *a, **kw):
+            # Payment check says CHARGED
+            return _ok_mock({"status": "CHARGED"})
+
+        def sweep_post(url, *a, **kw):
+            if "confirm" in url:
+                confirm_called[0] = True
+                return _ok_mock({"message": "Seats confirmed"})
+            if "refund" in url:
+                refund_called[0] = True
+                return _ok_mock({})
+            return _ok_mock({})
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=sweep_get), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=sweep_post):
+            call_command("recovery_stuck_transactions", stdout=StringIO())
+
+        # Step 3: Verify completed without refund
+        txn.refresh_from_db()
+        self.assertTrue(confirm_called[0], "Recovery sweep must retry confirm")
+        self.assertFalse(refund_called[0], "Refund must NOT be called")
+        self.assertEqual(txn.status, Transaction.Status.COMPLETED)
+
+    def test_q4_sweep_holding_expired_swept_to_terminal_timeout(self):
+        """
+        Q4: Sweep test for HOLDING expired -> terminal TIMEOUT.
+        When user abandons transaction in HOLDING, recovery sweeper claims it,
+        checks payment (NOT_CHARGED) and inventory (NOT_RESERVED / expired),
+        voids payment fence, and updates status to TIMEOUT.
+        """
+        import uuid
+        from django.core.management import call_command
+        from io import StringIO
+
+        txn_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=txn_id,
+            status=Transaction.Status.HOLDING,
+            amount=Decimal("100.00"),
+            seat_ids=[1],
+            user_id="u-hold-abandon",
+        )
+        Transaction.objects.filter(transaction_id=txn_id).update(
+            updated_at=timezone.now() - timedelta(minutes=10)
+        )
+
+        void_called = [False]
+
+        def fake_get(url, *a, **kw):
+            if "payment" in url:
+                return _ok_mock({"status": "NOT_CHARGED"})
+            return _ok_mock({"status": "NOT_RESERVED"})
+
+        def fake_post(url, *a, **kw):
+            if "void" in url:
+                void_called[0] = True
+                return _ok_mock({"status": "VOIDED"})
+            return _ok_mock({})
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=fake_get), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=fake_post):
+            call_command("recovery_stuck_transactions", stdout=StringIO())
+
+        txn.refresh_from_db()
+        self.assertTrue(void_called[0], "Void fence must be called before setting TIMEOUT")
+        self.assertEqual(txn.status, Transaction.Status.TIMEOUT)
+

@@ -2009,7 +2009,8 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             was_charged = True
 
     if not was_charged:
-        # Priority 2: Void payment in-flight before compensating inventory
+        # Priority 2: Void payment in-flight before compensating inventory (fence)
+        void_ok = False
         try:
             void_url = PAYMENT_VOID_URL
             void_resp = _http_post(
@@ -2022,8 +2023,25 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
                 v_data = _parse_json_response(void_resp)
                 if v_data and v_data.get("status") == "CHARGED":
                     was_charged = True
-        except (Timeout, ConnectionError):
-            pass
+                void_ok = True
+        except (Timeout, ConnectionError, RequestException):
+            void_ok = False
+
+        if not void_ok and not was_charged:
+            logger.warning(
+                "Payment void failed for tx %s during compensation; aborting seat release to prevent unfenced release.",
+                transaction_id,
+            )
+            return Response(
+                {
+                    "transaction_id": str(transaction_id),
+                    "status": Transaction.Status.COMPENSATING,
+                    "error": "Payment void failed; compensation will be retried by recovery sweep.",
+                    "needs_recovery": True,
+                },
+                status=503,
+            )
+
 
     # 1. Attempt Inventory Release
     release_ok = False
