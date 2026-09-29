@@ -103,7 +103,7 @@ def reclaim_expired_holds():
 
     held_seats = list(
         Seat.objects.filter(status=Seat.Status.HELD).values(
-            "id", "held_until", "user_email", "held_by_transaction_id"
+            "id", "held_until", "user_email", "user_id", "held_by_transaction_id"
         )
     )
     if not held_seats:
@@ -114,6 +114,15 @@ def reclaim_expired_holds():
 
     grace_seconds = getattr(settings, "HOLD_PRESENCE_GRACE_SECONDS", 120)
     hold_duration = get_hold_duration()
+
+    def _get_seat_presence_key(s):
+        email = s.get("user_email")
+        if email and str(email).strip():
+            return f"dtc:session:{str(email).strip().lower()}"
+        uid = s.get("user_id")
+        if uid and str(uid).strip():
+            return f"dtc:session:{str(uid).strip()}"
+        return None
 
     presence_candidates = []
 
@@ -128,47 +137,48 @@ def reclaim_expired_holds():
             continue
 
         # 2. Candidate for presence-based expiry: only if hold age >= grace_seconds
-        if seat["held_until"] and seat["user_email"] and redis_client:
+        has_identifier = bool(seat.get("user_email") or seat.get("user_id"))
+        if seat["held_until"] and has_identifier and redis_client:
             hold_start = seat["held_until"] - hold_duration
             hold_age = (now - hold_start).total_seconds()
             if hold_age >= grace_seconds:
                 presence_candidates.append(seat)
 
-    # Pipeline Redis EXISTS per unique email and unique transaction_id for presence candidates
+    # Pipeline Redis EXISTS per unique session key and unique transaction_id for presence candidates
     if presence_candidates and redis_client:
-        unique_emails = list({s["user_email"].strip().lower() for s in presence_candidates if s.get("user_email")})
+        unique_session_keys = list({_get_seat_presence_key(s) for s in presence_candidates if _get_seat_presence_key(s)})
         unique_tids = list({str(s["held_by_transaction_id"]) for s in presence_candidates if s.get("held_by_transaction_id")})
-        active_emails = set()
+        active_sessions = set()
         active_checkouts = set()
         try:
             pipe = redis_client.pipeline()
-            for email in unique_emails:
-                pipe.exists(f"dtc:session:{email}")
+            for key in unique_session_keys:
+                pipe.exists(key)
             for tid in unique_tids:
                 pipe.exists(f"dtc:checkout:{tid}")
             results = pipe.execute()
-            expected_len = len(unique_emails) + len(unique_tids)
+            expected_len = len(unique_session_keys) + len(unique_tids)
             if isinstance(results, (list, tuple)):
                 if len(results) >= expected_len:
-                    email_results = results[:len(unique_emails)]
-                    tid_results = results[len(unique_emails):expected_len]
-                elif len(results) == len(unique_emails):
-                    email_results = results
+                    key_results = results[:len(unique_session_keys)]
+                    tid_results = results[len(unique_session_keys):expected_len]
+                elif len(results) == len(unique_session_keys):
+                    key_results = results
                     tid_results = []
                 else:
-                    email_results = results[:len(unique_emails)]
+                    key_results = results[:len(unique_session_keys)]
                     tid_results = []
             else:
-                email_results = [redis_client.exists(f"dtc:session:{email}") for email in unique_emails]
+                key_results = [redis_client.exists(k) for k in unique_session_keys]
                 tid_results = []
 
-            for email, exists in zip(unique_emails, email_results):
+            for key, exists in zip(unique_session_keys, key_results):
                 if exists:
-                    active_emails.add(email)
+                    active_sessions.add(key)
 
             inactive_candidates = [
                 s for s in presence_candidates
-                if (s["user_email"].strip().lower() if s.get("user_email") else "") not in active_emails
+                if _get_seat_presence_key(s) not in active_sessions
             ]
             if inactive_candidates and unique_tids:
                 if not tid_results and not isinstance(results, (list, tuple)):
@@ -182,8 +192,8 @@ def reclaim_expired_holds():
                 # Skip presence-based reclaim if checkout key exists (user is actively paying in coordinator)
                 if tid_str and tid_str in active_checkouts:
                     continue
-                seat_email = seat["user_email"].strip().lower() if seat.get("user_email") else ""
-                if seat_email not in active_emails:
+                k = _get_seat_presence_key(seat)
+                if not k or k not in active_sessions:
                     expired_snapshots[seat["id"]] = {
                         "tid": seat["held_by_transaction_id"],
                         "held_until": seat["held_until"],
