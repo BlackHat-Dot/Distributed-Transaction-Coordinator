@@ -185,3 +185,67 @@ class TestA3BypassFlagsAndResetSeats(TestCase):
         self.assertIn("before_counts", log_line)
 
 
+class TestA4PresenceCheckoutProtection(TestCase):
+    def test_a4_presence_reclaim_skipped_when_checkout_key_exists(self):
+        from unittest.mock import MagicMock, patch
+        from datetime import timedelta
+        from django.utils import timezone
+        from inventory.models import Event, Seat, Reservation
+        from inventory.views import reclaim_expired_holds
+
+        event = Event.objects.create(name="Checkout Test Event")
+        tid = uuid.uuid4()
+        now = timezone.now()
+        # Seat hold started 3 minutes ago (hold age = 180s >= 120s grace period), held_until is 7 minutes in future
+        held_until = now + timedelta(minutes=7)
+        seat = Seat.objects.create(
+            event=event,
+            row="A",
+            seat_number="1",
+            status=Seat.Status.HELD,
+            held_until=held_until,
+            held_by_transaction_id=tid,
+            user_id="usr_checkout",
+            user_email="shopper@test.com",
+        )
+        Reservation.objects.create(
+            seat=seat,
+            transaction_id=tid,
+            status=Reservation.Status.RESERVED,
+            user_id="usr_checkout",
+            user_email="shopper@test.com",
+        )
+
+        # Mock Redis client where dtc:session:shopper@test.com is 0 (lapsed),
+        # but dtc:checkout:{tid} is 1 (mid-payment checkout active!)
+        mock_redis = MagicMock()
+        mock_pipe = MagicMock()
+        mock_redis.pipeline.return_value = mock_pipe
+
+        # Pipeline execution returns exists responses
+        def pipe_execute():
+            # Return list of results for each pipeline command in order
+            # The current un-fixed code only pipelines unique_emails: [0] -> expired!
+            # Our fixed code will pipeline unique_emails + unique_tids: [0, 1]
+            calls = mock_pipe.exists.call_args_list
+            res = []
+            for call in calls:
+                key = call[0][0]
+                if key.startswith("dtc:checkout:"):
+                    res.append(1)  # Checkout key EXISTS
+                else:
+                    res.append(0)  # Session key does NOT exist
+            return res
+
+        mock_pipe.execute.side_effect = pipe_execute
+
+        with patch("inventory.views.get_redis_client", return_value=mock_redis):
+            reclaimed, released = reclaim_expired_holds()
+
+        self.assertEqual(reclaimed, 0, "Seat must not be reclaimed when checkout key exists")
+        self.assertEqual(released, 0)
+        seat.refresh_from_db()
+        self.assertEqual(seat.status, Seat.Status.HELD)
+
+
+

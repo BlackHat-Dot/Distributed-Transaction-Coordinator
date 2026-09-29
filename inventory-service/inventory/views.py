@@ -68,6 +68,14 @@ def reclaim_expired_holds():
     Reclaims seats that are expired by time (held_until < now) OR abandoned by user
     (user exited browser/website, causing their Redis heartbeat session dtc:session:{email} to expire).
     Presence-based reclaim only applies after a grace period of HOLD_PRESENCE_GRACE_SECONDS (default 120s).
+
+    CONTRACT FOR COORDINATOR / FRONTEND:
+    When a checkout/payment begins for a transaction, the coordinator or checkout client
+    sets Redis key `dtc:checkout:{transaction_id}` (e.g. SET dtc:checkout:{transaction_id} 1 EX 180).
+    While this key exists, presence-based reclaim is skipped for any seats held by that
+    transaction_id, preventing holds from being prematurely cleared during payment processing
+    or 3D-Secure verification even if user presence heartbeats lapse.
+    Time-based expiry (held_until < now) is not skipped by dtc:checkout.
     """
     now = timezone.now()
 
@@ -101,27 +109,58 @@ def reclaim_expired_holds():
             if hold_age >= grace_seconds:
                 presence_candidates.append(seat)
 
-    # Pipeline Redis EXISTS per unique email for presence candidates
+    # Pipeline Redis EXISTS per unique email and unique transaction_id for presence candidates
     if presence_candidates and redis_client:
         unique_emails = list({s["user_email"] for s in presence_candidates if s.get("user_email")})
+        unique_tids = list({str(s["held_by_transaction_id"]) for s in presence_candidates if s.get("held_by_transaction_id")})
         active_emails = set()
+        active_checkouts = set()
         try:
             pipe = redis_client.pipeline()
             for email in unique_emails:
                 pipe.exists(f"dtc:session:{email}")
+            for tid in unique_tids:
+                pipe.exists(f"dtc:checkout:{tid}")
             results = pipe.execute()
-            if not isinstance(results, (list, tuple)) or len(results) != len(unique_emails):
-                results = [redis_client.exists(f"dtc:session:{email}") for email in unique_emails]
-            for email, exists in zip(unique_emails, results):
+            expected_len = len(unique_emails) + len(unique_tids)
+            if isinstance(results, (list, tuple)):
+                if len(results) >= expected_len:
+                    email_results = results[:len(unique_emails)]
+                    tid_results = results[len(unique_emails):expected_len]
+                elif len(results) == len(unique_emails):
+                    email_results = results
+                    tid_results = []
+                else:
+                    email_results = results[:len(unique_emails)]
+                    tid_results = []
+            else:
+                email_results = [redis_client.exists(f"dtc:session:{email}") for email in unique_emails]
+                tid_results = []
+
+            for email, exists in zip(unique_emails, email_results):
                 if exists:
                     active_emails.add(email)
 
+            inactive_candidates = [s for s in presence_candidates if s["user_email"] not in active_emails]
+            if inactive_candidates and unique_tids:
+                if not tid_results and not isinstance(results, (list, tuple)):
+                    tid_results = [redis_client.exists(f"dtc:checkout:{tid}") for tid in unique_tids]
+                for tid, exists in zip(unique_tids, tid_results):
+                    if exists:
+                        active_checkouts.add(tid)
+
             for seat in presence_candidates:
+                tid_str = str(seat["held_by_transaction_id"]) if seat.get("held_by_transaction_id") else None
+                # Skip presence-based reclaim if checkout key exists (user is actively paying in coordinator)
+                if tid_str and tid_str in active_checkouts:
+                    continue
                 if seat["user_email"] not in active_emails:
                     expired_snapshots[seat["id"]] = seat["held_by_transaction_id"]
+
         except Exception:
             # If Redis errors, skip presence expiry (fail safe)
             pass
+
 
     if not expired_snapshots:
         return 0, 0
