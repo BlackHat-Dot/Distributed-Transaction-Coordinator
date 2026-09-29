@@ -15,6 +15,8 @@ from requests.exceptions import Timeout, ConnectionError, RequestException
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.http import StreamingHttpResponse, JsonResponse, HttpResponse
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from .models import Transaction, SagaEvent
 from .saga_log import _set_status_with_event
@@ -977,6 +979,59 @@ def _handle_create_transaction(request):
                     },
                     status=409,
                 )
+
+            # H3: Validate hold expiry (held_until) before charging payment
+            holding_event = (
+                SagaEvent.objects.filter(
+                    transaction=txn,
+                    to_status=Transaction.Status.HOLDING,
+                )
+                .order_by("-seq")
+                .first()
+            )
+            if holding_event and holding_event.http_payload:
+                held_until_raw = holding_event.http_payload.get("held_until")
+                if held_until_raw:
+                    try:
+                        held_until_dt = parse_datetime(held_until_raw) if isinstance(held_until_raw, str) else held_until_raw
+                        if held_until_dt and timezone.is_naive(held_until_dt):
+                            held_until_dt = timezone.make_aware(held_until_dt)
+                        if held_until_dt and held_until_dt < timezone.now():
+                            # Hold has expired. Transition to TIMEOUT so it cannot be paid
+                            _set_status_with_event(
+                                txn.transaction_id,
+                                Transaction.Status.TIMEOUT,
+                                expected_status=Transaction.Status.HOLDING,
+                                actor=SagaEvent.ACTOR_REQUEST,
+                                http_status_code=409,
+                                http_payload={"error": "Seat hold expired before payment attempt"},
+                            )
+                            # Best-effort release to inventory
+                            try:
+                                rel_headers = {
+                                    "X-Correlation-ID": correlation_id,
+                                    "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+                                }
+                                _http_post(
+                                    INVENTORY_RELEASE_URL,
+                                    json={"transaction_id": str(txn.transaction_id), "seat_ids": txn.seat_ids},
+                                    headers=rel_headers,
+                                    timeout=REQUEST_TIMEOUT,
+                                )
+                            except Exception:
+                                pass
+
+                            return Response(
+                                {
+                                    "error": "Seat hold has expired. Please select seats and try again.",
+                                    "code": "HOLD_EXPIRED",
+                                    "status": Transaction.Status.TIMEOUT,
+                                    "transaction_id": str(txn.transaction_id),
+                                },
+                                status=409,
+                            )
+                    except Exception:
+                        pass
 
             transaction_id = txn.transaction_id
             seat_ids = txn.seat_ids

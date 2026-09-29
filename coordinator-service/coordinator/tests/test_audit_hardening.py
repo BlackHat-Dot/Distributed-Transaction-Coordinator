@@ -510,6 +510,60 @@ class SecurityAndReliabilityHardeningTests(TestCase):
             txn.refresh_from_db()
             self.assertEqual(txn.status, Transaction.Status.COMPLETED)
 
+    def test_h3_hold_expiry_validated_before_charging_payment(self):
+        """
+        H3: The pay path must validate hold expiry (held_until) before charging.
+        If the hold expired, payment must NOT be charged, and 409 HOLD_EXPIRED returned.
+        """
+        from datetime import timedelta
+        from django.utils import timezone
+
+        tx_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=tx_id,
+            user_id="user_charlie",
+            user_email="charlie@test.io",
+            status=Transaction.Status.HOLDING,
+            amount=Decimal("200.00"),
+            seat_ids=[1],
+        )
+
+        expired_time = (timezone.now() - timedelta(minutes=5)).isoformat()
+        SagaEvent.objects.create(
+            transaction=txn,
+            seq=1,
+            from_status=Transaction.Status.STARTED,
+            to_status=Transaction.Status.HOLDING,
+            actor=SagaEvent.ACTOR_REQUEST,
+            http_status_code=200,
+            http_payload={"held_until": expired_time, "seat_ids": [1]},
+        )
+
+        charge_called = []
+        def mock_post(url, *args, **kwargs):
+            if "charge" in url:
+                charge_called.append(url)
+            mock = MagicMock()
+            mock.status_code = 200
+            mock.json.return_value = {}
+            return mock
+
+        with patch("coordinator.views._http_post", side_effect=mock_post):
+            resp = self.client.post(
+                "/transactions/?sync=true",
+                data={"transaction_id": str(tx_id), "action": "pay"},
+                content_type="application/json",
+                HTTP_X_USER_ID="user_charlie",
+                HTTP_X_USER_EMAIL="charlie@test.io",
+            )
+
+            self.assertEqual(resp.status_code, 409)
+            self.assertEqual(resp.data.get("code"), "HOLD_EXPIRED")
+            self.assertEqual(len(charge_called), 0, "Payment charge was called for an expired hold!")
+            txn.refresh_from_db()
+            self.assertNotEqual(txn.status, Transaction.Status.HOLDING)
+
+
 
 
 
