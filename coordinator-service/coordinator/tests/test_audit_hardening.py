@@ -822,6 +822,68 @@ class SecurityAndReliabilityHardeningTests(TestCase):
             matching = [msg for msg in cm.output if cid in msg and "Failed to release hold" in msg]
             self.assertTrue(len(matching) >= 1, f"Expected warning log containing correlation ID {cid}, got: {cm.output}")
 
+    def test_h13_trigger_recovery_sweep_validation_and_lock(self):
+        """
+        H13: trigger_recovery_sweep input validation and concurrency lock:
+        - Rejects invalid / non-integer threshold_seconds with 400.
+        - Rejects negative threshold_seconds with 400.
+        - Rejects concurrent sweep with 409 when Redis lock is held.
+        """
+        # 1. Invalid threshold types
+        for bad_val in ["abc", [60], {"sec": 60}, True, False, -10]:
+            req = self.factory.post(
+                "/recovery/sweep/",
+                data=json.dumps({"threshold_seconds": bad_val}),
+                content_type="application/json",
+                HTTP_X_STAFF_KEY="secret-staff",
+            )
+            with patch.dict(os.environ, {"STAFF_API_KEY": "secret-staff"}):
+                resp = trigger_recovery_sweep(req)
+                self.assertEqual(resp.status_code, 400, f"Expected 400 for threshold_seconds={bad_val!r}")
+                self.assertEqual(resp.data.get("code"), "INVALID_THRESHOLD_SECONDS")
+
+        # 2. Redis lock already held by another sweeper
+        mock_redis = MagicMock()
+        mock_redis.set.return_value = False  # Lock acquisition failed
+        with patch.dict(os.environ, {"STAFF_API_KEY": "secret-staff"}), \
+             patch("coordinator.tasks.get_redis_client", return_value=mock_redis):
+            req = self.factory.post(
+                "/recovery/sweep/",
+                data=json.dumps({"threshold_seconds": 60}),
+                content_type="application/json",
+                HTTP_X_STAFF_KEY="secret-staff",
+            )
+            resp = trigger_recovery_sweep(req)
+            self.assertEqual(resp.status_code, 409)
+            self.assertEqual(resp.data.get("code"), "RECOVERY_ALREADY_IN_PROGRESS")
+
+    def test_h13_recovery_status_auth(self):
+        """
+        H13: recovery_status requires staff authentication.
+        """
+        from coordinator.views import recovery_status
+
+        # 1. Unauthenticated in prod -> 401
+        with self.settings(DEBUG=False, IS_TESTING=False):
+            with patch("coordinator.views.get_user_from_request", return_value=None):
+                req = self.factory.get("/recovery/status/")
+                resp = recovery_status(req)
+                self.assertEqual(resp.status_code, 401)
+
+            # 2. Authenticated non-staff -> 403
+            with patch("coordinator.views.get_user_from_request", return_value={"is_authenticated": True, "user_id": "u1", "user_email": "u@cust.com"}):
+                req = self.factory.get("/recovery/status/")
+                resp = recovery_status(req)
+                self.assertEqual(resp.status_code, 403)
+
+        # 3. Staff -> 200
+        req_staff = self.factory.get("/recovery/status/", HTTP_X_STAFF_KEY="secret-staff")
+        with patch.dict(os.environ, {"STAFF_API_KEY": "secret-staff"}):
+            resp = recovery_status(req_staff)
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.data.get("status"), "active")
+
+
 
 
 

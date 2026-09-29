@@ -498,30 +498,71 @@ def trigger_recovery_sweep(request):
     out = io.StringIO()
 
     # threshold_seconds => How long a transaction must be sitting in an unfinished state before the sweeper considers it "abandoned/crashed" (default: 60 seconds).
-    raw_threshold = int(request.data.get("threshold_seconds", 60) if request.data else 60)
-
+    raw_threshold = 60
+    if request.data and "threshold_seconds" in request.data:
+        val = request.data["threshold_seconds"]
+        if isinstance(val, bool) or not isinstance(val, (int, str)):
+            return Response(
+                {"error": "threshold_seconds must be a valid integer.", "code": "INVALID_THRESHOLD_SECONDS"},
+                status=400,
+            )
+        try:
+            raw_threshold = int(val)
+            if raw_threshold < 0:
+                return Response(
+                    {"error": "threshold_seconds must be a non-negative integer.", "code": "INVALID_THRESHOLD_SECONDS"},
+                    status=400,
+                )
+        except (ValueError, TypeError):
+            return Response(
+                {"error": "threshold_seconds must be a valid integer.", "code": "INVALID_THRESHOLD_SECONDS"},
+                status=400,
+            )
 
     # What if a caller sends threshold_seconds = 0 or 1
     # The sweeper would mistakenly abort and kill legitimate transactions that are actively processing payments right now.
     # This enforces a minimum floor of atleast 30 seconds.    
     min_floor = 5 if getattr(settings, "DEBUG", False) else int(os.getenv("RECOVERY_MIN_THRESHOLD_SECONDS", "30"))
 
-
     threshold_seconds = max(raw_threshold, min_floor)
 
-    # This is Django’s programmatic way of running:
-    #   python manage.py recovery_stuck_transactions --threshold_seconds=30
-    call_command("recovery_stuck_transactions", threshold_seconds=threshold_seconds, stdout=out)
+    from coordinator.tasks import get_redis_client, LOCK_KEY, RELEASE_LOCK_SCRIPT
+    redis_client = None
+    lock_token = None
+    lock_acquired = False
+    try:
+        redis_client = get_redis_client()
+        lock_token = str(uuid.uuid4())
+        lock_acquired = bool(redis_client.set(LOCK_KEY, lock_token, nx=True, ex=120))
+        if not lock_acquired:
+            return Response(
+                {
+                    "error": "Recovery sweep is already in progress.",
+                    "code": "RECOVERY_ALREADY_IN_PROGRESS",
+                },
+                status=409,
+            )
+    except (redis.ConnectionError, redis.TimeoutError, ConnectionRefusedError, OSError) as e:
+        logger.warning("Redis unavailable for recovery lock check: %s", e)
+        redis_client = None
+    except Exception as e:
+        logger.warning("Redis lock check failed in trigger_recovery_sweep: %s", e)
 
     try:
-        import time
-        from coordinator.tasks import get_redis_client
-        client = get_redis_client()
+        call_command("recovery_stuck_transactions", threshold_seconds=threshold_seconds, stdout=out)
 
-        # Update timestamp because a sweep just finished.
-        client.set("dtc:recovery:last_run_timestamp", str(time.time()))
-    except Exception:
-        pass
+        if redis_client:
+            try:
+                import time
+                redis_client.set("dtc:recovery:last_run_timestamp", str(time.time()))
+            except Exception:
+                pass
+    finally:
+        if redis_client and lock_acquired and lock_token:
+            try:
+                redis_client.eval(RELEASE_LOCK_SCRIPT, 1, LOCK_KEY, lock_token)
+            except Exception as exc:
+                logger.error("Failed to release lock '%s': %s", LOCK_KEY, exc)
 
     return Response({
         "message": "Recovery sweep complete",
@@ -532,6 +573,12 @@ def trigger_recovery_sweep(request):
 
 @api_view(["GET"])
 def recovery_status(request):
+    is_authenticated, auth_user_id, is_staff = _get_requester_identity(request)
+    if not is_authenticated:
+        return Response({"error": "Authentication required to view recovery status."}, status=401)
+    if not is_staff:
+        return Response({"error": "Staff privileges required to view recovery status."}, status=403)
+
     import time
     from coordinator.tasks import get_redis_client
 
