@@ -215,13 +215,20 @@ def transaction_stream(request, transaction_id):
 
     if txn.status in terminal_statuses:
         def terminal_generator():
-            initial_msg = json.dumps({
-                "transaction_id": str(txn.transaction_id),
-                "status": txn.status,
-                "is_terminal": True,
-                "needs_recovery": txn.status in Transaction.RECOVERABLE_STATUSES,
-            })
-            yield f"data: {initial_msg}\n\n"
+            try:
+                initial_msg = json.dumps({
+                    "transaction_id": str(txn.transaction_id),
+                    "status": txn.status,
+                    "is_terminal": True,
+                    "needs_recovery": txn.status in Transaction.RECOVERABLE_STATUSES,
+                })
+                yield f"data: {initial_msg}\n\n"
+            finally:
+                try:
+                    from django.db import close_old_connections
+                    close_old_connections()
+                except Exception:
+                    pass
         return StreamingHttpResponse(terminal_generator(), content_type="text/event-stream")
 
     def event_generator():
@@ -287,9 +294,9 @@ def transaction_stream(request, transaction_id):
                 if now - start_time > max_duration:
                     timeout_msg = json.dumps({
                         "transaction_id": str(transaction_id),
-                        "status": "TIMEOUT",
-                        "is_terminal": True,
-                        "needs_recovery": True,
+                        "status": "STREAM_TIMEOUT",
+                        "is_terminal": False,
+                        "needs_recovery": False,
                     })
                     yield f"data: {timeout_msg}\n\n"
                     break
@@ -349,6 +356,11 @@ def transaction_stream(request, transaction_id):
                     redis_client.close()
                 except Exception:
                     pass
+            try:
+                from django.db import close_old_connections
+                close_old_connections()
+            except Exception:
+                pass
 
     # Regular HttpResponse / JsonResponse: Takes an entire payload, computes its Content-Length, sends it all at once in a single network packet, and closes the TCP connection.
     # StreamingHttpResponse: Takes a Python generator / iterator (a function with yield). It does not close the connection immediately. Instead, whenever the generator yields a chunk of text, Django flushes that chunk down the open HTTP socket to the browser in real time.

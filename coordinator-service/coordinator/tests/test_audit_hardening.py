@@ -937,6 +937,44 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         self.assertEqual(resp_cap.status_code, 400)
         self.assertEqual(resp_cap.data.get("code"), "EXCEEDED_MAX_SEATS")
 
+    @patch("coordinator.views.redis.Redis.from_url")
+    def test_h17_stream_timeout_and_db_cleanup(self, mock_redis_cls):
+        """
+        H17: transaction_stream emits status="STREAM_TIMEOUT" with is_terminal=False
+        and cleans up database connections on completion.
+        """
+        from coordinator.views import transaction_stream
+        tx_id = uuid.uuid4()
+        Transaction.objects.create(
+            transaction_id=tx_id,
+            user_id="user_stream",
+            status=Transaction.Status.STARTED,
+            amount=Decimal("500.00"),
+        )
+        mock_redis = MagicMock()
+        mock_pubsub = MagicMock()
+        mock_redis.pubsub.return_value = mock_pubsub
+        mock_pubsub.get_message.return_value = None
+        mock_redis_cls.return_value = mock_redis
+
+        # Mock time.monotonic to trigger timeout on first loop iteration
+        time_vals = [0.0, 31.0, 32.0, 33.0]
+        with patch("time.monotonic", side_effect=time_vals), \
+             patch("django.db.close_old_connections") as mock_close_db:
+            req = self.factory.get(f"/transactions/{tx_id}/stream/", HTTP_X_USER_ID="user_stream")
+            resp = transaction_stream(req, tx_id)
+            raw_chunks = list(resp.streaming_content)
+            chunks = [c.decode("utf-8") if isinstance(c, bytes) else c for c in raw_chunks]
+            mock_close_db.assert_called()
+
+            # Find the STREAM_TIMEOUT chunk
+            timeout_chunk = [c for c in chunks if "STREAM_TIMEOUT" in c]
+            self.assertTrue(len(timeout_chunk) >= 1)
+            parsed = json.loads(timeout_chunk[0].replace("data: ", "").strip())
+            self.assertEqual(parsed.get("status"), "STREAM_TIMEOUT")
+            self.assertFalse(parsed.get("is_terminal"))
+
+
 
 
 
