@@ -136,6 +136,41 @@ def _publish_transaction_update(transaction_id, to_status, from_status=None):
         logger.warning("Failed to publish SSE event for tx %s: %s", transaction_id, exc)
 
 
+SENSITIVE_KEYS = {
+    "user_email", "email", "card_number", "credit_card", "pan", "cvv", "cvc",
+    "password", "token", "otp", "secret", "authorization",
+}
+
+
+def _mask_pii(data):
+    """
+    Recursively masks sensitive fields (email, credentials, tokens) in audit payloads.
+    """
+    if not data:
+        return data
+    if isinstance(data, dict):
+        masked = {}
+        for k, v in data.items():
+            if str(k).lower() in SENSITIVE_KEYS:
+                if isinstance(v, str) and "@" in v:
+                    parts = v.split("@", 1)
+                    user_part = parts[0]
+                    masked_user = (user_part[0] + "***" + user_part[-1]) if len(user_part) > 2 else "***"
+                    masked[k] = f"{masked_user}@{parts[1]}"
+                elif isinstance(v, str) and len(v) > 4:
+                    masked[k] = f"****{v[-4:]}"
+                else:
+                    masked[k] = "******"
+            elif isinstance(v, (dict, list)):
+                masked[k] = _mask_pii(v)
+            else:
+                masked[k] = v
+        return masked
+    elif isinstance(data, list):
+        return [_mask_pii(item) for item in data]
+    return data
+
+
 def _set_status_with_event(
     transaction_id,
     to_status,
@@ -207,7 +242,7 @@ def _set_status_with_event(
             to_status=to_status,
             actor=actor,
             http_status_code=http_status_code,
-            http_payload=http_payload,
+            http_payload=_mask_pii(http_payload),
         )
 
     # Database transaction committed. Publish real-time event to Redis for SSE streaming.

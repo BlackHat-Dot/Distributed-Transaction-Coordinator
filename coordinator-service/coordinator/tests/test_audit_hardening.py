@@ -1064,6 +1064,79 @@ class SecurityAndReliabilityHardeningTests(TestCase):
             )
             self.assertFalse(ok)
 
+    def test_h16_pii_masking_in_saga_event(self):
+        """
+        H16: SagaEvent.http_payload masks sensitive fields (email, credentials, tokens).
+        """
+        from coordinator.saga_log import _set_status_with_event
+        tx_id = uuid.uuid4()
+        Transaction.objects.create(
+            transaction_id=tx_id,
+            status=Transaction.Status.STARTED,
+            amount=Decimal("500.00"),
+            seat_ids=[1],
+        )
+
+        sensitive_payload = {
+            "user_email": "alice@company.com",
+            "token": "secret_token_12345",
+            "safe_field": "public_data",
+        }
+        ok = _set_status_with_event(
+            tx_id,
+            to_status=Transaction.Status.INVENTORY_RESERVED,
+            expected_status=Transaction.Status.STARTED,
+            http_payload=sensitive_payload,
+        )
+        self.assertTrue(ok)
+
+        event = SagaEvent.objects.filter(transaction__transaction_id=tx_id).first()
+        self.assertIsNotNone(event)
+        self.assertEqual(event.http_payload.get("safe_field"), "public_data")
+        # Masked values
+        self.assertNotEqual(event.http_payload.get("user_email"), "alice@company.com")
+        self.assertIn("@company.com", event.http_payload.get("user_email"))
+        self.assertNotEqual(event.http_payload.get("token"), "secret_token_12345")
+        self.assertTrue(event.http_payload.get("token").startswith("****"))
+
+    def test_h20_incoming_correlation_id_preserved(self):
+        """
+        H20: CorrelationIdMiddleware preserves incoming X-Correlation-ID header.
+        """
+        custom_cid = "trace-custom-uuid-9999"
+        resp = self.client.get("/health/", HTTP_X_CORRELATION_ID=custom_cid)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get("X-Correlation-ID"), custom_cid)
+
+    def test_h21_updated_at_refreshed_on_state_transition(self):
+        """
+        H21: _set_status_with_event refreshes updated_at timestamp in Transaction.
+        """
+        from datetime import timedelta
+        from django.utils import timezone
+        from coordinator.saga_log import _set_status_with_event
+
+        tx_id = uuid.uuid4()
+        past = timezone.now() - timedelta(minutes=10)
+        txn = Transaction.objects.create(
+            transaction_id=tx_id,
+            status=Transaction.Status.STARTED,
+            amount=Decimal("500.00"),
+            seat_ids=[1],
+        )
+        Transaction.objects.filter(pk=txn.pk).update(updated_at=past)
+        txn.refresh_from_db()
+        self.assertAlmostEqual(txn.updated_at.timestamp(), past.timestamp(), delta=2)
+
+        _set_status_with_event(
+            tx_id,
+            to_status=Transaction.Status.INVENTORY_RESERVED,
+            expected_status=Transaction.Status.STARTED,
+        )
+        txn.refresh_from_db()
+        self.assertGreater(txn.updated_at, past)
+
+
 
 
 

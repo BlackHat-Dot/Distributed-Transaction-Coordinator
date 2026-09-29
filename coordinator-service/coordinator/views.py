@@ -102,15 +102,13 @@ def _get_http_session():
 
 def _http_post(url, **kwargs):
     kwargs.setdefault("timeout", REQUEST_TIMEOUT)
-    # Support unittest.mock patches in test suite
-    if hasattr(requests.post, "mock_calls") or hasattr(requests.post, "assert_called"):
+    if getattr(settings, "IS_TESTING", False):
         return requests.post(url, **kwargs)
     return _get_http_session().post(url, **kwargs)
 
 def _http_get(url, **kwargs):
     kwargs.setdefault("timeout", REQUEST_TIMEOUT)
-    # Support unittest.mock patches in test suite
-    if hasattr(requests.get, "mock_calls") or hasattr(requests.get, "assert_called"):
+    if getattr(settings, "IS_TESTING", False):
         return requests.get(url, **kwargs)
     return _get_http_session().get(url, **kwargs)
 
@@ -1025,7 +1023,10 @@ def _handle_create_transaction(request):
                 new_amount = Decimal(str(resp_json["total_amount"]))
                 if new_amount != amount:
                     amount = new_amount
-                    Transaction.objects.filter(transaction_id=transaction_id).update(amount=amount)
+                    Transaction.objects.filter(transaction_id=transaction_id).update(
+                        amount=amount,
+                        updated_at=timezone.now(),
+                    )
             except (ValueError, TypeError):
                 pass
 
