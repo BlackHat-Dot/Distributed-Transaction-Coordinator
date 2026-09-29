@@ -16,6 +16,7 @@ from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
+import jwt
 import redis
 
 from .models import Event, Seat, Reservation
@@ -234,45 +235,27 @@ def _get_authenticated_user(request):
     """
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
-        token = auth_header.split(" ")[1].strip()
-        parts = token.split(".")
-        if len(parts) == 3:
-            h_str, p_str, sig_str = parts
-            try:
-                # 1. Header validation
-                h_rem = len(h_str) % 4
-                if h_rem > 0:
-                    h_str += "=" * (4 - h_rem)
-                header_data = json.loads(base64.urlsafe_b64decode(h_str.encode("utf-8")).decode("utf-8"))
-                if header_data.get("alg") == "HS256":
-                    # 2. Signature validation
-                    signing_input = f"{parts[0]}.{parts[1]}".encode("utf-8")
-                    secret = settings.SECRET_KEY.encode("utf-8")
-                    expected_sig = hmac.new(secret, signing_input, hashlib.sha256).digest()
-
-                    sig_rem = len(sig_str) % 4
-                    if sig_rem > 0:
-                        sig_str += "=" * (4 - sig_rem)
-                    actual_sig = base64.urlsafe_b64decode(sig_str.encode("utf-8"))
-
-                    if hmac.compare_digest(actual_sig, expected_sig):
-                        # 3. Payload validation
-                        p_rem = len(p_str) % 4
-                        if p_rem > 0:
-                            p_str += "=" * (4 - p_rem)
-                        payload = json.loads(base64.urlsafe_b64decode(p_str.encode("utf-8")).decode("utf-8"))
-
-                        if "exp" not in payload or payload["exp"] >= int(time.time()):
-                            uid = payload.get("user_id")
-                            uemail = payload.get("user_email")
-                            if uid or uemail:
-                                return {
-                                    "user_id": str(uid) if uid is not None else None,
-                                    "user_email": str(uemail) if uemail is not None else None,
-                                    "sid": payload.get("sid"),
-                                }
-            except Exception:
-                pass
+        token = auth_header.split(" ", 1)[1].strip()
+        key = getattr(settings, "JWT_SIGNING_KEY", None) or settings.SECRET_KEY
+        try:
+            payload = jwt.decode(
+                token,
+                key,
+                algorithms=["HS256"],
+                options={"require": ["exp"]},
+            )
+            uid = payload.get("user_id")
+            uemail = payload.get("user_email")
+            if uid or uemail:
+                return {
+                    "user_id": str(uid) if uid is not None else None,
+                    "user_email": str(uemail) if uemail is not None else None,
+                    "sid": payload.get("sid"),
+                }
+        except jwt.PyJWTError as e:
+            logger.debug("JWT verification failed: %s", type(e).__name__)
+        except Exception as e:
+            logger.debug("Unexpected error during JWT verification: %s", type(e).__name__)
 
     if getattr(settings, "ALLOW_UNVERIFIED_IDENTITY_HEADERS", False):
         uid = request.headers.get("X-User-ID")
@@ -285,6 +268,7 @@ def _get_authenticated_user(request):
             }
 
     return None
+
 
 
 def _get_authenticated_user_id(request):
