@@ -10,27 +10,11 @@ class InventoryConfig(AppConfig):
     def ready(self):
         import inventory.checks  # noqa: F401
 
-        non_serving_commands = {
-            "migrate",
-            "makemigrations",
-            "collectstatic",
-            "check",
-            "test",
-            "shell",
-            "createsuperuser",
-            "dumpdata",
-            "loaddata",
-            "showmigrations",
-            "squashmigrations",
-            "inspectdb",
-            "flush",
-            "sqlmigrate",
-        }
-        cmd = sys.argv[1] if len(sys.argv) > 1 else None
-        if cmd in non_serving_commands:
-            return
+        # Enforce startup security whenever DEBUG is False unless running the Django test runner.
+        # This covers all server runtimes (gunicorn, uvicorn, daphne, celery) and management commands (migrate, etc.).
+        is_test_runner = (len(sys.argv) > 1 and sys.argv[1] == "test") or "pytest" in sys.modules
 
-        if not getattr(settings, "DEBUG", False):
+        if not getattr(settings, "DEBUG", False) and not is_test_runner:
             if any([
                 getattr(settings, "IS_TESTING", False),
                 getattr(settings, "ALLOW_UNVERIFIED_IDENTITY_HEADERS", False),
