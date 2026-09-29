@@ -1672,6 +1672,9 @@ def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=No
                 },
                 status=409,
             )
+        return None, Response({"transaction_id": str(transaction_id), "status": status}, status=504)
+
+
 # CONTRACT WITH INVENTORY SERVICE:
 # When entering PAYMENT_PROCESSING, coordinator sets Redis key `dtc:checkout:{transaction_id}`
 # with TTL = (payment timeout + 60s). This prevents the inventory service presence sweep from
