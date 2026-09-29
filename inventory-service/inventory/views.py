@@ -648,7 +648,7 @@ def reserve_seat(request):
                         seat=seat,
                         transaction_id=seat.held_by_transaction_id,
                         status=Reservation.Status.RESERVED,
-                    ).delete()
+                    ).update(status=Reservation.Status.RELEASED)
 
                 seat.status = Seat.Status.HELD
                 seat.held_until = held_until_dt

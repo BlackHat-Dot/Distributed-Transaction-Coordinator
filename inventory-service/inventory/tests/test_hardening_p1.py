@@ -199,3 +199,53 @@ class TestB4InputValidation(TestCase):
             HTTP_X_USER_EMAIL="b4@example.com",
         )
         self.assertEqual(resp.status_code, 400)
+
+
+class TestB5ReservePreservesAuditHistory(TestCase):
+    def test_reassign_expired_hold_marks_old_reservation_released_not_deleted(self):
+        """
+        B5: Reassigning an expired hold to a new transaction must NOT hard-delete
+        the old Reservation row; it must mark it as RELEASED for audit history.
+        """
+        from rest_framework.test import APIClient
+        client = APIClient()
+        event = Event.objects.create(name="B5 Event")
+        now = timezone.now()
+        old_tid = uuid.uuid4()
+        new_tid = uuid.uuid4()
+
+        seat = Seat.objects.create(
+            event=event,
+            row="D",
+            seat_number="1",
+            status=Seat.Status.HELD,
+            held_until=now - timedelta(seconds=10),  # expired hold
+            held_by_transaction_id=old_tid,
+            user_id="usr_b5_old",
+            user_email="b5_old@example.com",
+            price=100.00,
+        )
+        old_res = Reservation.objects.create(
+            seat=seat,
+            transaction_id=old_tid,
+            status=Reservation.Status.RESERVED,
+            user_id="usr_b5_old",
+            user_email="b5_old@example.com",
+        )
+
+        resp = client.post(
+            "/seats/reserve/",
+            {"seat_ids": [seat.id], "transaction_id": str(new_tid)},
+            format="json",
+            HTTP_X_USER_ID="usr_b5_new",
+            HTTP_X_USER_EMAIL="b5_new@example.com",
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        # Old reservation must NOT be deleted
+        old_res.refresh_from_db()
+        self.assertEqual(old_res.status, Reservation.Status.RELEASED)
+
+        # New reservation exists and is RESERVED
+        new_res = Reservation.objects.get(transaction_id=new_tid, seat=seat)
+        self.assertEqual(new_res.status, Reservation.Status.RESERVED)
