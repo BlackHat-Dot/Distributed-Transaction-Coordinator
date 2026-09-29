@@ -523,9 +523,9 @@ def reserve_seat(request):
                 status=401,
             )
     # Enforce MAX_USER_HOLDS (D-5)
-    max_user_holds = getattr(settings, "MAX_USER_HOLDS", None) or 10
+    max_user_holds = getattr(settings, "MAX_USER_HOLDS", 10)
     
-    if len(seat_ids) > max_user_holds:
+    if max_user_holds is not None and len(seat_ids) > max_user_holds:
         return Response(
             {
                 "error": f"Requested seats count ({len(seat_ids)}) exceeds maximum allowed active holds ({max_user_holds}).",
@@ -552,7 +552,7 @@ def reserve_seat(request):
             now = timezone.now()
 
 
-            if user_id:
+            if user_id and max_user_holds is not None:
                 # Exclude objects which is held by current transaction id.
                 active_holds = Seat.objects.filter(
                     user_id=user_id,
@@ -560,14 +560,6 @@ def reserve_seat(request):
                     held_until__gt=now,
                 ).exclude(held_by_transaction_id=transaction_id).count()
 
-                # without .exclude(): If a user holds three seat then a network hicup happens then they retry,
-                # active_holds become three plus len(seats) => 3 + 3 = 6 > 5(max hold) and User is blocked from booking, In fact the user only retried
-                # but system blocked them due to a flaw.
-
-                # with .exclude(): If a user holds three seat then a network hicup happens then they retry,
-                # active_holds become three plus len(seats) => 0 + 3 = 3 < 5(max hold) and User is allowed to book
-
-                # .exclude() is used especially used for this case to neglect previous same transaction that isn't yet completed and that's been retried.
                 if active_holds + len(seats) > max_user_holds:
                     return Response(
                         {

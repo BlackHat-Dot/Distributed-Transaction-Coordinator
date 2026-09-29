@@ -44,3 +44,42 @@ class TestC2CleanCode(TestCase):
         )
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.data.get("error"), "transaction_id is required")
+
+
+class TestC3MaxUserHolds(TestCase):
+    @override_settings(MAX_USER_HOLDS=None)
+    def test_max_user_holds_none_allows_more_than_ten_holds(self):
+        """
+        C3: When MAX_USER_HOLDS is None (unlimited), reserving 12 seats must be allowed (not capped at 10).
+        """
+        client = APIClient()
+        event = Event.objects.create(name="C3 Event")
+        seats = [
+            Seat.objects.create(event=event, row="H", seat_number=str(i), status=Seat.Status.AVAILABLE, price=10.0)
+            for i in range(1, 13)
+        ]
+        resp = client.post(
+            "/seats/reserve/",
+            {"seat_ids": [s.id for s in seats], "transaction_id": str(uuid.uuid4())},
+            format="json",
+            HTTP_X_USER_ID="usr_c3_unlimited",
+            HTTP_X_USER_EMAIL="c3_unlimited@example.com",
+        )
+        self.assertEqual(resp.status_code, 200, f"Expected 200 when MAX_USER_HOLDS=None, got {resp.status_code}: {resp.data}")
+
+    @override_settings(MAX_USER_HOLDS=0)
+    def test_max_user_holds_zero_disables_holds(self):
+        """
+        C3: When MAX_USER_HOLDS is explicitly 0, any hold request must be rejected with 429.
+        """
+        client = APIClient()
+        event = Event.objects.create(name="C3 Event 2")
+        seat = Seat.objects.create(event=event, row="H", seat_number="99", status=Seat.Status.AVAILABLE, price=10.0)
+        resp = client.post(
+            "/seats/reserve/",
+            {"seat_ids": [seat.id], "transaction_id": str(uuid.uuid4())},
+            format="json",
+            HTTP_X_USER_ID="usr_c3_zero",
+            HTTP_X_USER_EMAIL="c3_zero@example.com",
+        )
+        self.assertEqual(resp.status_code, 429, f"Expected 429 when MAX_USER_HOLDS=0, got {resp.status_code}")
