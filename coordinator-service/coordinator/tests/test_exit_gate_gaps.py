@@ -1560,6 +1560,7 @@ class FinalClosureGapsTest(TestCase):
         It must revert claim to a recoverable status (e.g. COMPENSATION_FAILED) for retry.
         """
         import uuid
+        import requests
         from coordinator.recovery import execute_compensation_sweep
 
         txn_id = uuid.uuid4()
