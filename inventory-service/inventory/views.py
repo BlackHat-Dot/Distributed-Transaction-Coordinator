@@ -99,8 +99,12 @@ def reclaim_expired_holds():
         seat_id = seat["id"]
         # 1. Time-based expiry (10m hold elapsed) - stays unchanged
         if seat["held_until"] and seat["held_until"] < now:
-            expired_snapshots[seat_id] = seat["held_by_transaction_id"]
+            expired_snapshots[seat_id] = {
+                "tid": seat["held_by_transaction_id"],
+                "held_until": seat["held_until"],
+            }
             continue
+
 
         # 2. Candidate for presence-based expiry: only if hold age >= grace_seconds
         if seat["held_until"] and seat["user_email"] and redis_client:
@@ -155,7 +159,10 @@ def reclaim_expired_holds():
                 if tid_str and tid_str in active_checkouts:
                     continue
                 if seat["user_email"] not in active_emails:
-                    expired_snapshots[seat["id"]] = seat["held_by_transaction_id"]
+                    expired_snapshots[seat["id"]] = {
+                        "tid": seat["held_by_transaction_id"],
+                        "held_until": seat["held_until"],
+                    }
 
         except Exception:
             # If Redis errors, skip presence expiry (fail safe)
@@ -173,11 +180,25 @@ def reclaim_expired_holds():
         )
 
         verified_reclaim_seats = []
+        current_now = timezone.now()
         for seat in locked_seats:
-            expected_tid = expired_snapshots.get(seat.id)
+            snap = expired_snapshots.get(seat.id)
+            if not snap:
+                continue
+            expected_tid = snap["tid"]
+            snap_held_until = snap["held_until"]
+
             # Compare held_by_transaction_id directly without truthiness
-            if seat.held_by_transaction_id == expected_tid:
-                verified_reclaim_seats.append(seat)
+            if seat.held_by_transaction_id != expected_tid:
+                continue
+
+            # B1: If held_until changed between snapshot and lock,
+            # only proceed if it is still expired by time (seat.held_until < current_now).
+            if seat.held_until != snap_held_until and (seat.held_until and seat.held_until >= current_now):
+                continue
+
+            verified_reclaim_seats.append(seat)
+
 
         if not verified_reclaim_seats:
             return 0, 0
