@@ -309,16 +309,32 @@ CACHES = {
 }
 
 REST_FRAMEWORK = {
+    # NUM_PROXIES determines how many reverse proxy hops to trust when resolving client IP from X-Forwarded-For.
+    # Set to 1 for standard reverse-proxy (e.g. AWS ALB, Nginx, Cloudflare), or higher for nested proxies.
     "NUM_PROXIES": int(os.getenv("NUM_PROXIES", "1")),
     "DEFAULT_THROTTLE_RATES": {
-        "inventory_user": os.getenv("INVENTORY_USER_THROTTLE_RATE", "30/min"),
-        "inventory_anon": os.getenv("INVENTORY_ANON_THROTTLE_RATE", "120/min"),
-        "inventory_seat_list": os.getenv("INVENTORY_SEAT_LIST_THROTTLE_RATE", "120/min"),
+        # Fallback rates
+        "inventory_user": os.getenv("INVENTORY_USER_THROTTLE_RATE", "60/min"),
+        "inventory_anon": os.getenv("INVENTORY_ANON_THROTTLE_RATE", "300/min"),
+        # Catalog browsing: generous IP rate for university/office/cellular NAT gateways during on-sale
+        "inventory_seat_list": os.getenv("INVENTORY_SEAT_LIST_THROTTLE_RATE", "300/min"),
+        # Transaction check: generous IP rate for polling checkout status behind NAT
+        "inventory_check": os.getenv("INVENTORY_CHECK_THROTTLE_RATE", "120/min"),
+        # Authenticated user actions: strictly scoped per user_id, independent of client IP/NAT
         "inventory_reserve": os.getenv("INVENTORY_RESERVE_THROTTLE_RATE", "30/min"),
         "inventory_release": os.getenv("INVENTORY_RELEASE_THROTTLE_RATE", "30/min"),
-        "inventory_check": os.getenv("INVENTORY_CHECK_THROTTLE_RATE", "60/min"),
+        # Unauthenticated / bot protection on mutating routes: scoped per client IP with NAT in mind
+        "inventory_reserve_anon": os.getenv(
+            "INVENTORY_RESERVE_ANON_THROTTLE_RATE",
+            "1000/min" if IS_TESTING else "300/min",
+        ),
+        "inventory_release_anon": os.getenv(
+            "INVENTORY_RELEASE_ANON_THROTTLE_RATE",
+            "1000/min" if IS_TESTING else "300/min",
+        ),
     },
     "EXCEPTION_HANDLER": "inventory.throttling.inventory_exception_handler",
 }
+
 
 

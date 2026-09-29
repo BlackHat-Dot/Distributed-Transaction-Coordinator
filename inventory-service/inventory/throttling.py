@@ -64,10 +64,11 @@ class UserActionRateThrottle(BaseInventoryThrottle):
         uid = _get_authenticated_user_id(request)
         if not uid and hasattr(request, "data") and isinstance(request.data, dict):
             uid = request.data.get("user_id")
-        ident = uid or self.get_ident(request)
+        if not uid:
+            return None
         return self.cache_format % {
             "scope": self.scope,
-            "ident": ident,
+            "ident": str(uid),
         }
 
 
@@ -75,15 +76,39 @@ class AnonIpRateThrottle(BaseInventoryThrottle):
     scope = "inventory_anon"
 
     def get_cache_key(self, request, view):
+        uid = _get_authenticated_user_id(request)
+        if not uid and hasattr(request, "data") and isinstance(request.data, dict):
+            uid = request.data.get("user_id")
+        if uid:
+            return None  # Authenticated requests are throttled per user, not IP anon limit
         return self.cache_format % {
             "scope": self.scope,
             "ident": self.get_ident(request),
         }
 
 
-class SeatListRateThrottle(AnonIpRateThrottle):
+class SeatListRateThrottle(BaseInventoryThrottle):
     scope = "inventory_seat_list"
     fallback_scope = "inventory_anon"
+
+    def get_cache_key(self, request, view):
+        # Public catalog endpoint: throttled per client IP with NAT-aware capacity
+        return self.cache_format % {
+            "scope": self.scope,
+            "ident": self.get_ident(request),
+        }
+
+
+class CheckReservationRateThrottle(BaseInventoryThrottle):
+    scope = "inventory_check"
+    fallback_scope = "inventory_anon"
+
+    def get_cache_key(self, request, view):
+        # Transaction status query: throttled per client IP
+        return self.cache_format % {
+            "scope": self.scope,
+            "ident": self.get_ident(request),
+        }
 
 
 class ReserveRateThrottle(UserActionRateThrottle):
@@ -91,11 +116,17 @@ class ReserveRateThrottle(UserActionRateThrottle):
     fallback_scope = "inventory_user"
 
 
+class ReserveAnonRateThrottle(AnonIpRateThrottle):
+    scope = "inventory_reserve_anon"
+    fallback_scope = "inventory_anon"
+
+
 class ReleaseRateThrottle(UserActionRateThrottle):
     scope = "inventory_release"
     fallback_scope = "inventory_user"
 
 
-class CheckReservationRateThrottle(AnonIpRateThrottle):
-    scope = "inventory_check"
+class ReleaseAnonRateThrottle(AnonIpRateThrottle):
+    scope = "inventory_release_anon"
     fallback_scope = "inventory_anon"
+

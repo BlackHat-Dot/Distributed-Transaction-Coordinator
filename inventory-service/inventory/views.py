@@ -24,7 +24,9 @@ from .throttling import (
     AnonIpRateThrottle,
     SeatListRateThrottle,
     ReserveRateThrottle,
+    ReserveAnonRateThrottle,
     ReleaseRateThrottle,
+    ReleaseAnonRateThrottle,
     CheckReservationRateThrottle,
 )
 from .auth import (
@@ -197,7 +199,7 @@ def seat_pricing(request):
 
 
 @api_view(["POST"])
-@throttle_classes([ReserveRateThrottle])
+@throttle_classes([ReserveRateThrottle, ReserveAnonRateThrottle])
 def reserve_seat(request):
     auth_err, has_internal_key = _verify_internal_service_key(request, allow_client=True) # Service key checker
     if auth_err:
@@ -540,7 +542,7 @@ def confirm_seat(request):
         return Response({"error": "Internal server error occurred.", "code": "INTERNAL_ERROR"}, status=500)
 
 @api_view(["POST"])
-@throttle_classes([ReleaseRateThrottle])
+@throttle_classes([ReleaseRateThrottle, ReleaseAnonRateThrottle])
 def release_seat(request):
     # 1. Staff key check (Full admin override)
     is_staff = _is_staff_request(request)
