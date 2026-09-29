@@ -119,3 +119,26 @@ class TestC4SeatListEventFilter(TestCase):
         call_command("seed_demo_seats")
         self.assertEqual(Event.objects.count(), 1)
         self.assertEqual(Seat.objects.count(), 30)
+
+
+class TestC5RedisNegativeCaching(TestCase):
+    def test_redis_connection_failure_negative_cached_for_five_seconds(self):
+        """
+        C5: When Redis connection fails, subsequent calls within 5s return None
+        immediately without attempting to reconnect or paying timeout penalty.
+        """
+        import inventory.views as views
+        # Reset globals
+        views._redis_client_instance = None
+        if hasattr(views, "_redis_last_failure"):
+            views._redis_last_failure = 0.0
+
+        with patch("redis.Redis.from_url", side_effect=Exception("Connection refused")) as mock_redis:
+            client1 = views.get_redis_client()
+            self.assertIsNone(client1)
+            self.assertEqual(mock_redis.call_count, 1)
+
+            # Second call immediately after should be negatively cached
+            client2 = views.get_redis_client()
+            self.assertIsNone(client2)
+            self.assertEqual(mock_redis.call_count, 1, "Redis reconnect should not be attempted within TTL")

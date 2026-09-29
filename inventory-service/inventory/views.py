@@ -26,12 +26,18 @@ logger = logging.getLogger(__name__)
 
 
 _redis_client_instance = None
+_redis_last_failure = 0.0
+_REDIS_NEGATIVE_CACHE_TTL = 5.0
 
 
 def get_redis_client():
-    global _redis_client_instance
+    global _redis_client_instance, _redis_last_failure
     if _redis_client_instance is not None:
         return _redis_client_instance
+
+    now = time.monotonic()
+    if now - _redis_last_failure < _REDIS_NEGATIVE_CACHE_TTL:
+        return None
 
     redis_url = getattr(settings, "REDIS_URL", None) or getattr(settings, "CELERY_BROKER_URL", "redis://localhost:6379/0")
     try:
@@ -42,6 +48,7 @@ def get_redis_client():
         _redis_client_instance = client
         return _redis_client_instance
     except Exception:
+        _redis_last_failure = now
         return None
 
 
