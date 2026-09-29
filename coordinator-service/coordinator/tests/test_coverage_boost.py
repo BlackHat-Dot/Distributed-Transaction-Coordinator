@@ -791,7 +791,12 @@ class ViewsCoverageTests(TransactionTestCase):
             seat_ids=[1],
         )
         mock_resp = MagicMock(status_code=500, content=b'{"error": "Server error"}', json=lambda: {"error": "Server error"})
-        with patch("coordinator.views._http_post", return_value=mock_resp):
+        def fake_post(url, *a, **kw):
+            if "void" in url:
+                return MagicMock(status_code=200, content=b'{"status": "VOIDED"}', json=lambda: {"status": "VOIDED"})
+            return mock_resp
+
+        with patch("coordinator.views._http_post", side_effect=fake_post):
             resp = _compensate(
                 transaction_id=tx_id,
                 fail_compensation=False,
@@ -799,3 +804,4 @@ class ViewsCoverageTests(TransactionTestCase):
                 payment_status_code=400,
             )
             self.assertEqual(resp.status_code, 500)
+
