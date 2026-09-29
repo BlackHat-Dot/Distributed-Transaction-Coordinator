@@ -19,7 +19,14 @@ from rest_framework.response import Response
 import jwt
 from .models import Event, Seat, Reservation
 from .serializers import EventSerializer, PublicSeatSerializer, InternalSeatSerializer
-from .throttling import UserActionRateThrottle, AnonIpRateThrottle
+from .throttling import (
+    UserActionRateThrottle,
+    AnonIpRateThrottle,
+    SeatListRateThrottle,
+    ReserveRateThrottle,
+    ReleaseRateThrottle,
+    CheckReservationRateThrottle,
+)
 from .auth import (
     _is_staff_request,
     _get_authenticated_user,
@@ -98,7 +105,7 @@ def event_list(request):
 
 
 @api_view(["GET"])
-@throttle_classes([AnonIpRateThrottle])
+@throttle_classes([SeatListRateThrottle])
 def seat_list(request):
     # PERF-01: Removed reclaim_expired_holds() piggyback sweep from read path.
     # Expired holds are presented as AVAILABLE lazily by SeatSerializer,
@@ -190,7 +197,7 @@ def seat_pricing(request):
 
 
 @api_view(["POST"])
-@throttle_classes([UserActionRateThrottle])
+@throttle_classes([ReserveRateThrottle])
 def reserve_seat(request):
     auth_err, has_internal_key = _verify_internal_service_key(request, allow_client=True) # Service key checker
     if auth_err:
@@ -533,7 +540,7 @@ def confirm_seat(request):
         return Response({"error": "Internal server error occurred.", "code": "INTERNAL_ERROR"}, status=500)
 
 @api_view(["POST"])
-@throttle_classes([UserActionRateThrottle])
+@throttle_classes([ReleaseRateThrottle])
 def release_seat(request):
     # 1. Staff key check (Full admin override)
     is_staff = _is_staff_request(request)
@@ -668,7 +675,7 @@ def release_seat(request):
         return Response({"error": "Internal server error occurred.", "code": "INTERNAL_ERROR"}, status=500)
 
 @api_view(["GET"])
-@throttle_classes([AnonIpRateThrottle])
+@throttle_classes([CheckReservationRateThrottle])
 def check_reservation(request):
     raw_tid = request.query_params.get("transaction_id")
     if not raw_tid:

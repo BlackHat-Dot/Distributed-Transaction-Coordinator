@@ -296,11 +296,29 @@ LOGGING = {
     },
 }
 
+REDIS_URL = CELERY_BROKER_URL
+
+CACHES = {
+    "default": {
+        "BACKEND": os.getenv(
+            "CACHE_BACKEND",
+            "django.core.cache.backends.locmem.LocMemCache" if IS_TESTING else "django.core.cache.backends.redis.RedisCache",
+        ),
+        "LOCATION": REDIS_URL,
+    }
+}
+
 REST_FRAMEWORK = {
+    "NUM_PROXIES": int(os.getenv("NUM_PROXIES", "1")),
     "DEFAULT_THROTTLE_RATES": {
-        "inventory_user": os.getenv("INVENTORY_USER_THROTTLE_RATE", "1000/min"),
-        "inventory_anon": os.getenv("INVENTORY_ANON_THROTTLE_RATE", "2000/min"),
+        "inventory_user": os.getenv("INVENTORY_USER_THROTTLE_RATE", "30/min"),
+        "inventory_anon": os.getenv("INVENTORY_ANON_THROTTLE_RATE", "120/min"),
+        "inventory_seat_list": os.getenv("INVENTORY_SEAT_LIST_THROTTLE_RATE", "120/min"),
+        "inventory_reserve": os.getenv("INVENTORY_RESERVE_THROTTLE_RATE", "30/min"),
+        "inventory_release": os.getenv("INVENTORY_RELEASE_THROTTLE_RATE", "30/min"),
+        "inventory_check": os.getenv("INVENTORY_CHECK_THROTTLE_RATE", "60/min"),
     },
     "EXCEPTION_HANDLER": "inventory.throttling.inventory_exception_handler",
 }
+
 
