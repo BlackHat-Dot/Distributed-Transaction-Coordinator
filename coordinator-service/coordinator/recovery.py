@@ -11,10 +11,15 @@ PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
 PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
 PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
 INVENTORY_RELEASE_URL = f"{INVENTORY_BASE_URL}/seats/release/"
+INVENTORY_CONFIRM_URL = f"{INVENTORY_BASE_URL}/seats/confirm/"
 REQUEST_CONNECT_TIMEOUT = float(os.getenv("REQUEST_CONNECT_TIMEOUT", "2.0"))
 REQUEST_READ_TIMEOUT = float(os.getenv("REQUEST_READ_TIMEOUT", os.getenv("REQUEST_TIMEOUT", "5.0")))
 REQUEST_TIMEOUT = (REQUEST_CONNECT_TIMEOUT, REQUEST_READ_TIMEOUT)
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
+
+# Single source of truth from Transaction model
+TERMINAL_STATUSES = Transaction.TERMINAL_STATUSES
+RECOVERABLE_STATUSES = Transaction.RECOVERABLE_STATUSES
 
 
 def execute_compensation_sweep(
@@ -107,6 +112,8 @@ def execute_compensation_sweep(
     refund_ok = False
     refund_status_code = None
     refund_payload = None
+    # Sentinel: void revealed a late charge → forward-complete instead of compensating
+    void_revealed_charge = False
 
     if payment_status == "REFUNDED" or (payment_status == "NOT_CHARGED" and payment_voided):
         refund_ok = True
@@ -123,7 +130,8 @@ def execute_compensation_sweep(
             if v_resp.status_code == 200:
                 v_data = v_resp.json() if v_resp.content else {}
                 if v_data.get("status") == "CHARGED":
-                    payment_status = "CHARGED"  # Late charge landed; route to refund below
+                    payment_status = "CHARGED"  # Late charge landed; route to confirm below
+                    void_revealed_charge = True
                 else:
                     void_ok = True
         except (requests.exceptions.RequestException, Exception):
@@ -148,6 +156,45 @@ def execute_compensation_sweep(
                 "status": revert_status,
                 "error": "Payment void failed; claim released for retry",
             }
+
+    # H1(a): void revealed a late charge → seats still reserved, forward-complete
+    if void_revealed_charge:
+        confirm_ok = False
+        confirm_payload = None
+        try:
+            c_resp = post_http(
+                INVENTORY_CONFIRM_URL,
+                json={"transaction_id": str(transaction_id), "seat_ids": seat_ids},
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
+            )
+            if c_resp.status_code == 200:
+                confirm_ok = True
+                try:
+                    confirm_payload = c_resp.json() if c_resp.content else None
+                except Exception:
+                    pass
+        except (requests.exceptions.RequestException, Exception):
+            confirm_ok = False
+
+        if confirm_ok:
+            _set_status_with_event(
+                transaction_id=transaction_id,
+                to_status=Transaction.Status.COMPLETED,
+                expected_status=expected_final_status,
+                actor=actor,
+                http_status_code=200,
+                http_payload={"payment": {"status": "CHARGED"}, "inventory": confirm_payload},
+            )
+            return {
+                "success": True,
+                "status_code": 200,
+                "status": Transaction.Status.COMPLETED,
+                "forward_completed": True,
+                "compensation_response": confirm_payload,
+                "refund_response": None,
+            }
+        # Confirm failed: fall through to refund+release as best-effort compensation
 
     if payment_status == "CHARGED":
         try:

@@ -174,7 +174,7 @@ def _get_client_ip(request):
     X-Forwarded-For is only trusted if the immediate peer (REMOTE_ADDR)
     is in the configured TRUSTED_PROXIES set. Otherwise REMOTE_ADDR is used.
     """
-    remote_addr = request.META.get("REMOTE_ADDR", "127.0.0.1").strip()
+    remote_addr = request.META.get("REMOTE_ADDR", "unknown").strip()
 
     trusted_proxies = getattr(settings, "TRUSTED_PROXIES", None)
     if trusted_proxies is None:

@@ -89,6 +89,7 @@ ALLOWED_TRANSITIONS = {
         Transaction.Status.TIMEOUT,
     },
     Transaction.Status.COMPENSATING: {
+        Transaction.Status.COMPLETED,
         Transaction.Status.COMPENSATED,
         Transaction.Status.COMPENSATION_FAILED,
         Transaction.Status.RECOVERY_IN_PROGRESS,

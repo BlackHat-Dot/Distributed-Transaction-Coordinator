@@ -64,16 +64,29 @@ class CleanupA8Tests(TestCase):
         )
         raw_error_text = "Connection refused to http://internal-inventory:8000/seats/confirm/ [SECRET_SOCKET_FD_99]"
 
+        # 1. Transport error (ConnectionError): per H2, do NOT compensate; return 503 and do not leak
         with patch("coordinator.views._confirm_inventory", return_value=(None, requests.exceptions.ConnectionError(raw_error_text))), \
              patch("coordinator.views._compensate") as mock_compensate:
-            mock_compensate.return_value = MagicMock(status_code=200)
+            resp = _finalize_payment_outcome(
+                txn.transaction_id,
+                fail_compensation=False,
+                payment_data={"status": "CHARGED"},
+            )
+            self.assertFalse(mock_compensate.called, "Must not compensate on transport error (H2)")
+            self.assertEqual(resp.status_code, 503)
+            self.assertNotIn(raw_error_text, str(resp.data), "Raw exception details leaked into 503 response!")
 
+        # 2. Definitive inventory answer (409): route to compensation and do not leak
+        mock_409 = MagicMock(status_code=409)
+        mock_409.json.return_value = {"error": "hold expired"}
+        with patch("coordinator.views._confirm_inventory", return_value=(mock_409, None)), \
+             patch("coordinator.views._compensate") as mock_compensate:
+            mock_compensate.return_value = MagicMock(status_code=200)
             _finalize_payment_outcome(
                 txn.transaction_id,
                 fail_compensation=False,
                 payment_data={"status": "CHARGED"},
             )
-
             self.assertTrue(mock_compensate.called)
             decline_payload = mock_compensate.call_args.args[2]
             inv_confirm = decline_payload.get("inventory_confirm")

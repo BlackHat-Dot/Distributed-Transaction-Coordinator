@@ -1166,29 +1166,28 @@ def _handle_create_transaction(request):
             if simulate_decline and enable_test_payment_failure:
                 amount = Decimal("9999")
 
-            if not is_sync:
-                # Atomically mark as INVENTORY_RESERVED so parallel duplicate requests are rejected
-                transitioned = _set_status_with_event(
-                    transaction_id,
-                    Transaction.Status.INVENTORY_RESERVED,
-                    expected_status=Transaction.Status.HOLDING,
-                    actor=SagaEvent.ACTOR_REQUEST,
-                    http_status_code=200,
-                    http_payload={
-                        "message": f"{len(seat_ids) if seat_ids else 1} Seats reserved via coordinator hold",
-                        "seat_ids": seat_ids,
+            # Atomically mark as INVENTORY_RESERVED so parallel duplicate requests (sync or async) are rejected
+            transitioned = _set_status_with_event(
+                transaction_id,
+                Transaction.Status.INVENTORY_RESERVED,
+                expected_status=Transaction.Status.HOLDING,
+                actor=SagaEvent.ACTOR_REQUEST,
+                http_status_code=200,
+                http_payload={
+                    "message": f"{len(seat_ids) if seat_ids else 1} Seats reserved via coordinator hold",
+                    "seat_ids": seat_ids,
+                    "transaction_id": str(transaction_id),
+                },
+            )
+            if not transitioned:
+                return Response(
+                    {
+                        "error": "Transaction is already being processed or is not in an eligible state for payment.",
+                        "code": "CONCURRENT_PAYMENT_IN_PROGRESS",
                         "transaction_id": str(transaction_id),
                     },
+                    status=409,
                 )
-                if not transitioned:
-                    return Response(
-                        {
-                            "error": "Transaction is already being processed or is not in an eligible state for payment.",
-                            "code": "CONCURRENT_PAYMENT_IN_PROGRESS",
-                            "transaction_id": str(transaction_id),
-                        },
-                        status=409,
-                    )
 
         if not is_sync:
             try:
@@ -1917,6 +1916,27 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
             })
             return Response(data)
 
+        # H2: If both confirms were transport failures (no response at all), do NOT compensate.
+        # Payment charged but confirm outcome unknown — leave in PAYMENT_PROCESSING (recoverable)
+        # so the recovery sweep will re-attempt idempotent confirm via execute_compensation_sweep.
+        if confirm_resp is None:
+            logger.warning(
+                "Inventory confirm timed out twice for tx %s; leaving in PAYMENT_PROCESSING for sweep retry.",
+                transaction_id,
+            )
+            # Status already PAYMENT_PROCESSING (or PAYMENT_TIMEOUT/CONNECTION_ERROR from check path);
+            # no transition needed — sweep will pick it up.
+            return Response(
+                {
+                    "transaction_id": str(transaction_id),
+                    "status": Transaction.Status.PAYMENT_PROCESSING,
+                    "error": "Inventory confirm timed out; will be retried by recovery sweep.",
+                    "needs_recovery": True,
+                },
+                status=503,
+            )
+
+        # Definitive inventory answer (4xx: hold expired, seats not found, etc.) → compensate
         confirm_json = None
         if confirm_resp is not None:
             try:
@@ -1933,7 +1953,7 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
             transaction_id,
             fail_compensation,
             decline_payload,
-            payment_status_code=confirm_resp.status_code if confirm_resp else 504,
+            payment_status_code=confirm_resp.status_code,
             correlation_id=correlation_id,
             seat_ids=seat_ids,
         )

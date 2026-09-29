@@ -30,6 +30,10 @@ INVENTORY_RESERVED = Transaction.Status.INVENTORY_RESERVED
 INVENTORY_RELEASED = Transaction.Status.INVENTORY_RELEASED
 INVENTORY_NOT_RESERVED = Transaction.Status.NOT_RESERVED
 
+# Single source of truth from Transaction model
+TERMINAL_STATUSES = Transaction.TERMINAL_STATUSES
+RECOVERABLE_STATUSES = Transaction.RECOVERABLE_STATUSES
+
 
 
 class Command(BaseCommand):
