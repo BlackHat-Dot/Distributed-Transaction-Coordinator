@@ -206,24 +206,18 @@ def seat_list(request):
     return Response(serializer.data)
 
 
-INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
-STAFF_API_KEY = os.getenv("STAFF_API_KEY")
-
-
 def _is_staff_request(request):
     """
-    Verifies staff/admin identity using constant-time comparison against STAFF_API_KEY.
-    In production (DEBUG=False, IS_TESTING=False), it strictly fails closed if
-    STAFF_API_KEY is not configured in the environment.
+    Verifies staff/admin identity using constant-time comparison against settings.STAFF_API_KEY.
     """
     staff_key = request.headers.get("X-Staff-Key")
     if not staff_key:
         return False
-    if STAFF_API_KEY:
-        return secrets.compare_digest(staff_key, STAFF_API_KEY)
-    if settings.DEBUG or getattr(settings, "IS_TESTING", False):
-        return secrets.compare_digest(staff_key, "dtc-staff-secret-key-2026")
+    configured_key = getattr(settings, "STAFF_API_KEY", None)
+    if configured_key:
+        return secrets.compare_digest(str(staff_key), str(configured_key))
     return False
+
 
 
 def _get_authenticated_user(request):
@@ -290,7 +284,7 @@ def _verify_internal_service_key(request, allow_client=False):
     Returns (auth_err, is_internal).
     """
     key = request.headers.get("X-Internal-Service-Key")
-    configured_key = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
+    configured_key = getattr(settings, "INTERNAL_SERVICE_KEY", None)
 
     if key is not None:
         if not configured_key or not secrets.compare_digest(str(key), str(configured_key)):

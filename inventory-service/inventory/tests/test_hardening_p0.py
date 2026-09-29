@@ -105,3 +105,30 @@ class TestA1JWTVerification(TestCase):
         with override_settings(ALLOW_UNVERIFIED_IDENTITY_HEADERS=False):
             user = _get_authenticated_user(req)
         self.assertIsNone(user)
+
+
+class TestA2StaffAndInternalKeySettings(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+
+    @override_settings(STAFF_API_KEY="dynamic-staff-key-888")
+    def test_a2_staff_key_read_from_settings_at_call_time(self):
+        from inventory.views import _is_staff_request
+        req = self.factory.get("/test/", HTTP_X_STAFF_KEY="dynamic-staff-key-888")
+        self.assertTrue(_is_staff_request(req))
+
+    @override_settings(STAFF_API_KEY="", IS_TESTING=True, DEBUG=True)
+    def test_a2_no_hardcoded_staff_key_fallback(self):
+        # Even with DEBUG=True and IS_TESTING=True, the fallback secret 'dtc-staff-secret-key-2026' must NOT work
+        from inventory.views import _is_staff_request
+        req = self.factory.get("/test/", HTTP_X_STAFF_KEY="dtc-staff-secret-key-2026")
+        self.assertFalse(_is_staff_request(req), "Hardcoded fallback secret must be removed")
+
+    @override_settings(INTERNAL_SERVICE_KEY="dynamic-internal-key-999", IS_TESTING=False)
+    def test_a2_internal_key_read_from_settings_at_call_time(self):
+        from inventory.views import _verify_internal_service_key
+        req = self.factory.get("/test/", HTTP_X_INTERNAL_SERVICE_KEY="dynamic-internal-key-999")
+        err, is_internal = _verify_internal_service_key(req)
+        self.assertIsNone(err)
+        self.assertTrue(is_internal)
+

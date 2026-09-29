@@ -8,7 +8,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.conf import settings
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient, APIRequestFactory
 
@@ -133,7 +133,7 @@ class Phase3AuthAndSecurityTests(TestCase):
         resp = sweep_expired_holds(req)
         self.assertEqual(resp.status_code, 200)
 
-    @patch("inventory.views.STAFF_API_KEY", "dtc-staff-secret-key-2026")
+    @override_settings(STAFF_API_KEY="dtc-staff-secret-key-2026")
     @patch("inventory.views.settings.IS_TESTING", False)
     def test_sweep_expired_holds_endpoint_allows_staff_key(self):
         req = self.factory.post("/seats/sweep-expired/", HTTP_X_STAFF_KEY="dtc-staff-secret-key-2026")
