@@ -680,6 +680,71 @@ class SecurityAndReliabilityHardeningTests(TestCase):
             self.assertTrue(published_payloads[0]["is_terminal"])
             self.assertTrue(published_payloads[0]["needs_recovery"])
 
+    def test_h7_retry_compensation_reverts_claim_on_unexpected_exception(self):
+        """
+        H7: When retry_compensation claims RECOVERY_IN_PROGRESS and execute_compensation_sweep
+        raises an unhandled exception, coordinator must revert the claim to the original status
+        and not leave the transaction stuck in RECOVERY_IN_PROGRESS.
+        """
+        tx_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=tx_id,
+            user_id="user_eve",
+            status=Transaction.Status.COMPENSATION_FAILED,
+            amount=Decimal("150.00"),
+            seat_ids=[1],
+        )
+
+        request = self.factory.post(f"/transactions/{tx_id}/retry-compensation/")
+
+        with patch("coordinator.views._get_requester_identity", return_value=(True, "user_eve", True)), \
+             patch("coordinator.views.execute_compensation_sweep", side_effect=RuntimeError("Simulated sweep explosion")):
+            resp = retry_compensation(request, tx_id)
+
+            self.assertEqual(resp.status_code, 500)
+            txn.refresh_from_db()
+            self.assertEqual(
+                txn.status,
+                Transaction.Status.COMPENSATION_FAILED,
+                "Claim was not reverted back to original status on unexpected error!",
+            )
+
+            # Audit events show claim + reversion
+            events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
+            self.assertTrue(len(events) >= 2)
+            self.assertEqual(events[-2].to_status, Transaction.Status.RECOVERY_IN_PROGRESS)
+            self.assertEqual(events[-1].to_status, Transaction.Status.COMPENSATION_FAILED)
+
+    def test_h8_oneshot_celery_dispatch_failure_transitions_to_timeout(self):
+        """
+        H8: One-shot path: if execute_saga_task.delay fails, transaction must transition
+        to TIMEOUT rather than remaining orphaned in STARTED.
+        """
+        mock_pricing_resp = MagicMock()
+        mock_pricing_resp.status_code = 200
+        mock_pricing_resp.json.return_value = [{"id": 1, "price": "100.00", "seat_number": "A1"}]
+
+        with patch("coordinator.views._http_post", return_value=mock_pricing_resp), \
+             patch("coordinator.tasks.execute_saga_task.delay", side_effect=RuntimeError("Celery connection refused")):
+            resp = self.client.post(
+                "/transactions/",
+                data=json.dumps({"seat_ids": [1]}),
+                content_type="application/json",
+                HTTP_X_USER_ID="user_frank",
+                HTTP_X_USER_EMAIL="frank@test.io",
+            )
+
+            self.assertEqual(resp.status_code, 503)
+            tx_id = resp.data.get("transaction_id")
+            self.assertIsNotNone(tx_id)
+            txn = Transaction.objects.get(transaction_id=tx_id)
+            self.assertEqual(txn.status, Transaction.Status.TIMEOUT)
+
+            events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
+            self.assertEqual(events[-1].to_status, Transaction.Status.TIMEOUT)
+            self.assertEqual(events[-1].from_status, Transaction.Status.STARTED)
+
+
 
 
 

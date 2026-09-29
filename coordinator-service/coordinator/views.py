@@ -428,14 +428,38 @@ def retry_compensation(request, transaction_id):
         }, status=409)
 
     correlation_id = _get_active_correlation_id(getattr(request, "correlation_id", None))
-    outcome = execute_compensation_sweep(
-        transaction_id=transaction_id,
-        actor=SagaEvent.ACTOR_RETRY,
-        original_status=txn.status,
-        correlation_id=correlation_id,
-        get_func=_http_get,
-        post_func=_http_post,
-    )
+    try:
+        outcome = execute_compensation_sweep(
+            transaction_id=transaction_id,
+            actor=SagaEvent.ACTOR_RETRY,
+            original_status=txn.status,
+            correlation_id=correlation_id,
+            get_func=_http_get,
+            post_func=_http_post,
+        )
+    except Exception as exc:
+        logger.error(
+            "execute_compensation_sweep raised unexpectedly in retry_compensation for tx %s: %s; reverting claim",
+            transaction_id,
+            exc,
+            exc_info=True,
+        )
+        _set_status_with_event(
+            transaction_id=transaction_id,
+            to_status=txn.status,
+            expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+            actor=SagaEvent.ACTOR_RETRY,
+            http_status_code=None,
+            http_payload={"error": f"Internal error during compensation retry: {str(exc)}"},
+        )
+        return Response(
+            {
+                "transaction_id": str(transaction_id),
+                "status": txn.status,
+                "error": "Compensation retry encountered an unexpected error; claim released for retry",
+            },
+            status=500,
+        )
 
     response_data = {
         "transaction_id": str(transaction_id),
@@ -1218,10 +1242,18 @@ def _handle_create_transaction(request):
             )
         except Exception:
             logger.exception("Failed to dispatch Saga task")
+            _set_status_with_event(
+                transaction_id,
+                to_status=Transaction.Status.TIMEOUT,
+                expected_status=Transaction.Status.STARTED,
+                actor=SagaEvent.ACTOR_REQUEST,
+                http_status_code=None,
+                http_payload={"error": "Celery dispatch failed; marked TIMEOUT"},
+            )
             return Response(
                 {
                     "transaction_id": str(transaction_id),
-                    "status": Transaction.Status.STARTED,
+                    "status": Transaction.Status.TIMEOUT,
                     "error": "Saga could not be dispatched",
                 },
                 status=503,
