@@ -1809,3 +1809,119 @@ class FinalClosureGapsTest(TestCase):
         self.assertEqual(txn_expired.status, Transaction.Status.TIMEOUT)
         self.assertIn(str(txn_expired_id), void_called_ids)
 
+    def test_recover_compensation_failed_charged_rechecks_and_confirms_completed(self):
+        """
+        Item 1 test:
+        When a row lands in COMPENSATION_FAILED, recover_compensation_failed re-checks payment
+        and inventory; if payment is CHARGED and seats can be confirmed, it confirms inventory
+        and transitions to COMPLETED without issuing a refund.
+        """
+        import uuid
+        from django.core.management import call_command
+        from io import StringIO
+
+        txn_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=txn_id,
+            status=Transaction.Status.COMPENSATION_FAILED,
+            amount=Decimal("175.00"),
+            seat_ids=[99],
+            user_id="u-comp-fail-recheck",
+        )
+        Transaction.objects.filter(transaction_id=txn_id).update(
+            updated_at=timezone.now() - timedelta(minutes=5)
+        )
+
+        confirm_called = [False]
+        refund_called = [False]
+
+        def fake_get(url, *a, **kw):
+            # Payment check discovers the payment was indeed charged!
+            return _ok_mock({"status": "CHARGED"})
+
+        def fake_post(url, *a, **kw):
+            if "confirm" in url:
+                confirm_called[0] = True
+                return _ok_mock({"status": "CONFIRMED"})
+            if "refund" in url:
+                refund_called[0] = True
+                return _ok_mock({"status": "REFUNDED"})
+            return _ok_mock({})
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=fake_get), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=fake_post), \
+             patch("coordinator.recovery.requests.post", side_effect=fake_post), \
+             patch("coordinator.recovery.requests.get", side_effect=fake_get):
+            call_command("recovery_stuck_transactions", stdout=StringIO())
+
+        txn.refresh_from_db()
+
+        self.assertTrue(confirm_called[0], "Must attempt inventory confirm before refunding")
+        self.assertFalse(refund_called[0], "Must NOT refund when inventory confirm succeeds")
+        self.assertEqual(txn.status, Transaction.Status.COMPLETED)
+
+    def test_payment_processing_exceeds_retry_limit_logs_critical_manual_review_no_refund(self):
+        """
+        Item 2 test:
+        When a PAYMENT_PROCESSING transaction exceeds the retry attempt counter (or age cap),
+        the sweep logs a critical alert, marks it for manual review (manual_review_required=True),
+        and does NOT issue an auto-refund.
+        """
+        import uuid
+        from django.core.management import call_command
+        from io import StringIO
+
+        txn_id = uuid.uuid4()
+        txn = Transaction.objects.create(
+            transaction_id=txn_id,
+            status=Transaction.Status.PAYMENT_PROCESSING,
+            amount=Decimal("300.00"),
+            seat_ids=[105],
+            user_id="u-retry-cap-test",
+        )
+        # Seed 5 recovery attempt saga events
+        for seq in range(1, 6):
+            SagaEvent.objects.create(
+                transaction=txn,
+                seq=seq,
+                from_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+                to_status=Transaction.Status.PAYMENT_PROCESSING,
+                actor=SagaEvent.ACTOR_RECOVERY,
+                http_payload={"error": f"Attempt {seq} timed out"},
+            )
+        Transaction.objects.filter(transaction_id=txn_id).update(
+            updated_at=timezone.now() - timedelta(minutes=5)
+        )
+
+        confirm_called = [False]
+        refund_called = [False]
+
+        def fake_get(url, *a, **kw):
+            return _ok_mock({"status": "CHARGED"})
+
+        def fake_post(url, *a, **kw):
+            if "confirm" in url:
+                confirm_called[0] = True
+                return _ok_mock({"status": "CONFIRMED"})
+            if "refund" in url:
+                refund_called[0] = True
+                return _ok_mock({"status": "REFUNDED"})
+            return _ok_mock({})
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=fake_get), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=fake_post), \
+             patch("coordinator.recovery.requests.post", side_effect=fake_post), \
+             patch("coordinator.recovery.requests.get", side_effect=fake_get):
+            call_command("recovery_stuck_transactions", stdout=StringIO())
+
+        txn.refresh_from_db()
+
+        self.assertFalse(confirm_called[0], "Must not call confirm once retry cap is exceeded")
+        self.assertFalse(refund_called[0], "Must NOT auto-refund on retry cap exceeded")
+        self.assertEqual(txn.status, Transaction.Status.PAYMENT_PROCESSING)
+
+        # Verify saga event has manual_review_required flag
+        latest_event = txn.events.order_by("-seq").first()
+        self.assertIsNotNone(latest_event)
+        self.assertTrue(latest_event.http_payload.get("manual_review_required"))
+

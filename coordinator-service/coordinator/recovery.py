@@ -157,8 +157,8 @@ def execute_compensation_sweep(
                 "error": "Payment void failed; claim released for retry",
             }
 
-    # H1(a): void revealed a late charge → seats still reserved, forward-complete
-    if void_revealed_charge:
+    # Before refunding, re-check inventory: if payment is charged, attempt to confirm first
+    if payment_status == "CHARGED" or void_revealed_charge:
         confirm_ok = False
         confirm_payload = None
         confirm_status_code = None

@@ -285,6 +285,49 @@ class Command(BaseCommand):
             txn = Transaction.objects.filter(transaction_id=transaction_id).first()
             seat_ids = txn.seat_ids if txn else []
 
+            # Check attempt counter or age cap for confirm retries
+            retry_count = SagaEvent.objects.filter(
+                transaction=txn,
+                actor=SagaEvent.ACTOR_RECOVERY,
+            ).count() if txn else 0
+            age_minutes = ((timezone.now() - txn.created_at).total_seconds() / 60.0) if txn and txn.created_at else 0.0
+            max_attempts = getattr(settings, "MAX_CONFIRM_RETRY_ATTEMPTS", 5)
+            max_age_minutes = getattr(settings, "MAX_CONFIRM_RETRY_MINUTES", 60)
+
+            if retry_count >= max_attempts or age_minutes >= max_age_minutes:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.critical(
+                    "CRITICAL ALERT: Transaction %s exceeded confirm retry limits (attempts=%d/%d, age=%.1fm/%dm). "
+                    "Marked for MANUAL_REVIEW. Payment is CHARGED; NO auto-refund issued.",
+                    transaction_id,
+                    retry_count,
+                    max_attempts,
+                    age_minutes,
+                    max_age_minutes,
+                )
+                self.stdout.write(
+                    self.style.ERROR(
+                        f"CRITICAL: {transaction_id} exceeded confirm retry limit (attempts={retry_count}/{max_attempts}, age={age_minutes:.1f}m/{max_age_minutes}m). "
+                        "Marked for MANUAL REVIEW; NO auto-refund issued."
+                    )
+                )
+                _set_status_with_event(
+                    transaction_id=transaction_id,
+                    to_status=Transaction.Status.PAYMENT_PROCESSING,
+                    expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+                    actor=SagaEvent.ACTOR_RECOVERY,
+                    http_status_code=None,
+                    http_payload={
+                        "error": "Exceeded confirm retry limit; marked for manual review.",
+                        "manual_review_required": True,
+                        "retry_count": retry_count,
+                        "age_minutes": age_minutes,
+                        "payment_status": "CHARGED",
+                    },
+                )
+                return
+
             # Before completing, confirm inventory
             try:
                 confirm_resp = requests.post(
