@@ -883,6 +883,39 @@ class SecurityAndReliabilityHardeningTests(TestCase):
             self.assertEqual(resp.status_code, 200)
             self.assertEqual(resp.data.get("status"), "active")
 
+    def test_h14_startup_service_keys_system_check(self):
+        """
+        H14: check_service_keys_and_admin_domain validates configuration
+        when not in test runner.
+        """
+        from coordinator.checks import check_service_keys_and_admin_domain
+
+        # In testing mode, no warnings emitted
+        with self.settings(IS_TESTING=True):
+            warnings = check_service_keys_and_admin_domain(None)
+            self.assertEqual(len(warnings), 0)
+
+        # In non-testing mode with missing keys, returns 3 warnings
+        with self.settings(IS_TESTING=False, INTERNAL_SERVICE_KEY=""):
+            with patch.dict(os.environ, {}, clear=True):
+                warnings = check_service_keys_and_admin_domain(None)
+                warning_ids = {w.id for w in warnings}
+                self.assertIn("coordinator.W001", warning_ids)
+                self.assertIn("coordinator.W002", warning_ids)
+                self.assertIn("coordinator.W003", warning_ids)
+
+        # In non-testing mode with valid keys, returns 0 warnings
+        with self.settings(IS_TESTING=False, INTERNAL_SERVICE_KEY="prod-secret-123"):
+            env = {
+                "INTERNAL_SERVICE_KEY": "prod-secret-123",
+                "STAFF_API_KEY": "staff-secret-456",
+                "ADMIN_DOMAIN": "dtc.internal",
+            }
+            with patch.dict(os.environ, env):
+                warnings = check_service_keys_and_admin_domain(None)
+                self.assertEqual(len(warnings), 0)
+
+
 
 
 
