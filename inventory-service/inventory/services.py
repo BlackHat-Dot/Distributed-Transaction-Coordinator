@@ -91,10 +91,11 @@ def reclaim_expired_holds():
 
     CONTRACT FOR COORDINATOR / FRONTEND:
     When a checkout/payment begins for a transaction, the coordinator or checkout client
-    sets Redis key `dtc:checkout:{transaction_id}` (e.g. SET dtc:checkout:{transaction_id} 1 EX 180).
+    sets Redis key `dtc:checkout:{transaction_id}` with TTL = (payment timeout + 60s).
     While this key exists, presence-based reclaim is skipped for any seats held by that
     transaction_id, preventing holds from being prematurely cleared during payment processing
     or 3D-Secure verification even if user presence heartbeats lapse.
+    The coordinator deletes this key upon reaching terminal outcome (COMPLETED, COMPENSATED, FAILED).
     Time-based expiry (held_until < now) is not skipped by dtc:checkout.
     """
     now = timezone.now()

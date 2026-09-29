@@ -1672,7 +1672,37 @@ def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=No
                 },
                 status=409,
             )
-        return None, Response({"transaction_id": str(transaction_id), "status": status}, status=504)
+# CONTRACT WITH INVENTORY SERVICE:
+# When entering PAYMENT_PROCESSING, coordinator sets Redis key `dtc:checkout:{transaction_id}`
+# with TTL = (payment timeout + 60s). This prevents the inventory service presence sweep from
+# reclaiming the seat hold while the customer is on the 3D-Secure payment page.
+# Coordinator clears this key upon terminal outcome (COMPLETED, COMPENSATED, FAILED).
+
+def _get_coordinator_redis_client():
+    try:
+        from coordinator.tasks import get_redis_client
+        return get_redis_client()
+    except Exception:
+        return None
+
+
+def _set_checkout_presence(transaction_id):
+    try:
+        client = _get_coordinator_redis_client()
+        if client:
+            ttl = int(REQUEST_READ_TIMEOUT + 60)
+            client.set(f"dtc:checkout:{transaction_id}", "1", ex=ttl)
+    except Exception as e:
+        logger.debug("Failed to set checkout presence key: %s", e)
+
+
+def _clear_checkout_presence(transaction_id):
+    try:
+        client = _get_coordinator_redis_client()
+        if client:
+            client.delete(f"dtc:checkout:{transaction_id}")
+    except Exception as e:
+        logger.debug("Failed to clear checkout presence key: %s", e)
 
 
 def _charge_payment(
@@ -1684,6 +1714,7 @@ def _charge_payment(
     user_id=None,
     user_email=None,
 ):
+    _set_checkout_presence(transaction_id)
 
     headers = {
         "X-Correlation-ID": _get_active_correlation_id(correlation_id),
@@ -1894,6 +1925,7 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
                 http_status_code=payment_status_code,
                 http_payload={"payment": payment_data, "inventory": confirm_json},
             )
+            _clear_checkout_presence(transaction_id)
             if not transitioned:
                 current = Transaction.objects.filter(transaction_id=transaction_id).first()
                 curr_status = current.status if current else "UNKNOWN"
@@ -2100,6 +2132,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             http_status_code=release_status_code or 200,
             http_payload=release_data,
         )
+        _clear_checkout_presence(transaction_id)
         if not transitioned:
             current = Transaction.objects.filter(transaction_id=transaction_id).first()
             curr_status = current.status if current else "UNKNOWN"
@@ -2133,6 +2166,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
         http_status_code=refund_status_code if not refund_ok else release_status_code,
         http_payload=refund_data if not refund_ok else release_data,
     )
+    _clear_checkout_presence(transaction_id)
     if not transitioned:
         current = Transaction.objects.filter(transaction_id=transaction_id).first()
         curr_status = current.status if current else "UNKNOWN"
