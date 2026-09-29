@@ -46,6 +46,8 @@ ALLOW_UNVERIFIED_IDENTITY_HEADERS = IS_TESTING or (os.getenv("ALLOW_UNVERIFIED_I
 ALLOW_UNAUTHENTICATED_RESET = DEBUG or IS_TESTING or (os.getenv("ALLOW_UNAUTHENTICATED_RESET", "False").lower() in ("true", "1"))
 
 STAFF_API_KEY = os.getenv("STAFF_API_KEY")
+if not STAFF_API_KEY and IS_TESTING:
+    STAFF_API_KEY = "dtc-staff-secret-key-2026"
 JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY")
 
 INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY")
@@ -289,3 +291,12 @@ LOGGING = {
         },
     },
 }
+
+REST_FRAMEWORK = {
+    "DEFAULT_THROTTLE_RATES": {
+        "inventory_user": os.getenv("INVENTORY_USER_THROTTLE_RATE", "1000/min"),
+        "inventory_anon": os.getenv("INVENTORY_ANON_THROTTLE_RATE", "2000/min"),
+    },
+    "EXCEPTION_HANDLER": "inventory.throttling.inventory_exception_handler",
+}
+
