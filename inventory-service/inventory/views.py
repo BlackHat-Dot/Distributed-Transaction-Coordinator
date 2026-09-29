@@ -637,8 +637,10 @@ def release_seat(request):
 
             seat_ids = [r.seat_id for r in active_res if r.seat_id]
 
+            rel_reason = "COORDINATOR_COMPENSATED" if (is_staff or is_internal) else "USER_CANCELLED"
             Reservation.objects.filter(id__in=[r.id for r in active_res]).update(
-                status=Reservation.Status.RELEASED
+                status=Reservation.Status.RELEASED,
+                released_reason=rel_reason,
             )
 
             reclaimed_seat_count = 0
@@ -695,7 +697,11 @@ def check_reservation(request):
         return Response({"status": Reservation.Status.BOOKED, "transaction_id": str(transaction_id)}, status=200)
     
     if any(r.status == Reservation.Status.RELEASED for r in reservations):
-        return Response({"status": Reservation.Status.RELEASED, "transaction_id": str(transaction_id)}, status=200)
+        rel_r = next(r for r in reservations if r.status == Reservation.Status.RELEASED)
+        resp_data = {"status": Reservation.Status.RELEASED, "transaction_id": str(transaction_id)}
+        if rel_r.released_reason:
+            resp_data["released_reason"] = rel_r.released_reason
+        return Response(resp_data, status=200)
 
     now = timezone.now()
     if any(
@@ -705,7 +711,7 @@ def check_reservation(request):
         )
         for r in reservations
     ):
-        return Response({"status": Reservation.Status.RELEASED, "transaction_id": str(transaction_id)}, status=200)
+        return Response({"status": Reservation.Status.RELEASED, "transaction_id": str(transaction_id), "released_reason": "EXPIRED_HOLD"}, status=200)
 
     return Response({"status": Reservation.Status.RESERVED, "transaction_id": str(transaction_id)}, status=200)
 
@@ -747,8 +753,11 @@ def reset_seats(request):
             user_email=None,
         )
 
-        # F5: Do not hard-delete BOOKED reservations; mark them RELEASED to preserve audit history.
-        updated_booked = res_qs.filter(status=Reservation.Status.BOOKED).update(status=Reservation.Status.RELEASED)
+        # F5/G6: Do not hard-delete BOOKED reservations; mark them RELEASED with released_reason="ADMIN_RESET"
+        updated_booked = res_qs.filter(status=Reservation.Status.BOOKED).update(
+            status=Reservation.Status.RELEASED,
+            released_reason="ADMIN_RESET",
+        )
         deleted_res, _ = res_qs.exclude(status=Reservation.Status.RELEASED).delete()
         rows_affected = updated_seats + updated_booked + deleted_res
 

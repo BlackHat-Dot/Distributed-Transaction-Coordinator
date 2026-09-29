@@ -122,8 +122,15 @@ class Reservation(models.Model):
         choices=Status.choices,
         default=Status.RESERVED,
     )
+    released_reason = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Audit reason for release: e.g. ADMIN_RESET, EXPIRED_HOLD, USER_CANCELLED, COORDINATOR_COMPENSATED",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
 
     class Meta:
         constraints = [

@@ -248,7 +248,7 @@ def reclaim_expired_holds():
             released = Reservation.objects.filter(
                 pair_filter,
                 status=Reservation.Status.RESERVED,
-            ).update(status=Reservation.Status.RELEASED)
+            ).update(status=Reservation.Status.RELEASED, released_reason="EXPIRED_HOLD")
 
         reclaimed = Seat.objects.filter(
             id__in=reclaimed_ids,
