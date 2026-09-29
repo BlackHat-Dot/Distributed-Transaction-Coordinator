@@ -776,33 +776,20 @@ def _handle_create_transaction(request):
     is_dev = getattr(settings, "DEBUG", False)
 
     # ── Auth ─────────────────────────────────────────────────────────────────
-    # Priority 1: Staff/machine-to-machine via X-Staff-Key header
+    ident = _get_requester_identity(request)
+    if not ident[0]:
+        return Response(
+            {
+                "error": "Authentication required. Your session has expired or you are not signed in. Please sign in to book seats.",
+                "code": "AUTHENTICATION_REQUIRED",
+            },
+            status=401,
+        )
+
+    user_id = ident[1]
+    is_staff = ident[2]
+    user_email = getattr(ident, "user_email", None) or (ident[3] if len(ident) > 3 else None)
     has_staff_key = _verify_staff_key(request.headers.get("X-Staff-Key"))
-
-    is_staff = False
-    if has_staff_key:
-        user_id = request.headers.get("X-User-ID") or os.getenv("STAFF_USER_ID") or "system_staff"
-        user_email = request.headers.get("X-User-Email") or os.getenv("STAFF_EMAIL_ID") or "admin@dtc.internal"
-        is_staff = True
-    else:
-        # Priority 2: Regular user authenticated via JWT Bearer token
-        user_info = get_user_from_request(request)
-
-        if user_info and user_info.get("is_authenticated"):
-            user_id = user_info.get("user_id")
-            user_email = user_info.get("user_email")
-            is_staff = _is_admin_email(user_email)
-        elif is_testing or is_dev:
-            user_id = request.headers.get("X-User-ID") or ("system_test" if is_testing else "system_dev")
-            user_email = request.headers.get("X-User-Email") or None
-        else:
-            return Response(
-                {
-                    "error": "Authentication required. Your session has expired or you are not signed in. Please sign in to book seats.",
-                    "code": "AUTHENTICATION_REQUIRED",
-                },
-                status=401,
-            )
 
     correlation_id = request.correlation_id
     if not correlation_id:
@@ -2050,39 +2037,58 @@ def _is_admin_email(email):
     return parts[1] == admin_domain
 
 
+class RequesterIdentity(tuple):
+    """
+    Caller identity tuple: (is_authenticated, user_id, is_staff).
+    Provides full backward compatibility with 3-tuple unpacking while exposing typed attributes
+    including .user_email.
+    """
+    def __new__(cls, is_authenticated, user_id, is_staff, user_email=None):
+        return super().__new__(cls, (is_authenticated, user_id, is_staff))
+
+    def __init__(self, is_authenticated, user_id, is_staff, user_email=None):
+        self.is_authenticated = is_authenticated
+        self.user_id = user_id
+        self.is_staff = is_staff
+        self.user_email = user_email
+
+
 def _get_requester_identity(request):
     """
     Resolves caller identity and permissions (is_authenticated, auth_user_id, is_staff).
+    Returns a RequesterIdentity 3-tuple with .user_email attribute.
     
     Priority of Authentication:
-      1. JWT Bearer Token (Primary mechanism for Visualizer & API clients)
-      2. Service API Key (Machine-to-Machine / Admin scripts via X-Staff-Key)
+      1. Machine-to-Machine / Service API Key (Admin scripts via X-Staff-Key)
+      2. JWT Bearer Token (Primary mechanism for Visualizer & API clients)
       3. Automated Test Runner Environment (Preserves test suite execution)
       4. Local Development Fallback (DEBUG=True demo user)
     """
 
     # Machine-to-Machine: Internal Staff Secret Key (Priority 1)
     if _verify_staff_key(request.headers.get("X-Staff-Key")):
-        return True, "system_staff", True
+        user_id = request.headers.get("X-User-ID") or os.getenv("STAFF_USER_ID") or "system_staff"
+        user_email = request.headers.get("X-User-Email") or os.getenv("STAFF_EMAIL_ID") or "admin@dtc.internal"
+        return RequesterIdentity(True, user_id, True, user_email=user_email)
 
-    # JWT Bearer Token
+    # JWT Bearer Token (Priority 2)
     user_info = get_user_from_request(request)
     
     if user_info and user_info.get("is_authenticated"):
         user_email = user_info.get("user_email")
         is_staff = _is_admin_email(user_email)
+        return RequesterIdentity(True, user_info.get("user_id"), is_staff, user_email=user_email)
 
-        return True, user_info.get("user_id"), is_staff
-
-    # Automated Test Runner Environment
+    # Automated Test Runner Environment (Priority 3)
     is_testing = bool(getattr(settings, "IS_TESTING", False))
 
     if is_testing:
         test_uid = request.headers.get("X-User-ID") or "system_test"
+        test_email = request.headers.get("X-User-Email") or None
+        is_staff = _is_admin_email(test_email) if test_email else True
+        return RequesterIdentity(True, test_uid, is_staff, user_email=test_email)
 
-        return True, test_uid, True
-
-    # Local Development Mode (DEBUG=True)
+    # Local Development Mode (DEBUG=True) (Priority 4)
     is_dev = getattr(settings, "DEBUG", False)
     allow_dev_staff_bypass = getattr(settings, "ALLOW_DEV_STAFF_BYPASS", False) or (
         os.getenv("ALLOW_DEV_STAFF_BYPASS", "").lower() in ("true", "1", "yes", "t")
@@ -2094,11 +2100,14 @@ def _get_requester_identity(request):
             request.headers.get("X-User-ID")
             or (user_info.get("user_id") if user_info else "system_dev")
         )
-
-        return True, dev_uid, is_dev_staff
+        dev_email = (
+            request.headers.get("X-User-Email")
+            or (user_info.get("user_email") if user_info else None)
+        )
+        return RequesterIdentity(True, dev_uid, is_dev_staff, user_email=dev_email)
 
     # Default: Unauthenticated
-    return False, None, False
+    return RequesterIdentity(False, None, False, user_email=None)
 
 
 def _create_transaction(

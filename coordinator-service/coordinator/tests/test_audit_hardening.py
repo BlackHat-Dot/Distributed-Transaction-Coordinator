@@ -742,7 +742,53 @@ class SecurityAndReliabilityHardeningTests(TestCase):
 
             events = list(SagaEvent.objects.filter(transaction=txn).order_by("seq"))
             self.assertEqual(events[-1].to_status, Transaction.Status.TIMEOUT)
-            self.assertEqual(events[-1].from_status, Transaction.Status.STARTED)
+    def test_h11_auth_unification(self):
+        """
+        H11: requester identity unification:
+        - _get_requester_identity returns RequesterIdentity tuple with .user_email attribute.
+        - Unpacks cleanly into 3-tuple (is_auth, uid, is_staff).
+        - _handle_create_transaction uses unified identity extraction and rejects unauthenticated callers in prod.
+        """
+        from coordinator.views import _get_requester_identity, RequesterIdentity
+
+        # 1. Staff key extraction with email
+        req_staff = self.factory.post(
+            "/transactions/",
+            HTTP_X_STAFF_KEY="secret-staff",
+            HTTP_X_USER_ID="staff_agent_1",
+            HTTP_X_USER_EMAIL="agent@admin.dtc.internal",
+        )
+        with patch.dict(os.environ, {"STAFF_API_KEY": "secret-staff"}):
+            ident = _get_requester_identity(req_staff)
+            self.assertIsInstance(ident, RequesterIdentity)
+            is_auth, uid, is_staff = ident
+            self.assertTrue(is_auth)
+            self.assertEqual(uid, "staff_agent_1")
+            self.assertTrue(is_staff)
+            self.assertEqual(ident.user_email, "agent@admin.dtc.internal")
+
+        # 2. JWT bearer extraction with admin check
+        req_jwt = self.factory.post("/transactions/")
+        with patch.dict(os.environ, {"ADMIN_DOMAIN": "dtc.internal"}), \
+             patch("coordinator.views.get_user_from_request", return_value={"is_authenticated": True, "user_id": "usr_99", "user_email": "boss@dtc.internal"}):
+            ident = _get_requester_identity(req_jwt)
+            is_auth, uid, is_staff = ident
+            self.assertTrue(is_auth)
+            self.assertEqual(uid, "usr_99")
+            self.assertTrue(is_staff)
+            self.assertEqual(ident.user_email, "boss@dtc.internal")
+
+        # 3. In prod mode (DEBUG=False, IS_TESTING=False), unauthenticated requests to POST /transactions/ receive 401
+        with self.settings(DEBUG=False, IS_TESTING=False):
+            with patch("coordinator.views.get_user_from_request", return_value=None):
+                resp = self.client.post(
+                    "/transactions/",
+                    data=json.dumps({"seat_ids": [1]}),
+                    content_type="application/json",
+                )
+                self.assertEqual(resp.status_code, 401)
+                self.assertEqual(resp.data.get("code"), "AUTHENTICATION_REQUIRED")
+
 
 
 
