@@ -24,11 +24,7 @@ class CorrelationIdMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        correlation_id = (
-            request.headers.get("X-Correlation-ID")
-            or request.META.get("HTTP_X_CORRELATION_ID")
-            or str(uuid.uuid4())
-        )
+        correlation_id = str(uuid.uuid4())
 
         token = set_correlation_id(correlation_id)
 

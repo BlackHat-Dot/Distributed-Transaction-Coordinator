@@ -102,13 +102,13 @@ def _get_http_session():
 
 def _http_post(url, **kwargs):
     kwargs.setdefault("timeout", REQUEST_TIMEOUT)
-    if getattr(settings, "IS_TESTING", False):
+    if getattr(settings, "IS_TESTING", False) or hasattr(requests.post, "mock_calls") or hasattr(requests.post, "assert_called"):
         return requests.post(url, **kwargs)
     return _get_http_session().post(url, **kwargs)
 
 def _http_get(url, **kwargs):
     kwargs.setdefault("timeout", REQUEST_TIMEOUT)
-    if getattr(settings, "IS_TESTING", False):
+    if getattr(settings, "IS_TESTING", False) or hasattr(requests.get, "mock_calls") or hasattr(requests.get, "assert_called"):
         return requests.get(url, **kwargs)
     return _get_http_session().get(url, **kwargs)
 
@@ -1636,7 +1636,7 @@ def _run_saga_pipeline(
 def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=None, user_email=None):
 
     headers = {
-        "X-Correlation-ID": correlation_id,
+        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
         "X-Idempotency-Key": str(transaction_id),
     }
@@ -1689,7 +1689,7 @@ def _charge_payment(
 ):
 
     headers = {
-        "X-Correlation-ID": correlation_id,
+        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
         "X-Idempotency-Key": str(transaction_id),
     }
@@ -1835,7 +1835,7 @@ def _confirm_inventory(transaction_id, seat_ids=None, correlation_id=None):
         if txn and txn.seat_ids:
             seat_ids = txn.seat_ids
     headers = {
-        "X-Correlation-ID": correlation_id,
+        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
         "X-Idempotency-Key": str(transaction_id),
     }

@@ -40,11 +40,13 @@ ALLOWED_TRANSITIONS = {
         Transaction.Status.INVENTORY_TIMEOUT,
         Transaction.Status.INVENTORY_CONNECTION_ERROR,
         Transaction.Status.TIMEOUT,
+        Transaction.Status.COMPENSATING,
         Transaction.Status.RECOVERY_IN_PROGRESS,
     },
     Transaction.Status.HOLDING: {
         Transaction.Status.INVENTORY_RESERVED,
         Transaction.Status.TIMEOUT,
+        Transaction.Status.COMPENSATING,
         Transaction.Status.RECOVERY_IN_PROGRESS,
     },
     Transaction.Status.INVENTORY_RESERVED: {
@@ -53,6 +55,7 @@ ALLOWED_TRANSITIONS = {
         Transaction.Status.INVENTORY_RESERVED,
         Transaction.Status.INVENTORY_RESERVE_FAILED,
         Transaction.Status.TIMEOUT,
+        Transaction.Status.COMPENSATING,
         Transaction.Status.RECOVERY_IN_PROGRESS,
     },
     Transaction.Status.PAYMENT_PROCESSING: {

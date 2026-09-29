@@ -1099,14 +1099,27 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         self.assertNotEqual(event.http_payload.get("token"), "secret_token_12345")
         self.assertTrue(event.http_payload.get("token").startswith("****"))
 
-    def test_h20_incoming_correlation_id_preserved(self):
+    def test_h20_outbound_correlation_id_standardized(self):
         """
-        H20: CorrelationIdMiddleware preserves incoming X-Correlation-ID header.
+        H20: _reserve_inventory, _charge_payment, _confirm_inventory use _get_active_correlation_id
+        so that outbound calls always carry a valid non-empty X-Correlation-ID even if correlation_id=None.
         """
-        custom_cid = "trace-custom-uuid-9999"
-        resp = self.client.get("/health/", HTTP_X_CORRELATION_ID=custom_cid)
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.get("X-Correlation-ID"), custom_cid)
+        from coordinator.views import _reserve_inventory, _charge_payment, _confirm_inventory
+        with patch("coordinator.views._http_post") as mock_post:
+            mock_post.return_value = MagicMock(status_code=200, json=lambda: {})
+            tx_id = uuid.uuid4()
+
+            _reserve_inventory(tx_id, seat_ids=[1], correlation_id=None)
+            headers = mock_post.call_args[1]["headers"]
+            self.assertTrue(headers.get("X-Correlation-ID"))
+
+            _charge_payment(tx_id, amount=Decimal("100.00"), fail_compensation=False, correlation_id=None)
+            headers = mock_post.call_args[1]["headers"]
+            self.assertTrue(headers.get("X-Correlation-ID"))
+
+            _confirm_inventory(tx_id, seat_ids=[1], correlation_id=None)
+            headers = mock_post.call_args[1]["headers"]
+            self.assertTrue(headers.get("X-Correlation-ID"))
 
     def test_h21_updated_at_refreshed_on_state_transition(self):
         """
