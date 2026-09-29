@@ -42,9 +42,9 @@ def _get_redis_client():
     try:
         # socket_connect_timeout = 0.5(500ms); max time allowed to establish the TCP network connection.
         # socket_timeout = 0.5(500ms); max time allowed to wait for redis to reply to a command
-        # decode_responses=True tells the Redis client to automatically decode raw bytes into Python str (strings) using UTF-8.
+        timeout = getattr(settings, "REDIS_SOCKET_TIMEOUT", 0.02 if is_testing else 0.5)
         client = redis.Redis.from_url(
-            broker_url, decode_responses=True, socket_connect_timeout=0.5, socket_timeout=0.5
+            broker_url, decode_responses=True, socket_connect_timeout=timeout, socket_timeout=timeout
         )
 
         # If connection is successful then redis will reply 'PONG'

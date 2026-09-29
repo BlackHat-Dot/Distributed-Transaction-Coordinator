@@ -21,8 +21,13 @@ end
 
 
 def get_redis_client():
-    broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://localhost:6379/0")
-    return redis.Redis.from_url(broker_url)
+    broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+    timeout = getattr(settings, "REDIS_SOCKET_TIMEOUT", 1.0)
+    return redis.Redis.from_url(
+        broker_url,
+        socket_connect_timeout=timeout,
+        socket_timeout=timeout,
+    )
 
 
 @shared_task(name="coordinator.tasks.recover_stuck_transactions")

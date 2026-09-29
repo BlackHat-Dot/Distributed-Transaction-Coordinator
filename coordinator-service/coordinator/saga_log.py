@@ -16,13 +16,14 @@ _pub_client = None
 def _get_pub_client():
     global _pub_client
     if _pub_client is None:
-        broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://localhost:6379/0")
+        broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+        timeout = getattr(settings, "REDIS_SOCKET_TIMEOUT", 1.0)
         try:
             _pub_client = redis.Redis.from_url(
                 broker_url,
                 decode_responses=True,
-                socket_connect_timeout=1.0,
-                socket_timeout=1.0,
+                socket_connect_timeout=timeout,
+                socket_timeout=timeout,
             )
         except Exception as e:
             logger.warning("Failed to initialize Redis publisher client: %s", e)

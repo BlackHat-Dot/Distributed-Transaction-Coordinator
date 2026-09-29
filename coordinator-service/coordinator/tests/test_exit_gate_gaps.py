@@ -921,6 +921,7 @@ class Q5CoordinatorChangeMdChecklistTest(TestCase):
 
         with patch("coordinator.views.requests.post", side_effect=fake_post), \
              patch("coordinator.views._get_requester_identity", return_value=(True, "u-p1", False, "u@test.com")), \
+             patch("coordinator.tasks.execute_saga_task.delay"), \
              patch("django.conf.settings.ENABLE_TEST_PAYMENT_FAILURE", False, create=True):
             c = APIClient()
             c.post(

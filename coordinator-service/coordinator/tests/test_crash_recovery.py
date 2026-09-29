@@ -280,7 +280,16 @@ class CrashRecoveryTests(TransactionTestCase):
                 return mock
             raise ValueError(f"Unexpected GET: {url}")
 
-        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=mock_get):
+        def mock_post(url, *args, **kwargs):
+            mock = MagicMock()
+            if "payments/void" in url:
+                mock.status_code = 200
+                mock.json.return_value = {"status": "VOIDED"}
+                return mock
+            raise ValueError(f"Unexpected POST: {url}")
+
+        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=mock_get), \
+             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=mock_post):
             call_command("recovery_stuck_transactions")
 
         for tid in tids:

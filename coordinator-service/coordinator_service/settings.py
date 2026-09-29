@@ -269,10 +269,11 @@ CELERY_BROKER_URL = os.getenv(
         "REDIS_PRIVATE_URL",
         os.getenv(
             "REDIS_PUBLIC_URL",
-            os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+            os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
         )
     )
 )
+REDIS_SOCKET_TIMEOUT = float(os.getenv("REDIS_SOCKET_TIMEOUT", "0.02" if IS_TESTING else "1.0"))
 CELERY_RESULT_BACKEND = None
 
 CELERY_ACCEPT_CONTENT = ["json"]
