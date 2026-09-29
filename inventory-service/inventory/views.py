@@ -958,13 +958,11 @@ def check_reservation(request):
         return Response({"error": "transaction_id is required"}, status=400)
         
     try:
-        import uuid
-
         transaction_id = uuid.UUID(raw_tid)
     except ValueError:
         return Response({"error": "transaction_id must be a valid UUID"}, status=400)
 
-    reservations = list(Reservation.objects.filter(transaction_id=transaction_id))
+    reservations = list(Reservation.objects.select_related("seat").filter(transaction_id=transaction_id))
 
     if not reservations:
         return Response({"status": Reservation.Status.NOT_RESERVED, "transaction_id": str(transaction_id)}, status=200)
@@ -973,6 +971,16 @@ def check_reservation(request):
         return Response({"status": Reservation.Status.BOOKED, "transaction_id": str(transaction_id)}, status=200)
     
     if any(r.status == Reservation.Status.RELEASED for r in reservations):
+        return Response({"status": Reservation.Status.RELEASED, "transaction_id": str(transaction_id)}, status=200)
+
+    now = timezone.now()
+    if any(
+        r.seat and (
+            (r.seat.held_until and r.seat.held_until < now)
+            or (r.seat.held_by_transaction_id and str(r.seat.held_by_transaction_id) != str(transaction_id))
+        )
+        for r in reservations
+    ):
         return Response({"status": Reservation.Status.RELEASED, "transaction_id": str(transaction_id)}, status=200)
 
     return Response({"status": Reservation.Status.RESERVED, "transaction_id": str(transaction_id)}, status=200)

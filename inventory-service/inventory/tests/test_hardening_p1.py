@@ -377,3 +377,44 @@ class TestB7ReleaseOwnershipAndCount(TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data.get("released_count"), 0)
+
+
+class TestB8CheckReservationLazyExpiry(TestCase):
+    def test_check_reservation_returns_released_for_expired_hold_without_sweep(self):
+        """
+        B8: If a reservation is still marked RESERVED in DB, but its seat held_until
+        is in the past, GET /seats/check/ must compute effective status as RELEASED
+        without mutating the DB.
+        """
+        from rest_framework.test import APIClient
+        client = APIClient()
+        event = Event.objects.create(name="B8 Event")
+        now = timezone.now()
+        tid = uuid.uuid4()
+
+        seat = Seat.objects.create(
+            event=event,
+            row="G",
+            seat_number="1",
+            status=Seat.Status.HELD,
+            held_until=now - timedelta(minutes=5),  # expired 5 min ago
+            held_by_transaction_id=tid,
+            price=100.00,
+        )
+        res = Reservation.objects.create(
+            seat=seat,
+            transaction_id=tid,
+            status=Reservation.Status.RESERVED,
+        )
+
+        resp = client.get(f"/seats/check/?transaction_id={tid}")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            resp.data.get("status"),
+            Reservation.Status.RELEASED,
+            f"Expected {Reservation.Status.RELEASED} for expired hold, got {resp.data.get('status')}",
+        )
+
+        # Confirm no writes occurred on GET
+        res.refresh_from_db()
+        self.assertEqual(res.status, Reservation.Status.RESERVED)
