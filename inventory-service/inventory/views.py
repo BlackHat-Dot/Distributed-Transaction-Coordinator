@@ -875,8 +875,8 @@ def release_seat(request):
             active_res = []
             for r in reservations:
                 # Fail fast 1: Ownership mismatch for regular users
-                if auth_user_id and not (is_staff or is_internal):
-                    if r.user_id and str(r.user_id) != str(auth_user_id):
+                if not (is_staff or is_internal):
+                    if not r.user_id or not auth_user_id or str(r.user_id) != str(auth_user_id):
                         return Response(
                             {"error": "Forbidden: You do not own this reservation hold.", "code": "HOLD_OWNERSHIP_MISMATCH"},
                             status=403,
@@ -922,7 +922,7 @@ def release_seat(request):
             if seat_ids:
                 seats_to_update = [
                     s.id for s in locked_seats
-                    if s.id in seat_ids and s.held_by_transaction_id == transaction_id
+                    if s.id in seat_ids and str(s.held_by_transaction_id) == str(transaction_id)
                 ]
                 if seats_to_update:
                     reclaimed_seat_count = Seat.objects.filter(

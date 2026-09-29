@@ -297,3 +297,83 @@ class TestB6UserIdNormalization(TestCase):
             HTTP_X_INTERNAL_SERVICE_KEY=getattr(settings, "INTERNAL_SERVICE_KEY", "dtc-internal-coordinator-secret-key-2026"),
         )
         self.assertEqual(resp.status_code, 200, f"Expected 200 for same-user transition with int user_id, got {resp.status_code}: {resp.data}")
+
+
+class TestB7ReleaseOwnershipAndCount(TestCase):
+    def test_arbitrary_user_cannot_release_hold_with_none_user_id(self):
+        """
+        B7: If Reservation.user_id is None, an arbitrary regular user MUST NOT
+        be allowed to release it. Must reject with 403 HOLD_OWNERSHIP_MISMATCH.
+        """
+        from rest_framework.test import APIClient
+        from inventory.tests.test_phase3 import _generate_jwt
+        client = APIClient()
+        event = Event.objects.create(name="B7 Event")
+        now = timezone.now()
+        tid = uuid.uuid4()
+
+        seat = Seat.objects.create(
+            event=event,
+            row="F",
+            seat_number="1",
+            status=Seat.Status.HELD,
+            held_until=now + timedelta(minutes=10),
+            held_by_transaction_id=tid,
+            user_id=None,
+            user_email=None,
+            price=100.00,
+        )
+        Reservation.objects.create(
+            seat=seat,
+            transaction_id=tid,
+            status=Reservation.Status.RESERVED,
+            user_id=None,
+            user_email=None,
+        )
+
+        user_token = _generate_jwt("usr_attacker", "attacker@example.com")
+        resp = client.post(
+            "/seats/release/",
+            {"transaction_id": str(tid)},
+            format="json",
+            HTTP_AUTHORIZATION=f"Bearer {user_token}",
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.data.get("code"), "HOLD_OWNERSHIP_MISMATCH")
+
+    def test_release_already_released_hold_returns_count_zero(self):
+        """
+        B7: Calling release on an already released hold returns 200 with released_count=0.
+        """
+        from rest_framework.test import APIClient
+        from inventory.tests.test_phase3 import _generate_jwt
+        client = APIClient()
+        event = Event.objects.create(name="B7 Event 2")
+        tid = uuid.uuid4()
+
+        seat = Seat.objects.create(
+            event=event,
+            row="F",
+            seat_number="2",
+            status=Seat.Status.AVAILABLE,
+            held_until=None,
+            held_by_transaction_id=None,
+            price=100.00,
+        )
+        Reservation.objects.create(
+            seat=seat,
+            transaction_id=tid,
+            status=Reservation.Status.RELEASED,
+            user_id="usr_owner",
+            user_email="owner@example.com",
+        )
+
+        owner_token = _generate_jwt("usr_owner", "owner@example.com")
+        resp = client.post(
+            "/seats/release/",
+            {"transaction_id": str(tid)},
+            format="json",
+            HTTP_AUTHORIZATION=f"Bearer {owner_token}",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data.get("released_count"), 0)
