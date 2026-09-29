@@ -735,8 +735,10 @@ def reset_seats(request):
             user_email=None,
         )
 
-        deleted_res, _ = res_qs.delete()
-        rows_affected = updated_seats + deleted_res
+        # F5: Do not hard-delete BOOKED reservations; mark them RELEASED to preserve audit history.
+        updated_booked = res_qs.filter(status=Reservation.Status.BOOKED).update(status=Reservation.Status.RELEASED)
+        deleted_res, _ = res_qs.exclude(status=Reservation.Status.RELEASED).delete()
+        rows_affected = updated_seats + updated_booked + deleted_res
 
         who = "staff" if _is_staff_request(request) else "unauthenticated"
         logger.info(

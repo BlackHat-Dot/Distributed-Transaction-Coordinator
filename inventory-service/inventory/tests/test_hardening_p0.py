@@ -213,6 +213,36 @@ class TestA3BypassFlagsAndResetSeats(TestCase):
         self.assertIn("rows_affected", log_line)
         self.assertIn("before_counts", log_line)
 
+    @override_settings(DEBUG=False, STAFF_API_KEY="staff-key-123")
+    def test_f5_reset_seats_does_not_delete_booked_reservations(self):
+        """
+        F5: reset_seats must not hard-delete BOOKED reservations;
+        it should mark them RELEASED to preserve the audit trail.
+        """
+        from inventory.views import reset_seats
+        from inventory.models import Event, Seat, Reservation
+        event = Event.objects.create(name="F5 Event")
+        seat = Seat.objects.create(event=event, row="F", seat_number="5", status=Seat.Status.BOOKED)
+        res = Reservation.objects.create(
+            seat=seat,
+            transaction_id=uuid.uuid4(),
+            status=Reservation.Status.BOOKED,
+            user_id="customer_f5",
+        )
+
+        req = self.factory.post("/seats/reset/", HTTP_X_STAFF_KEY="staff-key-123")
+        resp = reset_seats(req)
+        self.assertEqual(resp.status_code, 200)
+
+        # Seat is reset to AVAILABLE
+        seat.refresh_from_db()
+        self.assertEqual(seat.status, Seat.Status.AVAILABLE)
+
+        # Reservation is NOT hard-deleted; it is marked RELEASED
+        self.assertTrue(Reservation.objects.filter(id=res.id).exists(), "BOOKED reservation must not be deleted")
+        res.refresh_from_db()
+        self.assertEqual(res.status, Reservation.Status.RELEASED)
+
 
 class TestA4PresenceCheckoutProtection(TestCase):
     def test_a4_presence_reclaim_skipped_when_checkout_key_exists(self):
