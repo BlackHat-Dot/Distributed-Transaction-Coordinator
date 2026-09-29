@@ -110,6 +110,8 @@ class RecoveryCoverageTests(TestCase):
         )
 
         def mock_post(url, **kw):
+            if "/confirm/" in url:
+                return MagicMock(status_code=409, content=b'{"error": "Hold expired"}', json=lambda: {"error": "Hold expired"})
             if "/refund/" in url:
                 raise Exception("Network error on refund")
             return MagicMock(status_code=200, content=b"{}", json=lambda: {})

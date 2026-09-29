@@ -124,11 +124,16 @@ class RetryCompensationA1Tests(TestCase):
 
         def mock_post(url, *args, **kwargs):
             mock = MagicMock()
-            mock.status_code = 200
-            if "refund" in url:
+            if "confirm" in url:
+                mock.status_code = 409
+                mock.content = b'{"error": "Hold expired", "code": "HOLD_EXPIRED"}'
+                mock.json.return_value = {"error": "Hold expired", "code": "HOLD_EXPIRED"}
+            elif "refund" in url:
+                mock.status_code = 200
                 mock.content = b'{"status": "REFUNDED"}'
                 mock.json.return_value = {"status": "REFUNDED"}
             else:
+                mock.status_code = 200
                 mock.content = b'{"message": "Released"}'
                 mock.json.return_value = {"message": "Released"}
             return mock
