@@ -1696,7 +1696,7 @@ def _set_checkout_presence(transaction_id):
             ttl = int(REQUEST_READ_TIMEOUT + 60)
             client.set(f"dtc:checkout:{transaction_id}", "1", ex=ttl)
     except Exception as e:
-        logger.debug("Failed to set checkout presence key: %s", e)
+        logger.warning("Failed to set checkout presence key for tx %s: %s", transaction_id, e)
 
 
 def _clear_checkout_presence(transaction_id):
@@ -1705,7 +1705,7 @@ def _clear_checkout_presence(transaction_id):
         if client:
             client.delete(f"dtc:checkout:{transaction_id}")
     except Exception as e:
-        logger.debug("Failed to clear checkout presence key: %s", e)
+        logger.warning("Failed to clear checkout presence key for tx %s: %s", transaction_id, e)
 
 
 def _charge_payment(
@@ -1718,7 +1718,30 @@ def _charge_payment(
     user_email=None,
 ):
     _set_checkout_presence(transaction_id)
+    try:
+        return _do_charge_payment(
+            transaction_id,
+            amount,
+            fail_compensation,
+            correlation_id=correlation_id,
+            seat_ids=seat_ids,
+            user_id=user_id,
+            user_email=user_email,
+        )
+    except Exception:
+        _clear_checkout_presence(transaction_id)
+        raise
 
+
+def _do_charge_payment(
+    transaction_id,
+    amount,
+    fail_compensation,
+    correlation_id=None,
+    seat_ids=None,
+    user_id=None,
+    user_email=None,
+):
     headers = {
         "X-Correlation-ID": _get_active_correlation_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
@@ -1726,6 +1749,7 @@ def _charge_payment(
     }
 
     try:
+
         payment_response = _http_post(
             PAYMENT_CHARGE_URL,
             json={
@@ -1858,6 +1882,8 @@ def _charge_payment(
         correlation_id=correlation_id,
         seat_ids=seat_ids,
     )
+
+
 
 
 def _confirm_inventory(transaction_id, seat_ids=None, correlation_id=None):
