@@ -236,7 +236,7 @@ def _set_status_with_event(
             .aggregate(m=Max("seq"))["m"]
             or 0
         )
-        next_seq = last_seq + 1 # new/prev sequence +1 
+        next_seq = last_seq + 1 # new/prev sequence +1
 
         SagaEvent.objects.create(
             transaction_id=txn_pk,

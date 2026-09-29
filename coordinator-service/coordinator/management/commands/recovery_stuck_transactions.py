@@ -100,7 +100,7 @@ class Command(BaseCommand):
             self._resolve_transaction(transaction_id)
 
     def recover_reserved(self, threshold):
-    
+
         for transaction_id in self._claim(Transaction.Status.INVENTORY_RESERVED, threshold):
             self.stdout.write(
                 f"Recovering {transaction_id} claimed from INVENTORY_RESERVED..."
@@ -109,7 +109,7 @@ class Command(BaseCommand):
 
 
     def recover_started(self, threshold):
-   
+
         for transaction_id in self._claim(Transaction.Status.STARTED, threshold):
             self.stdout.write(
                 f"Recovering {transaction_id} claimed from STARTED..."

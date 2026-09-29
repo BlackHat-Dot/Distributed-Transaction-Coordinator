@@ -2,11 +2,11 @@ import hmac
 import json
 import logging
 import os
-import secrets
 import time
 import uuid
 import redis
 import requests
+from requests.adapters import HTTPAdapter
 from decimal import Decimal
 
 from rest_framework.decorators import api_view
@@ -87,8 +87,6 @@ def _fault_injection_allowed():
         flag = os.getenv("ENABLE_FAULT_INJECTION", "").lower() in ("true", "1", "yes", "t")
     return bool(flag)
 
-from requests.adapters import HTTPAdapter
-
 _HTTP_SESSION = None
 
 def _get_http_session():
@@ -101,16 +99,16 @@ def _get_http_session():
     return _HTTP_SESSION
 
 def _http_post(url, **kwargs):
-    kwargs.setdefault("timeout", REQUEST_TIMEOUT)
+    timeout = kwargs.pop("timeout", REQUEST_TIMEOUT)
     if getattr(settings, "IS_TESTING", False) or hasattr(requests.post, "mock_calls") or hasattr(requests.post, "assert_called"):
-        return requests.post(url, **kwargs)
-    return _get_http_session().post(url, **kwargs)
+        return requests.post(url, timeout=timeout, **kwargs)
+    return _get_http_session().post(url, timeout=timeout, **kwargs)
 
 def _http_get(url, **kwargs):
-    kwargs.setdefault("timeout", REQUEST_TIMEOUT)
+    timeout = kwargs.pop("timeout", REQUEST_TIMEOUT)
     if getattr(settings, "IS_TESTING", False) or hasattr(requests.get, "mock_calls") or hasattr(requests.get, "assert_called"):
-        return requests.get(url, **kwargs)
-    return _get_http_session().get(url, **kwargs)
+        return requests.get(url, timeout=timeout, **kwargs)
+    return _get_http_session().get(url, timeout=timeout, **kwargs)
 
 
 
@@ -506,7 +504,7 @@ def trigger_recovery_sweep(request):
 
     2. io.StringIO() creates an in-memory text buffer.
 
-    3. When passed to stdout=out, all the text that would normally be printed in the terminal is redirected into 
+    3. When passed to stdout=out, all the text that would normally be printed in the terminal is redirected into
     this buffer so it can be sent back in the HTTP JSON response!
     """
     out = io.StringIO()
@@ -535,7 +533,7 @@ def trigger_recovery_sweep(request):
 
     # What if a caller sends threshold_seconds = 0 or 1
     # The sweeper would mistakenly abort and kill legitimate transactions that are actively processing payments right now.
-    # This enforces a minimum floor of atleast 30 seconds.    
+    # This enforces a minimum floor of atleast 30 seconds.
     min_floor = 5 if getattr(settings, "DEBUG", False) else int(os.getenv("RECOVERY_MIN_THRESHOLD_SECONDS", "30"))
 
     threshold_seconds = max(raw_threshold, min_floor)
@@ -1301,10 +1299,10 @@ def _handle_create_transaction(request):
 
             1. WHAT '.delay(...)' DOES:
                - Shortcut for 'execute_saga_task.apply_async(args=..., kwargs=...)'.
-               - Instead of running Python code immediately, Celery packages the task name and 
+               - Instead of running Python code immediately, Celery packages the task name and
                  parameters into a JSON message and pushes it to Redis (CELERY_BROKER_URL).
                - Returns immediately in ~1-2ms without waiting for downstream microservices(Inventory, Payment, ..).
-               - The web server responds instantly with HTTP 202 Accepted + poll_url, freeing 
+               - The web server responds instantly with HTTP 202 Accepted + poll_url, freeing
                  Gunicorn/Django web workers to handle thousands of concurrent incoming requests.
                - An independent background Celery worker daemon ('celery -A coordinator_service worker')
                  pops the task from Redis, executes the full Saga pipeline (Inventory -> Payment -> Confirm),
@@ -1319,9 +1317,9 @@ def _handle_create_transaction(request):
                    * Charge payment (/payments/charge/): ~200ms
                    * Confirm seats (/seats/confirm/):   ~50ms
                    Total latency: 300ms - 1500ms+ instead of 2ms.
-               - WORKER STARVATION: In production with 4 web workers, capacity drops from ~2000 req/s 
+               - WORKER STARVATION: In production with 4 web workers, capacity drops from ~2000 req/s
                  down to ~8 req/s. Concurrent users quickly get connection drops or 504 Gateway Timeouts.
-               - CLIENT TIMEOUTS: If Payment or Inventory has a slow network spike, browser/Nginx 
+               - CLIENT TIMEOUTS: If Payment or Inventory has a slow network spike, browser/Nginx
                  timeouts sever the connection before completion, risking orphaned states.
             """
             execute_saga_task.delay(
@@ -1603,7 +1601,7 @@ def _run_saga_pipeline(
         )
     transitioned_pay = _set_status_with_event(
         transaction_id,
-        Transaction.Status.PAYMENT_PROCESSING, # to 
+        Transaction.Status.PAYMENT_PROCESSING, # to
         expected_status=Transaction.Status.INVENTORY_RESERVED, # from
         actor=actor,
         http_status_code=None,
@@ -1710,7 +1708,7 @@ def _charge_payment(
         uncertain_status = _transport_status(
             e, Transaction.Status.PAYMENT_TIMEOUT, Transaction.Status.PAYMENT_CONNECTION_ERROR
         )
-    
+
         transitioned = _set_status_with_event(
             transaction_id,
             uncertain_status, # to
@@ -2181,7 +2179,7 @@ def _get_requester_identity(request):
     """
     Resolves caller identity and permissions (is_authenticated, auth_user_id, is_staff).
     Returns a RequesterIdentity 3-tuple with .user_email attribute.
-    
+
     Priority of Authentication:
       1. Machine-to-Machine / Service API Key (Admin scripts via X-Staff-Key)
       2. JWT Bearer Token (Primary mechanism for Visualizer & API clients)
@@ -2197,7 +2195,7 @@ def _get_requester_identity(request):
 
     # JWT Bearer Token (Priority 2)
     user_info = get_user_from_request(request)
-    
+
     if user_info and user_info.get("is_authenticated"):
         user_email = user_info.get("user_email")
         is_staff = _is_admin_email(user_email)

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
 
-from coordinator.models import Transaction, SagaEvent
+from coordinator.models import Transaction
 from coordinator.views import _charge_payment
 
 
@@ -14,7 +14,7 @@ class Payment5xxA5Tests(TestCase):
 
     def test_charge_5xx_routes_through_payment_check_and_refunds_if_charged(self):
         """F-05: 5xx from /payments/charge/ must query PAYMENT_CHECK; if charged, must refund."""
-        txn = Transaction.objects.create(
+        _txn = Transaction.objects.create(
             transaction_id=self.tx_id,
             status=Transaction.Status.PAYMENT_PROCESSING,
             seat_ids=[1],
@@ -60,7 +60,7 @@ class Payment5xxA5Tests(TestCase):
 
         with patch("coordinator.views._http_post", side_effect=mock_post) as p_post, \
              patch("coordinator.views._http_get", return_value=mock_check_resp) as p_get:
-            resp = _charge_payment(
+            _charge_payment(
                 transaction_id=self.tx_id,
                 amount=Decimal("100"),
                 fail_compensation=False,
@@ -74,7 +74,7 @@ class Payment5xxA5Tests(TestCase):
 
     def test_charge_422_does_not_call_payment_check(self):
         """F-05: 422 from /payments/charge/ (declined) must NOT query PAYMENT_CHECK."""
-        txn = Transaction.objects.create(
+        _txn = Transaction.objects.create(
             transaction_id=self.tx_id,
             status=Transaction.Status.PAYMENT_PROCESSING,
             seat_ids=[1],
@@ -106,7 +106,7 @@ class Payment5xxA5Tests(TestCase):
 
         with patch("coordinator.views._http_post", side_effect=mock_post), \
              patch("coordinator.views._http_get") as p_get:
-            resp = _charge_payment(
+            _charge_payment(
                 transaction_id=self.tx_id,
                 amount=Decimal("100"),
                 fail_compensation=False,

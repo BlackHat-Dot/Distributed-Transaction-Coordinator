@@ -38,7 +38,7 @@ class CorrelationIdMiddleware:
             # wipes the correlation ID out of this thread's memory
             _correlation_id_ctx.reset(token)
 
-        
+
         # Sets the correlation id onto the outgoinf reponse header
         response["X-Correlation-ID"] = correlation_id
 

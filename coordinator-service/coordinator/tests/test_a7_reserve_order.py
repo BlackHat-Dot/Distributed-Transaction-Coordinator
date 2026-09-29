@@ -5,7 +5,7 @@ from django.db import DatabaseError
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from coordinator.models import Transaction, SagaEvent
+from coordinator.models import Transaction
 from coordinator.views import _create_transaction
 
 

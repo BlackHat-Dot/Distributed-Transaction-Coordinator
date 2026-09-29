@@ -3,7 +3,6 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 from django.core.management import call_command
-from django.db import connection
 from django.test import TransactionTestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -66,7 +65,7 @@ class CrashRecoveryTests(TransactionTestCase):
 
         past_time = timezone.now() - timedelta(minutes=10)
         Transaction.objects.filter(transaction_id=txn.transaction_id).update(updated_at=past_time)
-        
+
         def mock_get_recovery(url, *args, **kwargs):
             if "payments/check" in url:
                 mock = MagicMock()

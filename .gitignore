@@ -7,3 +7,5 @@ celerybeat-schedule-shm
 celerybeat-schedule
 .vercel
 newfile.py
+.coverage
+.coverage.*

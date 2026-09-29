@@ -1,11 +1,11 @@
 import uuid
 from decimal import Decimal
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from coordinator.models import Transaction
-from coordinator.views import _can_access, get_transaction
+from coordinator.views import _can_access
 
 
 class OwnershipB1Tests(TestCase):

@@ -211,7 +211,7 @@ class SecurityAndReliabilityHardeningTests(TestCase):
             user_id="usr_alice",
             user_email="alice@example.com",
         )
-        tx2 = Transaction.objects.create(
+        _tx2 = Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=Transaction.Status.COMPLETED,
             amount=Decimal("200.00"),

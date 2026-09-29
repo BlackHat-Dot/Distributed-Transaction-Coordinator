@@ -42,7 +42,7 @@ class CleanupA8Tests(TestCase):
             mock_http_post.side_effect = side_effect
 
             # payment_data is a decline or non-dict, but payment_status_code is 200
-            resp = _compensate(
+            _compensate(
                 txn.transaction_id,
                 fail_compensation=False,
                 payment_data={"status": "DECLINED"},

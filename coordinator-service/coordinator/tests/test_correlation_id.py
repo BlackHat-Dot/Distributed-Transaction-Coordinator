@@ -9,7 +9,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from coordinator.models import Transaction
-from coordinator.middleware import CorrelationIdFilter, get_correlation_id
+from coordinator.middleware import CorrelationIdFilter
 
 
 class CorrelationIdMiddlewareTests(TestCase):

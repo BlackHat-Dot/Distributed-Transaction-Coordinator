@@ -3,8 +3,7 @@ import uuid
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-from django.core.management import call_command
-from django.test import TestCase, TransactionTestCase, override_settings
+from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -591,11 +590,10 @@ class ViewsCoverageTests(TransactionTestCase):
 
     @patch("coordinator.views.redis.Redis.from_url")
     def test_transaction_stream_periodic_db_check(self, mock_redis):
-        import time
         from django.db import connection
         connection.ensure_connection()
         tx_id = uuid.uuid4()
-        txn = Transaction.objects.create(
+        _txn = Transaction.objects.create(
             transaction_id=tx_id,
             user_id="usr_stream_db",
             status=Transaction.Status.COMPLETED,
@@ -608,7 +606,6 @@ class ViewsCoverageTests(TransactionTestCase):
         mock_redis.return_value = mock_client
 
         # Mock time.time to simulate passage of 4 seconds between start and first loop
-        real_time = time.time
         with patch("coordinator.views.time.time", side_effect=[100.0, 100.0, 104.5, 105.0]):
             resp = self.client.get(
                 f"/transactions/{tx_id}/stream/",
@@ -642,7 +639,6 @@ class ViewsCoverageTests(TransactionTestCase):
 
     def test_compensate_already_released_and_refund_transport_error(self):
         from requests.exceptions import RequestException
-        from coordinator.views import _compensate
 
         tx_id = uuid.uuid4()
         Transaction.objects.create(
@@ -786,7 +782,6 @@ class ViewsCoverageTests(TransactionTestCase):
             self.assertEqual(resp.status_code, 503)
 
     def test_compensate_release_server_error(self):
-        from coordinator.views import _compensate
         tx_id = uuid.uuid4()
         Transaction.objects.create(
             transaction_id=tx_id,

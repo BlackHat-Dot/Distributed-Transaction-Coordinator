@@ -1,6 +1,4 @@
-﻿import sys
-import uuid
-from django.test import TestCase
+﻿from django.test import TestCase
 from django.core.cache import cache
 from rest_framework.test import APIClient
 from coordinator.auth_views import _get_redis_client

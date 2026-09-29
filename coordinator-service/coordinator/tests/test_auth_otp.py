@@ -1,6 +1,5 @@
 import os
 import sys
-import uuid
 from unittest.mock import patch, MagicMock
 from django.test import TestCase
 from django.core.cache import cache
@@ -185,7 +184,6 @@ class LocalDevAuthNumbModeTests(TestCase):
     @patch("coordinator.views.settings.DEBUG", False)
     @patch("coordinator.views.settings.IS_TESTING", False)
     def test_production_rejects_unauthenticated_transaction(self):
-        import sys
         with patch.object(sys, "argv", ["gunicorn"]):
             resp = self.client.post("/transactions/", {"seat_ids": [1]}, format="json")
             self.assertEqual(resp.status_code, 401)
@@ -194,7 +192,6 @@ class LocalDevAuthNumbModeTests(TestCase):
     @patch("coordinator.views.settings.DEBUG", False)
     @patch("coordinator.views.settings.IS_TESTING", False)
     def test_production_accepts_authenticated_jwt_transaction(self):
-        import sys
         with patch.object(sys, "argv", ["gunicorn"]):
             from coordinator.auth_views import _create_jwt
             token = _create_jwt("usr_real_fan", "fan@test.io")
@@ -218,7 +215,6 @@ class LocalDevAuthNumbModeTests(TestCase):
     @patch("coordinator.views.settings.IS_TESTING", False)
     @patch.dict(os.environ, {"STAFF_API_KEY": "super-secret-staff-key", "STAFF_USER_ID": "usr_staff_01", "STAFF_EMAIL_ID": "staff@dtc.internal"})
     def test_staff_key_allows_booking_without_jwt(self):
-        import sys
         with patch.object(sys, "argv", ["gunicorn"]):
             mock_pricing = MagicMock()
             mock_pricing.status_code = 200
@@ -242,7 +238,6 @@ class LocalDevAuthNumbModeTests(TestCase):
     @patch("coordinator.views.settings.IS_TESTING", False)
     @patch.dict(os.environ, {"STAFF_API_KEY": "super-secret-staff-key"})
     def test_staff_key_bypasses_invalid_jwt_token(self):
-        import sys
         with patch.object(sys, "argv", ["gunicorn"]):
             mock_pricing = MagicMock()
             mock_pricing.status_code = 200
