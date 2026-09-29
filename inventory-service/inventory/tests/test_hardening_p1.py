@@ -249,3 +249,51 @@ class TestB5ReservePreservesAuditHistory(TestCase):
         # New reservation exists and is RESERVED
         new_res = Reservation.objects.get(transaction_id=new_tid, seat=seat)
         self.assertEqual(new_res.status, Reservation.Status.RESERVED)
+
+
+class TestB6UserIdNormalization(TestCase):
+    def test_same_user_transition_with_integer_user_id_succeeds(self):
+        """
+        B6: If user_id comes in as an integer (e.g. 12345), but seat.user_id in DB
+        is stored as string '12345', same-user transition must succeed (200 OK)
+        and not fail with 409 SEAT_UNAVAILABLE due to type inequality.
+        """
+        from rest_framework.test import APIClient
+        from django.conf import settings
+        client = APIClient()
+        event = Event.objects.create(name="B6 Event")
+        now = timezone.now()
+        old_tid = uuid.uuid4()
+        new_tid = uuid.uuid4()
+
+        seat = Seat.objects.create(
+            event=event,
+            row="E",
+            seat_number="1",
+            status=Seat.Status.HELD,
+            held_until=now + timedelta(minutes=10),
+            held_by_transaction_id=old_tid,
+            user_id="12345",
+            user_email="user12345@example.com",
+            price=100.00,
+        )
+        Reservation.objects.create(
+            seat=seat,
+            transaction_id=old_tid,
+            status=Reservation.Status.RESERVED,
+            user_id="12345",
+            user_email="user12345@example.com",
+        )
+
+        resp = client.post(
+            "/seats/reserve/",
+            {
+                "seat_ids": [seat.id],
+                "transaction_id": str(new_tid),
+                "user_id": 12345,  # int in request body
+                "user_email": "user12345@example.com",
+            },
+            format="json",
+            HTTP_X_INTERNAL_SERVICE_KEY=getattr(settings, "INTERNAL_SERVICE_KEY", "dtc-internal-coordinator-secret-key-2026"),
+        )
+        self.assertEqual(resp.status_code, 200, f"Expected 200 for same-user transition with int user_id, got {resp.status_code}: {resp.data}")

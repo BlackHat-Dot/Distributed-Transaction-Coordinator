@@ -508,6 +508,11 @@ def reserve_seat(request):
         user_id = None
         user_email = None
 
+    if user_id is not None:
+        user_id = str(user_id)
+    if user_email is not None:
+        user_email = str(user_email)
+
     is_testing = bool(getattr(settings, "IS_TESTING", False))
     is_dev = getattr(settings, "DEBUG", False)
 
@@ -621,7 +626,7 @@ def reserve_seat(request):
                     continue
                 
                 # 2. Is it held by the same user? (Transition temporary hold to checkout)
-                if seat.is_held and not seat.is_expired(now) and user_id and seat.user_id == user_id:
+                if seat.is_held and not seat.is_expired(now) and user_id and str(seat.user_id) == str(user_id):
                     continue
                 
                 # 3. Is it available for anyone to take? (Available or expired)
