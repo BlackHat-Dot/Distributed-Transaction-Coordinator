@@ -17,44 +17,69 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 import jwt
-import redis
-
 from .models import Event, Seat, Reservation
 from .serializers import EventSerializer, PublicSeatSerializer, InternalSeatSerializer
+from .auth import (
+    _is_staff_request,
+    _get_authenticated_user,
+    _get_authenticated_user_id,
+    _verify_internal_service_key,
+)
+from .services import (
+    get_redis_client,
+    get_hold_duration,
+    reclaim_expired_holds,
+    _validate_uuid,
+    _validate_reserve_input,
+    _redis_client_instance,
+    _redis_last_failure,
+    _REDIS_NEGATIVE_CACHE_TTL,
+)
 
 logger = logging.getLogger(__name__)
-
-
-_redis_client_instance = None
-_redis_last_failure = 0.0
-_REDIS_NEGATIVE_CACHE_TTL = 5.0
-
-
-def get_redis_client():
-    global _redis_client_instance, _redis_last_failure
-    if _redis_client_instance is not None:
-        return _redis_client_instance
-
-    now = time.monotonic()
-    if now - _redis_last_failure < _REDIS_NEGATIVE_CACHE_TTL:
-        return None
-
-    redis_url = getattr(settings, "REDIS_URL", None) or getattr(settings, "CELERY_BROKER_URL", "redis://localhost:6379/0")
-    try:
-        client = redis.Redis.from_url(
-            redis_url, socket_connect_timeout=0.2, socket_timeout=0.2, decode_responses=True
-        )
-        client.ping()
-        _redis_client_instance = client
-        return _redis_client_instance
-    except Exception:
-        _redis_last_failure = now
-        return None
 
 
 @api_view(["GET"])
 def health_check(request):
     return Response({"status": "healthy", "service": "inventory"})
+
+
+@api_view(["GET"])
+def ready_check(request):
+    """
+    Readiness probe verifying database and Redis connectivity.
+    Returns 200 if both are reachable, 503 if any core dependency is down.
+    """
+    db_ok = False
+    redis_ok = False
+    try:
+        connection.ensure_connection()
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        db_ok = True
+    except Exception as e:
+        logger.warning("Database readiness check failed: %s", e)
+
+    try:
+        r = get_redis_client()
+        if r is not None and r.ping():
+            redis_ok = True
+        else:
+            logger.warning("Redis readiness check failed: client is None or ping failed")
+    except Exception as e:
+        logger.warning("Redis readiness check failed: %s", e)
+
+    is_ready = db_ok and redis_ok
+    status_code = 200 if is_ready else 503
+    return Response(
+        {
+            "status": "ready" if is_ready else "not_ready",
+            "database": "connected" if db_ok else "disconnected",
+            "redis": "connected" if redis_ok else "disconnected",
+            "service": "inventory",
+        },
+        status=status_code,
+    )
 
 @api_view(["GET"])
 def event_list(request):
@@ -69,183 +94,6 @@ def event_list(request):
     serializer = EventSerializer(events, many=True)
 
     return Response(serializer.data)
-
-def get_hold_duration() -> timedelta:
-    """Return configured hold duration as a timedelta, defaulting to 10 minutes."""
-    return timedelta(minutes=getattr(settings, "HOLD_DURATION_MINUTES", 10))
-
-
-def reclaim_expired_holds():
-    """
-    Reclaims seats that are expired by time (held_until < now) OR abandoned by user
-    (user exited browser/website, causing their Redis heartbeat session dtc:session:{email} to expire).
-    Presence-based reclaim only applies after a grace period of HOLD_PRESENCE_GRACE_SECONDS (default 120s).
-
-    CONTRACT FOR COORDINATOR / FRONTEND:
-    When a checkout/payment begins for a transaction, the coordinator or checkout client
-    sets Redis key `dtc:checkout:{transaction_id}` (e.g. SET dtc:checkout:{transaction_id} 1 EX 180).
-    While this key exists, presence-based reclaim is skipped for any seats held by that
-    transaction_id, preventing holds from being prematurely cleared during payment processing
-    or 3D-Secure verification even if user presence heartbeats lapse.
-    Time-based expiry (held_until < now) is not skipped by dtc:checkout.
-    """
-    now = timezone.now()
-
-    held_seats = list(
-        Seat.objects.filter(status=Seat.Status.HELD).values(
-            "id", "held_until", "user_email", "held_by_transaction_id"
-        )
-    )
-    if not held_seats:
-        return 0, 0
-
-    expired_snapshots = {}  # seat_id -> held_by_transaction_id
-    redis_client = get_redis_client()
-
-    grace_seconds = getattr(settings, "HOLD_PRESENCE_GRACE_SECONDS", 120)
-    hold_duration = get_hold_duration()
-
-    presence_candidates = []
-
-    for seat in held_seats:
-        seat_id = seat["id"]
-        # 1. Time-based expiry (hold elapsed) - stays unchanged
-        if seat["held_until"] and seat["held_until"] < now:
-            expired_snapshots[seat_id] = {
-                "tid": seat["held_by_transaction_id"],
-                "held_until": seat["held_until"],
-            }
-            continue
-
-
-        # 2. Candidate for presence-based expiry: only if hold age >= grace_seconds
-        if seat["held_until"] and seat["user_email"] and redis_client:
-            hold_start = seat["held_until"] - hold_duration
-            hold_age = (now - hold_start).total_seconds()
-            if hold_age >= grace_seconds:
-                presence_candidates.append(seat)
-
-    # Pipeline Redis EXISTS per unique email and unique transaction_id for presence candidates
-    if presence_candidates and redis_client:
-        unique_emails = list({s["user_email"].strip().lower() for s in presence_candidates if s.get("user_email")})
-        unique_tids = list({str(s["held_by_transaction_id"]) for s in presence_candidates if s.get("held_by_transaction_id")})
-        active_emails = set()
-        active_checkouts = set()
-        try:
-            pipe = redis_client.pipeline()
-            for email in unique_emails:
-                pipe.exists(f"dtc:session:{email}")
-            for tid in unique_tids:
-                pipe.exists(f"dtc:checkout:{tid}")
-            results = pipe.execute()
-            expected_len = len(unique_emails) + len(unique_tids)
-            if isinstance(results, (list, tuple)):
-                if len(results) >= expected_len:
-                    email_results = results[:len(unique_emails)]
-                    tid_results = results[len(unique_emails):expected_len]
-                elif len(results) == len(unique_emails):
-                    email_results = results
-                    tid_results = []
-                else:
-                    email_results = results[:len(unique_emails)]
-                    tid_results = []
-            else:
-                email_results = [redis_client.exists(f"dtc:session:{email}") for email in unique_emails]
-                tid_results = []
-
-            for email, exists in zip(unique_emails, email_results):
-                if exists:
-                    active_emails.add(email)
-
-            inactive_candidates = [
-                s for s in presence_candidates
-                if (s["user_email"].strip().lower() if s.get("user_email") else "") not in active_emails
-            ]
-            if inactive_candidates and unique_tids:
-                if not tid_results and not isinstance(results, (list, tuple)):
-                    tid_results = [redis_client.exists(f"dtc:checkout:{tid}") for tid in unique_tids]
-                for tid, exists in zip(unique_tids, tid_results):
-                    if exists:
-                        active_checkouts.add(tid)
-
-            for seat in presence_candidates:
-                tid_str = str(seat["held_by_transaction_id"]) if seat.get("held_by_transaction_id") else None
-                # Skip presence-based reclaim if checkout key exists (user is actively paying in coordinator)
-                if tid_str and tid_str in active_checkouts:
-                    continue
-                seat_email = seat["user_email"].strip().lower() if seat.get("user_email") else ""
-                if seat_email not in active_emails:
-                    expired_snapshots[seat["id"]] = {
-                        "tid": seat["held_by_transaction_id"],
-                        "held_until": seat["held_until"],
-                    }
-
-        except Exception:
-            # If Redis errors, skip presence expiry (fail safe)
-            pass
-
-
-    if not expired_snapshots:
-        return 0, 0
-
-    with transaction.atomic():
-        locked_seats = list(
-            Seat.objects.select_for_update()
-            .filter(id__in=list(expired_snapshots.keys()), status=Seat.Status.HELD)
-            .order_by("id")
-        )
-
-        verified_reclaim_seats = []
-        current_now = timezone.now()
-        for seat in locked_seats:
-            snap = expired_snapshots.get(seat.id)
-            if not snap:
-                continue
-            expected_tid = snap["tid"]
-            snap_held_until = snap["held_until"]
-
-            # Compare held_by_transaction_id directly without truthiness
-            if seat.held_by_transaction_id != expected_tid:
-                continue
-
-            # B1: If held_until changed between snapshot and lock,
-            # only proceed if it is still expired by time (seat.held_until < current_now).
-            if seat.held_until != snap_held_until and (seat.held_until and seat.held_until >= current_now):
-                continue
-
-            verified_reclaim_seats.append(seat)
-
-
-        if not verified_reclaim_seats:
-            return 0, 0
-
-        reclaimed_ids = [s.id for s in verified_reclaim_seats]
-        pair_filter = Q()
-        for s in verified_reclaim_seats:
-            if s.held_by_transaction_id is not None:
-                pair_filter |= Q(seat_id=s.id, transaction_id=s.held_by_transaction_id)
-            else:
-                pair_filter |= Q(seat_id=s.id)
-
-        released = 0
-        if pair_filter:
-            released = Reservation.objects.filter(
-                pair_filter,
-                status=Reservation.Status.RESERVED,
-            ).update(status=Reservation.Status.RELEASED)
-
-        reclaimed = Seat.objects.filter(
-            id__in=reclaimed_ids,
-            status=Seat.Status.HELD,
-        ).update(
-            status=Seat.Status.AVAILABLE,
-            held_until=None,
-            held_by_transaction_id=None,
-            user_id=None,
-            user_email=None,
-        )
-
-    return reclaimed, released
 
 
 @api_view(["GET"])
@@ -287,109 +135,6 @@ def seat_list(request):
     seats = seats.order_by("id")
     serializer = PublicSeatSerializer(seats, many=True, context={"request": request})
     return Response(serializer.data)
-
-
-def _is_staff_request(request):
-    """
-    Verifies staff/admin identity using constant-time comparison against settings.STAFF_API_KEY.
-    """
-    staff_key = request.headers.get("X-Staff-Key")
-    if not staff_key:
-        return False
-    configured_key = getattr(settings, "STAFF_API_KEY", None)
-    if configured_key:
-        return secrets.compare_digest(str(staff_key), str(configured_key))
-    return False
-
-
-
-def _get_authenticated_user(request):
-    """
-    Extracts and cryptographically verifies the JWT from Authorization header.
-    Returns dict {"user_id": ..., "user_email": ..., "sid": ...} if valid, else None.
-    If header verification fails and ALLOW_UNVERIFIED_IDENTITY_HEADERS is True (e.g. in test env),
-    falls back to unverified request headers.
-    """
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header.split(" ", 1)[1].strip()
-        key = getattr(settings, "JWT_SIGNING_KEY", None) or settings.SECRET_KEY
-        try:
-            payload = jwt.decode(
-                token,
-                key,
-                algorithms=["HS256"],
-                options={"require": ["exp"]},
-            )
-            uid = payload.get("user_id")
-            uemail = payload.get("user_email")
-            if uid or uemail:
-                return {
-                    "user_id": str(uid) if uid is not None else None,
-                    "user_email": str(uemail) if uemail is not None else None,
-                    "sid": payload.get("sid"),
-                }
-        except jwt.PyJWTError as e:
-            logger.debug("JWT verification failed: %s", type(e).__name__)
-        except Exception as e:
-            logger.debug("Unexpected error during JWT verification: %s", type(e).__name__)
-
-    if getattr(settings, "ALLOW_UNVERIFIED_IDENTITY_HEADERS", False):
-        uid = request.headers.get("X-User-ID")
-        uemail = request.headers.get("X-User-Email")
-        if uid or uemail:
-            return {
-                "user_id": str(uid) if uid else None,
-                "user_email": str(uemail) if uemail else None,
-                "sid": None,
-            }
-
-    return None
-
-
-
-def _get_authenticated_user_id(request):
-    """
-    Extracts and cryptographically verifies the JWT from Authorization header.
-    Returns user_id string if signature and expiration are valid, None otherwise.
-    """
-    auth_user = _get_authenticated_user(request)
-    return auth_user.get("user_id") if auth_user else None
-
-
-def _verify_internal_service_key(request, allow_client=False):
-    """
-    Ensures internal state-mutating endpoints (confirm, release-booked)
-    can only be called by internal services (e.g. coordinator) presenting
-    the shared secret.
-    If allow_client=True (e.g. reserve_seat or user hold cancel), calls without
-    the header are permitted, but invalid keys are always rejected with 403.
-    Returns (auth_err, is_internal).
-    """
-    key = request.headers.get("X-Internal-Service-Key")
-    configured_key = getattr(settings, "INTERNAL_SERVICE_KEY", None)
-
-    if key is not None:
-        if not configured_key or not secrets.compare_digest(str(key), str(configured_key)):
-            return Response(
-                {"error": "Forbidden: invalid internal service key."},
-                status=403,
-            ), False
-        return None, True
-
-    if getattr(settings, "IS_TESTING", False):
-        auth_header = request.headers.get("Authorization", "")
-        if allow_client and auth_header.startswith("Bearer "):
-            return None, False
-        return None, True
-
-    if allow_client:
-        return None, False
-
-    return Response(
-        {"error": "Forbidden: missing internal service key."},
-        status=403,
-    ), False
 
 
 @api_view(["POST"])
@@ -440,46 +185,6 @@ def seat_pricing(request):
        return self._data
     """
     return Response(serializer.data) # .data ; the actual `trigger`.
-
-
-def _validate_uuid(val):
-    try:
-        return uuid.UUID(str(val))
-    except (ValueError, AttributeError):
-        return None
-
-def _validate_reserve_input(data):
-    if not isinstance(data, dict):
-        return None, None, Response({"error": "Request body must be a JSON object", "code": "INVALID_BODY"}, status=400)
-
-    if not data:
-        return None, None, Response({"message": "no input values"}, status=400)
-
-    seat_ids = data.get("seat_ids")
-    if not seat_ids:
-        return None, None, Response({"error": "seat_ids is required"}, status=400)
-
-    if not isinstance(seat_ids, (list, tuple)):
-        return None, None, Response({"error": "seat_ids must be a list of integers"}, status=400)
-
-    for s in seat_ids:
-        if type(s) is not int or isinstance(s, bool):
-            return None, None, Response({"error": "seat_ids must be a list of integers"}, status=400)
-
-    # Finding 18: Dedupe seat_ids while preserving order, and cap at 50
-    seat_ids = list(dict.fromkeys(seat_ids))
-    if len(seat_ids) > 50:
-        return None, None, Response({"error": "Cannot reserve more than 50 seats at once", "code": "MAX_SEATS_EXCEEDED"}, status=400)
-
-    raw_tid = data.get("transaction_id")
-    if raw_tid:
-        tid = _validate_uuid(raw_tid)
-        if not tid:
-            return None, None, Response({"error": "transaction_id must be a valid UUID"}, status=400)
-    else:
-        tid = None  # Caller will decide: generate server-side or reject
-
-    return seat_ids, tid, None
 
 
 @api_view(["POST"])
@@ -697,7 +402,7 @@ def reserve_seat(request):
             return Response(resp_data, status=200)
 
     except IntegrityError as e:
-        logger.warning("IntegrityError in reserve_seat: %s", e)
+        logger.warning("[transaction_id=%s] IntegrityError in reserve_seat: %s", transaction_id if "transaction_id" in locals() else None, e)
         return Response(
             {
                 "error": "Conflict: Seat reservation conflict or concurrent modification.",
@@ -707,10 +412,10 @@ def reserve_seat(request):
             status=409,
         )
     except DatabaseError as e:
-        logger.exception("DatabaseError in reserve_seat: %s", e)
+        logger.exception("[transaction_id=%s] DatabaseError in reserve_seat: %s", transaction_id if "transaction_id" in locals() else None, e)
         return Response({"error": "Internal server error occurred.", "code": "DATABASE_ERROR"}, status=500)
     except Exception as e:
-        logger.exception("Unexpected error in reserve_seat: %s", e)
+        logger.exception("[transaction_id=%s] Unexpected error in reserve_seat: %s", transaction_id if "transaction_id" in locals() else None, e)
         return Response({"error": "Internal server error occurred.", "code": "INTERNAL_ERROR"}, status=500)
 
 @api_view(["POST"])
@@ -818,10 +523,10 @@ def confirm_seat(request):
 
             return Response({"message": "Seats confirmed", "transaction_id": str(transaction_id)}, status=200)
     except DatabaseError as e:
-        logger.exception("DatabaseError in confirm_seat: %s", e)
+        logger.exception("[transaction_id=%s] DatabaseError in confirm_seat: %s", transaction_id if "transaction_id" in locals() else None, e)
         return Response({"error": "Internal server error occurred.", "code": "DATABASE_ERROR"}, status=500)
     except Exception as e:
-        logger.exception("Unexpected error in confirm_seat: %s", e)
+        logger.exception("[transaction_id=%s] Unexpected error in confirm_seat: %s", transaction_id if "transaction_id" in locals() else None, e)
         return Response({"error": "Internal server error occurred.", "code": "INTERNAL_ERROR"}, status=500)
 
 @api_view(["POST"])
@@ -952,10 +657,10 @@ def release_seat(request):
             )
 
     except DatabaseError as e:
-        logger.exception("DatabaseError in release_seat: %s", e)
+        logger.exception("[transaction_id=%s] DatabaseError in release_seat: %s", transaction_id if "transaction_id" in locals() else None, e)
         return Response({"error": "Internal server error occurred.", "code": "DATABASE_ERROR"}, status=500)
     except Exception as e:
-        logger.exception("Unexpected error in release_seat: %s", e)
+        logger.exception("[transaction_id=%s] Unexpected error in release_seat: %s", transaction_id if "transaction_id" in locals() else None, e)
         return Response({"error": "Internal server error occurred.", "code": "INTERNAL_ERROR"}, status=500)
 
 @api_view(["GET"])

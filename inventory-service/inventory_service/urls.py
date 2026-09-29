@@ -11,6 +11,7 @@ from inventory.views import (
     reset_seats,
     sweep_expired_holds,
     health_check,
+    ready_check,
 )
 
 urlpatterns = [
@@ -25,6 +26,7 @@ urlpatterns = [
     path('seats/reset/', reset_seats),
     path('reserve/check/', check_reservation),
     path('health/', health_check),
+    path('ready/', ready_check),
 ]
 
 # Only mount /admin/ in local development mode (DEBUG=True)

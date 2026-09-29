@@ -201,3 +201,77 @@ class TestC6EmailNormalization(TestCase):
         self.assertEqual(reclaimed, 0, "Active lowercase session must protect uppercase email hold from reclaim")
         seat.refresh_from_db()
         self.assertEqual(seat.status, Seat.Status.HELD)
+
+
+class TestC7ReadinessAndDecomposition(TestCase):
+    def test_ready_endpoint_healthy(self):
+        """
+        C7: /ready/ returns 200 when DB and Redis are connected.
+        """
+        client = APIClient()
+        class MockRedis:
+            def ping(self):
+                return True
+        with patch("inventory.views.get_redis_client", return_value=MockRedis()):
+            resp = client.get("/ready/")
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.data.get("status"), "ready")
+            self.assertEqual(resp.data.get("database"), "connected")
+            self.assertEqual(resp.data.get("redis"), "connected")
+
+    def test_ready_endpoint_db_down_returns_503(self):
+        """
+        C7: /ready/ returns 503 when DB connection fails.
+        """
+        client = APIClient()
+        class MockRedis:
+            def ping(self):
+                return True
+        from django.db import DatabaseError
+        with patch("inventory.views.get_redis_client", return_value=MockRedis()):
+            with patch("django.db.connection.cursor", side_effect=DatabaseError("DB Down")):
+                resp = client.get("/ready/")
+                self.assertEqual(resp.status_code, 503)
+                self.assertEqual(resp.data.get("status"), "not_ready")
+                self.assertEqual(resp.data.get("database"), "disconnected")
+                self.assertEqual(resp.data.get("redis"), "connected")
+
+    def test_ready_endpoint_redis_down_returns_503(self):
+        """
+        C7: /ready/ returns 503 when Redis ping fails.
+        """
+        client = APIClient()
+        with patch("inventory.views.get_redis_client", return_value=None):
+            resp = client.get("/ready/")
+            self.assertEqual(resp.status_code, 503)
+            self.assertEqual(resp.data.get("status"), "not_ready")
+            self.assertEqual(resp.data.get("database"), "connected")
+            self.assertEqual(resp.data.get("redis"), "disconnected")
+
+    def test_decomposition_modules_and_reexports(self):
+        """
+        C7: Verify auth and service modules can be imported directly and are re-exported in views.py.
+        """
+        from inventory import auth, services, views
+        # Auth helpers
+        self.assertTrue(callable(auth._is_staff_request))
+        self.assertTrue(callable(auth._get_authenticated_user))
+        self.assertTrue(callable(auth._get_authenticated_user_id))
+        self.assertTrue(callable(auth._verify_internal_service_key))
+        # Re-exported in views
+        self.assertIs(views._is_staff_request, auth._is_staff_request)
+        self.assertIs(views._get_authenticated_user, auth._get_authenticated_user)
+        self.assertIs(views._get_authenticated_user_id, auth._get_authenticated_user_id)
+        self.assertIs(views._verify_internal_service_key, auth._verify_internal_service_key)
+
+        # Service helpers
+        self.assertTrue(callable(services.get_redis_client))
+        self.assertTrue(callable(services.get_hold_duration))
+        self.assertTrue(callable(services.reclaim_expired_holds))
+        self.assertTrue(callable(services._validate_reserve_input))
+        self.assertTrue(callable(services._validate_uuid))
+        # Re-exported in views
+        self.assertIs(views.get_redis_client, services.get_redis_client)
+        self.assertIs(views.get_hold_duration, services.get_hold_duration)
+        self.assertIs(views.reclaim_expired_holds, services.reclaim_expired_holds)
+
