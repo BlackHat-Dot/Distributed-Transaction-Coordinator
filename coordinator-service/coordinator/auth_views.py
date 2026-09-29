@@ -866,17 +866,20 @@ def verify_otp(request):
         pass
 
     session_id = uuid.uuid4().hex
+    user_id = _generate_user_id(email)
+    session_keys = [session_key, f"dtc:session:{user_id}"]
     if client:
         try:
-            client.setex(session_key, 30, session_id)
+            for k in session_keys:
+                client.setex(k, 30, session_id)
         except Exception:
             pass
     try:
-        cache.set(session_key, session_id, timeout=30)
+        for k in session_keys:
+            cache.set(k, session_id, timeout=30)
     except Exception:
         pass
 
-    user_id = _generate_user_id(email)
     jwt_expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "1800"))
     jwt_token = _create_jwt(user_id=user_id, user_email=email, session_id=session_id, expires_in=jwt_expires_in)
 
@@ -935,37 +938,44 @@ def heartbeat(request):
         return Response({"error": "Unauthorized"}, status=401)
 
     email = user_info.get("email")
-    if not email:
+    user_id = user_info.get("user_id")
+    if not email and not user_id:
         return Response({"error": "Missing email"}, status=400)
 
     token_sid = user_info.get("sid")
-    session_key = f"dtc:session:{email}"
     client = _get_redis_client()
+    session_keys = []
+    if email:
+        session_keys.append(f"dtc:session:{email}")
+    if user_id:
+        session_keys.append(f"dtc:session:{user_id}")
 
     if client:
         try:
-            # Fetch from Redis the session ID of whoever is supposed to be the active device
-            raw_val = client.get(session_key)
-            if raw_val:
-                active_sid = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else raw_val
-
-                if token_sid and active_sid and active_sid != token_sid:
-                    return Response({
-                        "error": "Session superseded by another login.",
-                        "code": "SESSION_SUPERSEDED"
-                    }, status=401)
-            client.setex(session_key, 30, token_sid or "active")
+            if email:
+                raw_val = client.get(f"dtc:session:{email}")
+                if raw_val:
+                    active_sid = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else raw_val
+                    if token_sid and active_sid and active_sid != token_sid:
+                        return Response({
+                            "error": "Session superseded by another login.",
+                            "code": "SESSION_SUPERSEDED"
+                        }, status=401)
+            for k in session_keys:
+                client.setex(k, 30, token_sid or "active")
         except Exception:
             pass
 
     try:
-        cache_sid = cache.get(session_key)
-        if cache_sid and token_sid and cache_sid != token_sid:
-            return Response({
-                "error": "Session superseded by another login.",
-                "code": "SESSION_SUPERSEDED"
-            }, status=401)
-        cache.set(session_key, token_sid or cache_sid or "active", timeout=30)
+        if email:
+            cache_sid = cache.get(f"dtc:session:{email}")
+            if cache_sid and token_sid and cache_sid != token_sid:
+                return Response({
+                    "error": "Session superseded by another login.",
+                    "code": "SESSION_SUPERSEDED"
+                }, status=401)
+        for k in session_keys:
+            cache.set(k, token_sid or "active", timeout=30)
     except Exception:
         pass
 
@@ -978,18 +988,22 @@ def logout(request):
     Deletes the user's active session in Redis and cache.
     """
     user_info = get_user_from_request(request)
-    if user_info and user_info.get("email"):
-        email = user_info.get("email")
-        session_key = f"dtc:session:{email}"
+    if user_info:
+        keys_to_del = []
+        if user_info.get("email"):
+            keys_to_del.append(f"dtc:session:{user_info.get('email')}")
+        if user_info.get("user_id"):
+            keys_to_del.append(f"dtc:session:{user_info.get('user_id')}")
         client = _get_redis_client()
-        if client:
+        for k in keys_to_del:
+            if client:
+                try:
+                    client.delete(k)
+                except Exception:
+                    pass
             try:
-                client.delete(session_key)
+                cache.delete(k)
             except Exception:
                 pass
-        try:
-            cache.delete(session_key)
-        except Exception:
-            pass
 
     return Response({"status": "logged_out"}, status=200)
