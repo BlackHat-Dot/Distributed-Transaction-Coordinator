@@ -422,6 +422,52 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         ]
         self.assertTrue(len(refund_calls) >= 1)
 
+    def test_h1_recovery_sweep_calls_void_when_not_charged(self):
+        """
+        H1 / N1: Proves that execute_compensation_sweep calls /payments/void/
+        when payment status is NOT_CHARGED before releasing inventory.
+        """
+        from coordinator.recovery import execute_compensation_sweep
+        tx_id = uuid.uuid4()
+        Transaction.objects.create(
+            transaction_id=tx_id,
+            user_id="user_bob",
+            status=Transaction.Status.RECOVERY_IN_PROGRESS,
+            amount=Decimal("150.00"),
+            seat_ids=[1],
+        )
+
+        mock_get = MagicMock()
+        mock_get.status_code = 200
+        mock_get.content = b'{"status": "NOT_CHARGED"}'
+        mock_get.json.return_value = {"status": "NOT_CHARGED"}
+
+        mock_post_calls = []
+        def mock_post(url, **kwargs):
+            mock_post_calls.append(url)
+            resp = MagicMock()
+            resp.status_code = 200
+            if "/payments/void/" in url:
+                resp.content = b'{"status": "VOIDED"}'
+                resp.json.return_value = {"status": "VOIDED"}
+            else:
+                resp.content = b'{"status": "RELEASED"}'
+                resp.json.return_value = {"status": "RELEASED"}
+            return resp
+
+        outcome = execute_compensation_sweep(
+            transaction_id=tx_id,
+            actor=SagaEvent.ACTOR_RECOVERY,
+            get_func=lambda url, **kwargs: mock_get,
+            post_func=mock_post,
+        )
+
+        self.assertTrue(
+            any("/payments/void/" in url for url in mock_post_calls),
+            "execute_compensation_sweep failed to call /payments/void/ when payment was NOT_CHARGED!",
+        )
+        self.assertTrue(outcome["success"])
+
 
 
 

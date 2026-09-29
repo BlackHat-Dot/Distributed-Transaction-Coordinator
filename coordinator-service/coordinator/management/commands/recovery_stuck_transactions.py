@@ -251,27 +251,6 @@ class Command(BaseCommand):
             )
             return
 
-        # Ensure payment is voided so an in-flight charge cannot land after inventory release
-        try:
-            void_resp = requests.post(
-                PAYMENT_VOID_URL,
-                json={"transaction_id": str(transaction_id)},
-                headers=headers,
-                timeout=REQUEST_TIMEOUT,
-            )
-            if void_resp.status_code == 200:
-                v_data = void_resp.json()
-                if v_data.get("status") == "CHARGED":
-                    self.stdout.write(
-                        self.style.WARNING(
-                            f"  -> {transaction_id}: payment was charged before void; routing to refund."
-                        )
-                    )
-                    self._compensate(transaction_id, payment_was_charged=True)
-                    return
-        except requests.exceptions.RequestException:
-            pass
-
         try:
             inventory_resp = requests.get(
                 INVENTORY_CHECK_URL,
@@ -288,6 +267,27 @@ class Command(BaseCommand):
         if inventory_status == INVENTORY_RESERVED:
             self._compensate(transaction_id, payment_was_charged=False)
         elif inventory_status in (INVENTORY_RELEASED, INVENTORY_NOT_RESERVED):
+            # Ensure payment is voided so an in-flight charge cannot land after marking TIMEOUT
+            try:
+                void_resp = requests.post(
+                    PAYMENT_VOID_URL,
+                    json={"transaction_id": str(transaction_id)},
+                    headers=headers,
+                    timeout=REQUEST_TIMEOUT,
+                )
+                if void_resp.status_code == 200:
+                    v_data = void_resp.json()
+                    if v_data.get("status") == "CHARGED":
+                        self.stdout.write(
+                            self.style.WARNING(
+                                f"  -> {transaction_id}: payment was charged before void; routing to refund."
+                            )
+                        )
+                        self._compensate(transaction_id, payment_was_charged=True)
+                        return
+            except requests.exceptions.RequestException:
+                pass
+
             _set_status_with_event(
                 transaction_id=transaction_id,
                 to_status=Transaction.Status.TIMEOUT,

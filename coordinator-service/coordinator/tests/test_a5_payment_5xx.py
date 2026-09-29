@@ -95,6 +95,11 @@ class Payment5xxA5Tests(TestCase):
         def mock_post(url, *args, **kwargs):
             if "charge" in url:
                 return mock_charge_resp
+            if "void" in url:
+                mock_void = MagicMock()
+                mock_void.status_code = 200
+                mock_void.json.return_value = {"status": "VOIDED"}
+                return mock_void
             if "release" in url:
                 return mock_release_resp
             raise ValueError(f"Unexpected POST url: {url}")

@@ -98,12 +98,21 @@ class CleanupA8Tests(TestCase):
         mock_release.content = b'{"error": "Reservation already released"}'
         mock_release.json.return_value = {"error": "Reservation already released"}
 
+        def mock_post(url, *args, **kwargs):
+            if "void" in url:
+                mock_v = MagicMock()
+                mock_v.status_code = 200
+                mock_v.content = b'{"status": "VOIDED"}'
+                mock_v.json.return_value = {"status": "VOIDED"}
+                return mock_v
+            return mock_release
+
         outcome = execute_compensation_sweep(
             transaction_id=txn.transaction_id,
             actor=SagaEvent.ACTOR_RETRY,
             original_status=Transaction.Status.COMPENSATION_FAILED,
             get_func=lambda *args, **kwargs: mock_check,
-            post_func=lambda *args, **kwargs: mock_release,
+            post_func=mock_post,
         )
 
         self.assertTrue(outcome["success"], f"Outcome was expected to succeed but failed: {outcome}")

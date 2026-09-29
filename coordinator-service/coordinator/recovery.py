@@ -9,6 +9,7 @@ PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rst
 
 PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
 PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
+PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
 INVENTORY_RELEASE_URL = f"{INVENTORY_BASE_URL}/seats/release/"
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "5"))
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
@@ -49,6 +50,7 @@ def execute_compensation_sweep(
     # 1. Payment Check in EVERY status
     payment_check_failed = False
     payment_status = None
+    payment_voided = False
     try:
         p_resp = get_http(
             PAYMENT_CHECK_URL,
@@ -61,6 +63,7 @@ def execute_compensation_sweep(
         elif p_resp.status_code == 200:
             p_data = p_resp.json() if p_resp.content else {}
             payment_status = p_data.get("status")
+            payment_voided = bool(p_data.get("voided", False))
         else:
             payment_check_failed = True
     except (requests.exceptions.RequestException, Exception):
@@ -102,9 +105,48 @@ def execute_compensation_sweep(
     refund_status_code = None
     refund_payload = None
 
-    if payment_status in ("REFUNDED", "NOT_CHARGED"):
+    if payment_status == "REFUNDED" or (payment_status == "NOT_CHARGED" and payment_voided):
         refund_ok = True
-    elif payment_status == "CHARGED":
+    elif payment_status == "NOT_CHARGED":
+        # Fence against in-flight charge landing after release
+        void_ok = False
+        try:
+            v_resp = post_http(
+                PAYMENT_VOID_URL,
+                json={"transaction_id": str(transaction_id)},
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
+            )
+            if v_resp.status_code == 200:
+                v_data = v_resp.json() if v_resp.content else {}
+                if v_data.get("status") == "CHARGED":
+                    payment_status = "CHARGED"  # Late charge landed; route to refund below
+                else:
+                    void_ok = True
+        except (requests.exceptions.RequestException, Exception):
+            void_ok = False
+
+        if void_ok:
+            refund_ok = True
+        elif payment_status != "CHARGED":
+            # Void failed and payment not confirmed charged -> state uncertain, abort compensation
+            revert_status = original_status or Transaction.Status.COMPENSATION_FAILED
+            _set_status_with_event(
+                transaction_id=transaction_id,
+                to_status=revert_status,
+                expected_status=expected_final_status,
+                actor=actor,
+                http_status_code=None,
+                http_payload={"error": "Payment void failed/timed out. Claim released."},
+            )
+            return {
+                "success": False,
+                "status_code": 503,
+                "status": revert_status,
+                "error": "Payment void failed; claim released for retry",
+            }
+
+    if payment_status == "CHARGED":
         try:
             r_resp = post_http(
                 PAYMENT_REFUND_URL,
@@ -121,7 +163,7 @@ def execute_compensation_sweep(
                     pass
         except (requests.exceptions.RequestException, Exception):
             refund_ok = False
-    else:
+    elif payment_status != "NOT_CHARGED" and payment_status != "REFUNDED":
         refund_ok = False
 
     # 2. Inventory Release
