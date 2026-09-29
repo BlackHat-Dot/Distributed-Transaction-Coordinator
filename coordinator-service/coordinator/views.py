@@ -55,7 +55,9 @@ PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
 PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
 PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
 
-REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "5"))
+REQUEST_CONNECT_TIMEOUT = float(os.getenv("REQUEST_CONNECT_TIMEOUT", "2.0"))
+REQUEST_READ_TIMEOUT = float(os.getenv("REQUEST_READ_TIMEOUT", os.getenv("REQUEST_TIMEOUT", "5.0")))
+REQUEST_TIMEOUT = (REQUEST_CONNECT_TIMEOUT, REQUEST_READ_TIMEOUT)
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 
 
@@ -99,12 +101,14 @@ def _get_http_session():
     return _HTTP_SESSION
 
 def _http_post(url, **kwargs):
+    kwargs.setdefault("timeout", REQUEST_TIMEOUT)
     # Support unittest.mock patches in test suite
     if hasattr(requests.post, "mock_calls") or hasattr(requests.post, "assert_called"):
         return requests.post(url, **kwargs)
     return _get_http_session().post(url, **kwargs)
 
 def _http_get(url, **kwargs):
+    kwargs.setdefault("timeout", REQUEST_TIMEOUT)
     # Support unittest.mock patches in test suite
     if hasattr(requests.get, "mock_calls") or hasattr(requests.get, "assert_called"):
         return requests.get(url, **kwargs)
@@ -947,6 +951,7 @@ def _handle_create_transaction(request):
             headers = {
                 "X-Correlation-ID": correlation_id,
                 "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+                "X-Idempotency-Key": str(transaction_id),
             }
             try:
                 _http_post(
@@ -981,6 +986,7 @@ def _handle_create_transaction(request):
             headers = {
                 "X-Correlation-ID": correlation_id,
                 "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+                "X-Idempotency-Key": str(transaction_id),
             }
             try:
                 _http_post(
@@ -1124,6 +1130,7 @@ def _handle_create_transaction(request):
                                 rel_headers = {
                                     "X-Correlation-ID": correlation_id,
                                     "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+                                    "X-Idempotency-Key": str(txn.transaction_id),
                                 }
                                 _http_post(
                                     INVENTORY_RELEASE_URL,
@@ -1630,6 +1637,7 @@ def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=No
     headers = {
         "X-Correlation-ID": correlation_id,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+        "X-Idempotency-Key": str(transaction_id),
     }
 
     try:
@@ -1682,6 +1690,7 @@ def _charge_payment(
     headers = {
         "X-Correlation-ID": correlation_id,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+        "X-Idempotency-Key": str(transaction_id),
     }
 
     try:
@@ -1827,6 +1836,7 @@ def _confirm_inventory(transaction_id, seat_ids=None, correlation_id=None):
     headers = {
         "X-Correlation-ID": correlation_id,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+        "X-Idempotency-Key": str(transaction_id),
     }
     try:
         response = _http_post(
@@ -1944,6 +1954,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
     headers = {
         "X-Correlation-ID": _get_active_correlation_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+        "X-Idempotency-Key": str(transaction_id),
     }
 
     claimed = _set_status_with_event(

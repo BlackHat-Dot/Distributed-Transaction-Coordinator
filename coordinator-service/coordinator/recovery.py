@@ -11,7 +11,9 @@ PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
 PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
 PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
 INVENTORY_RELEASE_URL = f"{INVENTORY_BASE_URL}/seats/release/"
-REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "5"))
+REQUEST_CONNECT_TIMEOUT = float(os.getenv("REQUEST_CONNECT_TIMEOUT", "2.0"))
+REQUEST_READ_TIMEOUT = float(os.getenv("REQUEST_READ_TIMEOUT", os.getenv("REQUEST_TIMEOUT", "5.0")))
+REQUEST_TIMEOUT = (REQUEST_CONNECT_TIMEOUT, REQUEST_READ_TIMEOUT)
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 
 
@@ -42,6 +44,7 @@ def execute_compensation_sweep(
     headers = {
         "X-Correlation-ID": str(correlation_id or transaction_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+        "X-Idempotency-Key": str(transaction_id),
     }
 
     txn = Transaction.objects.filter(transaction_id=transaction_id).first()

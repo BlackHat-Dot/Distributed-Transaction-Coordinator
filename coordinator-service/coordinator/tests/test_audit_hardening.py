@@ -974,6 +974,48 @@ class SecurityAndReliabilityHardeningTests(TestCase):
             self.assertEqual(parsed.get("status"), "STREAM_TIMEOUT")
             self.assertFalse(parsed.get("is_terminal"))
 
+    def test_h18_timeout_tuple_and_idempotency_headers(self):
+        """
+        H18: Connect/read timeout tuple and X-Idempotency-Key header on outbound calls.
+        """
+        from coordinator.views import (
+            REQUEST_TIMEOUT,
+            _charge_payment,
+            _reserve_inventory,
+            _confirm_inventory,
+        )
+        self.assertIsInstance(REQUEST_TIMEOUT, tuple)
+        self.assertEqual(len(REQUEST_TIMEOUT), 2)
+
+        tx_id = uuid.uuid4()
+        Transaction.objects.create(
+            transaction_id=tx_id,
+            status=Transaction.Status.STARTED,
+            amount=Decimal("500.00"),
+            seat_ids=[1],
+        )
+
+        with patch("coordinator.views.requests.post") as mock_post:
+            mock_post.return_value = MagicMock(status_code=200, json=lambda: {"status": "RESERVED"})
+            _reserve_inventory(tx_id, [1], correlation_id="cid-123")
+            call_kwargs = mock_post.call_args[1]
+            self.assertEqual(call_kwargs["headers"].get("X-Idempotency-Key"), str(tx_id))
+            self.assertEqual(call_kwargs.get("timeout"), REQUEST_TIMEOUT)
+
+            # Test _charge_payment
+            Transaction.objects.filter(transaction_id=tx_id).update(status=Transaction.Status.INVENTORY_RESERVED)
+            _charge_payment(tx_id, 500, False, correlation_id="cid-123", seat_ids=[1])
+            call_kwargs = mock_post.call_args[1]
+            self.assertEqual(call_kwargs["headers"].get("X-Idempotency-Key"), str(tx_id))
+            self.assertEqual(call_kwargs.get("timeout"), REQUEST_TIMEOUT)
+
+            # Test _confirm_inventory
+            _confirm_inventory(tx_id, [1], correlation_id="cid-123")
+            call_kwargs = mock_post.call_args[1]
+            self.assertEqual(call_kwargs["headers"].get("X-Idempotency-Key"), str(tx_id))
+            self.assertEqual(call_kwargs.get("timeout"), REQUEST_TIMEOUT)
+
+
 
 
 
