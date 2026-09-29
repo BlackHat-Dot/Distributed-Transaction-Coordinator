@@ -1,3 +1,5 @@
+import logging
+import os
 import requests
 from datetime import timedelta
 from django.utils import timezone
@@ -7,7 +9,7 @@ from coordinator.models import Transaction, SagaEvent
 from coordinator.saga_log import _set_status_with_event
 from coordinator.recovery import execute_compensation_sweep
 
-import os
+logger = logging.getLogger(__name__)
 
 INVENTORY_BASE_URL = os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000").rstrip("/")
 PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rstrip("/")
@@ -295,8 +297,6 @@ class Command(BaseCommand):
             max_age_minutes = getattr(settings, "MAX_CONFIRM_RETRY_MINUTES", 60)
 
             if retry_count >= max_attempts or age_minutes >= max_age_minutes:
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.critical(
                     "CRITICAL ALERT: Transaction %s exceeded confirm retry limits (attempts=%d/%d, age=%.1fm/%dm). "
                     "Marked for MANUAL_REVIEW. Payment is CHARGED; NO auto-refund issued.",
@@ -385,7 +385,48 @@ class Command(BaseCommand):
                 )
                 return
             else:
-                # Definitive 4xx error (hold expired, seats not found) -> route to compensation
+                # Definitive 4xx error (hold expired, seats not found)
+                confirm_payload = confirm_resp.json() if confirm_resp.content else {}
+                released_reason = confirm_payload.get("released_reason") if isinstance(confirm_payload, dict) else None
+                if not released_reason:
+                    try:
+                        chk_resp = requests.get(
+                            INVENTORY_CHECK_URL,
+                            params={"transaction_id": str(transaction_id)},
+                            headers=headers,
+                            timeout=REQUEST_TIMEOUT,
+                        )
+                        if chk_resp.status_code == 200:
+                            chk_data = chk_resp.json() if chk_resp.content else {}
+                            released_reason = chk_data.get("released_reason")
+                    except Exception:
+                        pass
+
+                if released_reason == "ADMIN_RESET":
+                    logger.critical(
+                        f"CRITICAL: Transaction {transaction_id} was released by ADMIN_RESET while payment is CHARGED! Auto-compensation/refund prohibited; manual review required."
+                    )
+                    _set_status_with_event(
+                        transaction_id=transaction_id,
+                        to_status=Transaction.Status.COMPENSATION_FAILED,
+                        expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+                        actor=SagaEvent.ACTOR_RECOVERY,
+                        http_status_code=confirm_resp.status_code,
+                        http_payload={
+                            "error": "Inventory was released by ADMIN_RESET while payment is CHARGED; auto-refund prohibited. Manual review required.",
+                            "manual_review_required": True,
+                            "released_reason": "ADMIN_RESET",
+                            "payment_status": "CHARGED",
+                        },
+                    )
+                    self.stdout.write(
+                        self.style.ERROR(
+                            f"  -> {transaction_id}: inventory released by ADMIN_RESET while payment CHARGED; auto-refund blocked, marked COMPENSATION_FAILED (manual_review_required)."
+                        )
+                    )
+                    return
+
+                # Otherwise (e.g. hold expired naturally) -> route to compensation
                 self.stdout.write(
                     self.style.WARNING(
                         f"  -> {transaction_id}: inventory confirm failed definitively (HTTP {confirm_resp.status_code}); routing to compensation."
@@ -411,11 +452,12 @@ class Command(BaseCommand):
             self._leave_in_progress(transaction_id, "inventory check failed")
             return
 
-        inventory_status = inventory_resp.json().get("status") if inventory_resp.status_code == 200 else None
+        inv_data = inventory_resp.json() if inventory_resp.status_code == 200 and inventory_resp.content else {}
+        inventory_status = inv_data.get("status") if inventory_resp.status_code == 200 else None
 
-        if inventory_status == INVENTORY_RESERVED:
+        if inventory_status in (INVENTORY_RESERVED, "RESERVED"):
             self._compensate(transaction_id, payment_was_charged=False)
-        elif inventory_status in (INVENTORY_RELEASED, INVENTORY_NOT_RESERVED):
+        elif inventory_status in (INVENTORY_RELEASED, INVENTORY_NOT_RESERVED, "RELEASED"):
             # Ensure payment is voided so an in-flight charge cannot land after marking TIMEOUT
             try:
                 void_resp = requests.post(
@@ -427,6 +469,30 @@ class Command(BaseCommand):
                 if void_resp.status_code == 200:
                     v_data = void_resp.json()
                     if v_data.get("status") == "CHARGED":
+                        if inv_data.get("released_reason") == "ADMIN_RESET":
+                            logger.critical(
+                                f"CRITICAL: Transaction {transaction_id} was released by ADMIN_RESET while payment is CHARGED! Auto-compensation/refund prohibited; manual review required."
+                            )
+                            _set_status_with_event(
+                                transaction_id=transaction_id,
+                                to_status=Transaction.Status.COMPENSATION_FAILED,
+                                expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+                                actor=SagaEvent.ACTOR_RECOVERY,
+                                http_status_code=void_resp.status_code,
+                                http_payload={
+                                    "error": "Inventory was released by ADMIN_RESET while payment is CHARGED; auto-refund prohibited. Manual review required.",
+                                    "manual_review_required": True,
+                                    "released_reason": "ADMIN_RESET",
+                                    "payment_status": "CHARGED",
+                                },
+                            )
+                            self.stdout.write(
+                                self.style.ERROR(
+                                    f"  -> {transaction_id}: inventory released by ADMIN_RESET while payment CHARGED; auto-refund blocked, marked COMPENSATION_FAILED (manual_review_required)."
+                                )
+                            )
+                            return
+
                         self.stdout.write(
                             self.style.WARNING(
                                 f"  -> {transaction_id}: payment was charged before void; routing to refund."

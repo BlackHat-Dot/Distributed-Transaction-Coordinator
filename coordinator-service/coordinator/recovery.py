@@ -177,6 +177,11 @@ def execute_compensation_sweep(
                     confirm_payload = c_resp.json() if c_resp.content else None
                 except Exception:
                     pass
+            elif c_resp.content:
+                try:
+                    confirm_payload = c_resp.json()
+                except Exception:
+                    pass
         except (requests.exceptions.RequestException, Exception):
             confirm_transport_error = True
             confirm_ok = False
@@ -217,7 +222,50 @@ def execute_compensation_sweep(
                 "error": "Inventory confirm transport error/5xx; claim released for retry",
             }
 
-        # Definitive 4xx error (hold expired, seats not found) -> route to refund and release seats
+        # Definitive 4xx error (hold expired, seats not found)
+        # Check released_reason: if released by ADMIN_RESET, prohibit auto-refund and require manual review
+        released_reason = None
+        if confirm_payload and isinstance(confirm_payload, dict):
+            released_reason = confirm_payload.get("released_reason")
+
+        if not released_reason:
+            try:
+                chk_resp = get_http(
+                    f"{INVENTORY_BASE_URL}/reserve/check/",
+                    params={"transaction_id": str(transaction_id)},
+                    headers=headers,
+                    timeout=REQUEST_TIMEOUT,
+                )
+                if chk_resp.status_code == 200:
+                    chk_data = chk_resp.json() if chk_resp.content else {}
+                    released_reason = chk_data.get("released_reason")
+            except Exception:
+                pass
+
+        if released_reason == "ADMIN_RESET":
+            revert_status = original_status or Transaction.Status.COMPENSATION_FAILED
+            _set_status_with_event(
+                transaction_id=transaction_id,
+                to_status=revert_status,
+                expected_status=expected_final_status,
+                actor=actor,
+                http_status_code=409,
+                http_payload={
+                    "error": "Inventory was released by ADMIN_RESET while payment is CHARGED; auto-refund prohibited. Manual review required.",
+                    "manual_review_required": True,
+                    "released_reason": "ADMIN_RESET",
+                    "payment_status": "CHARGED",
+                },
+            )
+            return {
+                "success": False,
+                "status_code": 409,
+                "status": revert_status,
+                "error": "Reservation was released by ADMIN_RESET; auto-refund prohibited, manual review required",
+                "manual_review_required": True,
+                "released_reason": "ADMIN_RESET",
+            }
+
         payment_status = "CHARGED"
 
     if payment_status == "CHARGED":

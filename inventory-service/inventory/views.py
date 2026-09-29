@@ -466,12 +466,15 @@ def confirm_seat(request):
 
                 # This condition checks whether this seat object is held by this transaction id
                 if str(seat.held_by_transaction_id) != str(transaction_id):
+                    released_res = [r for r in reservations if r.status == Reservation.Status.RELEASED]
+                    rel_reason = (released_res[0].released_reason or "UNKNOWN_LEGACY") if released_res else "EXPIRED_HOLD"
                     return Response(
                         {
                             "error": f"Seat {seat.row}{seat.seat_number} hold does not belong to transaction {transaction_id}",
                             "code": "HOLD_EXPIRED",
                             "status": "HOLD_EXPIRED",
                             "transaction_id": str(transaction_id),
+                            "released_reason": rel_reason,
                         },
                         status=409,
                     )
@@ -700,9 +703,11 @@ def check_reservation(request):
     
     if any(r.status == Reservation.Status.RELEASED for r in reservations):
         rel_r = next(r for r in reservations if r.status == Reservation.Status.RELEASED)
-        resp_data = {"status": Reservation.Status.RELEASED, "transaction_id": str(transaction_id)}
-        if rel_r.released_reason:
-            resp_data["released_reason"] = rel_r.released_reason
+        resp_data = {
+            "status": Reservation.Status.RELEASED,
+            "transaction_id": str(transaction_id),
+            "released_reason": rel_r.released_reason or "UNKNOWN_LEGACY",
+        }
         return Response(resp_data, status=200)
 
     now = timezone.now()
