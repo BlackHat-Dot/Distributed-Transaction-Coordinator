@@ -20,7 +20,7 @@ import jwt
 import redis
 
 from .models import Event, Seat, Reservation
-from .serializers import EventSerializer, SeatSerializer, PublicSeatSerializer, InternalSeatSerializer
+from .serializers import EventSerializer, PublicSeatSerializer, InternalSeatSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -479,15 +479,12 @@ def reserve_seat(request):
     #   - Coordinator calls (X-Internal-Service-Key present) send their saga UUID in the body → honour it.
     #   - Browser calls never supply a valid transaction_id from the body (client-sent ID is silently ignored).
 
-    try:
-        if has_internal_key:
-            if not supplied_tid:
-                return Response({"error": "transaction_id is required"}, status=400)
-            transaction_id = supplied_tid
-        else:
-            transaction_id = uuid.uuid4()  # Always freshly generated for browser callers
-    except (ValueError):
-        transaction_id = uuid.uuid4()
+    if has_internal_key:
+        if not supplied_tid:
+            return Response({"error": "transaction_id is required"}, status=400)
+        transaction_id = supplied_tid
+    else:
+        transaction_id = uuid.uuid4()  # Always freshly generated for browser callers
 
     # Authenticate user:
     # 1. Cryptographically verify JWT from Authorization header
