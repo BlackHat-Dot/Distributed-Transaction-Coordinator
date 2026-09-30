@@ -390,6 +390,57 @@ class TicketEndpointTests(TransactionTestCase):
         )
         self.assertEqual(r61.status_code, 429)
 
+    def test_rotating_x_forwarded_for_from_untrusted_peer_does_not_bypass_gate_rate_limit(self):
+        """Rotating spoofed X-Forwarded-For headers from untrusted peer cannot bypass gate rate limiting."""
+        from django.core.cache import cache
+        cache.clear()
+
+        # Send 10 invalid requests with changing X-Forwarded-For from an untrusted peer
+        for i in range(10):
+            r = self.client.post(
+                "/gate/redeem/",
+                {"ticket_code": self.ticket.ticket_code},
+                HTTP_X_GATE_API_KEY="bad_key_attempt",
+                HTTP_X_FORWARDED_FOR=f"203.0.113.{i+1}",
+                REMOTE_ADDR="198.51.100.25",  # Untrusted peer
+                format="json",
+            )
+            self.assertEqual(r.status_code, 401)
+
+        # 11th attempt from same peer (even with new spoofed IP) must be blocked with 429
+        r11 = self.client.post(
+            "/gate/redeem/",
+            {"ticket_code": self.ticket.ticket_code},
+            HTTP_X_GATE_API_KEY="bad_key_attempt",
+            HTTP_X_FORWARDED_FOR="198.18.0.99",
+            REMOTE_ADDR="198.51.100.25",
+            format="json",
+        )
+        self.assertEqual(r11.status_code, 429)
+        self.assertEqual(r11.data.get("code"), "RATE_LIMITED")
+
+    def test_rotating_x_forwarded_for_from_untrusted_peer_does_not_bypass_verify_rate_limit(self):
+        """Rotating spoofed X-Forwarded-For headers from untrusted peer cannot bypass verify rate limiting."""
+        from django.core.cache import cache
+        cache.clear()
+
+        # The limit is 60/min. Make 60 requests with rotating XFF from untrusted peer.
+        for i in range(60):
+            r = self.client.get(
+                f"/verify/{self.ticket.ticket_code}/",
+                HTTP_X_FORWARDED_FOR=f"10.{i // 256}.{i % 256}.1",
+                REMOTE_ADDR="198.51.100.30",  # Untrusted peer
+            )
+            self.assertEqual(r.status_code, 200)
+
+        # 61st request must be rate-limited (429)
+        r61 = self.client.get(
+            f"/verify/{self.ticket.ticket_code}/",
+            HTTP_X_FORWARDED_FOR="10.255.255.1",
+            REMOTE_ADDR="198.51.100.30",
+        )
+        self.assertEqual(r61.status_code, 429)
+
     def test_verify_page_valid_before_redeem_and_already_used_after(self):
         """GET /verify/ shows VALID before redeem and ALREADY USED after redeem."""
         from django.core.cache import cache

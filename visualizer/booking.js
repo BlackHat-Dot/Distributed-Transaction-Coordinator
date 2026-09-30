@@ -2077,6 +2077,9 @@ async function initiateSagaCheckout() {
   openSagaModal(firstSeat, selectedAmount, isPreReserved);
 
   const queryParams = new URLSearchParams();
+  if (isLocal) {
+    queryParams.set("sync", "true");
+  }
   if (selectedAmount === "9999") {
     queryParams.set("simulate_payment_decline", "true");
   }

@@ -11,7 +11,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from coordinator.auth_views import verify_jwt
+from coordinator.auth_views import verify_jwt, _get_client_ip
 from coordinator.models import Transaction, Ticket
 from coordinator.ticket_generator import (
     generate_qr_code_base64,
@@ -68,8 +68,6 @@ def authenticate_ticket_requester(request, transaction_id):
             {"error": "Authorization header with Bearer token required.", "code": "UNAUTHORIZED"},
             status=status.HTTP_401_UNAUTHORIZED,
         )
-
-
 
     token = auth_header.split(" ", 1)[1].strip()
     payload, err = verify_jwt(token)
@@ -200,7 +198,7 @@ def public_verify_ticket(request, ticket_code):
     Public read-only verification page/JSON.
     Rate limited. NO PII (no email, user ID, transaction UUID).
     """
-    ip = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "unknown")).split(",")[0].strip()
+    ip = _get_client_ip(request)
     rate_key = f"dtc:ratelimit:verify:{ip}"
     if not check_rate_limit(rate_key, limit=60, window=60):
         return HttpResponse("Too Many Requests", status=429, content_type="text/plain")
@@ -333,7 +331,7 @@ def gate_redeem_ticket(request):
     Refuses (409) if transaction is not COMPLETED.
     """
     # Rate limit gate check: 10 attempts per minute
-    ip = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "unknown")).split(",")[0].strip()
+    ip = _get_client_ip(request)
     rate_key = f"dtc:ratelimit:gate:{ip}"
     if not check_rate_limit(rate_key, limit=10, window=60):
         return Response({"error": "Rate limit exceeded on gate redemption.", "code": "RATE_LIMITED"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
