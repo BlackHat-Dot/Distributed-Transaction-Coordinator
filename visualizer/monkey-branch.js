@@ -17,10 +17,10 @@
   const RM = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // Geometry configuration tuned for header health strip
-  const BY = 34;       // Branch baseline Y
+  const BY = 36;       // Branch baseline Y
   const D = 20;        // Break drop distance
   const GAP = 16;      // Break gap width
-  const PILL_TOP = 58; // Top offset where pills hang
+  const PILL_TOP = 62; // Top offset where pills hang
 
   const SV = [
     { k: "coord", n: "Coordinator", p: ":8002", i: 0, st: "up", sag: 0, brk: 0, tsag: 0, tbrk: 0 },
@@ -30,7 +30,7 @@
   ];
 
   let bk, fr, wrap, pillsEl, helpBtn, stripEl;
-  let W = 760, H = 104, time = 0, tok = 0;
+  let W = 760, H = 112, time = 0, tok = 0;
   let M = null;
   const MO = [];
   let wp = null;
@@ -334,7 +334,7 @@
   function layout() {
     if (!wrap) return;
     W = wrap.clientWidth || 760;
-    H = wrap.clientHeight || 104;
+    H = wrap.clientHeight || 112;
     [bk, fr].forEach((v) => v && v.setAttribute("viewBox", `0 0 ${W} ${H}`));
 
     const wrapRect = wrap.getBoundingClientRect();
@@ -448,20 +448,22 @@
 
     m.band = E("rect", { x: -8.5, y: -8, width: 17, height: 3.5, rx: 1.8, display: "none" }, m.hd);
     m.sw = E("path", { d: "M0 0Q-3.5 5 0 7Q3.5 5 0 0Z", fill: "#5cc8ff", transform: "translate(11 -42)" }, inn);
+    m.bubG = E("g", { class: "mb-speech-bubble", display: "none" }, fr);
+    m.bubTail = E("path", { fill: "#141c18", stroke: "#24362e", "stroke-width": 1.2 }, m.bubG);
+    m.bubRect = E("rect", { rx: 5, ry: 5, fill: "#141c18", stroke: "#24362e", "stroke-width": 1.2 }, m.bubG);
     m.bub = E("text", {
       "text-anchor": "middle",
-      "font-size": 11,
-      "font-weight": 700,
-      fill: "#fff",
-      stroke: "#0a120f",
-      "stroke-width": 2.5,
-      "paint-order": "stroke",
-      "font-family": "system-ui, sans-serif"
-    }, fr);
+      "dominant-baseline": "central",
+      "font-size": 10.5,
+      "font-weight": 800,
+      fill: "#ffffff",
+      "font-family": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+      "letter-spacing": "0.02em"
+    }, m.bubG);
 
-    m.speak = (t, ms) => {
+    m.speak = (t, ms = 1400) => {
       m.say = t;
-      m.sayT = time + ms / 1000;
+      m.sayT = time + Math.max(ms, 1200) / 1000;
     };
     MO.push(m);
     return m;
@@ -677,8 +679,87 @@
     m.ban.setAttribute("display", m.banana ? "" : "none");
     m.sw.setAttribute("display", m.slow || m.pose === "shock" || m.sad ? "" : "none");
     const say = time < m.sayT ? m.say : m.q ? "?" : "";
-    m.bub.textContent = say;
-    m.bub.setAttribute("transform", `translate(${m.x} ${m.mode === "hang" ? py - 10 : m.y - 56 * sc})`);
+    if (!say) {
+      m.bubG.setAttribute("display", "none");
+    } else {
+      m.bubG.removeAttribute("display");
+      m.bub.textContent = say;
+
+      // Tone-specific color palettes
+      let bg = "rgba(18, 28, 23, 0.96)";
+      let border = "#3dd68c";
+      let textCol = "#ffffff";
+      let glow = "drop-shadow(0 2px 6px rgba(0,0,0,0.5))";
+
+      if (say === "CRASH!" || say === "Declined!" || say === "409") {
+        bg = "rgba(44, 14, 14, 0.96)";
+        border = "#ff5d4d";
+        textCol = "#ffb3b3";
+        glow = "drop-shadow(0 2px 8px rgba(255, 93, 77, 0.45))";
+      } else if (say === "WIN (200)" || say === "Refunded") {
+        bg = "rgba(14, 38, 20, 0.96)";
+        border = "#52e27c";
+        textCol = "#a3ffbc";
+        glow = "drop-shadow(0 2px 8px rgba(82, 226, 124, 0.45))";
+      } else if (say === "Hold!" || say === "?") {
+        bg = "rgba(36, 30, 10, 0.96)";
+        border = "#ffd84a";
+        textCol = "#ffeb99";
+        glow = "drop-shadow(0 2px 8px rgba(255, 216, 74, 0.4))";
+      }
+
+      m.bubRect.setAttribute("fill", bg);
+      m.bubRect.setAttribute("stroke", border);
+      m.bubTail.setAttribute("fill", bg);
+      m.bubTail.setAttribute("stroke", border);
+      m.bub.setAttribute("fill", textCol);
+      m.bubG.style.filter = glow;
+
+      const bubW = Math.max(22, say.length * 7.2 + 16);
+      const bubH = 20;
+      const headY = py - (m.mode === "hang" ? 16 : 28) * sc;
+
+      let bubX, bubY, tailPath;
+
+      if (headY >= 28) {
+        // Plenty of headroom above monkey: place bubble centered above head
+        bubX = Math.max(bubW / 2 + 6, Math.min(W - bubW / 2 - 6, px));
+        bubY = Math.max(bubH / 2 + 4, headY - bubH / 2 - 6);
+        const tailTipX = px;
+        const tailTipY = headY - 1;
+        const tailBaseY = bubY + bubH / 2;
+        const tailBaseX = Math.max(bubX - bubW / 2 + 6, Math.min(bubX + bubW / 2 - 6, px));
+        tailPath = `M${tailBaseX - 4} ${tailBaseY} L${tailTipX} ${tailTipY} L${tailBaseX + 4} ${tailBaseY} Z`;
+      } else {
+        // Ceiling clearance is tight (standing on branch): place bubble to the side of head
+        const preferRight = px + 14 + bubW + 6 <= W || px - 14 - bubW - 6 < 0;
+        if (preferRight) {
+          bubX = px + 14 + bubW / 2;
+          bubY = Math.max(bubH / 2 + 4, Math.min(H - bubH / 2 - 4, headY + 6));
+          bubX = Math.min(W - bubW / 2 - 6, bubX);
+          tailPath = `M${bubX - bubW / 2 + 0.5} ${bubY - 3} L${px + 7 * sc} ${headY + 3} L${bubX - bubW / 2 + 0.5} ${bubY + 4} Z`;
+        } else {
+          bubX = px - 14 - bubW / 2;
+          bubY = Math.max(bubH / 2 + 4, Math.min(H - bubH / 2 - 4, headY + 6));
+          bubX = Math.max(bubW / 2 + 6, bubX);
+          tailPath = `M${bubX + bubW / 2 - 0.5} ${bubY - 3} L${px - 7 * sc} ${headY + 3} L${bubX + bubW / 2 - 0.5} ${bubY + 4} Z`;
+        }
+      }
+
+      // Hard clamp guarantees bubble is NEVER clipped regardless of window/stage size
+      bubX = Math.max(bubW / 2 + 4, Math.min(W - bubW / 2 - 4, bubX));
+      bubY = Math.max(bubH / 2 + 4, Math.min(H - bubH / 2 - 4, bubY));
+
+      m.bubRect.setAttribute("x", bubX - bubW / 2);
+      m.bubRect.setAttribute("y", bubY - bubH / 2);
+      m.bubRect.setAttribute("width", bubW);
+      m.bubRect.setAttribute("height", bubH);
+
+      m.bubTail.setAttribute("d", tailPath);
+
+      m.bub.setAttribute("x", bubX);
+      m.bub.setAttribute("y", bubY);
+    }
   }
 
   // =========================================================================
@@ -876,6 +957,7 @@
       await Promise.all(raceOver);
       monos.slice(1).forEach((m) => {
         m.root.remove();
+        if (m.bubG) m.bubG.remove();
         MO.splice(MO.indexOf(m), 1);
       });
     });
@@ -1263,6 +1345,13 @@
 
     if (new URLSearchParams(window.location.search).has("test_celeb")) {
       window.triggerBookingCelebration({ seat: "Seat #34 (Row C)", saga: "2PC Atomic Saga" });
+    }
+
+    if (new URLSearchParams(window.location.search).has("test_speech")) {
+      const speechText = new URLSearchParams(window.location.search).get("test_speech") || "CRASH!";
+      setTimeout(() => {
+        if (M) M.speak(speechText, 80000);
+      }, 400);
     }
   }
 

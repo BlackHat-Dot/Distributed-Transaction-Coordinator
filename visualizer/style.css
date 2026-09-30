@@ -192,7 +192,7 @@ button, input, select, textarea {
    ========================================================================== */
 .monkey-branch-strip {
   position: relative;
-  height: 104px;
+  height: 112px;
   min-width: 760px;
   max-width: 840px;
   margin-left: auto;
@@ -237,7 +237,7 @@ button, input, select, textarea {
   position: absolute;
   left: 0;
   right: 0;
-  top: 58px;
+  top: 62px;
   display: flex;
   justify-content: space-evenly;
   align-items: center;
