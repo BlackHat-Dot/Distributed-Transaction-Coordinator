@@ -1221,6 +1221,9 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
     });
 
     createSimulatedTransaction("COMPLETED");
+    if (window.triggerBookingCelebration) {
+      window.triggerBookingCelebration({ seat: "Seat #34", saga: "Happy Path Saga (Simulated)" });
+    }
     DOM.topoCoordState.textContent = "IDLE";
     return;
   }
@@ -1264,6 +1267,9 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
   }
 
   if (res.ok && res.data && res.data.transaction_id) {
+    if (window.triggerBookingCelebration) {
+      window.triggerBookingCelebration({ seat: `Seat #${nextSeatId}`, saga: "Live Sync Saga" });
+    }
     window.selectTransaction(res.data.transaction_id);
     fetchTransactionsFeed();
   }

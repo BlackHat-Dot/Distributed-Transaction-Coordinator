@@ -1,7 +1,7 @@
 /**
- * DTC OBSERVABILITY CONSOLE — MONKEY BRANCH HEALTH STRIP
- * Fully integrated health strip with interactive wooden branch,
- * autonomous rigged monkey, woodpecker recovery, and live telemetry hooks.
+ * DTC OBSERVABILITY CONSOLE — MONKEY BRANCH & COMPANION
+ * Fully integrated interactive wooden branch, autonomous rigged monkey,
+ * woodpecker recovery, non-stressful user opt-in, and center booking celebration.
  */
 (function () {
   "use strict";
@@ -29,15 +29,259 @@
     { k: "rec", n: "Recovery Worker", p: "", i: 3, st: "up", sag: 0, brk: 0, tsag: 0, tbrk: 0 }
   ];
 
-  let bk, fr, wrap, pillsEl, helpBtn;
-  let W = 700, H = 98, time = 0, tok = 0;
+  let bk, fr, wrap, pillsEl, helpBtn, stripEl;
+  let W = 760, H = 104, time = 0, tok = 0;
   let M = null;
   const MO = [];
   let wp = null;
   let hs = null;
   const ptr = { x: 0, y: 0, active: false };
 
+  // =========================================================================
+  // 1. User Preference & Opt-In State ("only if the user willing to see this")
+  // =========================================================================
+  window.isMonkeyEnabled = function () {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has("monkey")) return urlParams.get("monkey") === "1" || urlParams.get("monkey") === "true";
+    return localStorage.getItem("dtc_monkey_enabled") === "true";
+  };
+
+  window.setMonkeyEnabled = function (enabled) {
+    localStorage.setItem("dtc_monkey_enabled", enabled ? "true" : "false");
+    applyMonkeyPreference(enabled);
+
+    // Close opt-in prompt card if open
+    const optinCard = $("#mb-optin-card");
+    if (optinCard) optinCard.classList.add("hidden");
+  };
+
+  window.toggleMonkeyCompanion = function () {
+    window.setMonkeyEnabled(!window.isMonkeyEnabled());
+  };
+
+  function applyMonkeyPreference(enabled) {
+    // 1. Update all toggle switches across pages
+    const toggleInputs = document.querySelectorAll("#toggle-monkey-mode");
+    toggleInputs.forEach((inp) => (inp.checked = enabled));
+
+    const toggleLabels = document.querySelectorAll("#monkey-toggle-label");
+    toggleLabels.forEach((lbl) => lbl.classList.toggle("active", enabled));
+
+    const toggleIcons = document.querySelectorAll("#monkey-toggle-icon");
+    toggleIcons.forEach((ico) => (ico.style.opacity = enabled ? "1" : "0.45"));
+
+    // 2. Toggle top-right strip mode (Classic Clean vs Monkey Branch)
+    if (stripEl) {
+      if (enabled) {
+        stripEl.classList.remove("classic-mode");
+        setTimeout(() => {
+          layout();
+          SV.forEach(drawSeg);
+          if (M) {
+            M.pose = "cele";
+            setTimeout(() => { if (M) M.pose = "idle"; }, 800);
+          }
+        }, 50);
+      } else {
+        stripEl.classList.add("classic-mode");
+      }
+    }
+  }
+
+  function initOptInCard() {
+    const optinCard = $("#mb-optin-card");
+    const btnYes = $("#btn-optin-yes");
+    const btnNo = $("#btn-optin-no");
+    const btnClose = $("#btn-optin-close");
+
+    // Check if user has already made a choice
+    const savedChoice = localStorage.getItem("dtc_monkey_enabled");
+
+    if (savedChoice === null && optinCard) {
+      // First visit: ask politely after a gentle 1.5s delay so it's completely stress-free
+      setTimeout(() => {
+        if (localStorage.getItem("dtc_monkey_enabled") === null) {
+          optinCard.classList.remove("hidden");
+        }
+      }, 1500);
+    }
+
+    if (btnYes) {
+      btnYes.addEventListener("click", () => {
+        window.setMonkeyEnabled(true);
+      });
+    }
+
+    if (btnNo) {
+      btnNo.addEventListener("click", () => {
+        window.setMonkeyEnabled(false);
+      });
+    }
+
+    if (btnClose) {
+      btnClose.addEventListener("click", () => {
+        // Dismiss quietly
+        if (optinCard) optinCard.classList.add("hidden");
+        if (localStorage.getItem("dtc_monkey_enabled") === null) {
+          localStorage.setItem("dtc_monkey_enabled", "false");
+          applyMonkeyPreference(false);
+        }
+      });
+    }
+
+    // Bind change on toggle switches
+    const toggleInputs = document.querySelectorAll("#toggle-monkey-mode");
+    toggleInputs.forEach((inp) => {
+      inp.addEventListener("change", (e) => {
+        window.setMonkeyEnabled(e.target.checked);
+      });
+    });
+  }
+
+  // =========================================================================
+  // 2. Center Booking Celebration Overlay ("shows them monkey in the middle")
+  // =========================================================================
+  let celebTimerId = null;
+  let celebAnimId = null;
+
+  window.triggerBookingCelebration = function (details = {}) {
+    // Only show if the user is willing to see the monkey
+    if (!window.isMonkeyEnabled()) return;
+
+    const overlay = $("#mb-center-celebration");
+    if (!overlay) return;
+
+    const titleEl = $("#mb-celeb-title");
+    const descEl = $("#mb-celeb-desc");
+    const timerEl = $("#mb-celeb-timer");
+    const closeBtn = $("#btn-close-celebration");
+    const optoutBtn = $("#btn-optout-monkey");
+    const svgEl = $("#mb-celeb-svg");
+
+    if (titleEl) titleEl.textContent = details.title || "Seat Secured!";
+    if (descEl) descEl.textContent = details.seat ? `${details.seat} • 2PC Saga Completed` : "Transaction confirmed with ACID guarantee";
+
+    overlay.classList.remove("hidden");
+
+    // Draw cute celebration monkey in SVG
+    if (svgEl) {
+      drawCelebrationMonkey(svgEl);
+    }
+
+    // Feasible duration: 2.8 seconds
+    const totalMs = 2800;
+    const startT = performance.now();
+
+    if (celebTimerId) clearInterval(celebTimerId);
+    if (celebAnimId) cancelAnimationFrame(celebAnimId);
+
+    celebTimerId = setInterval(() => {
+      const elapsed = performance.now() - startT;
+      const rem = Math.max(0, Math.ceil((totalMs - elapsed) / 1000));
+      if (timerEl) timerEl.textContent = `Auto-closing in ${rem}s`;
+      if (elapsed >= totalMs) {
+        dismissCelebration();
+      }
+    }, 250);
+
+    function dismissCelebration() {
+      if (celebTimerId) { clearInterval(celebTimerId); celebTimerId = null; }
+      if (celebAnimId) { cancelAnimationFrame(celebAnimId); celebAnimId = null; }
+      overlay.classList.add("hidden");
+    }
+
+    if (closeBtn) {
+      closeBtn.onclick = (e) => {
+        e.stopPropagation();
+        dismissCelebration();
+      };
+    }
+
+    if (optoutBtn) {
+      optoutBtn.onclick = (e) => {
+        e.stopPropagation();
+        dismissCelebration();
+        window.setMonkeyEnabled(false);
+      };
+    }
+  };
+
+  function drawCelebrationMonkey(svg) {
+    svg.innerHTML = "";
+    const c = "#7a4a2a", f = "#f0cf9b";
+    const g = E("g", { transform: "translate(45, 52)" }, svg);
+
+    // Confetti particles
+    const confettiColors = ["#ffd84a", "#6fd26a", "#38bdf8", "#b58cff", "#ff5d4d"];
+    const confetti = [];
+    for (let i = 0; i < 14; i++) {
+      const ang = (i / 14) * Math.PI * 2;
+      const rad = 24 + Math.random() * 16;
+      const dot = E("circle", {
+        cx: Math.cos(ang) * rad,
+        cy: Math.sin(ang) * rad - 10,
+        r: 1.8 + Math.random() * 1.4,
+        fill: confettiColors[i % confettiColors.length]
+      }, g);
+      confetti.push({ dot, ang, rad, speed: 0.8 + Math.random() * 1.2 });
+    }
+
+    // Limbs and body
+    const tail = E("path", { d: "M-6 -6 Q-18 -18 -8 -26", fill: "none", stroke: c, "stroke-width": 3, "stroke-linecap": "round" }, g);
+    const leftLeg = E("line", { x1: -5, y1: 0, x2: -10, y2: 12, stroke: c, "stroke-width": 3.6, "stroke-linecap": "round" }, g);
+    const rightLeg = E("line", { x1: 5, y1: 0, x2: 10, y2: 12, stroke: c, "stroke-width": 3.6, "stroke-linecap": "round" }, g);
+
+    // Body
+    E("ellipse", { cx: 0, cy: -8, rx: 9, ry: 11, fill: c }, g);
+    E("ellipse", { cx: 0, cy: -7, rx: 5.5, ry: 7, fill: f }, g);
+
+    // Arms waving upward in joy
+    const leftArm = E("path", { d: "M-6 -14 Q-16 -22 -14 -30", fill: "none", stroke: c, "stroke-width": 3.5, "stroke-linecap": "round" }, g);
+    const rightArm = E("path", { d: "M6 -14 Q16 -22 14 -30", fill: "none", stroke: c, "stroke-width": 3.5, "stroke-linecap": "round" }, g);
+
+    // Golden Ticket in hand
+    const ticket = E("g", { transform: "translate(14, -34) rotate(15)" }, g);
+    E("rect", { x: -4, y: -6, width: 14, height: 9, rx: 1.5, fill: "#ffd84a", stroke: "#b8901a", "stroke-width": 0.8 }, ticket);
+    E("line", { x1: -1, y1: -3, x2: 7, y2: -3, stroke: "#9e7710", "stroke-width": 0.7 }, ticket);
+
+    // Head
+    const head = E("g", { transform: "translate(0, -22)" }, g);
+    E("circle", { r: 9, fill: c }, head);
+    [-8, 8].forEach((x) => {
+      E("circle", { cx: x, cy: -1, r: 3, fill: c }, head);
+      E("circle", { cx: x, cy: -1, r: 1.5, fill: f }, head);
+    });
+    E("ellipse", { cy: 2.5, rx: 6, ry: 5, fill: f }, head);
+    [-2.5, 2.5].forEach((x) => E("circle", { cx: x, cy: 0, r: 1.4, fill: "#1a0f08" }, head));
+    E("path", { d: "M-2.5 4.5 Q0 7 2.5 4.5", fill: "none", stroke: "#5a2f14", "stroke-width": 1 }, head);
+
+    // Party hat
+    E("polygon", { points: "0,-18 -5,-9 5,-9", fill: "#ff5d4d" }, head);
+    E("circle", { cx: 0, cy: -18, r: 1.6, fill: "#ffd84a" }, head);
+
+    let t0 = performance.now();
+    function animateCeleb(now) {
+      const dt = (now - t0) / 1000;
+      const bob = Math.abs(Math.sin(dt * 9)) * 8;
+      g.setAttribute("transform", `translate(45, ${54 - bob})`);
+      tail.setAttribute("d", `M-6 -6 Q-18 -18 -8 ${-24 + Math.sin(dt * 12) * 5}`);
+
+      confetti.forEach((item, idx) => {
+        const pulse = Math.sin(dt * 6 + idx) * 3;
+        item.dot.setAttribute("cx", Math.cos(item.ang) * (item.rad + pulse));
+        item.dot.setAttribute("cy", Math.sin(item.ang) * (item.rad + pulse) - 10);
+      });
+
+      celebAnimId = requestAnimationFrame(animateCeleb);
+    }
+    celebAnimId = requestAnimationFrame(animateCeleb);
+  }
+
+  // =========================================================================
+  // 3. Stage & Branch Elements Initialization
+  // =========================================================================
   function initElements() {
+    stripEl = $("#monkey-branch-strip");
     bk = $("#mb-back");
     fr = $("#mb-front");
     wrap = $("#mb-wrap");
@@ -60,7 +304,6 @@
     return true;
   }
 
-  // ---------- Branch Drawing ----------
   function initBranchDefs() {
     const defs = E("defs", {}, bk);
     defs.innerHTML = `
@@ -90,8 +333,8 @@
 
   function layout() {
     if (!wrap) return;
-    W = wrap.clientWidth || 700;
-    H = wrap.clientHeight || 98;
+    W = wrap.clientWidth || 760;
+    H = wrap.clientHeight || 104;
     [bk, fr].forEach((v) => v && v.setAttribute("viewBox", `0 0 ${W} ${H}`));
 
     const wrapRect = wrap.getBoundingClientRect();
@@ -157,7 +400,9 @@
     s.rope.style.opacity = Math.max(0, 1 - s.brk * 2.8);
   }
 
-  // ---------- Rigged Monkey ----------
+  // =========================================================================
+  // 4. Rigged Monkey Creation & Kinematics
+  // =========================================================================
   function mk(sc = 0.62) {
     const c = "#7a4a2a", f = "#f0cf9b";
     const root = E("g", {}, fr);
@@ -237,7 +482,6 @@
     return [lo, hi];
   }
 
-  // Buttery-smooth swing pose & limb kinematics
   function poseOf(m, t) {
     const o = { la: 6, ra: 6, ll: 0, rl: 0, tl: Math.sin(t * 2) * 10, bob: Math.sin(t * 2.4) * 0.5, hd: 0 };
     const sl = m.slow ? 0.5 : 1;
@@ -351,7 +595,6 @@
       }
     }
 
-    // 60FPS Buttery-smooth horizontal guide when hanging under branch
     if (m.mode === "hang" && m.followHang && ptr.active) {
       const l = lims({ x: m.hx, ground: false });
       const targetX = Math.min(Math.max(ptr.x, l[0]), l[1]);
@@ -374,7 +617,6 @@
       m.spin += 540 * dt * Math.min(1, Math.abs(m.vx) / 60);
     }
 
-    // Continuous smooth transition between stand and hang (no vertical pops!)
     const targetHangK = m.mode === "hang" ? 1 : 0;
     m.hangK += (targetHangK - m.hangK) * Math.min(1, dt * 8);
 
@@ -439,7 +681,9 @@
     m.bub.setAttribute("transform", `translate(${m.x} ${m.mode === "hang" ? py - 10 : m.y - 56 * sc})`);
   }
 
-  // ---------- Director & Scripting ----------
+  // =========================================================================
+  // 5. Director & Scripting
+  // =========================================================================
   const sleep = (ms, my) => new Promise((r, j) => setTimeout(() => (my === tok ? r() : j("x")), ms));
   const tween = (ms, fn, my) =>
     new Promise((res, rej) => {
@@ -454,6 +698,7 @@
     });
 
   async function play(fn) {
+    if (!window.isMonkeyEnabled()) return;
     const my = ++tok;
     if (wp) wp.mode = "perch";
     hs = null;
@@ -518,6 +763,10 @@
 
   async function idle(my) {
     while (my === tok) {
+      if (!window.isMonkeyEnabled()) {
+        await sleep(1000, my);
+        continue;
+      }
       if (M.ground) {
         M.pose = "sit";
         M.sad = true;
@@ -561,7 +810,9 @@
     }
   }
 
-  // ---------- Scenario Orchestrations ----------
+  // =========================================================================
+  // 6. Scenario Orchestrations
+  // =========================================================================
   const happy = () =>
     go(async (my) => {
       M.ground = false;
@@ -672,7 +923,9 @@
       await pose(M, "cele", 900, my);
     });
 
-  // ---------- Woodpecker ----------
+  // =========================================================================
+  // 7. Woodpecker
+  // =========================================================================
   function mkWoodpecker() {
     const g = E("g", {}, fr);
     const body = E("g", {}, g);
@@ -739,7 +992,7 @@
 
   async function wpFlyHome(my) {
     wp.mode = "fly";
-    const x0 = wp.x, y0 = wp.y, tx = W - 32, ty = BY - 8;
+    const x0 = wp.x, y0 = wp.y, tx = W - 20, ty = BY - 8;
     wp.dir = tx > x0 ? 1 : -1;
     await tween(
       600,
@@ -781,7 +1034,9 @@
     }
   }
 
-  // ---------- Service Health State Updates ----------
+  // =========================================================================
+  // 8. Service Health State Updates
+  // =========================================================================
   function setSt(i, st) {
     const s = SV[i];
     if (!s) return;
@@ -802,11 +1057,14 @@
     }
   }
 
-  // ---------- Mouse & Pointer Guidance ----------
+  // =========================================================================
+  // 9. Pointer Guidance
+  // =========================================================================
   function initPointer() {
     if (!wrap) return;
 
     wrap.addEventListener("pointerenter", (e) => {
+      if (!window.isMonkeyEnabled()) return;
       ptr.active = true;
       if (!hs && !M.ground) {
         const branchLine = (surf(e.clientX - wrap.getBoundingClientRect().left) ?? BY) + 8;
@@ -825,20 +1083,21 @@
 
     wrap.addEventListener("pointerleave", () => {
       ptr.active = false;
-      if (M.mode === "hang" && M.followHang) {
+      if (M && M.mode === "hang" && M.followHang) {
         M.followHang = false;
         M.mode = "stand";
         M.pose = "idle";
       }
-      M.follow = false;
+      if (M) M.follow = false;
     });
 
     wrap.addEventListener("pointermove", (e) => {
+      if (!window.isMonkeyEnabled()) return;
       const rect = wrap.getBoundingClientRect();
       ptr.x = e.clientX - rect.left;
       ptr.y = e.clientY - rect.top;
 
-      if (!hs && !M.ground) {
+      if (!hs && M && !M.ground) {
         const branchLine = (surf(ptr.x) ?? BY) + 8;
         if (M.mode === "stand" && ptr.y > branchLine + 18) {
           M.mode = "hang";
@@ -856,7 +1115,7 @@
     });
 
     wrap.addEventListener("click", () => {
-      if (M.ground && helpBtn) {
+      if (M && M.ground && helpBtn) {
         helpBtn.hidden = false;
         helpBtn.style.left = `${Math.min(W - 100, Math.max(20, M.x - 35))}px`;
         helpBtn.style.top = `${H - 32}px`;
@@ -872,29 +1131,34 @@
     }
   }
 
-  // ---------- Main Animation Loop ----------
+  // =========================================================================
+  // 10. Animation Loop
+  // =========================================================================
   let last = performance.now();
   function loop(now) {
     const dt = Math.min(0.06, (now - last) / 1000);
     last = now;
     time += dt;
 
-    SV.forEach((s) => {
-      s.sag += (s.tsag - s.sag) * Math.min(1, dt * 6);
-      s.brk += (s.tbrk - s.brk) * Math.min(1, dt * 8);
-      drawSeg(s);
-    });
+    if (window.isMonkeyEnabled() && stripEl && !stripEl.classList.contains("classic-mode")) {
+      SV.forEach((s) => {
+        s.sag += (s.tsag - s.sag) * Math.min(1, dt * 6);
+        s.brk += (s.tbrk - s.brk) * Math.min(1, dt * 8);
+        drawSeg(s);
+      });
 
-    MO.forEach((m) => upd(m, dt));
-    updWp(dt);
-    updChips(dt);
+      MO.forEach((m) => upd(m, dt));
+      updWp(dt);
+      updChips(dt);
+    }
 
     requestAnimationFrame(loop);
   }
 
-  // ---------- Telemetry & Console Event Hooks ----------
+  // =========================================================================
+  // 11. Telemetry Hooks
+  // =========================================================================
   function hookConsoleEvents() {
-    // 1. Observe real health status and latency changes on existing pills
     const observeNode = (nodeKey, idx) => {
       const elNode = SV[idx].el;
       const elLat = SV[idx].lat;
@@ -925,7 +1189,6 @@
     observeNode("inv", 1);
     observeNode("pay", 2);
 
-    // 2. Hook into Proof Panel scenario buttons
     const btnHappy = document.getElementById("btn-demo-happy");
     const btnFail = document.getElementById("btn-demo-fail");
     const btnRace = document.getElementById("btn-demo-race");
@@ -944,48 +1207,63 @@
           M.sad = false;
           M.mode = "stand";
           M.pose = "cele";
-          setTimeout(() => (M.pose = "idle"), 800);
+          setTimeout(() => { if (M) M.pose = "idle"; }, 800);
         }
       });
     }
 
-    // 3. Hook recovery sweep
     window.triggerMonkeyRecovery = recover;
   }
 
-  // ---------- Initialization ----------
+  // =========================================================================
+  // 12. Global Initialization
+  // =========================================================================
   function init() {
-    if (!initElements()) return;
+    // 1. Initialize Opt-in and Toggle Controls everywhere (index & booking)
+    initOptInCard();
 
-    initBranchDefs();
-    layout();
+    const isEnabled = window.isMonkeyEnabled();
 
-    M = mk(0.62);
-    M.x = SV[0].xm;
-    M.y = BY - 8;
-
-    wp = mkWoodpecker();
-
-    initPointer();
-    hookConsoleEvents();
-
-    window.addEventListener("resize", () => {
+    // 2. Initialize Stage & Branch if on index.html
+    const hasStage = initElements();
+    if (hasStage) {
+      initBranchDefs();
       layout();
-      SV.forEach(drawSeg);
-    });
 
-    if (window.ResizeObserver && wrap) {
-      new ResizeObserver(() => {
+      M = mk(0.62);
+      M.x = SV[0].xm;
+      M.y = BY - 8;
+
+      wp = mkWoodpecker();
+
+      initPointer();
+      hookConsoleEvents();
+
+      window.addEventListener("resize", () => {
         layout();
         SV.forEach(drawSeg);
-      }).observe(wrap);
+      });
+
+      if (window.ResizeObserver && wrap) {
+        new ResizeObserver(() => {
+          layout();
+          SV.forEach(drawSeg);
+        }).observe(wrap);
+      }
+
+      requestAnimationFrame((t) => {
+        last = t;
+        loop(t);
+        idle(tok);
+      });
     }
 
-    requestAnimationFrame((t) => {
-      last = t;
-      loop(t);
-      idle(tok);
-    });
+    // 3. Apply preference state
+    applyMonkeyPreference(isEnabled);
+
+    if (new URLSearchParams(window.location.search).has("test_celeb")) {
+      window.triggerBookingCelebration({ seat: "Seat #34 (Row C)", saga: "2PC Atomic Saga" });
+    }
   }
 
   if (document.readyState === "loading") {

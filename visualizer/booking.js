@@ -942,6 +942,10 @@ function initEntryScreen() {
   const canvas = document.getElementById("dtc-entry-canvas");
   const pctLabel = document.getElementById("dtc-entry-pct");
   if (!overlay || !canvas || !pctLabel) return;
+  if (new URLSearchParams(window.location.search).has("skip_entry") || window.location.hash === "#skip") {
+    overlay.style.display = "none";
+    return;
+  }
 
   const ctx = canvas.getContext("2d");
   const offCanvas = document.createElement("canvas");
@@ -2336,6 +2340,12 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
 
     if (DOM.modalTitle) DOM.modalTitle.textContent = "Booking Confirmed!";
     if (DOM.modalSubtitle) DOM.modalSubtitle.textContent = "Your payment was processed and your seat is locked in the venue.";
+
+    if (window.triggerBookingCelebration) {
+      const labels = (STATE.myHold && STATE.myHold.seatNumbers)
+        || (STATE.draftSeatLabels && STATE.draftSeatLabels.length > 0 ? STATE.draftSeatLabels.join(", ") : "Seat");
+      window.triggerBookingCelebration({ seat: `Seats ${labels}`, saga: "Live Arena Seat Allocation" });
+    }
 
     if (DOM.eticketCard) {
       DOM.eticketCard.classList.remove("hidden");
