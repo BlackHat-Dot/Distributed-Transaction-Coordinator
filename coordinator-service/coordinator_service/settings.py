@@ -149,6 +149,7 @@ CORS_ALLOW_HEADERS = [
     "x-correlation-id",
     "x-user-id",
     "x-user-email",
+    "x-gate-api-key",
 ]
 # allows frontend to send this headers
 

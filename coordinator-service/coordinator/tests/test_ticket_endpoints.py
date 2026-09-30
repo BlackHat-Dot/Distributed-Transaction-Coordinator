@@ -466,3 +466,16 @@ class TicketEndpointTests(TransactionTestCase):
         self.assertEqual(v_after.status_code, 200)
         self.assertIn("ALREADY USED", v_after.content.decode("utf-8"))
 
+    def test_cors_preflight_gate_api_key(self):
+        """OPTIONS preflight requesting x-gate-api-key returns it in Access-Control-Allow-Headers."""
+        response = self.client.options(
+            "/gate/redeem/",
+            HTTP_ORIGIN="http://localhost:3000",
+            HTTP_ACCESS_CONTROL_REQUEST_METHOD="POST",
+            HTTP_ACCESS_CONTROL_REQUEST_HEADERS="x-gate-api-key",
+        )
+        self.assertEqual(response.status_code, 200)
+        allow_headers = response.headers.get("Access-Control-Allow-Headers", "").lower()
+        self.assertIn("x-gate-api-key", [h.strip() for h in allow_headers.split(",")])
+
+
