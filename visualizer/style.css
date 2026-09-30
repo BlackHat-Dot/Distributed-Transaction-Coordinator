@@ -192,9 +192,9 @@ button, input, select, textarea {
    ========================================================================== */
 .monkey-branch-strip {
   position: relative;
-  height: 112px;
-  min-width: 760px;
-  max-width: 840px;
+  height: 126px;
+  min-width: 800px;
+  max-width: 890px;
   margin-left: auto;
   border-radius: 14px;
   background: radial-gradient(ellipse at 50% 60%, rgba(19, 31, 26, 0.75) 0%, rgba(12, 20, 17, 0.35) 100%);
@@ -202,6 +202,7 @@ button, input, select, textarea {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 4px 18px rgba(0, 0, 0, 0.3);
   overflow: hidden;
   user-select: none;
+  cursor: grab;
 }
 
 [data-theme="light"] .monkey-branch-strip {
@@ -237,7 +238,7 @@ button, input, select, textarea {
   position: absolute;
   left: 0;
   right: 0;
-  top: 62px;
+  top: 76px;
   display: flex;
   justify-content: space-evenly;
   align-items: center;

@@ -17,10 +17,10 @@
   const RM = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // Geometry configuration tuned for header health strip
-  const BY = 36;       // Branch baseline Y
+  const BY = 48;       // Branch baseline Y (lowered so monkey head never hits border)
   const D = 20;        // Break drop distance
   const GAP = 16;      // Break gap width
-  const PILL_TOP = 62; // Top offset where pills hang
+  const PILL_TOP = 76; // Top offset where pills hang
 
   const SV = [
     { k: "coord", n: "Coordinator", p: ":8002", i: 0, st: "up", sag: 0, brk: 0, tsag: 0, tbrk: 0 },
@@ -30,7 +30,7 @@
   ];
 
   let bk, fr, wrap, pillsEl, helpBtn, stripEl;
-  let W = 760, H = 112, time = 0, tok = 0;
+  let W = 760, H = 126, time = 0, tok = 0;
   let M = null;
   const MO = [];
   let wp = null;
@@ -147,6 +147,24 @@
   window.triggerBookingCelebration = function (details = {}) {
     // Only show if the user is willing to see the monkey
     if (!window.isMonkeyEnabled()) return;
+
+    // 1. Top-Right Branch Monkey speaks booking details directly on its head!
+    if (M) {
+      M.ground = false;
+      M.sad = false;
+      M.mode = "stand";
+      M.pose = "cele";
+      M.banana = true;
+      const seatText = details.seat || "Seat #34";
+      const bookMsg = details.msg || `${seatText} Booked! 🎉`;
+      M.speak(bookMsg, 4000);
+      for (let i = 0; i < 7; i++) {
+        spawnBananaSparkle(M.x + (Math.random() - 0.5) * 20, M.y - 12 + (Math.random() - 0.5) * 14);
+      }
+      setTimeout(() => {
+        if (M && M.pose === "cele") M.pose = "idle";
+      }, 3500);
+    }
 
     const overlay = $("#mb-center-celebration");
     if (!overlay) return;
@@ -331,10 +349,71 @@
     });
   }
 
+  const BANANA_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cpath d='M4 6 Q14 -2 22 8 Q25 15 21 21 Q14 26 7 21 Q2 16 4 6 Z' fill='%23ffd84a' stroke='%23b88a0e' stroke-width='1.5'/%3E%3Cpath d='M6 8 Q14 2 20 10' stroke='%23fff2a8' stroke-width='1.2' fill='none'/%3E%3Crect x='3' y='4' width='3' height='3' rx='1' fill='%234a320b'/%3E%3Ccircle cx='21' cy='20' r='1.5' fill='%23693e0f'/%3E%3C/svg%3E") 6 6, pointer`;
+
+  let cursorBanana = null;
+  function initCursorBanana() {
+    if (!fr) return;
+    cursorBanana = E("g", { id: "mb-cursor-banana", display: "none", "pointer-events": "none" }, fr);
+    // Subtle golden glow
+    E("circle", { cx: 0, cy: 0, r: 13, fill: "rgba(255, 216, 74, 0.35)", filter: "blur(2px)" }, cursorBanana);
+    // Yellow banana curve
+    E("path", {
+      d: "M-9 -6 Q-2 -12 7 -7 Q10 -3 8 4 Q4 10 -5 8 Q-10 5 -9 -6 Z",
+      fill: "#ffd84a",
+      stroke: "#b88a0e",
+      "stroke-width": 1.2
+    }, cursorBanana);
+    // Highlight streak
+    E("path", {
+      d: "M-7 -5 Q-2 -9 5 -6",
+      fill: "none",
+      stroke: "#fff7ba",
+      "stroke-width": 1.1,
+      "stroke-linecap": "round"
+    }, cursorBanana);
+    // Brown stem & tip
+    E("rect", { x: -10.5, y: -7.5, width: 2.4, height: 2.8, rx: 0.6, fill: "#4a320b" }, cursorBanana);
+    E("circle", { cx: 8, cy: 4, r: 1.1, fill: "#5c380c" }, cursorBanana);
+  }
+
+  const sparkles = [];
+  function spawnBananaSparkle(x, y) {
+    if (!fr) return;
+    const c = E("circle", { cx: x, cy: y, r: 2.2, fill: "#ffd84a", "pointer-events": "none" }, fr);
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 30 + Math.random() * 40;
+    sparkles.push({
+      el: c, x, y,
+      vx: Math.cos(ang) * spd,
+      vy: Math.sin(ang) * spd - 20,
+      life: 0.55
+    });
+  }
+
+  function updSparkles(dt) {
+    for (let i = sparkles.length - 1; i >= 0; i--) {
+      const s = sparkles[i];
+      s.life -= dt;
+      if (s.life <= 0) {
+        s.el.remove();
+        sparkles.splice(i, 1);
+        continue;
+      }
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.vy += 80 * dt;
+      s.el.setAttribute("cx", s.x);
+      s.el.setAttribute("cy", s.y);
+      s.el.setAttribute("r", Math.max(0.5, 2.2 * (s.life / 0.55)));
+      s.el.style.opacity = (s.life / 0.55).toString();
+    }
+  }
+
   function layout() {
     if (!wrap) return;
     W = wrap.clientWidth || 760;
-    H = wrap.clientHeight || 112;
+    H = wrap.clientHeight || 126;
     [bk, fr].forEach((v) => v && v.setAttribute("viewBox", `0 0 ${W} ${H}`));
 
     const wrapRect = wrap.getBoundingClientRect();
@@ -576,9 +655,72 @@
     }
     m.slow = SV.some((s) => m.x >= s.x0 && m.x <= s.x1 && s.st === "slow") && m.mode === "stand" && !m.ground;
 
-    if (m === M && m.follow && m.mode === "stand" && ptr.active) m.tx = ptr.x;
+    const sc = m.sc;
 
-    if (m.mode === "stand" && m.tx != null) {
+    // =========================================================================
+    // Active Cursor Tracking & Banana Chase
+    // =========================================================================
+    if (m === M && ptr.active && !hs) {
+      // Recompute up/down mode smoothly based on cursor Y relative to branch surface
+      const branchY = (surf(m.x) ?? BY);
+      if (m.mode === "stand" && ptr.y > branchY + 12) {
+        m.mode = "hang";
+      } else if (m.mode === "hang" && ptr.y < branchY + 6) {
+        m.mode = "stand";
+      }
+
+      const l = lims({ x: m.x, ground: false });
+      const targetX = Math.max(l[0] + 6, Math.min(l[1] - 6, ptr.x));
+      const diff = targetX - m.x;
+      const chaseSpeed = (m.mode === "hang" ? 175 : 155) * (m.slow ? 0.45 : 1);
+
+      // Distance to cursor
+      const curDist = Math.hypot(ptr.x - m.x, ptr.y - (m.y - 12));
+
+      if (curDist < 26) {
+        // Cursor reached monkey / monkey caught cursor!
+        if (!m.banana) {
+          m.banana = true;
+          m.speak("Yum! 🍌", 1800);
+          for (let i = 0; i < 5; i++) {
+            spawnBananaSparkle(m.x + (Math.random() - 0.5) * 16, m.y - 10 + (Math.random() - 0.5) * 12);
+          }
+        }
+        m.pose = "eat";
+        m.dir = ptr.x >= m.x ? 1 : -1;
+        if (cursorBanana) cursorBanana.setAttribute("display", "none");
+      } else {
+        // Pursuing: if moved away from eaten banana, ready for next banana!
+        if (curDist > 34 && m.banana && time > m.sayT) {
+          m.banana = false;
+        }
+        if (cursorBanana) {
+          cursorBanana.removeAttribute("display");
+          cursorBanana.setAttribute(
+            "transform",
+            `translate(${ptr.x} ${ptr.y - 2}) rotate(${Math.sin(time * 8) * 14}) scale(1.15)`
+          );
+        }
+
+        if (Math.abs(diff) > 3) {
+          const moveStep = Math.sign(diff) * Math.min(Math.abs(diff), chaseSpeed * dt);
+          m.x += moveStep;
+          m.vx = moveStep / dt;
+          m.dir = diff > 0 ? 1 : -1;
+          m.pose = m.mode === "hang" ? "hang" : "walk";
+        } else {
+          m.vx = (m.vx || 0) * 0.8;
+          if (m.mode === "hang") {
+            m.pose = "reach";
+            m.dir = ptr.x >= m.x ? 1 : -1;
+            m.ra_ = Math.atan2(-(ptr.x - m.x) * m.dir, ptr.y - ((surf(m.x) ?? BY) + 9) - 20 * sc) * 57.3;
+          } else {
+            m.pose = "idle";
+          }
+        }
+      }
+    } else if (m.mode === "stand" && m.tx != null) {
+      // Normal autonomous / scripted walking
       const l = lims(m);
       const tx = Math.max(l[0], Math.min(l[1], m.tx));
       const d = tx - m.x;
@@ -597,22 +739,6 @@
       }
     }
 
-    if (m.mode === "hang" && m.followHang && ptr.active) {
-      const l = lims({ x: m.hx, ground: false });
-      const targetX = Math.min(Math.max(ptr.x, l[0]), l[1]);
-      const diff = targetX - m.hx;
-      const moveStep = Math.sign(diff) * Math.min(Math.abs(diff), 150 * dt);
-      m.hx += moveStep;
-      m.vx = moveStep / dt;
-      if (Math.abs(diff) > 3) {
-        m.dir = diff > 0 ? 1 : -1;
-        m.pose = "hang";
-      } else {
-        m.vx *= 0.85;
-        m.pose = "reach";
-      }
-    }
-
     if (m.pose === "bonk") {
       m.x += m.vx * dt;
       m.vx *= 0.95;
@@ -622,12 +748,14 @@
     const targetHangK = m.mode === "hang" ? 1 : 0;
     m.hangK += (targetHangK - m.hangK) * Math.min(1, dt * 8);
 
-    const sc = m.sc;
-    let px, py, rot = 0, hoff = 0;
+    let px = m.x, py, rot = 0, hoff = 0;
+
+    const sy = surf(m.x) ?? BY;
+    const standY = sy - 8;
+    const hangAnchorY = (m.pv && !ptr.active) ? m.pv()[1] : sy + 9;
 
     if (m.mode === "hang" || m.hangK > 0.01) {
-      const pv = m.pv ? m.pv() : [m.x, (surf(m.x) ?? BY) + 9];
-      px = pv[0];
+      px = (m.pv && !ptr.active) ? m.pv()[0] : m.x;
       m.x = px;
 
       m.swingPhase = (m.swingPhase || 0) + dt * 2.5;
@@ -639,25 +767,19 @@
 
       if (m.pose === "reach") {
         m.dir = ptr.x > px ? 1 : -1;
-        m.ra_ = Math.atan2(-(ptr.x - px) * m.dir, ptr.y - pv[1] - 20 * sc) * 57.3;
+        m.ra_ = Math.atan2(-(ptr.x - px) * m.dir, ptr.y - hangAnchorY - 20 * sc) * 57.3;
       }
 
       hoff = 48 * sc * m.hangK;
-      const standY = (surf(px) ?? BY) - 8;
-      const hangAnchorY = pv[1];
       py = standY + (hangAnchorY - standY) * m.hangK;
       m.y = py + hoff;
     } else {
       if (m.mode === "stand") {
-        const sy = surf(m.x);
         if (m.ground) {
           m.y += (H - 4 - m.y) * Math.min(1, dt * 4);
-        } else if (sy != null) {
-          m.y += (sy - 8 - m.y) * Math.min(1, dt * 14);
-          rot = Math.atan2((surf(m.x + 6) ?? sy) - (surf(m.x - 6) ?? sy), 12) * 57.3;
         } else {
-          const s = SV.find((s) => m.x >= s.x0 && m.x <= s.x1);
-          if (s) m.x += (m.x >= s.xm ? 1 : -1) * 80 * dt;
+          m.y += (standY - m.y) * Math.min(1, dt * 14);
+          rot = Math.atan2((surf(m.x + 6) ?? sy) - (surf(m.x - 6) ?? sy), 12) * 57.3;
         }
       }
       px = m.x;
@@ -691,16 +813,16 @@
       let textCol = "#ffffff";
       let glow = "drop-shadow(0 2px 6px rgba(0,0,0,0.5))";
 
-      if (say === "CRASH!" || say === "Declined!" || say === "409") {
-        bg = "rgba(44, 14, 14, 0.96)";
-        border = "#ff5d4d";
-        textCol = "#ffb3b3";
-        glow = "drop-shadow(0 2px 8px rgba(255, 93, 77, 0.45))";
-      } else if (say === "WIN (200)" || say === "Refunded") {
+      if (say.includes("Booked") || say.includes("Secured") || say.includes("Confirmed") || say === "WIN (200)" || say === "Refunded") {
         bg = "rgba(14, 38, 20, 0.96)";
         border = "#52e27c";
         textCol = "#a3ffbc";
         glow = "drop-shadow(0 2px 8px rgba(82, 226, 124, 0.45))";
+      } else if (say === "CRASH!" || say === "Declined!" || say === "409") {
+        bg = "rgba(44, 14, 14, 0.96)";
+        border = "#ff5d4d";
+        textCol = "#ffb3b3";
+        glow = "drop-shadow(0 2px 8px rgba(255, 93, 77, 0.45))";
       } else if (say === "Hold!" || say === "?") {
         bg = "rgba(36, 30, 10, 0.96)";
         border = "#ffd84a";
@@ -715,36 +837,19 @@
       m.bub.setAttribute("fill", textCol);
       m.bubG.style.filter = glow;
 
-      const bubW = Math.max(22, say.length * 7.2 + 16);
-      const bubH = 20;
+      // Adjust length to fit booking messages comfortably
+      const bubW = Math.max(26, say.length * 7.5 + 22);
+      const bubH = 21;
       const headY = py - (m.mode === "hang" ? 16 : 28) * sc;
 
-      let bubX, bubY, tailPath;
+      // Center speech bubble directly ON ITS HEAD
+      let bubX = Math.max(bubW / 2 + 6, Math.min(W - bubW / 2 - 6, px));
+      let bubY = Math.max(bubH / 2 + 4, headY - bubH / 2 - 5);
 
-      if (headY >= 28) {
-        // Plenty of headroom above monkey: place bubble centered above head
-        bubX = Math.max(bubW / 2 + 6, Math.min(W - bubW / 2 - 6, px));
-        bubY = Math.max(bubH / 2 + 4, headY - bubH / 2 - 6);
-        const tailTipX = px;
-        const tailTipY = headY - 1;
-        const tailBaseY = bubY + bubH / 2;
-        const tailBaseX = Math.max(bubX - bubW / 2 + 6, Math.min(bubX + bubW / 2 - 6, px));
-        tailPath = `M${tailBaseX - 4} ${tailBaseY} L${tailTipX} ${tailTipY} L${tailBaseX + 4} ${tailBaseY} Z`;
-      } else {
-        // Ceiling clearance is tight (standing on branch): place bubble to the side of head
-        const preferRight = px + 14 + bubW + 6 <= W || px - 14 - bubW - 6 < 0;
-        if (preferRight) {
-          bubX = px + 14 + bubW / 2;
-          bubY = Math.max(bubH / 2 + 4, Math.min(H - bubH / 2 - 4, headY + 6));
-          bubX = Math.min(W - bubW / 2 - 6, bubX);
-          tailPath = `M${bubX - bubW / 2 + 0.5} ${bubY - 3} L${px + 7 * sc} ${headY + 3} L${bubX - bubW / 2 + 0.5} ${bubY + 4} Z`;
-        } else {
-          bubX = px - 14 - bubW / 2;
-          bubY = Math.max(bubH / 2 + 4, Math.min(H - bubH / 2 - 4, headY + 6));
-          bubX = Math.max(bubW / 2 + 6, bubX);
-          tailPath = `M${bubX + bubW / 2 - 0.5} ${bubY - 3} L${px - 7 * sc} ${headY + 3} L${bubX + bubW / 2 - 0.5} ${bubY + 4} Z`;
-        }
-      }
+      const tailBaseY = bubY + bubH / 2;
+      const tailTipY = Math.min(bubY + bubH / 2 + 6, Math.max(bubY + bubH / 2 + 1, headY - 1));
+      const tailBaseX = Math.max(bubX - bubW / 2 + 8, Math.min(bubX + bubW / 2 - 8, px));
+      const tailPath = `M${tailBaseX - 4.5} ${tailBaseY} L${px} ${tailTipY} L${tailBaseX + 4.5} ${tailBaseY} Z`;
 
       // Hard clamp guarantees bubble is NEVER clipped regardless of window/stage size
       bubX = Math.max(bubW / 2 + 4, Math.min(W - bubW / 2 - 4, bubX));
@@ -844,8 +949,8 @@
 
   async function idle(my) {
     while (my === tok) {
-      if (!window.isMonkeyEnabled()) {
-        await sleep(1000, my);
+      if (!window.isMonkeyEnabled() || ptr.active) {
+        await sleep(350, my);
         continue;
       }
       if (M.ground) {
@@ -1142,58 +1247,62 @@
   // =========================================================================
   // 9. Pointer Guidance
   // =========================================================================
+  function summonMonkeyToCursor() {
+    if (!M) return;
+    if (M.ground) {
+      M.ground = false;
+      M.sad = false;
+      M.mode = "stand";
+      M.pose = "walk";
+    }
+    M.q = false;
+    M.follow = true;
+    M.pv = null;
+    if (M.pend) {
+      M.pend.res(false);
+      M.pend = null;
+      M.tx = null;
+    }
+  }
+
   function initPointer() {
     if (!wrap) return;
 
     wrap.addEventListener("pointerenter", (e) => {
       if (!window.isMonkeyEnabled()) return;
       ptr.active = true;
-      if (!hs && !M.ground) {
-        const branchLine = (surf(e.clientX - wrap.getBoundingClientRect().left) ?? BY) + 8;
-        const rect = wrap.getBoundingClientRect();
-        const cursorY = e.clientY - rect.top;
-        if (cursorY > branchLine + 12) {
-          M.mode = "hang";
-          M.followHang = true;
-          M.hx = Math.max(SV[0].x0 + 12, Math.min(SV[3].x1 - 12, e.clientX - rect.left));
-          M.pv = () => [M.hx, (surf(M.hx) ?? BY) + 9];
-        } else {
-          M.follow = true;
-        }
+      wrap.style.cursor = BANANA_CURSOR;
+      const rect = wrap.getBoundingClientRect();
+      ptr.x = Math.max(0, Math.min(W, e.clientX - rect.left));
+      ptr.y = Math.max(0, Math.min(H, e.clientY - rect.top));
+      summonMonkeyToCursor();
+      if (cursorBanana) {
+        cursorBanana.removeAttribute("display");
+        cursorBanana.setAttribute("transform", `translate(${ptr.x} ${ptr.y - 2})`);
       }
     });
 
     wrap.addEventListener("pointerleave", () => {
       ptr.active = false;
-      if (M && M.mode === "hang" && M.followHang) {
-        M.followHang = false;
-        M.mode = "stand";
-        M.pose = "idle";
+      wrap.style.cursor = "";
+      if (cursorBanana) cursorBanana.setAttribute("display", "none");
+      if (M) {
+        M.follow = false;
+        if (M.mode === "hang") {
+          M.pose = "hang";
+        } else {
+          M.pose = "idle";
+        }
       }
-      if (M) M.follow = false;
     });
 
     wrap.addEventListener("pointermove", (e) => {
       if (!window.isMonkeyEnabled()) return;
+      ptr.active = true;
       const rect = wrap.getBoundingClientRect();
-      ptr.x = e.clientX - rect.left;
-      ptr.y = e.clientY - rect.top;
-
-      if (!hs && M && !M.ground) {
-        const branchLine = (surf(ptr.x) ?? BY) + 8;
-        if (M.mode === "stand" && ptr.y > branchLine + 18) {
-          M.mode = "hang";
-          M.followHang = true;
-          M.follow = false;
-          M.hx = ptr.x;
-          M.pv = () => [M.hx, (surf(M.hx) ?? BY) + 9];
-        } else if (M.mode === "hang" && ptr.y < branchLine - 4) {
-          M.mode = "stand";
-          M.followHang = false;
-          M.follow = true;
-          M.pose = "walk";
-        }
-      }
+      ptr.x = Math.max(0, Math.min(W, e.clientX - rect.left));
+      ptr.y = Math.max(0, Math.min(H, e.clientY - rect.top));
+      summonMonkeyToCursor();
     });
 
     wrap.addEventListener("click", () => {
@@ -1232,6 +1341,7 @@
       MO.forEach((m) => upd(m, dt));
       updWp(dt);
       updChips(dt);
+      updSparkles(dt);
     }
 
     requestAnimationFrame(loop);
@@ -1310,6 +1420,7 @@
     const hasStage = initElements();
     if (hasStage) {
       initBranchDefs();
+      initCursorBanana();
       layout();
 
       M = mk(0.62);
@@ -1347,11 +1458,39 @@
       window.triggerBookingCelebration({ seat: "Seat #34 (Row C)", saga: "2PC Atomic Saga" });
     }
 
+    if (new URLSearchParams(window.location.search).has("test_booking")) {
+      const testSeat = new URLSearchParams(window.location.search).get("test_booking") || "Seat #34";
+      setTimeout(() => {
+        window.triggerBookingCelebration({ seat: testSeat });
+      }, 400);
+    }
+
     if (new URLSearchParams(window.location.search).has("test_speech")) {
       const speechText = new URLSearchParams(window.location.search).get("test_speech") || "CRASH!";
       setTimeout(() => {
         if (M) M.speak(speechText, 80000);
       }, 400);
+    }
+
+    if (new URLSearchParams(window.location.search).has("test_chase")) {
+      const chaseMode = new URLSearchParams(window.location.search).get("test_chase");
+      setTimeout(() => {
+        if (!wrap || !M) return;
+        ptr.active = true;
+        if (chaseMode === "down") {
+          ptr.x = SV[2].xm;
+          ptr.y = 78; // Down below branch
+        } else if (chaseMode === "reach") {
+          // Reaching the monkey place
+          ptr.x = M.x + 4;
+          ptr.y = M.y - 10;
+        } else {
+          // Standing chase up on branch
+          ptr.x = SV[1].xm + 30;
+          ptr.y = 22; // Up above branch
+        }
+        summonMonkeyToCursor();
+      }, 350);
     }
   }
 
