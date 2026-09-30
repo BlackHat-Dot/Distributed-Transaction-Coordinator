@@ -11,3 +11,4 @@ supervisor>=4.2.0
 resend
 reportlab>=4.0.0
 qrcode[pil]>=7.4.0
+icalendar>=5.0.0
