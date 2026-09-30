@@ -318,28 +318,217 @@ select:focus-visible,
 }
 
 /* ---------- 8. Toggles & Controls ---------- */
-.toggle-slider { background: rgba(120, 120, 128, 0.32); box-shadow: none; }
-[data-theme="light"] .toggle-slider { background: rgba(120, 120, 128, 0.16); }
-.toggle-knob { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
-.mode-toggle-container .toggle-slider,
-.mode-toggle-container input:checked + .toggle-slider,
-.theme-toggle-container .toggle-slider,
+.switch-toggle {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 22px;
+  margin: 0;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.switch-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+  pointer-events: none;
+}
+
+.switch-toggle input:focus-visible + .toggle-slider {
+  outline: 2px solid var(--border-focus, #2997ff);
+  outline-offset: 2px;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(120, 120, 128, 0.28);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.15));
+  border-radius: 999px;
+  transition: background-color 260ms cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 260ms cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 260ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.toggle-knob {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 2px;
+  bottom: 2px;
+  background-color: #ffffff;
+  border-radius: 50%;
+  transition: transform 260ms cubic-bezier(0.4, 0, 0.2, 1),
+              background-color 260ms cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 260ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+/* 1. DEMO ⟷ LIVE Toggle */
+/* LIVE Mode (Unchecked / Default): Knob on Right (22px), vibrant emerald green */
+.mode-toggle-container .toggle-slider {
+  background: rgba(48, 209, 88, 0.18);
+  border-color: rgba(48, 209, 88, 0.45);
+  box-shadow: 0 0 10px rgba(48, 209, 88, 0.25);
+}
+
+.mode-toggle-container .toggle-knob {
+  transform: translateX(22px);
+  background-color: #30d158;
+  box-shadow: 0 0 8px rgba(48, 209, 88, 0.7);
+}
+
+/* DEMO Mode (Checked): Knob on Left (0px), electric sapphire blue */
+.mode-toggle-container input:checked + .toggle-slider {
+  background: rgba(41, 151, 255, 0.18);
+  border-color: rgba(41, 151, 255, 0.45);
+  box-shadow: 0 0 10px rgba(41, 151, 255, 0.25);
+}
+
+.mode-toggle-container input:checked + .toggle-slider .toggle-knob {
+  transform: translateX(0px);
+  background-color: #2997ff;
+  box-shadow: 0 0 8px rgba(41, 151, 255, 0.7);
+}
+
+/* 2. THEME Toggle (Sun ⟷ Moon) */
+/* DARK Mode (Unchecked / Default): Knob on Right towards Moon (22px), cyber purple */
+.theme-toggle-container .toggle-slider {
+  background: rgba(191, 90, 242, 0.18);
+  border-color: rgba(191, 90, 242, 0.45);
+  box-shadow: 0 0 10px rgba(191, 90, 242, 0.2);
+}
+
+.theme-toggle-container .toggle-knob {
+  transform: translateX(22px);
+  background-color: #bf5af2;
+  box-shadow: 0 0 8px rgba(191, 90, 242, 0.7);
+}
+
+/* LIGHT Mode (Checked): Knob on Left towards Sun (0px), warm amber */
 .theme-toggle-container input:checked + .toggle-slider {
-  background: rgba(120, 120, 128, 0.32);
-  border-color: transparent;
-  box-shadow: none;
+  background: rgba(255, 159, 10, 0.18);
+  border-color: rgba(255, 159, 10, 0.45);
+  box-shadow: 0 0 10px rgba(255, 159, 10, 0.2);
 }
-.mode-toggle-container .toggle-knob,
-.mode-toggle-container input:checked + .toggle-slider .toggle-knob,
-.theme-toggle-container .toggle-knob,
+
 .theme-toggle-container input:checked + .toggle-slider .toggle-knob {
-  background-color: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transform: translateX(0px);
+  background-color: #ff9f0a;
+  box-shadow: 0 0 8px rgba(255, 159, 10, 0.7);
 }
-.toggle-label-live.active { color: var(--accent-green); text-shadow: none; }
-.toggle-label-demo.active { color: var(--accent-blue); text-shadow: none; }
-.toggle-icon-dark.active, .toggle-icon-light.active { filter: none; }
-.sliding-toggle-group:hover .toggle-slider { filter: none; }
+
+/* 3. MONKEY Toggle */
+/* OFF (Unchecked / Default): Knob on Left (0px), neutral gray */
+.monkey-toggle-container .toggle-slider {
+  background: rgba(120, 120, 128, 0.25);
+  border-color: rgba(120, 120, 128, 0.35);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.monkey-toggle-container .toggle-knob {
+  transform: translateX(0px);
+  background-color: #8e8e93;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* ON (Checked): Knob on Right (22px), emerald green glow */
+.monkey-toggle-container input:checked + .toggle-slider {
+  background: rgba(48, 209, 88, 0.18);
+  border-color: rgba(48, 209, 88, 0.45);
+  box-shadow: 0 0 10px rgba(48, 209, 88, 0.25);
+}
+
+.monkey-toggle-container input:checked + .toggle-slider .toggle-knob {
+  transform: translateX(22px);
+  background-color: #30d158;
+  box-shadow: 0 0 8px rgba(48, 209, 88, 0.7);
+}
+
+/* Labels and Icons */
+.toggle-label-live.active {
+  color: var(--accent-green, #30d158);
+  text-shadow: 0 0 8px rgba(48, 209, 88, 0.4);
+  opacity: 1;
+}
+
+.toggle-label-demo.active {
+  color: var(--accent-blue, #2997ff);
+  text-shadow: 0 0 8px rgba(41, 151, 255, 0.4);
+  opacity: 1;
+}
+
+.toggle-icon-dark.active {
+  filter: drop-shadow(0 0 6px rgba(191, 90, 242, 0.6));
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+.toggle-icon-light.active {
+  filter: drop-shadow(0 0 6px rgba(255, 159, 10, 0.6));
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+.monkey-toggle-container .toggle-side-label.active {
+  color: var(--accent-green, #30d158);
+  text-shadow: 0 0 8px rgba(48, 209, 88, 0.4);
+  opacity: 1;
+}
+
+.monkey-toggle-container .toggle-side-icon.active {
+  filter: drop-shadow(0 0 6px rgba(48, 209, 88, 0.6));
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+.sliding-toggle-group:hover .toggle-slider {
+  filter: brightness(1.12);
+}
+
+/* Light Theme Precision Overrides */
+[data-theme="light"] .toggle-slider {
+  background: rgba(120, 120, 128, 0.18);
+  border-color: #b8b8bd;
+}
+
+[data-theme="light"] .mode-toggle-container .toggle-slider {
+  background: rgba(48, 209, 88, 0.22);
+  border-color: rgba(48, 209, 88, 0.55);
+}
+
+[data-theme="light"] .mode-toggle-container input:checked + .toggle-slider {
+  background: rgba(41, 151, 255, 0.22);
+  border-color: rgba(41, 151, 255, 0.55);
+}
+
+[data-theme="light"] .theme-toggle-container .toggle-slider {
+  background: rgba(191, 90, 242, 0.22);
+  border-color: rgba(191, 90, 242, 0.55);
+}
+
+[data-theme="light"] .theme-toggle-container input:checked + .toggle-slider {
+  background: rgba(255, 159, 10, 0.22);
+  border-color: rgba(255, 159, 10, 0.55);
+}
+
+[data-theme="light"] .monkey-toggle-container .toggle-slider {
+  background: rgba(120, 120, 128, 0.18);
+  border-color: #b8b8bd;
+}
+
+[data-theme="light"] .monkey-toggle-container input:checked + .toggle-slider {
+  background: rgba(48, 209, 88, 0.22);
+  border-color: rgba(48, 209, 88, 0.55);
+}
 
 /* ---------- 9. Hero Panel & Metrics ---------- */
 .proof-panel {
@@ -570,51 +759,6 @@ select:focus-visible,
   display: inline-block;
 }
 
-.switch-toggle {
-  position: relative;
-  display: inline-block;
-  width: 32px;
-  height: 18px;
-  margin: 0;
-  cursor: pointer;
-}
-
-.switch-toggle input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-  position: absolute;
-}
-
-.toggle-slider {
-  position: absolute;
-  cursor: pointer;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background-color: rgba(255, 255, 255, 0.15);
-  transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
-  border-radius: 18px;
-}
-
-.toggle-knob {
-  position: absolute;
-  content: "";
-  height: 14px;
-  width: 14px;
-  left: 2px;
-  bottom: 2px;
-  background-color: #fff;
-  transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
-  border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
-}
-
-.switch-toggle input:checked + .toggle-slider {
-  background-color: #30d158;
-}
-
-.switch-toggle input:checked + .toggle-slider .toggle-knob {
-  transform: translateX(14px);
-}
 
 .mb-celebration-overlay {
   position: fixed;

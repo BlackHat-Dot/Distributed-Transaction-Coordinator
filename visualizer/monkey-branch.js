@@ -40,13 +40,18 @@
   // =========================================================================
   // 1. User Preference & Opt-In State ("only if the user willing to see this")
   // =========================================================================
+  let runtimeMonkeyOverride = null;
   window.isMonkeyEnabled = function () {
+    if (runtimeMonkeyOverride !== null) return runtimeMonkeyOverride;
+    const stored = localStorage.getItem("dtc_monkey_enabled");
+    if (stored !== null) return stored === "true";
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.has("monkey")) return urlParams.get("monkey") === "1" || urlParams.get("monkey") === "true";
-    return localStorage.getItem("dtc_monkey_enabled") === "true";
+    return false;
   };
 
   window.setMonkeyEnabled = function (enabled) {
+    runtimeMonkeyOverride = enabled;
     localStorage.setItem("dtc_monkey_enabled", enabled ? "true" : "false");
     applyMonkeyPreference(enabled);
 
@@ -68,7 +73,10 @@
     toggleLabels.forEach((lbl) => lbl.classList.toggle("active", enabled));
 
     const toggleIcons = document.querySelectorAll("#monkey-toggle-icon");
-    toggleIcons.forEach((ico) => (ico.style.opacity = enabled ? "1" : "0.45"));
+    toggleIcons.forEach((ico) => {
+      ico.classList.toggle("active", enabled);
+      ico.style.opacity = enabled ? "1" : "0.45";
+    });
 
     // 2. Toggle top-right strip mode (Classic Clean vs Monkey Branch)
     if (stripEl) {
