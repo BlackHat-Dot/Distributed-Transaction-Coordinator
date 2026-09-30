@@ -121,3 +121,28 @@ class SagaEvent(models.Model):
             f"SagaEvent(txn={self.transaction_id}, seq={self.seq}, "
             f"{self.from_status}->{self.to_status})"
         )
+
+
+class Ticket(models.Model):
+    transaction = models.ForeignKey(
+        Transaction,
+        on_delete=models.CASCADE,
+        related_name="tickets",
+    )
+    seat_id = models.IntegerField(db_index=True)
+    seat_label = models.CharField(max_length=64)
+    event_name = models.CharField(max_length=200)
+    venue = models.CharField(max_length=200, blank=True, default="")
+    starts_at = models.DateTimeField(null=True, blank=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    ticket_code = models.CharField(max_length=64, unique=True, db_index=True)
+    issued_at = models.DateTimeField(auto_now_add=True)
+    used_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    used_by = models.CharField(max_length=64, null=True, blank=True)
+
+    class Meta:
+        unique_together = [("transaction", "seat_id")]
+        ordering = ["seat_id"]
+
+    def __str__(self):
+        return f"Ticket({self.ticket_code}, txn={self.transaction_id}, seat={self.seat_label})"
