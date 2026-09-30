@@ -2992,6 +2992,10 @@ function initEntryScreen() {
   const pctLabel = document.getElementById("dtc-entry-pct");
   const skipBtn = document.getElementById("btn-skip-entry");
   if (!overlay || !canvas || !pctLabel) return;
+  if (new URLSearchParams(window.location.search).has("skip_entry") || window.location.hash === "#skip") {
+    overlay.style.display = "none";
+    return;
+  }
 
   const ctx = canvas.getContext("2d");
   const offCanvas = document.createElement("canvas");
@@ -3188,7 +3192,8 @@ window.addEventListener("DOMContentLoaded", () => {
   initEntryScreen();
   const savedTheme = localStorage.getItem("dtc_theme") || "dark";
   window.setDashboardTheme(savedTheme);
-  window.setBackendMode(false);
+  const startInDemo = new URLSearchParams(window.location.search).has("demo") || new URLSearchParams(window.location.search).has("sim");
+  window.setBackendMode(startInDemo);
 
   setupMainAuthEventListeners();
   updateMainAuthWidgetUI();

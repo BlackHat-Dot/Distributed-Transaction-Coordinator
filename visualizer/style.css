@@ -187,6 +187,98 @@ button, input, select, textarea {
   flex-wrap: wrap;
 }
 
+/* ==========================================================================
+   MONKEY BRANCH HEALTH STRIP INTEGRATION
+   ========================================================================== */
+.monkey-branch-strip {
+  position: relative;
+  height: 104px;
+  min-width: 760px;
+  max-width: 840px;
+  margin-left: auto;
+  border-radius: 14px;
+  background: radial-gradient(ellipse at 50% 60%, rgba(19, 31, 26, 0.75) 0%, rgba(12, 20, 17, 0.35) 100%);
+  border: 1px solid rgba(111, 210, 106, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 4px 18px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  user-select: none;
+}
+
+[data-theme="light"] .monkey-branch-strip {
+  background: radial-gradient(ellipse at 50% 60%, rgba(220, 239, 214, 0.8) 0%, rgba(194, 220, 184, 0.4) 100%);
+  border-color: rgba(47, 158, 68, 0.25);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+.mb-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.mb-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+#mb-back {
+  z-index: 1;
+}
+
+#mb-front {
+  z-index: 3;
+}
+
+.mb-pills {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 58px;
+  display: flex;
+  justify-content: space-evenly;
+  align-items: center;
+  gap: 10px;
+  z-index: 2;
+  padding: 0 40px 0 16px;
+}
+
+.mb-pills .health-node {
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  background: var(--bg-surface-elevated, #16241d);
+  border: 1px solid var(--border-subtle, #24362e);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  transition: transform 0.5s cubic-bezier(0.3, 1.6, 0.5, 1), opacity 0.4s;
+  transform-origin: 50% -18px;
+}
+
+.mb-pills .health-node.slow {
+  transform: translateY(3px);
+  border-color: rgba(255, 179, 71, 0.4);
+}
+
+.mb-pills .health-node.down {
+  transform: translateY(6px) rotate(8deg);
+  border-color: rgba(255, 93, 77, 0.5);
+  opacity: 0.65;
+}
+
+.mb-help-btn {
+  font: 600 11px var(--font-sans, system-ui);
+  background: #b58cff;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(181, 140, 255, 0.4);
+}
+
 .health-node {
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);
@@ -2114,12 +2206,24 @@ button, input, select, textarea {
     gap: 10px;
   }
 
-  .health-strip {
+  .health-strip:not(.monkey-branch-strip) {
     order: 3;
     width: 100%;
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 6px;
+  }
+
+  .health-strip.monkey-branch-strip {
+    order: 3;
+    width: 100%;
+    min-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .health-strip.monkey-branch-strip .mb-wrap {
+    min-width: 660px;
   }
 
   .health-node {

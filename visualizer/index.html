@@ -54,32 +54,39 @@
       </div>
     </div>
 
-    <div class="health-strip">
-      <div class="health-node" id="node-health-coord" title="Coordinator Service (:8002)">
-        <span class="pulse-dot"></span>
-        <span class="node-name">Coordinator</span>
-        <span class="node-port">:8002</span>
-        <span class="node-latency" id="lat-coord">-- ms</span>
-      </div>
+    <div class="health-strip monkey-branch-strip" id="monkey-branch-strip">
+      <div class="mb-wrap" id="mb-wrap">
+        <svg id="mb-back" class="mb-svg"></svg>
+        <div class="mb-pills" id="mb-pills">
+          <div class="health-node" id="node-health-coord" title="Coordinator Service (:8002)">
+            <span class="pulse-dot"></span>
+            <span class="node-name">Coordinator</span>
+            <span class="node-port">:8002</span>
+            <span class="node-latency" id="lat-coord">-- ms</span>
+          </div>
 
-      <div class="health-node" id="node-health-inv" title="Inventory Service (:8000)">
-        <span class="pulse-dot"></span>
-        <span class="node-name">Inventory</span>
-        <span class="node-port">:8000</span>
-        <span class="node-latency" id="lat-inv">-- ms</span>
-      </div>
+          <div class="health-node" id="node-health-inv" title="Inventory Service (:8000)">
+            <span class="pulse-dot"></span>
+            <span class="node-name">Inventory</span>
+            <span class="node-port">:8000</span>
+            <span class="node-latency" id="lat-inv">-- ms</span>
+          </div>
 
-      <div class="health-node" id="node-health-pay" title="Payment Service (:8001)">
-        <span class="pulse-dot"></span>
-        <span class="node-name">Payment</span>
-        <span class="node-port">:8001</span>
-        <span class="node-latency" id="lat-pay">-- ms</span>
-      </div>
+          <div class="health-node" id="node-health-pay" title="Payment Service (:8001)">
+            <span class="pulse-dot"></span>
+            <span class="node-name">Payment</span>
+            <span class="node-port">:8001</span>
+            <span class="node-latency" id="lat-pay">-- ms</span>
+          </div>
 
-      <div class="health-node node-infra" id="node-health-celery" title="Celery Beat Crash Recovery (90s Sweep)">
-        <span class="pulse-dot"></span>
-        <span class="node-name">Recovery Worker</span>
-        <span class="node-countdown" id="sweep-countdown">90s</span>
+          <div class="health-node node-infra" id="node-health-celery" title="Celery Beat Crash Recovery (90s Sweep)">
+            <span class="pulse-dot"></span>
+            <span class="node-name">Recovery Worker</span>
+            <span class="node-countdown" id="sweep-countdown">90s</span>
+          </div>
+        </div>
+        <svg id="mb-front" class="mb-svg"></svg>
+        <button id="mb-help" class="mb-help-btn" hidden style="position:absolute;z-index:5">Help monkey 🪢</button>
       </div>
     </div>
 
@@ -96,12 +103,6 @@
             </svg>
             <span style="font-family: var(--font-sans, system-ui, -apple-system, sans-serif); font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #38bdf8; display: block; margin-left: 40px; margin-top: 20px; background: rgba(56, 189, 248, 0.1); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.2);">Book your seats here</span>
           </div>
-        </a>
-
-        <!-- Monkey Branch Stage Link -->
-        <a href="monkey-branch.html" class="btn btn-secondary btn-sm" id="btn-monkey-branch" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 12px; text-decoration: none; border: 1px solid rgba(111, 210, 106, 0.4); background: rgba(111, 210, 106, 0.1); color: #6fd26a; font-weight: 600;" title="Open Monkey Branch Observability Stage">
-          <span>🐒</span>
-          <span>Monkey Branch</span>
         </a>
 
         <!-- Fan Identity Button -->
@@ -949,5 +950,6 @@
 
   <script src="app.js?v=6.1.0"></script>
   <script src="motion.js?v=2.0.0"></script>
+  <script src="monkey-branch.js?v=1.0.0"></script>
 </body>
 </html>
