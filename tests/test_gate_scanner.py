@@ -13,10 +13,13 @@ GATE_URL = "http://127.0.0.1:3000/gate.html"
 CORRECT_GATE_KEY = "gate-secret-key-change-in-production"
 
 
-def get_fresh_booked_ticket(user_email="gate_test_user@example.com"):
+def get_fresh_booked_ticket(user_email=None):
     """
     Drives a real booking flow via API & UI to obtain a real booked ticket.
     """
+    if user_email is None:
+        import uuid
+        user_email = f"fan_{uuid.uuid4().hex[:8]}@example.com"
     requests.post(f"{INVENTORY_URL}/seats/reset/", timeout=5)
     otp_resp = requests.post(f"{COORDINATOR_URL}/auth/send-otp/", json={"email": user_email}, timeout=5)
     otp_match = re.search(r"\b(\d{6})\b", otp_resp.json().get("message", ""))
@@ -95,7 +98,7 @@ class GateScannerPlaywrightTests(unittest.TestCase):
 
     def test_a_valid_ticket_admit_and_already_used_rescan(self):
         """Valid ticket scan -> ADMIT; re-scan (after debounce) -> ALREADY USED with original time."""
-        ticket_info = get_fresh_booked_ticket("fan_a@example.com")
+        ticket_info = get_fresh_booked_ticket()
         code = ticket_info["ticket_code"]
         verify_url = f"{COORDINATOR_URL}/verify/{code}/"
 
@@ -263,7 +266,7 @@ class GateScannerPlaywrightTests(unittest.TestCase):
 
     def test_f_real_decode_photo_file_upload(self):
         """Generate a real QR PNG, feed through file input with setInputFiles, assert ADMIT."""
-        ticket_info = get_fresh_booked_ticket("fan_photo@example.com")
+        ticket_info = get_fresh_booked_ticket()
         code = ticket_info["ticket_code"]
         verify_url = f"{COORDINATOR_URL}/verify/{code}/"
 
