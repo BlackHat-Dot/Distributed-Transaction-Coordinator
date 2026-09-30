@@ -177,7 +177,7 @@
     const svgEl = $("#mb-celeb-svg");
 
     if (titleEl) titleEl.textContent = details.title || "Seat Secured!";
-    if (descEl) descEl.textContent = details.seat ? `${details.seat} • 2PC Saga Completed` : "Transaction confirmed with ACID guarantee";
+    if (descEl) descEl.textContent = details.seat ? `${details.seat} • Distributed Saga Completed` : "Distributed saga confirmed with ACID guarantee";
 
     overlay.classList.remove("hidden");
 
@@ -349,32 +349,49 @@
     });
   }
 
-  const BANANA_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cpath d='M4 6 Q14 -2 22 8 Q25 15 21 21 Q14 26 7 21 Q2 16 4 6 Z' fill='%23ffd84a' stroke='%23b88a0e' stroke-width='1.5'/%3E%3Cpath d='M6 8 Q14 2 20 10' stroke='%23fff2a8' stroke-width='1.2' fill='none'/%3E%3Crect x='3' y='4' width='3' height='3' rx='1' fill='%234a320b'/%3E%3Ccircle cx='21' cy='20' r='1.5' fill='%23693e0f'/%3E%3C/svg%3E") 6 6, pointer`;
+  const BANANA_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M6 9 C11 3, 21 4, 27 12 C29 16, 29 22, 23 27 C25 21, 22 15, 17 12 C13 9, 9 9, 6 9 Z' fill='%23ffd84a' stroke='%23d97706' stroke-width='0.8' stroke-linejoin='round'/%3E%3Cpath d='M6 9 C12 7, 18 10, 23 18 C24 21, 24 24, 23 27 C25 21, 22 15, 17 12 C13 9, 9 9, 6 9 Z' fill='%23eab308' opacity='0.55'/%3E%3Cpath d='M8 8 C13 5, 20 6, 25 12' fill='none' stroke='%23fffbeb' stroke-width='1.4' stroke-linecap='round'/%3E%3Cpath d='M3 6 C3 4, 5 4, 6 9 L4.5 9.5 C4 7, 3 7, 3 6 Z' fill='%2365a30d' stroke='%233f6212' stroke-width='0.6'/%3E%3Cpath d='M22 26 L24 26 L23.5 28.5 L22 27.5 Z' fill='%23451a03'/%3E%3C/svg%3E") 4 6, pointer`;
 
-  let cursorBanana = null;
-  function initCursorBanana() {
-    if (!fr) return;
-    cursorBanana = E("g", { id: "mb-cursor-banana", display: "none", "pointer-events": "none" }, fr);
-    // Subtle golden glow
-    E("circle", { cx: 0, cy: 0, r: 13, fill: "rgba(255, 216, 74, 0.35)", filter: "blur(2px)" }, cursorBanana);
-    // Yellow banana curve
+  function createBananaG(scale = 1, parent = null) {
+    const g = E("g", { class: "mb-banana" }, parent);
+    // Main Peel Body
     E("path", {
-      d: "M-9 -6 Q-2 -12 7 -7 Q10 -3 8 4 Q4 10 -5 8 Q-10 5 -9 -6 Z",
+      d: "M 6 9 C 11 3, 21 4, 27 12 C 29 16, 29 22, 23 27 C 25 21, 22 15, 17 12 C 13 9, 9 9, 6 9 Z",
       fill: "#ffd84a",
-      stroke: "#b88a0e",
-      "stroke-width": 1.2
-    }, cursorBanana);
-    // Highlight streak
+      stroke: "#d97706",
+      "stroke-width": 0.8,
+      "stroke-linejoin": "round"
+    }, g);
+    // Inner shaded rib
     E("path", {
-      d: "M-7 -5 Q-2 -9 5 -6",
+      d: "M 6 9 C 12 7, 18 10, 23 18 C 24 21, 24 24, 23 27 C 25 21, 22 15, 17 12 C 13 9, 9 9, 6 9 Z",
+      fill: "#eab308",
+      opacity: 0.55
+    }, g);
+    // Outer bright highlight
+    E("path", {
+      d: "M 8 8 C 13 5, 20 6, 25 12",
       fill: "none",
-      stroke: "#fff7ba",
-      "stroke-width": 1.1,
+      stroke: "#fffbeb",
+      "stroke-width": 1.4,
       "stroke-linecap": "round"
-    }, cursorBanana);
-    // Brown stem & tip
-    E("rect", { x: -10.5, y: -7.5, width: 2.4, height: 2.8, rx: 0.6, fill: "#4a320b" }, cursorBanana);
-    E("circle", { cx: 8, cy: 4, r: 1.1, fill: "#5c380c" }, cursorBanana);
+    }, g);
+    // Curved stem
+    E("path", {
+      d: "M 3 6 C 3 4, 5 4, 6 9 L 4.5 9.5 C 4 7, 3 7, 3 6 Z",
+      fill: "#65a30d",
+      stroke: "#3f6212",
+      "stroke-width": 0.6
+    }, g);
+    // Bottom tip
+    E("path", {
+      d: "M 22 26 L 24 26 L 23.5 28.5 L 22 27.5 Z",
+      fill: "#451a03"
+    }, g);
+
+    if (scale !== 1) {
+      g.setAttribute("transform", `scale(${scale})`);
+    }
+    return g;
   }
 
   const sparkles = [];
@@ -513,7 +530,8 @@
 
     m.la = limb(21, 1);
     m.ra = limb(21, 1);
-    m.ban = E("path", { d: "M-2 0Q3-8 10-6Q6 0-2 0Z", fill: "#ffd84a", stroke: "#b8901a", "stroke-width": 0.9, transform: "translate(0 21)" }, m.ra);
+    m.ban = E("g", { transform: "translate(-5 14) scale(0.48) rotate(-10)", display: "none" }, m.ra);
+    createBananaG(1, m.ban);
 
     m.hd = E("g", {}, inn);
     E("circle", { r: 8.8, fill: c }, m.hd);
@@ -688,18 +706,10 @@
         }
         m.pose = "eat";
         m.dir = ptr.x >= m.x ? 1 : -1;
-        if (cursorBanana) cursorBanana.setAttribute("display", "none");
       } else {
         // Pursuing: if moved away from eaten banana, ready for next banana!
         if (curDist > 34 && m.banana && time > m.sayT) {
           m.banana = false;
-        }
-        if (cursorBanana) {
-          cursorBanana.removeAttribute("display");
-          cursorBanana.setAttribute(
-            "transform",
-            `translate(${ptr.x} ${ptr.y - 2}) rotate(${Math.sin(time * 8) * 14}) scale(1.15)`
-          );
         }
 
         if (Math.abs(diff) > 3) {
@@ -838,13 +848,13 @@
       m.bubG.style.filter = glow;
 
       // Adjust length to fit booking messages comfortably
-      const bubW = Math.max(26, say.length * 7.5 + 22);
+      const bubW = Math.max(26, say.length * 6.8 + 18);
       const bubH = 21;
       const headY = py - (m.mode === "hang" ? 16 : 28) * sc;
 
-      // Center speech bubble directly ON ITS HEAD
-      let bubX = Math.max(bubW / 2 + 6, Math.min(W - bubW / 2 - 6, px));
-      let bubY = Math.max(bubH / 2 + 4, headY - bubH / 2 - 5);
+      // Center speech bubble directly ON ITS HEAD with edge-safe clamps
+      let bubX = Math.max(bubW / 2 + 10, Math.min(W - bubW / 2 - 10, px));
+      let bubY = Math.max(bubH / 2 + 3, headY - bubH / 2 - 5);
 
       const tailBaseY = bubY + bubH / 2;
       const tailTipY = Math.min(bubY + bubH / 2 + 6, Math.max(bubY + bubH / 2 + 1, headY - 1));
@@ -852,8 +862,8 @@
       const tailPath = `M${tailBaseX - 4.5} ${tailBaseY} L${px} ${tailTipY} L${tailBaseX + 4.5} ${tailBaseY} Z`;
 
       // Hard clamp guarantees bubble is NEVER clipped regardless of window/stage size
-      bubX = Math.max(bubW / 2 + 4, Math.min(W - bubW / 2 - 4, bubX));
-      bubY = Math.max(bubH / 2 + 4, Math.min(H - bubH / 2 - 4, bubY));
+      bubX = Math.max(bubW / 2 + 8, Math.min(W - bubW / 2 - 8, bubX));
+      bubY = Math.max(bubH / 2 + 3, Math.min(H - bubH / 2 - 4, bubY));
 
       m.bubRect.setAttribute("x", bubX - bubW / 2);
       m.bubRect.setAttribute("y", bubY - bubH / 2);
@@ -887,13 +897,15 @@
     if (!window.isMonkeyEnabled()) return;
     const my = ++tok;
     if (wp) wp.mode = "perch";
-    hs = null;
+    hs = true;
     M.follow = false;
     M.followHang = false;
     try {
       await fn(my);
     } catch (e) {
       if (e !== "x") console.error("Monkey director error:", e);
+    } finally {
+      if (tok === my) hs = false;
     }
   }
 
@@ -1035,36 +1047,107 @@
 
   const race = () =>
     go(async (my) => {
-      const monos = [M, ...[1, 2, 3, 4].map(() => mk(0.45))];
+      // 0. Ensure branches are healthy for the race so monkeys sprint smoothly
+      SV.slice(0, 3).forEach((_, i) => setSt(i, "up"));
+      await sleep(120, my);
+
+      // 1. Target is the single prize banana on top of Inventory (SV[1])
+      const inv = SV[1];
+      const invX = inv.xm;
+      const invY = (surf(invX) ?? BY) - 10;
+
+      // Clean up any existing leftover prize banana
+      const oldBn = document.getElementById("mb-race-banana");
+      if (oldBn) oldBn.remove();
+
+      // Create the single banana sitting on top of Inventory
+      const prizeBanana = E(
+        "g",
+        {
+          id: "mb-race-banana",
+          transform: `translate(${invX - 16} ${invY - 18})`
+        },
+        fr
+      );
+      // Soft glowing aura around prize banana
+      E("circle", { cx: 16, cy: 16, r: 15, fill: "rgba(255, 216, 74, 0.28)" }, prizeBanana);
+      createBananaG(1, prizeBanana);
+
+      // 2. Prepare 5 racing monkeys
+      const cols = ["#ffd84a", "#5cc8ff", "#b58cff", "#ff5d4d", "#4ade80"];
+      const monos = [M, ...[1, 2, 3, 4].map(() => mk(0.55))];
+
       monos.forEach((m, idx) => {
         m.ground = false;
-        m.x = SV[0].x0 + 12 + idx * 8;
-        m.speed = 100 + Math.random() * 30;
+        m.sad = false;
+        m.mode = "stand";
+        m.hangK = 0;
+        m.pv = null;
+        m.rot = 0;
+        m.banana = false; // None of them have a banana initially!
+        m.band.setAttribute("fill", cols[idx]);
+        m.band.removeAttribute("display");
+        m.x = SV[0].x0 + 12 + idx * 16;
+        m.dir = 1;
+        m.speed = idx === 0 ? 195 : 145 + Math.random() * 20; // Winner is fastest
       });
-      const raceOver = monos.map(
-        (m, idx) =>
-          new Promise(async (resolve) => {
-            await sleep(idx * 80, my);
-            const targetX = idx === 0 ? SV[2].xm : SV[1].xm + (idx - 2) * 12;
-            const ok = await goStand(m, targetX, my).catch(() => false);
-            if (idx === 0 && ok) {
-              m.speak("WIN (200)", 1000);
-              await pose(m, "cele", 1100, my);
-            } else {
-              m.speak("409", 700);
-              m.pose = "bonk";
-              m.vx = -(120 + Math.random() * 60);
-              await sleep(800, my);
-            }
-            resolve();
-          })
-      );
-      await Promise.all(raceOver);
+
+      M.speak("Race for banana! 🍌", 900);
+      await sleep(400, my);
+
+      try {
+        // 3. All 5 monkeys run towards the single banana on top of Inventory
+        const runPromises = monos.map((m, idx) => {
+          const targetX = idx === 0 ? invX : invX - 18 - (idx - 1) * 14;
+          return goStand(m, targetX, my).catch(() => false);
+        });
+
+        await Promise.all(runPromises);
+
+        // 4. Winner takes the single banana from top of Inventory!
+        if (prizeBanana && prizeBanana.parentNode) {
+          prizeBanana.remove();
+        }
+        for (let i = 0; i < 7; i++) {
+          spawnBananaSparkle(invX + (Math.random() - 0.5) * 18, invY + (Math.random() - 0.5) * 12);
+        }
+
+        // Exactly ONE gets the banana!
+        const winner = monos[0];
+        winner.banana = true;
+        winner.pose = "cele";
+        winner.speak("200 OK 👑", 2600);
+
+        // The remaining 4 get NONE! They bonk and recoil with 409 Conflict
+        monos.slice(1).forEach((loser, idx) => {
+          loser.banana = false;
+          loser.tx = null;
+          loser.pend = null;
+          loser.pose = "bonk";
+          loser.vx = -(135 + idx * 25);
+          loser.speak("409", 1800);
+          loser.spin = 360;
+        });
+
+        await sleep(2600, my);
+      } finally {
+        const cleanupBn = document.getElementById("mb-race-banana");
+        if (cleanupBn) cleanupBn.remove();
+      }
+
+      // 5. Clean up extra monkeys and reset
       monos.slice(1).forEach((m) => {
         m.root.remove();
         if (m.bubG) m.bubG.remove();
-        MO.splice(MO.indexOf(m), 1);
+        const idxInMO = MO.indexOf(m);
+        if (idxInMO >= 0) MO.splice(idxInMO, 1);
       });
+
+      M.band.setAttribute("display", "none");
+      M.banana = false;
+      M.pose = "idle";
+      M.mode = "stand";
+      M.ground = false;
     });
 
   const crash = () =>
@@ -1224,12 +1307,17 @@
   // =========================================================================
   // 8. Service Health State Updates
   // =========================================================================
-  function setSt(i, st) {
+  function setSt(i, st, force = false) {
     const s = SV[i];
     if (!s) return;
     s.st = st;
     s.tsag = st === "slow" ? 1 : 0;
     s.tbrk = st === "down" ? 1 : 0;
+    if (force) {
+      s.sag = s.tsag;
+      s.brk = s.tbrk;
+      drawSeg(s);
+    }
 
     if (s.el) {
       s.el.classList.toggle("slow", st === "slow");
@@ -1276,16 +1364,11 @@
       ptr.x = Math.max(0, Math.min(W, e.clientX - rect.left));
       ptr.y = Math.max(0, Math.min(H, e.clientY - rect.top));
       summonMonkeyToCursor();
-      if (cursorBanana) {
-        cursorBanana.removeAttribute("display");
-        cursorBanana.setAttribute("transform", `translate(${ptr.x} ${ptr.y - 2})`);
-      }
     });
 
     wrap.addEventListener("pointerleave", () => {
       ptr.active = false;
       wrap.style.cursor = "";
-      if (cursorBanana) cursorBanana.setAttribute("display", "none");
       if (M) {
         M.follow = false;
         if (M.mode === "hang") {
@@ -1357,6 +1440,7 @@
       if (!elNode) return;
 
       const checkHealthState = () => {
+        if (hs) return;
         const isOffline = elNode.classList.contains("offline");
         const latText = elLat ? elLat.textContent.trim() : "";
         const latMatch = latText.match(/(\d+)\s*ms/);
@@ -1405,6 +1489,7 @@
     }
 
     window.triggerMonkeyRecovery = recover;
+    window.triggerMonkeyRace = race;
   }
 
   // =========================================================================
@@ -1420,7 +1505,6 @@
     const hasStage = initElements();
     if (hasStage) {
       initBranchDefs();
-      initCursorBanana();
       layout();
 
       M = mk(0.62);
@@ -1454,8 +1538,80 @@
     // 3. Apply preference state
     applyMonkeyPreference(isEnabled);
 
+    if (new URLSearchParams(window.location.search).has("test_race")) {
+      const mode = new URLSearchParams(window.location.search).get("test_race");
+      setTimeout(() => {
+        hs = true;
+        SV.slice(0, 3).forEach((_, i) => setSt(i, "up", true));
+        if (mode === "start") {
+          const invX = SV[1].xm;
+          const invY = (surf(invX) ?? BY) - 10;
+          const oldBn = document.getElementById("mb-race-banana");
+          if (oldBn) oldBn.remove();
+          const prizeBanana = E("g", { id: "mb-race-banana", transform: `translate(${invX - 16} ${invY - 18})` }, fr);
+          E("circle", { cx: 16, cy: 16, r: 15, fill: "rgba(255, 216, 74, 0.28)" }, prizeBanana);
+          createBananaG(1, prizeBanana);
+
+          const cols = ["#ffd84a", "#5cc8ff", "#b58cff", "#ff5d4d", "#4ade80"];
+          const monos = [M, ...[1, 2, 3, 4].map(() => mk(0.55))];
+          monos.forEach((m, idx) => {
+            m.ground = false;
+            m.mode = "stand";
+            m.banana = false;
+            m.band.setAttribute("fill", cols[idx]);
+            m.band.removeAttribute("display");
+            m.x = SV[0].x0 + 18 + idx * 26;
+            m.y = BY - 8;
+            m.dir = 1;
+            m.pose = "walk";
+          });
+          M.speak("Race for banana! 🍌", 80000);
+        } else if (mode === "winner") {
+          const invX = SV[1].xm;
+          const cols = ["#ffd84a", "#5cc8ff", "#b58cff", "#ff5d4d", "#4ade80"];
+          const monos = [M, ...[1, 2, 3, 4].map(() => mk(0.55))];
+          // Winner at inventory with banana
+          M.mode = "stand";
+          M.hangK = 0;
+          M.pv = null;
+          M.ground = false;
+          M.sad = false;
+          M.x = invX;
+          M.y = BY - 8;
+          M.tx = null;
+          M.pend = null;
+          M.banana = true;
+          M.pose = "cele";
+          M.band.setAttribute("fill", cols[0]);
+          M.band.removeAttribute("display");
+          M.speak("200 OK 👑", 80000);
+
+          // 4 losers with NO banana, bonking with 409
+          monos.slice(1).forEach((loser, idx) => {
+            loser.mode = "stand";
+            loser.hangK = 0;
+            loser.pv = null;
+            loser.ground = false;
+            loser.sad = false;
+            loser.banana = false;
+            loser.band.setAttribute("fill", cols[idx + 1]);
+            loser.band.removeAttribute("display");
+            loser.x = invX - 45 - idx * 28;
+            loser.y = BY - 8;
+            loser.tx = null;
+            loser.pend = null;
+            loser.pose = "bonk";
+            loser.speak("409", 80000);
+            loser.spin = 30 + idx * 45;
+          });
+        } else {
+          race();
+        }
+      }, 400);
+    }
+
     if (new URLSearchParams(window.location.search).has("test_celeb")) {
-      window.triggerBookingCelebration({ seat: "Seat #34 (Row C)", saga: "2PC Atomic Saga" });
+      window.triggerBookingCelebration({ seat: "Seat #34 (Row C)", saga: "Distributed Saga" });
     }
 
     if (new URLSearchParams(window.location.search).has("test_booking")) {

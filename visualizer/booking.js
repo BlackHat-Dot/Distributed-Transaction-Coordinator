@@ -2385,7 +2385,7 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
     if (DOM.compensationCard) {
       DOM.compensationCard.classList.remove("hidden");
       if (DOM.compReason) {
-        DOM.compReason.textContent = "Simulated card decline amount ($9,999). Coordinator triggered 2PC compensation release.";
+        DOM.compReason.textContent = "Simulated card decline amount ($9,999). Coordinator triggered Saga compensation release.";
       }
     }
 
