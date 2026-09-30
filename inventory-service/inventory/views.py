@@ -8,8 +8,10 @@ import os
 import secrets
 import time
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
+import zoneinfo
 from django.conf import settings
+
 from django.db import transaction, connection, IntegrityError, DatabaseError
 from django.db.models import Q
 from django.utils import timezone
@@ -122,8 +124,9 @@ def seat_list(request):
                 event = Event.objects.create(
                     name='Coldplay: Music of the Spheres World Tour',
                     venue='Grand Arena Stadium',
-                    starts_at=timezone.now() + timedelta(days=14)
+                    starts_at=datetime(2026, 11, 15, 19, 30, tzinfo=zoneinfo.ZoneInfo("Asia/Kolkata"))
                 )
+
 
             seats_to_create = []
 
@@ -693,13 +696,41 @@ def check_reservation(request):
     except ValueError:
         return Response({"error": "transaction_id must be a valid UUID"}, status=400)
 
-    reservations = list(Reservation.objects.select_related("seat").filter(transaction_id=transaction_id))
+    reservations = list(Reservation.objects.select_related("seat", "seat__event").filter(transaction_id=transaction_id))
 
     if not reservations:
         return Response({"status": Reservation.Status.NOT_RESERVED, "transaction_id": str(transaction_id)}, status=200)
 
     if any(r.status == Reservation.Status.BOOKED for r in reservations):
-        return Response({"status": Reservation.Status.BOOKED, "transaction_id": str(transaction_id)}, status=200)
+        if any(r.seat and r.seat.held_by_transaction_id and str(r.seat.held_by_transaction_id) != str(transaction_id) for r in reservations):
+            return Response({
+                "status": Reservation.Status.RELEASED,
+                "transaction_id": str(transaction_id),
+                "released_reason": "SEAT_TAKEN_BY_ANOTHER_TRANSACTION",
+            }, status=200)
+        booked_reservations = [r for r in reservations if r.status == Reservation.Status.BOOKED]
+        first_seat = booked_reservations[0].seat if booked_reservations else None
+        event_data = None
+        if first_seat and first_seat.event:
+            event_data = {
+                "name": first_seat.event.name,
+                "venue": first_seat.event.venue,
+                "starts_at": first_seat.event.starts_at.isoformat() if first_seat.event.starts_at else None,
+            }
+        seats_data = [
+            {
+                "seat_id": r.seat.id,
+                "seat_label": f"{r.seat.row}{r.seat.seat_number}" if r.seat else "",
+                "amount": str(r.seat.price) if r.seat else "0.00",
+            }
+            for r in booked_reservations if r.seat
+        ]
+        return Response({
+            "status": Reservation.Status.BOOKED,
+            "transaction_id": str(transaction_id),
+            "event": event_data,
+            "seats": seats_data,
+        }, status=200)
     
     if any(r.status == Reservation.Status.RELEASED for r in reservations):
         rel_r = next(r for r in reservations if r.status == Reservation.Status.RELEASED)

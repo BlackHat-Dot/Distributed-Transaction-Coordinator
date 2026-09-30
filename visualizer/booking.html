@@ -378,10 +378,27 @@
             </div>
             <div class="eticket-qr">
               <div class="qr-box">
-                <div class="qr-mock"></div>
+                <div id="ticket-qr-container" style="display:flex;align-items:center;justify-content:center;min-width:120px;min-height:120px;">
+                  <img id="ticket-qr-img" class="hidden" alt="Ticket QR Code" style="width: 120px; height: 120px; border-radius: 4px; display: block; background: white; padding: 4px;" />
+                  <div id="ticket-qr-spinner" style="font-size: 11px; color: #94a3b8; text-align: center;">Generating QR...</div>
+                </div>
                 <span>SCAN AT GATE</span>
               </div>
             </div>
+          </div>
+
+          <div id="eticket-error" class="hidden" style="margin: 10px 16px 0; padding: 8px 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 8px; color: #fca5a5; font-size: 12px;"></div>
+
+          <div class="eticket-actions" id="eticket-actions" style="display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-top: 1px dashed rgba(255,255,255,0.12); margin-top: 12px;">
+            <button id="btn-download-pdf" class="btn btn-primary" style="flex: 1; min-width: 135px; font-size: 12px; padding: 8px 10px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+              <span>📄 Download PDF</span>
+            </button>
+            <button id="btn-download-ics" class="btn btn-secondary" style="flex: 1; min-width: 120px; font-size: 12px; padding: 8px 10px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+              <span>📅 Add to Calendar</span>
+            </button>
+            <button id="btn-email-ticket" class="btn btn-secondary" style="flex: 1; min-width: 125px; font-size: 12px; padding: 8px 10px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+              <span>✉️ Email Ticket</span>
+            </button>
           </div>
         </div>
 
@@ -415,7 +432,7 @@
       <!-- Modal Footer -->
       <div class="modal-footer">
         <button id="btn-modal-close" class="btn btn-secondary" disabled>Processing Transaction...</button>
-        <a id="btn-view-forensics" href="#" class="btn btn-primary hidden" target="_blank">Inspect Forensic Audit Log ↗</a>
+        <a id="btn-view-forensics" href="#" class="btn btn-primary hidden" target="_blank" style="text-decoration: none;">Inspect Forensic Audit Log ↗</a>
       </div>
 
     </div>

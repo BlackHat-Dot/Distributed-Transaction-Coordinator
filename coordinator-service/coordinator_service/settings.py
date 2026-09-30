@@ -294,6 +294,21 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+if not PUBLIC_BASE_URL:
+    if DEBUG or IS_TESTING:
+        PUBLIC_BASE_URL = "http://localhost:8002"
+    else:
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured(
+            "CRITICAL CONFIGURATION ERROR: PUBLIC_BASE_URL environment variable must be set in production when DEBUG=False! "
+            "It must be configured with a public URL reachable from client devices (e.g. mobile phones for QR scanning)."
+        )
+
+GATE_API_KEY = os.getenv("GATE_API_KEY", "gate-secret-key-change-in-production")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+
+
 
 """
 

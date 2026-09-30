@@ -147,13 +147,21 @@ const DOM = {
   step2Status: document.getElementById("step-2-status"),
   step3: document.getElementById("step-3"),
   step3Title: document.getElementById("step-3-title"),
+  step2Desc: document.getElementById("step-2-desc"),
   step3Desc: document.getElementById("step-3-desc"),
   step3Status: document.getElementById("step-3-status"),
   modalResult: document.getElementById("modal-result"),
   eticketCard: document.getElementById("eticket-card"),
   ticketEventName: document.getElementById("ticket-event-name"),
+  ticketVenueName: document.getElementById("ticket-venue-name"),
   ticketSeatNumber: document.getElementById("ticket-seat-number"),
   ticketTxId: document.getElementById("ticket-tx-id"),
+  ticketQrImg: document.getElementById("ticket-qr-img"),
+  ticketQrSpinner: document.getElementById("ticket-qr-spinner"),
+  eticketError: document.getElementById("eticket-error"),
+  btnDownloadPdf: document.getElementById("btn-download-pdf"),
+  btnDownloadIcs: document.getElementById("btn-download-ics"),
+  btnEmailTicket: document.getElementById("btn-email-ticket"),
   compensationCard: document.getElementById("compensation-card"),
   compReason: document.getElementById("comp-reason"),
   btnModalClose: document.getElementById("btn-modal-close"),
@@ -2069,6 +2077,9 @@ async function initiateSagaCheckout() {
   openSagaModal(firstSeat, selectedAmount, isPreReserved);
 
   const queryParams = new URLSearchParams();
+  if (isLocal) {
+    queryParams.set("sync", "true");
+  }
   if (selectedAmount === "9999") {
     queryParams.set("simulate_payment_decline", "true");
   }
@@ -2332,6 +2343,7 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
     // SAGA SUCCESS: E-Ticket Confirmed
     DOM.step2.className = "step-item done";
     DOM.step2Status.textContent = "CHARGED";
+    if (DOM.step2Desc) DOM.step2Desc.textContent = "Payment charged";
 
     DOM.step3.className = "step-item done";
     DOM.step3Title.textContent = "Ticket Confirmed";
@@ -2357,6 +2369,7 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
         DOM.ticketSeatNumber.textContent = `Row ${seat.row} - Seats ${labels}`;
       }
       if (DOM.ticketTxId) DOM.ticketTxId.textContent = txId;
+      loadAndRenderTicket(txId);
     }
 
     // Clean up local hold and draft state
@@ -2437,6 +2450,236 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
     DOM.btnBottomPay.textContent = "Pay Amount";
   }
   STATE.isActionInProgress = false;
+}
+
+/* ==========================================================================
+   E-TICKET FETCHING, QR RENDERING & ATTACHMENT EXPORT
+   ========================================================================== */
+
+async function loadAndRenderTicket(txId) {
+  const token = localStorage.getItem("dtc_auth_token") || "";
+  const coordUrl = (CONFIG.coordinatorUrl || defaultCoord).replace(/\/$/, "");
+
+  // Reset QR, spinners, and error blocks
+  if (DOM.ticketQrImg) DOM.ticketQrImg.classList.add("hidden");
+  if (DOM.ticketQrSpinner) {
+    DOM.ticketQrSpinner.classList.remove("hidden");
+    DOM.ticketQrSpinner.textContent = "Generating official QR...";
+  }
+  if (DOM.eticketError) {
+    DOM.eticketError.classList.add("hidden");
+    DOM.eticketError.textContent = "";
+  }
+
+  // Setup click actions for downloads and email
+  if (DOM.btnDownloadPdf) {
+    DOM.btnDownloadPdf.onclick = () => downloadTicketPdf(txId);
+  }
+  if (DOM.btnDownloadIcs) {
+    DOM.btnDownloadIcs.onclick = () => downloadTicketIcs(txId);
+  }
+  if (DOM.btnEmailTicket) {
+    DOM.btnEmailTicket.onclick = () => emailTicket(txId);
+  }
+
+  try {
+    const res = await fetch(`${coordUrl}/tickets/${txId}/`, {
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (res.status === 401) {
+      showTicketError("Authentication required (401). Please log in again.");
+      return;
+    }
+    if (res.status === 404) {
+      showTicketError("Ticket not found or permission denied (404).");
+      return;
+    }
+    if (res.status === 409) {
+      const errJson = await res.json().catch(() => ({}));
+      showTicketError(errJson.error || "Conflict: Ticket not yet confirmed in inventory (409).");
+      return;
+    }
+    if (!res.ok) {
+      showTicketError(`Failed to load ticket (HTTP ${res.status}).`);
+      return;
+    }
+
+    const data = await res.json();
+
+    // Dynamically update event details (no hardcoding)
+    if (data.event) {
+      if (DOM.ticketEventName) DOM.ticketEventName.textContent = data.event.name || "Live Event";
+      if (DOM.ticketVenueName) {
+        const venue = data.event.venue || "Grand Arena Stadium";
+        const timeStr = data.event.starts_at_formatted || "";
+        DOM.ticketVenueName.textContent = timeStr ? `${venue} • ${timeStr}` : venue;
+      }
+    }
+
+    // Display seat numbers and real QR code
+    if (data.tickets && data.tickets.length > 0) {
+      const labels = data.tickets.map(t => t.seat_label).join(", ");
+      if (DOM.ticketSeatNumber) {
+        DOM.ticketSeatNumber.textContent = `Seat: ${labels}`;
+      }
+
+      const firstQr = data.tickets[0].qr_code_base64;
+      if (firstQr && DOM.ticketQrImg) {
+        DOM.ticketQrImg.src = firstQr;
+        DOM.ticketQrImg.classList.remove("hidden");
+        if (DOM.ticketQrSpinner) DOM.ticketQrSpinner.classList.add("hidden");
+      }
+    }
+  } catch (err) {
+    console.error("Error fetching ticket data:", err);
+    showTicketError("Network error loading ticket details.");
+  }
+}
+
+function showTicketError(msg) {
+  if (DOM.ticketQrSpinner) DOM.ticketQrSpinner.textContent = "QR unavailable";
+  if (DOM.eticketError) {
+    DOM.eticketError.textContent = msg;
+    DOM.eticketError.classList.remove("hidden");
+  }
+}
+
+async function downloadTicketPdf(txId) {
+  const token = localStorage.getItem("dtc_auth_token") || "";
+  const coordUrl = (CONFIG.coordinatorUrl || defaultCoord).replace(/\/$/, "");
+  const btn = DOM.btnDownloadPdf;
+  const origText = btn ? btn.innerHTML : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = "<span>⏳ Downloading...</span>";
+  }
+
+  try {
+    const res = await fetch(`${coordUrl}/tickets/${txId}/pdf/`, {
+      headers: {
+        "Authorization": `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || `PDF download failed (HTTP ${res.status}).`);
+      return;
+    }
+
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const disposition = res.headers.get("Content-Disposition");
+    let filename = `DTC-Ticket-${txId.substring(0, 8)}.pdf`;
+    if (disposition && disposition.includes("filename=")) {
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      if (match && match[1]) filename = match[1];
+    }
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (e) {
+    alert("Network error while downloading PDF ticket.");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origText;
+    }
+  }
+}
+
+async function downloadTicketIcs(txId) {
+  const token = localStorage.getItem("dtc_auth_token") || "";
+  const coordUrl = (CONFIG.coordinatorUrl || defaultCoord).replace(/\/$/, "");
+  const btn = DOM.btnDownloadIcs;
+  const origText = btn ? btn.innerHTML : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = "<span>⏳ Exporting...</span>";
+  }
+
+  try {
+    const res = await fetch(`${coordUrl}/tickets/${txId}/calendar.ics`, {
+      headers: {
+        "Authorization": `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || `Calendar export failed (HTTP ${res.status}).`);
+      return;
+    }
+
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `DTC-${txId.substring(0, 8)}.ics`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (e) {
+    alert("Network error exporting calendar event.");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origText;
+    }
+  }
+}
+
+async function emailTicket(txId) {
+  const token = localStorage.getItem("dtc_auth_token") || "";
+  const coordUrl = (CONFIG.coordinatorUrl || defaultCoord).replace(/\/$/, "");
+  const btn = DOM.btnEmailTicket;
+  const origText = btn ? btn.innerHTML : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = "<span>⏳ Sending...</span>";
+  }
+
+  try {
+    const res = await fetch(`${coordUrl}/tickets/${txId}/email/`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      if (btn) {
+        btn.innerHTML = "<span>✓ Email Queued!</span>";
+        setTimeout(() => {
+          btn.innerHTML = origText;
+          btn.disabled = false;
+        }, 4000);
+      }
+    } else {
+      alert(data.error || `Failed to send email (HTTP ${res.status}).`);
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = origText;
+      }
+    }
+  } catch (e) {
+    alert("Network error dispatching ticket email.");
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origText;
+    }
+  }
 }
 
 /* ==========================================================================

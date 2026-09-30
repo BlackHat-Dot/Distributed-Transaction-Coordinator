@@ -43,11 +43,13 @@ echo "[Inventory] Ensuring seed event/seat catalog exists..."
 python manage.py shell -c "
 from inventory.models import Event, Seat
 from django.utils import timezone
-from datetime import timedelta
+from datetime import datetime, timedelta
+import zoneinfo
 event = Event.objects.first()
 if not event:
-    event = Event.objects.create(name='Coldplay: Music of the Spheres World Tour', venue='Grand Arena Stadium', starts_at=timezone.now() + timedelta(days=14))
+    event = Event.objects.create(name='Coldplay: Music of the Spheres World Tour', venue='Grand Arena Stadium', starts_at=datetime(2026, 11, 15, 19, 30, tzinfo=zoneinfo.ZoneInfo('Asia/Kolkata')))
 if Seat.objects.count() == 0:
+
     for r, price in [('A', 750.00), ('B', 500.00), ('C', 350.00)]:
         for num in range(1, 11):
             Seat.objects.create(event=event, row=r, seat_number=str(num), price=price, status=Seat.Status.AVAILABLE)

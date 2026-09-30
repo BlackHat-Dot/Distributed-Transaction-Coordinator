@@ -20,6 +20,16 @@ from coordinator.auth_views import (
 )
 
 
+from coordinator.ticket_views import (
+    get_transaction_tickets,
+    get_ticket_pdf,
+    get_ticket_ics,
+    send_ticket_email,
+    public_verify_ticket,
+    gate_redeem_ticket,
+)
+
+
 urlpatterns = [
     path('health/', health_check),
 
@@ -39,6 +49,14 @@ urlpatterns = [
     path("transactions/feed/", list_transactions),
     path("recovery/sweep/", trigger_recovery_sweep),
     path("recovery/status/", recovery_status),
+
+    # E-Ticket & Gate Check-in endpoints
+    path("tickets/<uuid:transaction_id>/", get_transaction_tickets),
+    path("tickets/<uuid:transaction_id>/pdf/", get_ticket_pdf),
+    path("tickets/<uuid:transaction_id>/calendar.ics", get_ticket_ics),
+    path("tickets/<uuid:transaction_id>/email/", send_ticket_email),
+    path("verify/<str:ticket_code>/", public_verify_ticket),
+    path("gate/redeem/", gate_redeem_ticket),
 ]
 
 # Only mount /admin/ in local development mode (DEBUG=True)
