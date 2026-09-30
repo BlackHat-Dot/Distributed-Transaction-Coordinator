@@ -2455,7 +2455,7 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
 
 async function loadAndRenderTicket(txId) {
   const token = localStorage.getItem("dtc_auth_token") || "";
-  const coordUrl = STATE.config.coordinatorUrl.replace(/\/$/, "");
+  const coordUrl = (CONFIG.coordinatorUrl || defaultCoord).replace(/\/$/, "");
 
   // Reset QR, spinners, and error blocks
   if (DOM.ticketQrImg) DOM.ticketQrImg.classList.add("hidden");
@@ -2547,7 +2547,7 @@ function showTicketError(msg) {
 
 async function downloadTicketPdf(txId) {
   const token = localStorage.getItem("dtc_auth_token") || "";
-  const coordUrl = STATE.config.coordinatorUrl.replace(/\/$/, "");
+  const coordUrl = (CONFIG.coordinatorUrl || defaultCoord).replace(/\/$/, "");
   const btn = DOM.btnDownloadPdf;
   const origText = btn ? btn.innerHTML : "";
   if (btn) {
@@ -2595,7 +2595,7 @@ async function downloadTicketPdf(txId) {
 
 async function downloadTicketIcs(txId) {
   const token = localStorage.getItem("dtc_auth_token") || "";
-  const coordUrl = STATE.config.coordinatorUrl.replace(/\/$/, "");
+  const coordUrl = (CONFIG.coordinatorUrl || defaultCoord).replace(/\/$/, "");
   const btn = DOM.btnDownloadIcs;
   const origText = btn ? btn.innerHTML : "";
   if (btn) {
@@ -2637,7 +2637,7 @@ async function downloadTicketIcs(txId) {
 
 async function emailTicket(txId) {
   const token = localStorage.getItem("dtc_auth_token") || "";
-  const coordUrl = STATE.config.coordinatorUrl.replace(/\/$/, "");
+  const coordUrl = (CONFIG.coordinatorUrl || defaultCoord).replace(/\/$/, "");
   const btn = DOM.btnEmailTicket;
   const origText = btn ? btn.innerHTML : "";
   if (btn) {
