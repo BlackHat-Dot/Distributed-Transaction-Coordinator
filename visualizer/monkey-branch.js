@@ -897,21 +897,24 @@
     if (!window.isMonkeyEnabled()) return;
     const my = ++tok;
     if (wp) wp.mode = "perch";
-    hs = true;
     M.follow = false;
     M.followHang = false;
     try {
       await fn(my);
     } catch (e) {
       if (e !== "x") console.error("Monkey director error:", e);
-    } finally {
-      if (tok === my) hs = false;
     }
   }
 
   const go = (fn) =>
     play(async (my) => {
-      await fn(my);
+      hs = true;
+      try {
+        await fn(my);
+      } finally {
+        hs = false;
+        if (typeof checkAllNodesHealth === "function") checkAllNodesHealth();
+      }
       if (my !== tok) return;
       await idle(my);
     });
@@ -1310,6 +1313,7 @@
   function setSt(i, st, force = false) {
     const s = SV[i];
     if (!s) return;
+    const oldSt = s.st;
     s.st = st;
     s.tsag = st === "slow" ? 1 : 0;
     s.tbrk = st === "down" ? 1 : 0;
@@ -1329,6 +1333,31 @@
       M.pv = () => [s.xm - GAP - 4, BY + D + 4];
       M.pose = "hangOne";
       M.q = true;
+    } else if (st === "up" && oldSt !== "up" && M && !hs && !ptr.active) {
+      M.q = false;
+      if (M.mode === "hang" && M.pv) {
+        M.mode = "stand";
+        M.hangK = 0;
+        M.pv = null;
+        M.y = BY - 8;
+        M.pose = "cele";
+        M.speak("Healed! ✓", 1400);
+        setTimeout(() => {
+          if (M && M.pose === "cele") M.pose = "idle";
+        }, 1400);
+      } else if (M.ground) {
+        M.ground = false;
+        M.sad = false;
+        M.mode = "stand";
+        M.hangK = 0;
+        M.pv = null;
+        M.y = BY - 8;
+        M.pose = "cele";
+        M.speak("Recovered! ✓", 1400);
+        setTimeout(() => {
+          if (M && M.pose === "cele") M.pose = "idle";
+        }, 1400);
+      }
     }
   }
 
@@ -1408,13 +1437,49 @@
   // =========================================================================
   // 10. Animation Loop
   // =========================================================================
+  function checkAllNodesHealth() {
+    if (hs) return;
+    for (let idx = 0; idx < 3; idx++) {
+      const s = SV[idx];
+      const elNode = s.el;
+      const elLat = s.lat;
+      if (!elNode) continue;
+
+      const isOffline = elNode.classList.contains("offline") || elNode.classList.contains("status-down");
+      const latText = elLat ? elLat.textContent.trim() : (elNode.querySelector(".node-latency")?.textContent.trim() || "");
+      const latMatch = latText.match(/(\d+)\s*ms/);
+
+      if (latMatch) {
+        const ms = parseInt(latMatch[1], 10);
+        if (ms > 800) {
+          if (s.st !== "slow") setSt(idx, "slow");
+        } else {
+          // Live healthy millisecond latency (e.g. 312 ms) -> restore branch to normal!
+          if (s.st !== "up") setSt(idx, "up");
+        }
+      } else if (isOffline || latText === "CRASHED" || latText === "OFFLINE" || latText === "-- ms") {
+        if (s.st !== "down") setSt(idx, "down");
+      }
+    }
+  }
+
+  // =========================================================================
+  // 10. Animation Loop
+  // =========================================================================
   let last = performance.now();
+  let lastHealthCheck = 0;
   function loop(now) {
     const dt = Math.min(0.06, (now - last) / 1000);
     last = now;
     time += dt;
 
     if (window.isMonkeyEnabled() && stripEl && !stripEl.classList.contains("classic-mode")) {
+      // Continuously poll live latency in real-time so branch heals as soon as ms updates!
+      if (time - lastHealthCheck > 0.2) {
+        lastHealthCheck = time;
+        checkAllNodesHealth();
+      }
+
       SV.forEach((s) => {
         s.sag += (s.tsag - s.sag) * Math.min(1, dt * 6);
         s.brk += (s.tbrk - s.brk) * Math.min(1, dt * 8);
@@ -1434,36 +1499,18 @@
   // 11. Telemetry Hooks
   // =========================================================================
   function hookConsoleEvents() {
-    const observeNode = (nodeKey, idx) => {
-      const elNode = SV[idx].el;
-      const elLat = SV[idx].lat;
-      if (!elNode) return;
-
-      const checkHealthState = () => {
-        if (hs) return;
-        const isOffline = elNode.classList.contains("offline");
-        const latText = elLat ? elLat.textContent.trim() : "";
-        const latMatch = latText.match(/(\d+)\s*ms/);
-        const latVal = latMatch ? parseInt(latMatch[1], 10) : 0;
-
-        if (isOffline || latText === "CRASHED" || latText === "OFFLINE") {
-          setSt(idx, "down");
-        } else if (latVal > 800) {
-          setSt(idx, "slow");
-        } else {
-          setSt(idx, "up");
-        }
-      };
-
-      const mo = new MutationObserver(checkHealthState);
-      mo.observe(elNode, { attributes: true, attributeFilter: ["class"] });
-      if (elLat) mo.observe(elLat, { childList: true, characterData: true, subtree: true });
-      checkHealthState();
-    };
-
-    observeNode("coord", 0);
-    observeNode("inv", 1);
-    observeNode("pay", 2);
+    for (let i = 0; i < 3; i++) {
+      const s = SV[i];
+      if (s.el) {
+        const mo = new MutationObserver(checkAllNodesHealth);
+        mo.observe(s.el, { attributes: true, attributeFilter: ["class"] });
+      }
+      if (s.lat) {
+        const moLat = new MutationObserver(checkAllNodesHealth);
+        moLat.observe(s.lat, { childList: true, characterData: true, subtree: true });
+      }
+    }
+    checkAllNodesHealth();
 
     const btnHappy = document.getElementById("btn-demo-happy");
     const btnFail = document.getElementById("btn-demo-fail");
@@ -1537,6 +1584,33 @@
 
     // 3. Apply preference state
     applyMonkeyPreference(isEnabled);
+
+    if (new URLSearchParams(window.location.search).has("test_heal")) {
+      setTimeout(() => {
+        // Step 1: Simulate broken branch like user had
+        setSt(1, "down");
+        if (M) {
+          M.mode = "hang";
+          M.pv = () => [SV[1].xm - GAP - 4, BY + D + 4];
+          M.pose = "hangOne";
+          M.q = true;
+        }
+
+        setTimeout(() => {
+          // Step 2: Now simulate live ms updating to healthy 312 ms!
+          const elLat = document.getElementById("lat-inv");
+          const elNode = document.getElementById("node-health-inv");
+          if (elLat) {
+            elLat.textContent = "312 ms";
+            elLat.className = "node-latency text-success";
+          }
+          if (elNode) {
+            elNode.className = "health-node online";
+          }
+          checkAllNodesHealth();
+        }, 700);
+      }, 300);
+    }
 
     if (new URLSearchParams(window.location.search).has("test_race")) {
       const mode = new URLSearchParams(window.location.search).get("test_race");
