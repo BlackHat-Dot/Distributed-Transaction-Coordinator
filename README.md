@@ -418,3 +418,46 @@ python payment-service/manage.py test payments --noinput
 --- PAYMENT:     Ran 28 tests  -> OK
 Total: 145 tests passed (100% success)
 ```
+
+---
+
+## 10. E-Ticket Issuance, QR Verification & Gate Check-In
+
+### Overview
+The DTC platform issues cryptographic single-use electronic tickets for completed saga transactions. Tickets are generated lazily and idempotently per seat booking, complete with scannable QR codes, pure-Python PDF rendering (ReportLab), iCalendar (.ics) event sync, and a high-concurrency gate check-in mechanism.
+
+### Service Endpoints
+
+| Method | Endpoint | Auth Required | Description |
+|---|---|:---:|---|
+| `GET` | `/tickets/<uuid:transaction_id>/` | Bearer JWT (Owner) | Returns ticket details, seat labels, event metadata, and base64 PNG QR code for frontend modal display. |
+| `GET` | `/tickets/<uuid:transaction_id>/pdf/` | Bearer JWT (Owner) | Downloads a portrait A5 PDF ticket (`application/pdf`) with scannable QR code and Asia/Kolkata timezone formatting. Multi-seat bookings generate multi-page documents (one page per seat). |
+| `GET` | `/tickets/<uuid:transaction_id>/calendar.ics` | Bearer JWT (Owner) | Generates and downloads a standard iCalendar event with UTC `DTSTART` and venue details. |
+| `POST` | `/tickets/<uuid:transaction_id>/email/` | Bearer JWT (Owner) | Dispatches a Celery background task to send the ticket PDF as an email attachment. Sends exclusively to the owner's registered email; accepts no external recipient override. Rate limited to 3/hour per transaction. |
+| `GET` | `/verify/<str:ticket_code>/` | Public | Public read-only verification page/API. Returns `VALID`, `ALREADY USED`, or `INVALID` along with event name and seat. Zero PII: strictly omits email, user ID, and transaction UUID. Rate limited. |
+| `POST` | `/gate/redeem/` | `X-Gate-Api-Key` | Atomically marks a ticket as redeemed using PostgreSQL `SELECT FOR UPDATE` row locks. Refuses redemption if transaction is not `COMPLETED`. Idempotent: first scan returns 200, repeated scans return 409 `ALREADY_USED`. |
+
+### Security & Architecture Rules
+1. **Ownership & Auth:**
+   - Ticket endpoints strictly reject `?token=` query parameters (`HTTP 401`). Authentication is accepted only via `Authorization: Bearer <jwt>`.
+   - Accessing a transaction belonging to another user returns `HTTP 404 Not Found` (preventing transaction existence enumeration).
+2. **Ground Truth Validation Before Atomic Lock:**
+   - Tickets are issued only when transaction status is `COMPLETED` and inventory ground truth confirms the seat is `BOOKED` specifically for the requested `transaction_id`.
+   - The HTTP ground-truth query to Inventory Service is executed **before** opening a database transaction to prevent holding DB locks across network boundaries.
+3. **Gate Security:**
+   - Gate scanner requests must present `X-Gate-Api-Key` matching `GATE_API_KEY`. Verification uses constant-time `hmac.compare_digest`.
+4. **Concurrency & Idempotency:**
+   - Simultaneous issuance requests on the same transaction catch database unique constraints on `(transaction_id, seat_id)` and idempotently return the existing ticket.
+   - Concurrent gate redemption attempts under high load serialize via `SELECT FOR UPDATE`, guaranteeing exactly 1 redemption succeeds while all concurrent competitors receive 409.
+
+### Environment Variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PUBLIC_BASE_URL` | `http://localhost:8002` (dev/test only) | Base URL encoded into the QR code (`<PUBLIC_BASE_URL>/verify/<ticket_code>/`). **Mandatory in production (`DEBUG=False`)**: raises `ImproperlyConfigured` if unset. Must be reachable from mobile phones and client devices scanning ticket QR codes at the gate. |
+| `GATE_API_KEY` | `gate-secret-key-change-in-production` | Shared secret key required for gate staff ticket redemption at `POST /gate/redeem/`. |
+| `RESEND_API_KEY` | *(empty)* | Resend API key for emailing ticket PDF attachments via Celery. |
+
+### Current Limitations
+- **Apple & Google Wallet:** Native `.pkpass` and Google Wallet Pass integrations are not yet implemented; tickets are currently provided as downloadable PDFs, iCalendar (.ics) files, and scannable web verification badges.
+
