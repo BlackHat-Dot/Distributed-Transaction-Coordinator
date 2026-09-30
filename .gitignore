@@ -9,3 +9,4 @@ celerybeat-schedule
 newfile.py
 .coverage
 .coverage.*
+prototypes
