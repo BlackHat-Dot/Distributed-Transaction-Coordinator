@@ -1,5 +1,6 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
+import zoneinfo
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from inventory.models import Event, Seat
@@ -14,8 +15,9 @@ class Command(BaseCommand):
             event = Event.objects.create(
                 name='Coldplay: Music of the Spheres World Tour',
                 venue='Grand Arena Stadium',
-                starts_at=timezone.now() + timedelta(days=14),
+                starts_at=datetime(2026, 11, 15, 19, 30, tzinfo=zoneinfo.ZoneInfo("Asia/Kolkata")),
             )
+
             self.stdout.write(f"Created event: {event.name}")
 
         seats_to_create = []
