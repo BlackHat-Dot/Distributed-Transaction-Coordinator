@@ -116,6 +116,8 @@ services:
       RECOVERY_THRESHOLD_SECONDS: ${RECOVERY_THRESHOLD_SECONDS:-60}
       RECOVERY_MIN_THRESHOLD_SECONDS: ${RECOVERY_MIN_THRESHOLD_SECONDS:-30}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8002}
+      GATE_API_KEY: ${GATE_API_KEY:-gate-secret-key-change-in-production}
     ports:
       - "8002:8002"
     depends_on:
