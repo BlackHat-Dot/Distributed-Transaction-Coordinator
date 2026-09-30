@@ -226,6 +226,11 @@ body {
   background: linear-gradient(135deg, #2997ff 0%, #2997ff 100%);
   color: #fff;
   box-shadow: 0 4px 14px rgba(41, 151, 255, 0.35);
+  text-decoration: none;
+}
+
+#btn-view-forensics {
+  text-decoration: none !important;
 }
 
 .btn-primary:hover {
