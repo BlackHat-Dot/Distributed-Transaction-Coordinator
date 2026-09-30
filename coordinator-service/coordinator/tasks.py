@@ -1,4 +1,5 @@
 import logging
+import os
 import uuid
 import redis
 from celery import shared_task
@@ -90,3 +91,67 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, fail_compensati
     logger.info("Async saga task completed for transaction_id=%s with status=%s", transaction_id, getattr(response, 'status_code', 'unknown'))
 
     return "completed"
+
+
+@shared_task(name="coordinator.tasks.send_ticket_email_task", bind=True, max_retries=3, default_retry_delay=10)
+def send_ticket_email_task(self, transaction_id):
+    from coordinator.models import Transaction
+    from coordinator.ticket_generator import generate_tickets_pdf
+    from coordinator.tickets import issue_tickets_for_transaction
+    import resend
+
+    try:
+        tid = uuid.UUID(str(transaction_id))
+    except ValueError:
+        logger.error("Invalid transaction_id for ticket email task: %s", transaction_id)
+        return "invalid_uuid"
+
+    txn = Transaction.objects.filter(transaction_id=tid).first()
+    if not txn or not txn.user_email:
+        logger.warning("Transaction %s not found or has no email.", tid)
+        return "no_email"
+
+    tickets = list(txn.tickets.all().order_by("seat_id"))
+    if not tickets:
+        try:
+            tickets = issue_tickets_for_transaction(txn)
+        except Exception as exc:
+            logger.error("Failed to issue tickets for email dispatch on %s: %exc", tid)
+            raise self.retry(exc=exc)
+
+    pdf_bytes = generate_tickets_pdf(txn, tickets)
+    short_ref = str(txn.transaction_id)[:8]
+    filename = f"DTC-Ticket-{short_ref}.pdf"
+
+    api_key = getattr(settings, "RESEND_API_KEY", os.getenv("RESEND_API_KEY"))
+    if not api_key:
+        logger.info("RESEND_API_KEY not configured. Simulated ticket email to %s with PDF attachment %s.", txn.user_email, filename)
+        return "simulated"
+
+    resend.api_key = api_key
+    try:
+        seat_labels = ", ".join(t.seat_label for t in tickets)
+        event_name = tickets[0].event_name if tickets else "Live Event"
+        params = {
+            "from": "DTC Tickets <tickets@resend.dev>",
+            "to": [txn.user_email],
+            "subject": f"Your Electronic Tickets: {event_name} (#{short_ref})",
+            "html": f"""<p>Dear Customer,</p>
+<p>Thank you for booking with DTC. Attached is your official electronic ticket for <strong>{event_name}</strong>.</p>
+<p><strong>Seats:</strong> {seat_labels}<br>
+<strong>Booking Ref:</strong> #{short_ref}</p>
+<p>Please present the QR code on your ticket at the venue gate for admission.</p>
+<p>Best regards,<br>The DTC Team</p>""",
+            "attachments": [
+                {
+                    "filename": filename,
+                    "content": list(pdf_bytes),
+                }
+            ],
+        }
+        res = resend.Emails.send(params)
+        logger.info("Ticket email sent successfully to %s: %s", txn.user_email, res)
+        return "sent"
+    except Exception as exc:
+        logger.error("Error dispatching ticket email to %s: %s", txn.user_email, exc)
+        raise self.retry(exc=exc)
