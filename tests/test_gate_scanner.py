@@ -244,32 +244,24 @@ class GateScannerPlaywrightTests(unittest.TestCase):
         self.assertEqual(redeem_payloads[0]["ticket_code"], "code_with_subpath_12345")
 
     def test_c_wrong_key_rejected_and_never_leaked(self):
-        """Wrong key -> KEY REJECTED, cleared from memory/input, never leaked to storage, URL, or logs."""
+        """Wrong key on unlock -> rejected immediately on login view; in-session revocation -> KEY REJECTED & locked."""
         bad_key = "super-secret-wrong-key-99999"
         captured_logs = []
         captured_requests = []
         self.page.on("console", lambda msg: captured_logs.append(msg.text))
         self.page.on("request", lambda req: captured_requests.append(req.url))
 
+        # 1. Immediate rejection at login
         self.page.goto(GATE_URL, wait_until="networkidle")
         self.page.fill("#gate-key-input", bad_key)
         self.page.click("#unlock-gate-btn")
-        self.page.wait_for_selector("#scanner-view:not(.hidden)", timeout=5000)
 
-        # Trigger scan with wrong key
-        self.page.evaluate("url => window.__gateHandleScan(url)", f"{COORDINATOR_URL}/verify/somecode123456789012/")
-        self.page.wait_for_selector("#result-overlay.active.result-key-rejected", timeout=5000)
-        self.assertIn("KEY REJECTED", self.page.text_content("#result-status"))
+        # Must display error and NOT unlock scanner view
+        self.page.wait_for_selector("#key-entry-error:not(.hidden)", timeout=5000)
+        self.assertIn("Invalid Gate API Key", self.page.text_content("#key-entry-error"))
+        self.assertTrue(self.page.is_hidden("#scanner-view"))
 
-        # Wait for auto-reset to key entry
-        self.page.click("#result-overlay")
-        self.page.wait_for_selector("#key-entry-view:not(.hidden)", timeout=5000)
-
-        # Verify key input is wiped
-        val = self.page.input_value("#gate-key-input")
-        self.assertEqual(val, "", "Key input was not cleared after KEY REJECTED!")
-
-        # Verify key was never leaked
+        # Verify bad key was never leaked to URLs, storage, cookies, logs
         for req_url in captured_requests:
             self.assertNotIn(bad_key, req_url, f"Key leaked in request URL: {req_url}")
 
@@ -285,19 +277,35 @@ class GateScannerPlaywrightTests(unittest.TestCase):
         for log in captured_logs:
             self.assertNotIn(bad_key, log, f"Key leaked into console log: {log}")
 
+        # 2. In-session key revocation handling: unlock with valid key, then server returns 401 on scan
+        self.page.fill("#gate-key-input", CORRECT_GATE_KEY)
+        self.page.click("#unlock-gate-btn")
+        self.page.wait_for_selector("#scanner-view:not(.hidden)", timeout=5000)
+
+        # Mock server revocation (401 on redeem)
+        self.page.route("**/gate/redeem/**", lambda route: route.fulfill(
+            status=401,
+            content_type="application/json",
+            body='{"error":"Invalid or missing gate API key.","code":"UNAUTHORIZED"}'
+        ))
+
+        self.page.evaluate("url => window.__gateHandleScan(url)", f"{COORDINATOR_URL}/verify/somecode123456789012/")
+        self.page.wait_for_selector("#result-overlay.active.result-key-rejected", timeout=5000)
+        self.assertIn("KEY REJECTED", self.page.text_content("#result-status"))
+
+        # Dismiss overlay and ensure kick-back to key-entry with input cleared
+        self.page.click("#result-overlay")
+        self.page.wait_for_selector("#key-entry-view:not(.hidden)", timeout=5000)
+        self.assertEqual(self.page.input_value("#gate-key-input"), "", "Key input was not cleared after KEY REJECTED!")
+
     def test_d_rate_limiting_slow_down(self):
         """11 bad-key attempts -> SLOW DOWN is shown."""
-        # Use mocked route or live requests to trigger 429
-        self.page.goto(GATE_URL, wait_until="networkidle")
+        self._unlock_gate(self.page)
         self.page.route("**/gate/redeem/**", lambda route: route.fulfill(
             status=429,
             content_type="application/json",
             body='{"error":"Rate limit exceeded on gate redemption.","code":"RATE_LIMITED"}'
         ))
-        self.page.fill("#gate-key-input", CORRECT_GATE_KEY)
-        self.page.click("#unlock-gate-btn")
-        self.page.wait_for_selector("#scanner-view:not(.hidden)", timeout=5000)
-
         self.page.evaluate("url => window.__gateHandleScan(url)", f"{COORDINATOR_URL}/verify/rate_limit_code_12345/")
         self.page.wait_for_selector("#result-overlay.active.result-slow-down", timeout=5000)
         self.assertIn("SLOW DOWN", self.page.text_content("#result-status"))

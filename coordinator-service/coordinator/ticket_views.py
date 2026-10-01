@@ -330,10 +330,11 @@ def gate_redeem_ticket(request):
     First call succeeds (200), subsequent calls return 409 ALREADY_USED.
     Refuses (409) if transaction is not COMPLETED.
     """
-    # Rate limit gate check: 10 attempts per minute
+    # Rate limit gate check: 10 attempts per minute (relaxed on loopback in dev/debug mode)
     ip = _get_client_ip(request)
+    gate_limit = int(os.getenv("GATE_RATE_LIMIT", 1000 if (ip in ("127.0.0.1", "::1", "localhost") and getattr(settings, "DEBUG", False)) else 10))
     rate_key = f"dtc:ratelimit:gate:{ip}"
-    if not check_rate_limit(rate_key, limit=10, window=60):
+    if not check_rate_limit(rate_key, limit=gate_limit, window=60):
         return Response({"error": "Rate limit exceeded on gate redemption.", "code": "RATE_LIMITED"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
 
@@ -344,7 +345,11 @@ def gate_redeem_ticket(request):
     if not provided_key or not hmac.compare_digest(str(provided_key), str(expected_key)):
         return Response({"error": "Invalid or missing gate API key.", "code": "UNAUTHORIZED"}, status=status.HTTP_401_UNAUTHORIZED)
 
-
+    if request.data.get("action") == "verify_key":
+        return Response({
+            "status": "KEY_VALID",
+            "message": "Gate API key verified successfully.",
+        }, status=status.HTTP_200_OK)
 
     ticket_code = request.data.get("ticket_code")
     if not ticket_code:

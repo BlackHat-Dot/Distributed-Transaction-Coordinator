@@ -310,7 +310,7 @@
   window.__gateHandleScan = handleScan;
 
   // --- 7. Key Management & View Transitions ---
-  function unlockScanner() {
+  async function unlockScanner() {
     const enteredKey = DOM.gateKeyInput.value.trim();
     if (!enteredKey) {
       DOM.keyEntryError.textContent = "Please enter the gate API key.";
@@ -318,12 +318,53 @@
       return;
     }
 
-    gateKey = enteredKey;
+    DOM.unlockGateBtn.disabled = true;
+    DOM.unlockGateBtn.textContent = "Verifying...";
     DOM.keyEntryError.classList.add("hidden");
-    DOM.keyEntryView.classList.add("hidden");
-    DOM.scannerView.classList.remove("hidden");
 
-    initCameraScanner();
+    try {
+      const response = await fetch(`${COORDINATOR_URL}/gate/redeem/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Gate-Api-Key": enteredKey,
+        },
+        body: JSON.stringify({ action: "verify_key" }),
+      });
+
+      if (response.status === 401) {
+        DOM.keyEntryError.textContent = "Invalid Gate API Key. Access denied.";
+        DOM.keyEntryError.classList.remove("hidden");
+        return;
+      }
+
+      if (response.status === 429) {
+        DOM.keyEntryError.textContent = "Rate limit reached. Please wait a minute.";
+        DOM.keyEntryError.classList.remove("hidden");
+        return;
+      }
+
+      let data = null;
+      try { data = await response.json(); } catch (_) {}
+
+      // Accept if 200 (new coordinator) or 400 with BAD_REQUEST (older coordinator where key was accepted but ticket_code missing)
+      if (response.status === 200 || (response.status === 400 && data && data.code === "BAD_REQUEST")) {
+        gateKey = enteredKey;
+        DOM.keyEntryError.classList.add("hidden");
+        DOM.keyEntryView.classList.add("hidden");
+        DOM.scannerView.classList.remove("hidden");
+        initCameraScanner();
+      } else {
+        DOM.keyEntryError.textContent = (data && data.error) ? data.error : "Key verification failed.";
+        DOM.keyEntryError.classList.remove("hidden");
+      }
+    } catch (err) {
+      DOM.keyEntryError.textContent = "Unable to connect to Coordinator service.";
+      DOM.keyEntryError.classList.remove("hidden");
+    } finally {
+      DOM.unlockGateBtn.disabled = false;
+      DOM.unlockGateBtn.textContent = "Unlock Scanner";
+    }
   }
 
   function lockScanner() {

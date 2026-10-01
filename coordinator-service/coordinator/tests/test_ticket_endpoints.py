@@ -177,6 +177,27 @@ class TicketEndpointTests(TransactionTestCase):
         )
         self.assertEqual(resp.status_code, 401)
 
+    def test_gate_verify_key_action(self):
+        """POST /gate/redeem/ with action='verify_key' returns 200 with valid key, 401 with invalid key."""
+        # Valid key
+        resp = self.client.post(
+            "/gate/redeem/",
+            {"action": "verify_key"},
+            HTTP_X_GATE_API_KEY=self.gate_key,
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data.get("status"), "KEY_VALID")
+
+        # Invalid key
+        resp_bad = self.client.post(
+            "/gate/redeem/",
+            {"action": "verify_key"},
+            HTTP_X_GATE_API_KEY="wrong-gate-key",
+            format="json",
+        )
+        self.assertEqual(resp_bad.status_code, 401)
+
     def test_gate_redeem_atomic_and_idempotent_409(self):
         """First gate redemption succeeds (200), subsequent calls return 409 ALREADY_USED."""
         # First call succeeds
