@@ -9,7 +9,14 @@ from playwright.sync_api import sync_playwright
 
 COORDINATOR_URL = "http://127.0.0.1:8002"
 INVENTORY_URL = "http://127.0.0.1:8000"
-GATE_URL = "http://127.0.0.1:3000/gate.html"
+import functools
+import http.server
+import socket
+import threading
+from pathlib import Path
+
+GATE_SCANNER_DIR = Path(__file__).resolve().parent.parent / "gate-scanner"
+GATE_URL = os.getenv("GATE_URL", "http://127.0.0.1:3001/index.html")
 CORRECT_GATE_KEY = "gate-secret-key-change-in-production"
 
 
@@ -75,6 +82,16 @@ def get_fresh_booked_ticket(user_email=None):
 class GateScannerPlaywrightTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls._httpd = None
+        # Check if server is running, otherwise boot one serving gate-scanner
+        if not cls._is_server_up(GATE_URL):
+            port = 3001
+            handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(GATE_SCANNER_DIR))
+            cls._httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+            cls._server_thread = threading.Thread(target=cls._httpd.serve_forever, daemon=True)
+            cls._server_thread.start()
+            time.sleep(0.5)
+
         cls.playwright = sync_playwright().start()
         cls.browser = cls.playwright.chromium.launch(headless=True)
 
@@ -82,6 +99,17 @@ class GateScannerPlaywrightTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.browser.close()
         cls.playwright.stop()
+        if cls._httpd:
+            cls._httpd.shutdown()
+            cls._httpd.server_close()
+
+    @staticmethod
+    def _is_server_up(url):
+        try:
+            r = requests.head(url, timeout=1)
+            return r.status_code == 200
+        except Exception:
+            return False
 
     def setUp(self):
         self.context = self.browser.new_context()
