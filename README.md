@@ -461,3 +461,47 @@ The DTC platform issues cryptographic single-use electronic tickets for complete
 ### Current Limitations
 - **Apple & Google Wallet:** Native `.pkpass` and Google Wallet Pass integrations are not yet implemented; tickets are currently provided as downloadable PDFs, iCalendar (.ics) files, and scannable web verification badges.
 
+---
+
+## 11. Staff Gate Scanner (`/gate.html`)
+
+### Overview
+The DTC Staff Gate Scanner is a mobile-first, high-concurrency ticket validation and redemption interface designed for venue turnstiles and gate staff. It runs offline-capable QR code scanning and integrates directly with the Coordinator Service's atomic redemption engine (`POST /gate/redeem/`).
+
+- **Scanner URL:** `http://localhost:3000/gate.html` (or `<VISUALIZER_HOST>/gate.html`). Note that this URL is deliberately unlinked from fan-facing pages (such as `booking.html`) to prevent unauthorized fan access.
+
+### Gate Key Authentication
+- **Source of Truth:** Gate staff authenticate using the shared `GATE_API_KEY` environment variable configured on the Coordinator Service (`GATE_API_KEY="your-secret-gate-key"`).
+- **In-Memory Security:** The gate key is entered upon loading the page and held **strictly in a private JavaScript variable**. It is never written to `localStorage`, `sessionStorage`, cookies, URL parameters, or `console.log`.
+- **Session-Scoped Limitation:** Because the key is kept purely in memory, refreshing the page or starting a new browser session requires re-entering the gate key. If the coordinator rejects a key (`401 Unauthorized`), the key is instantly wiped from memory and the scanner locks back to the key entry prompt.
+
+### Mobile Camera Access over HTTPS
+Modern mobile browsers (iOS Safari, Android Chrome) restrict live camera streams via `navigator.mediaDevices.getUserMedia` strictly to **secure contexts** (`https://` or `localhost`). When running on a local development network across physical mobile phones, use one of the following concrete options:
+
+#### Option A: Cloudflare Tunnel (Recommended)
+Expose the visualizer over an authenticated, free HTTPS tunnel:
+```bash
+# In a new terminal, launch Cloudflare Tunnel targeting visualizer port 3000:
+cloudflared tunnel --url http://127.0.0.1:3000
+```
+Open the generated `https://<random-subdomain>.trycloudflare.com/gate.html` on your mobile phone.
+
+#### Option B: Local SSL via mkcert
+Generate locally-trusted TLS certificates for LAN IP testing:
+```bash
+# 1. Install mkcert root CA
+mkcert -install
+
+# 2. Generate local certs for your LAN IP
+mkcert 192.168.1.50 localhost 127.0.0.1
+
+# 3. Serve visualizer over HTTPS
+python -m http.server 3000 --directory visualizer --bind 0.0.0.0
+```
+
+#### HTTP Fallbacks (No HTTPS Required)
+If running over plain HTTP without a secure tunnel:
+1. **Take Photo of QR:** Tap **"Take Photo / Upload QR"** to capture a photo with `<input type="file" accept="image/*" capture="environment">`. The vendored `Html5Qrcode` scanner decodes the image client-side without streaming video.
+2. **Manual Ticket Code Entry:** Type or paste the 22-character ticket code (or full `/verify/<code>/` URL) into the manual input box and tap **"Redeem"**.
+
+
