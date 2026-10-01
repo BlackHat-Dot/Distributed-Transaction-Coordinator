@@ -179,7 +179,7 @@ class TicketEndpointTests(TransactionTestCase):
 
     def test_gate_verify_key_action(self):
         """POST /gate/redeem/ with action='verify_key' returns 200 with valid key, 401 with invalid key."""
-        # Valid key
+        # Valid key via X-Gate-Api-Key
         resp = self.client.post(
             "/gate/redeem/",
             {"action": "verify_key"},
@@ -188,6 +188,25 @@ class TicketEndpointTests(TransactionTestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data.get("status"), "KEY_VALID")
+
+        # Valid key via X-Staff-Key (Cloudflare Worker CORS allowed header)
+        resp_staff = self.client.post(
+            "/gate/redeem/",
+            {"action": "verify_key"},
+            HTTP_X_STAFF_KEY=self.gate_key,
+            format="json",
+        )
+        self.assertEqual(resp_staff.status_code, 200)
+        self.assertEqual(resp_staff.data.get("status"), "KEY_VALID")
+
+        # Valid key via body gate_key (CORS-immune fallback)
+        resp_body = self.client.post(
+            "/gate/redeem/",
+            {"action": "verify_key", "gate_key": self.gate_key},
+            format="json",
+        )
+        self.assertEqual(resp_body.status_code, 200)
+        self.assertEqual(resp_body.data.get("status"), "KEY_VALID")
 
         # Invalid key
         resp_bad = self.client.post(

@@ -338,9 +338,19 @@ def gate_redeem_ticket(request):
         return Response({"error": "Rate limit exceeded on gate redemption.", "code": "RATE_LIMITED"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
 
-    # Verify GATE_API_KEY
+    # Verify GATE_API_KEY (supports X-Staff-Key, X-Gate-Api-Key, gate_key in body, or Bearer auth)
     expected_key = getattr(settings, "GATE_API_KEY", os.getenv("GATE_API_KEY", "gate-secret-key-change-in-production"))
-    provided_key = request.headers.get("X-Gate-Api-Key", "")
+    provided_key = (
+        request.headers.get("X-Staff-Key")
+        or request.headers.get("X-Gate-Api-Key")
+        or request.data.get("gate_key")
+        or request.data.get("gate_api_key")
+        or ""
+    )
+    if not provided_key:
+        auth_hdr = request.headers.get("Authorization", "")
+        if auth_hdr.startswith("Bearer "):
+            provided_key = auth_hdr.split(" ", 1)[1].strip()
 
     if not provided_key or not hmac.compare_digest(str(provided_key), str(expected_key)):
         return Response({"error": "Invalid or missing gate API key.", "code": "UNAUTHORIZED"}, status=status.HTTP_401_UNAUTHORIZED)

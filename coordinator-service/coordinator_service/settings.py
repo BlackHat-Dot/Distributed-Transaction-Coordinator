@@ -124,7 +124,9 @@ if DEBUG or IS_TESTING:
         r"^http://127\.0\.0\.1(:\d+)?$",
     ]
 else:
-    CORS_ALLOWED_ORIGIN_REGEXES = []
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r"^https://[a-zA-Z0-9-]+\.vercel\.app$",
+    ]
 
     _cors_env = os.getenv("CORS_ALLOWED_ORIGINS")
     if _cors_env:
@@ -150,6 +152,7 @@ CORS_ALLOW_HEADERS = [
     "x-user-id",
     "x-user-email",
     "x-gate-api-key",
+    "x-staff-key",
 ]
 # allows frontend to send this headers
 

@@ -246,9 +246,9 @@
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Gate-Api-Key": gateKey,
+          "X-Staff-Key": gateKey,
         },
-        body: JSON.stringify({ ticket_code: ticketCode }),
+        body: JSON.stringify({ ticket_code: ticketCode, gate_key: gateKey }),
         signal: controller.signal,
       });
 
@@ -327,9 +327,9 @@
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Gate-Api-Key": enteredKey,
+          "X-Staff-Key": enteredKey,
         },
-        body: JSON.stringify({ action: "verify_key" }),
+        body: JSON.stringify({ action: "verify_key", gate_key: enteredKey }),
       });
 
       if (response.status === 401) {
