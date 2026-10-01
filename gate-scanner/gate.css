@@ -141,6 +141,70 @@ body.gate-body {
 }
 .scan-hint { text-align: center; font-size: 15px; line-height: 1.45; color: var(--muted); }
 
+/* Auto-Zoom Badge (Floating pill inside camera viewfinder) */
+.zoom-badge {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.85);
+  color: #38bdf8;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  padding: 5px 14px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.zoom-badge.hidden {
+  opacity: 0;
+  transform: translate(-50%, -8px);
+  pointer-events: none;
+}
+
+/* Quick Zoom Chips (Under viewfinder) */
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 2px 0;
+}
+.zoom-chip {
+  min-width: 44px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.zoom-chip:hover {
+  color: var(--ink);
+  border-color: var(--muted);
+}
+.zoom-chip.active {
+  background: var(--brand);
+  color: var(--brand-ink);
+  border-color: var(--brand);
+}
+
 .fallback-banner { background: var(--warn-bg); color: var(--warn-ink); border-radius: var(--r-sm); padding: 14px 16px; }
 .fallback-text { font-size: 15px; line-height: 1.4; font-weight: 500; }
 

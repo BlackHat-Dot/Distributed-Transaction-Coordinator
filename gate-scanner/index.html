@@ -48,8 +48,16 @@
 
       <div id="scanner-wrapper" class="scanner-wrapper">
         <div id="qr-reader" class="scanner-box"></div>
+        <div id="zoom-badge" class="zoom-badge hidden" aria-live="polite">
+          <span id="zoom-badge-text">🔍 Auto-Zoom 2.0x</span>
+        </div>
       </div>
       <p class="scan-hint">Hold the ticket's QR code inside the frame. It scans on its own.</p>
+      <div id="zoom-controls" class="zoom-controls hidden" role="group" aria-label="Camera Zoom">
+        <button type="button" class="zoom-chip active" data-zoom="1">1x</button>
+        <button type="button" class="zoom-chip" data-zoom="2">2x</button>
+        <button type="button" class="zoom-chip" data-zoom="3">3x</button>
+      </div>
 
       <div id="qr-reader-dummy" class="hidden"></div>
 
