@@ -2,106 +2,85 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light dark">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' http://localhost:* http://127.0.0.1:*; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http://localhost:* http://127.0.0.1:* https://reverse-proxy.nexoflow.workers.dev;">
-  <title>DTC Staff Gate Scanner</title>
+  <title>DTC Gate</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="gate.css">
 </head>
 <body class="gate-body">
-  <div class="gate-container">
+  <main class="gate-container">
 
-    <!-- View 1: Key Entry View -->
-    <div id="key-entry-view" class="gate-card">
+    <!-- Sign-in: one field, one button -->
+    <section id="key-entry-view" class="gate-screen">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">DTC Gate</span>
+      </div>
+
       <div class="gate-header">
-        <div class="gate-logo-badge">DTC GATE</div>
-        <h1 class="gate-title">Staff Verification</h1>
-        <p class="gate-subtitle">Enter the authorized gate API key to activate the ticket check-in scanner.</p>
+        <h1 class="gate-title">Ready to check people in?</h1>
+        <p class="gate-subtitle">Enter the gate key your supervisor gave you. It is only kept while this page is open.</p>
       </div>
 
       <form id="key-entry-form" onsubmit="return false;">
         <div class="form-group">
-          <label for="gate-key-input" class="form-label">Gate API Key</label>
-          <input
-            type="password"
-            id="gate-key-input"
-            class="gate-input"
-            placeholder="Enter gate key..."
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="off"
-            spellcheck="false"
-            required
-          />
+          <label for="gate-key-input" class="form-label">Gate key</label>
+          <input type="password" id="gate-key-input" class="gate-input" placeholder="Type or paste the key"
+                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" required>
         </div>
-        <div id="key-entry-error" class="gate-alert gate-alert-danger hidden"></div>
+        <div id="key-entry-error" class="gate-alert hidden" role="alert"></div>
         <button type="submit" id="unlock-gate-btn" class="gate-btn gate-btn-primary">Unlock Scanner</button>
       </form>
-    </div>
+    </section>
 
-    <!-- View 2: Active Scanner View -->
-    <div id="scanner-view" class="gate-card hidden">
-      <div class="scanner-top-bar">
+    <!-- Scanner: camera first, fallbacks quiet underneath -->
+    <section id="scanner-view" class="gate-screen hidden">
+      <header class="scanner-top-bar">
         <div>
-          <span class="gate-badge">STAFF SCANNER</span>
-          <div id="session-counter" class="session-stat">Admitted this session: 0</div>
+          <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">DTC Gate</span></div>
+          <div id="session-counter" class="session-stat" aria-live="polite">Admitted this session: 0</div>
         </div>
-        <button id="lock-gate-btn" class="gate-btn gate-btn-outline gate-btn-sm" title="Lock and clear session key">Lock</button>
-      </div>
+        <button id="lock-gate-btn" class="gate-btn gate-btn-quiet gate-btn-sm" type="button" title="Lock and clear the key">Lock</button>
+      </header>
 
-      <!-- Live Camera Scanner Box -->
       <div id="scanner-wrapper" class="scanner-wrapper">
         <div id="qr-reader" class="scanner-box"></div>
       </div>
+      <p class="scan-hint">Hold the ticket's QR code inside the frame. It scans on its own.</p>
 
-      <!-- Hidden container for Html5Qrcode file scan -->
-      <div id="qr-reader-dummy" style="display: none;"></div>
+      <div id="qr-reader-dummy" class="hidden"></div>
 
-      <!-- Camera Unavailable / Fallback Notice -->
-      <div id="camera-fallback" class="fallback-banner hidden">
-        <div class="fallback-icon">📷</div>
+      <div id="camera-fallback" class="fallback-banner hidden" role="status">
         <div id="camera-fallback-msg" class="fallback-text">
-          Camera scanning requires HTTPS or localhost. Use photo capture or manual code entry below.
+          Camera scanning needs a secure (HTTPS) connection. Use a photo or type the code below.
         </div>
       </div>
 
-      <!-- Fallback Actions: Photo Upload & Manual Code -->
       <div class="fallback-section">
-        <input type="file" id="qr-file-input" accept="image/*" capture="environment" style="display: none;">
-        <button id="upload-photo-btn" class="gate-btn gate-btn-secondary" type="button">
-          📸 Take Photo / Upload QR
-        </button>
+        <input type="file" id="qr-file-input" accept="image/*" capture="environment" class="hidden">
+        <button id="upload-photo-btn" class="gate-btn gate-btn-secondary" type="button">Take a photo of the QR</button>
 
         <div class="manual-entry-card">
-          <div class="manual-title">Manual Code Entry</div>
+          <label for="manual-ticket-code" class="manual-title">Or type the ticket code</label>
           <div class="manual-input-group">
-            <input
-              type="text"
-              id="manual-ticket-code"
-              class="gate-input manual-input"
-              placeholder="Enter ticket code or /verify/ URL"
-              autocomplete="off"
-              autocorrect="off"
-              autocapitalize="off"
-              spellcheck="false"
-            />
-            <button id="manual-submit-btn" class="gate-btn gate-btn-primary manual-btn" type="button">
-              Redeem
-            </button>
+            <input type="text" id="manual-ticket-code" class="gate-input manual-input"
+                   placeholder="Ticket code or link" autocomplete="off" autocorrect="off"
+                   autocapitalize="off" spellcheck="false">
+            <button id="manual-submit-btn" class="gate-btn gate-btn-primary manual-btn" type="button">Check in</button>
           </div>
         </div>
       </div>
-    </div>
+    </section>
+  </main>
 
-  </div>
-
-  <!-- Full-Screen Result Overlay -->
-  <div id="result-overlay" class="result-overlay hidden" role="dialog" aria-modal="true">
+  <!-- Result: the whole screen answers the question -->
+  <div id="result-overlay" class="result-overlay hidden" role="alertdialog" aria-modal="true" aria-live="assertive">
     <div class="result-card">
-      <div id="result-status" class="result-status-title">STATUS</div>
-      
+      <div id="result-status" class="result-status-title">Status</div>
+
       <div id="result-detail" class="result-detail-box">
         <div class="result-field" id="result-seat-row">
           <span class="result-label">Seat</span>
@@ -112,13 +91,15 @@
           <span id="result-event" class="result-value">-</span>
         </div>
         <div class="result-field hidden" id="result-used-row">
-          <span class="result-label">Redeemed At</span>
+          <span class="result-label">First scanned at</span>
           <span id="result-used-time" class="result-value">-</span>
         </div>
         <div id="result-message" class="result-message-text"></div>
       </div>
-
-      <div class="result-footer-hint">Tap anywhere or auto-resets in 3s</div>
+    </div>
+    <div class="result-footer">
+      <div class="result-countdown" aria-hidden="true"><span></span></div>
+      <div class="result-footer-hint">Tap anywhere to scan the next ticket</div>
     </div>
   </div>
 
