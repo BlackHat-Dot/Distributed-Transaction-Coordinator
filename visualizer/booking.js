@@ -161,7 +161,7 @@ const DOM = {
   eticketError: document.getElementById("eticket-error"),
   btnDownloadPdf: document.getElementById("btn-download-pdf"),
   btnDownloadIcs: document.getElementById("btn-download-ics"),
-  btnEmailTicket: document.getElementById("btn-email-ticket"),
+  ticketEmailStatus: document.getElementById("ticket-email-status"),
   compensationCard: document.getElementById("compensation-card"),
   compReason: document.getElementById("comp-reason"),
   btnModalClose: document.getElementById("btn-modal-close"),
@@ -2456,6 +2456,8 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
    E-TICKET FETCHING, QR RENDERING & ATTACHMENT EXPORT
    ========================================================================== */
 
+const autoEmailedTxIds = new Set();
+
 async function loadAndRenderTicket(txId) {
   const token = localStorage.getItem("dtc_auth_token") || "";
   const coordUrl = (CONFIG.coordinatorUrl || defaultCoord).replace(/\/$/, "");
@@ -2471,15 +2473,18 @@ async function loadAndRenderTicket(txId) {
     DOM.eticketError.textContent = "";
   }
 
-  // Setup click actions for downloads and email
+  // Setup click actions for downloads
   if (DOM.btnDownloadPdf) {
     DOM.btnDownloadPdf.onclick = () => downloadTicketPdf(txId);
   }
   if (DOM.btnDownloadIcs) {
     DOM.btnDownloadIcs.onclick = () => downloadTicketIcs(txId);
   }
-  if (DOM.btnEmailTicket) {
-    DOM.btnEmailTicket.onclick = () => emailTicket(txId);
+
+  // Automatically dispatch official ticket email on successful booking
+  if (txId && !autoEmailedTxIds.has(txId)) {
+    autoEmailedTxIds.add(txId);
+    emailTicket(txId, { silent: true });
   }
 
   try {
@@ -2638,14 +2643,15 @@ async function downloadTicketIcs(txId) {
   }
 }
 
-async function emailTicket(txId) {
+async function emailTicket(txId, { silent = true } = {}) {
   const token = localStorage.getItem("dtc_auth_token") || "";
   const coordUrl = (CONFIG.coordinatorUrl || defaultCoord).replace(/\/$/, "");
-  const btn = DOM.btnEmailTicket;
-  const origText = btn ? btn.innerHTML : "";
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = "<span>⏳ Sending...</span>";
+  const statusEl = DOM.ticketEmailStatus;
+
+  if (statusEl) {
+    statusEl.innerHTML = "<span>⏳ Dispatching official e-ticket to your email...</span>";
+    statusEl.style.color = "#94a3b8";
+    statusEl.classList.remove("hidden");
   }
 
   try {
@@ -2659,25 +2665,34 @@ async function emailTicket(txId) {
 
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      if (btn) {
-        btn.innerHTML = "<span>✓ Email Queued!</span>";
-        setTimeout(() => {
-          btn.innerHTML = origText;
-          btn.disabled = false;
-        }, 4000);
+      if (statusEl) {
+        const recipient = data.recipient ? ` to ${data.recipient}` : "";
+        statusEl.innerHTML = `<span>✓ Official e-ticket sent${recipient}</span>`;
+        statusEl.style.color = "#10b981";
       }
     } else {
-      alert(data.error || `Failed to send email (HTTP ${res.status}).`);
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = origText;
+      if (!silent) {
+        alert(data.error || `Failed to send email (HTTP ${res.status}).`);
+      }
+      if (statusEl) {
+        if (res.status === 429) {
+          statusEl.innerHTML = "<span>✓ Official e-ticket already sent to your email</span>";
+          statusEl.style.color = "#10b981";
+        } else if (res.status === 401) {
+          statusEl.innerHTML = "<span style=\"color: #94a3b8;\">Sign in to receive tickets via email</span>";
+        } else if (data.code === "NO_EMAIL") {
+          statusEl.innerHTML = "<span style=\"color: #94a3b8;\">No email associated with booking</span>";
+        } else {
+          statusEl.innerHTML = `<span style="color: #94a3b8;">${data.error || "Email delivery queued"}</span>`;
+        }
       }
     }
   } catch (e) {
-    alert("Network error dispatching ticket email.");
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = origText;
+    if (!silent) {
+      alert("Network error dispatching ticket email.");
+    }
+    if (statusEl) {
+      statusEl.innerHTML = "<span style=\"color: #94a3b8;\">Ticket email will be delivered shortly</span>";
     }
   }
 }

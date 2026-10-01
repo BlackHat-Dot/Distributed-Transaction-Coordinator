@@ -9,6 +9,7 @@ python-dotenv>=1.0.0
 gunicorn>=21.2.0
 supervisor>=4.2.0
 resend
+pyjwt>=2.8.0
 reportlab>=4.0.0
 qrcode[pil]>=7.4.0
 icalendar>=5.0.0
