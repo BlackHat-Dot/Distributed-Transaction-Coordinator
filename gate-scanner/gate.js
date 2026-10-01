@@ -176,10 +176,10 @@
         break;
     }
 
-    // Auto-reset after 3 seconds
+    // Auto-reset after 30 seconds
     resetTimer = setTimeout(() => {
       dismissResult();
-    }, 3000);
+    }, 30000);
   }
 
   function dismissResult() {
@@ -397,8 +397,6 @@
   let cameraZoomCaps = null;
   let barcodeDetectorInstance = null;
   let lastQrDetectTime = 0;
-  let autoZoomScanCanvas = null;
-  let autoZoomScanCtx = null;
 
   function initBarcodeDetector() {
     if (typeof window !== "undefined" && "BarcodeDetector" in window) {
@@ -555,131 +553,51 @@
     });
   }
 
-  function checkFinderPatternRatio(counts) {
-    const total = counts[0] + counts[1] + counts[2] + counts[3] + counts[4];
-    if (total < 7) return false;
-    const moduleSize = total / 7;
-    const maxVariance = moduleSize / 2;
-    return (
-      Math.abs(moduleSize - counts[0]) < maxVariance &&
-      Math.abs(moduleSize - counts[1]) < maxVariance &&
-      Math.abs(3 * moduleSize - counts[2]) < 3 * maxVariance &&
-      Math.abs(moduleSize - counts[3]) < maxVariance &&
-      Math.abs(moduleSize - counts[4]) < maxVariance
-    );
-  }
-
-  function detectFinderPatternRatio(video) {
-    if (!autoZoomScanCanvas) {
-      autoZoomScanCanvas = document.createElement("canvas");
-      autoZoomScanCanvas.width = 160;
-      autoZoomScanCanvas.height = 160;
-      autoZoomScanCtx = autoZoomScanCanvas.getContext("2d", { willReadFrequently: true });
-    }
-    if (!autoZoomScanCtx) return null;
-
-    try {
-      autoZoomScanCtx.drawImage(video, 0, 0, 160, 160);
-      const imgData = autoZoomScanCtx.getImageData(0, 0, 160, 160);
-      const data = imgData.data;
-      const width = 160;
-      const height = 160;
-      const centers = [];
-
-      for (let y = 10; y < height - 10; y += 6) {
-        let state = 0;
-        const counts = [0, 0, 0, 0, 0];
-        let lastIsBlack = false;
-
-        for (let x = 0; x < width; x++) {
-          const idx = (y * width + x) * 4;
-          const isBlack = (data[idx] * 299 + data[idx + 1] * 587 + data[idx + 2] * 114) < 128000;
-
-          if (x === 0) {
-            lastIsBlack = isBlack;
-            counts[0] = 1;
-            continue;
-          }
-
-          if (isBlack === lastIsBlack) {
-            counts[state]++;
-          } else {
-            if (state < 4) {
-              state++;
-              counts[state] = 1;
-            } else {
-              if (checkFinderPatternRatio(counts)) {
-                const centerX = x - counts[4] - counts[3] - (counts[2] / 2);
-                centers.push({ x: centerX, y });
-              }
-              counts[0] = counts[2];
-              counts[1] = counts[3];
-              counts[2] = counts[4];
-              counts[3] = 1;
-              counts[4] = 0;
-              state = 3;
-            }
-            lastIsBlack = isBlack;
-          }
-        }
-      }
-
-      if (centers.length >= 2) {
-        let maxDist = 0;
-        for (let i = 0; i < centers.length; i++) {
-          for (let j = i + 1; j < centers.length; j++) {
-            const d = Math.hypot(centers[i].x - centers[j].x, centers[i].y - centers[j].y);
-            if (d > maxDist) maxDist = d;
-          }
-        }
-        if (maxDist > 12) {
-          const estimatedQrSize = maxDist / 0.8;
-          return estimatedQrSize / 160;
-        }
-      }
-    } catch (_) {}
-    return null;
-  }
-
   async function autoZoomDetectionTick(video) {
     if (!video || video.readyState < 2 || inFlight) return;
+    if (!barcodeDetectorInstance) return;
 
     let detectedRatio = null;
     let detectedRawValue = null;
 
-    if (barcodeDetectorInstance) {
-      try {
-        const barcodes = await barcodeDetectorInstance.detect(video);
-        if (barcodes && barcodes.length > 0) {
-          const bc = barcodes[0];
-          const box = bc.boundingBox;
+    try {
+      const barcodes = await barcodeDetectorInstance.detect(video);
+      // Strictly 100% verified QR code detection:
+      // Must be format "qr_code" and non-trivial dimensions
+      if (Array.isArray(barcodes) && barcodes.length > 0) {
+        const qr = barcodes.find(
+          (b) => b.format === "qr_code" && b.boundingBox && b.boundingBox.width >= 20 && b.boundingBox.height >= 20
+        );
+
+        if (qr) {
+          const box = qr.boundingBox;
           const qrDim = Math.max(box.width, box.height);
           const viewDim = Math.min(video.videoWidth || 640, video.videoHeight || 480);
           detectedRatio = qrDim / viewDim;
-          if (bc.rawValue) {
-            detectedRawValue = bc.rawValue;
+          if (qr.rawValue) {
+            detectedRawValue = qr.rawValue;
           }
         }
-      } catch (_) {}
-    }
-
-    if (detectedRatio === null) {
-      detectedRatio = detectFinderPatternRatio(video);
+      }
+    } catch (_) {
+      return;
     }
 
     const now = Date.now();
     if (detectedRatio !== null && detectedRatio > 0.05) {
       lastQrDetectTime = now;
 
-      const targetRatio = 0.58;
+      // Fit QR length to scan reticle (~60% of viewfinder)
+      const targetRatio = 0.60;
       const maxAllowedZoom = cameraZoomCaps ? cameraZoomCaps.max : 4.0;
 
-      if (detectedRatio < 0.35 && currentZoomLevel < maxAllowedZoom) {
+      // Only zoom if QR code is small (< 38% of viewfinder)
+      if (detectedRatio < 0.38 && currentZoomLevel < maxAllowedZoom) {
         const neededMultiplier = targetRatio / detectedRatio;
         const desiredZoom = currentZoomLevel * neededMultiplier;
-        const targetZoom = Math.min(maxAllowedZoom, Math.max(1, desiredZoom));
+        const targetZoom = Math.min(maxAllowedZoom, Math.max(1.0, desiredZoom));
 
-        if (targetZoom > currentZoomLevel + 0.25) {
+        if (targetZoom > currentZoomLevel + 0.2) {
           smoothZoomTo(targetZoom, true);
         }
       }
@@ -688,7 +606,9 @@
         handleScan(detectedRawValue);
       }
     } else {
-      if (currentZoomLevel > 1.05 && (now - lastQrDetectTime) > 2000) {
+      // 100% empty area or no QR code in view:
+      // If camera was zoomed in and no QR code has been seen for 1.8s, smoothly reset back to 1x
+      if (currentZoomLevel > 1.05 && (now - lastQrDetectTime) > 1800) {
         smoothZoomTo(1.0, false);
       }
     }
