@@ -31,7 +31,10 @@
     }
     return isLocal
       ? [`http://${localHost}:8002`, "http://localhost:8002", "http://127.0.0.1:8002"]
-      : ["https://reverse-proxy.nexoflow.workers.dev"];
+      : [
+          "https://reverse-proxy.nexoflow.workers.dev",
+          "https://distributed-transaction-coordinator-production.up.railway.app",
+        ];
   }
 
   // --- 2. In-Memory State (Never persisted to storage, URLs, or cookies) ---
@@ -208,7 +211,8 @@
         return;
       }
 
-      const match = parsedUrl.pathname.match(/^\/verify\/([A-Za-z0-9_-]{16,32})\/?$/);
+      // Supports both direct root path (/verify/<code>/) and subpaths (/coordinator/verify/<code>/)
+      const match = parsedUrl.pathname.match(/(?:^|\/)verify\/([A-Za-z0-9_-]{16,32})\/?$/);
       if (!match) {
         showResult("NOT_VALID", { message: "Invalid ticket URL format" });
         return;

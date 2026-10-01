@@ -223,6 +223,26 @@ class GateScannerPlaywrightTests(unittest.TestCase):
         self.assertEqual(len(redeem_payloads), 1)
         self.assertEqual(redeem_payloads[0]["ticket_code"], "code_from_listed_origin_123")
 
+    def test_b3_subpath_verify_url_like_reverse_proxy(self):
+        """Scanned QR URL with subpath (e.g. /coordinator/verify/<code>/) is correctly parsed and redeemed."""
+        self._unlock_gate(self.page)
+        redeem_payloads = []
+        self.page.route("**/gate/redeem/**", lambda route: (
+            redeem_payloads.append(route.request.post_data_json),
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body='{"status":"REDEEMED","seat_label":"C5","event_name":"Subpath Tour","used_at":"2026-10-01T12:00:00Z"}'
+            )
+        ))
+
+        subpath_qr = f"{COORDINATOR_URL}/coordinator/verify/code_with_subpath_12345/"
+        self.page.evaluate("url => window.__gateHandleScan(url)", subpath_qr)
+        self.page.wait_for_selector("#result-overlay.active.result-admit", timeout=5000)
+        self.assertIn("ADMIT", self.page.text_content("#result-status"))
+        self.assertEqual(len(redeem_payloads), 1)
+        self.assertEqual(redeem_payloads[0]["ticket_code"], "code_with_subpath_12345")
+
     def test_c_wrong_key_rejected_and_never_leaked(self):
         """Wrong key -> KEY REJECTED, cleared from memory/input, never leaked to storage, URL, or logs."""
         bad_key = "super-secret-wrong-key-99999"
