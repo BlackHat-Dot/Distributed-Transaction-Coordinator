@@ -280,19 +280,19 @@
             </div>
           </div>
 
-          <!-- Payment Simulation Options -->
-          <div class="simulation-selector">
-            <label class="sim-label">Payment Gateway Simulation:</label>
+          <!-- Payment Simulation Options (Local development only) -->
+          <div class="simulation-selector hidden" id="payment-simulation-container">
+            <label class="sim-label">Payment Gateway Simulation (Local Only):</label>
             <div class="sim-options">
               <label class="sim-option selected" id="opt-happy">
-                <input type="radio" name="pay_sim" value="500" checked>
+                <input type="radio" id="pay-sim-success" name="pay_sim" value="500" checked>
                 <div class="sim-opt-content">
-                  <strong>Standard Payment ($500)</strong>
+                  <strong id="sim-opt-success-title">Standard Payment ($500)</strong>
                   <small>Card approved → Saga marked COMPLETED</small>
                 </div>
               </label>
               <label class="sim-option" id="opt-decline">
-                <input type="radio" name="pay_sim" value="9999">
+                <input type="radio" id="pay-sim-fail" name="pay_sim" value="9999">
                 <div class="sim-opt-content">
                   <strong>Declined Card ($9,999)</strong>
                   <small>Card declined (HTTP 422) → Auto-compensate hold</small>
@@ -618,7 +618,7 @@
     </div>
   </div>
 
-  <script src="booking.js?v=6.2.0"></script>
+  <script src="booking.js?v=6.3.0"></script>
   <script src="motion.js?v=2.0.0"></script>
   <script src="monkey-branch.js?v=1.0.0"></script>
 </body>

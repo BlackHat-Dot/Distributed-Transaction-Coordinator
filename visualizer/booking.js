@@ -134,8 +134,12 @@ const DOM = {
   summaryTotalPrice: document.getElementById("summary-total-price"),
   btnProceedPay: document.getElementById("btn-proceed-pay"),
 
+  paySimContainer: document.getElementById("payment-simulation-container"),
   optHappy: document.getElementById("opt-happy"),
   optDecline: document.getElementById("opt-decline"),
+  paySimSuccess: document.getElementById("pay-sim-success"),
+  paySimFail: document.getElementById("pay-sim-fail"),
+  simOptSuccessTitle: document.getElementById("sim-opt-success-title"),
 
   sagaModal: document.getElementById("saga-modal"),
   modalTitle: document.getElementById("modal-title"),
@@ -929,6 +933,7 @@ window.addEventListener("beforeunload", handleTabExitCleanup);
 window.addEventListener("pagehide", handleTabExitCleanup);
 
 document.addEventListener("DOMContentLoaded", () => {
+  initPaymentSimulationVisibility();
   initEntryScreen();
   if (STATE.user && STATE.user.token && isTokenExpired(STATE.user.token)) {
     handleLogout();
@@ -1146,6 +1151,16 @@ function finishEntryScreen() {
   isDataReady = true;
 }
 
+function initPaymentSimulationVisibility() {
+  const container = (DOM && DOM.paySimContainer) || document.getElementById("payment-simulation-container");
+  if (!container) return;
+  if (isLocal) {
+    container.classList.remove("hidden");
+  } else {
+    container.remove();
+  }
+}
+
 function initEventListeners() {
   // Reset Venue Seats Button
   if (DOM.btnRestock) {
@@ -1226,19 +1241,21 @@ function initEventListeners() {
     });
   }
 
-  // Simulation Option Radio Buttons
-  const radioInputs = document.querySelectorAll('input[name="pay_sim"]');
-  radioInputs.forEach(radio => {
-    radio.addEventListener("change", (e) => {
-      if (e.target.value === "500") {
-        DOM.optHappy.classList.add("selected");
-        DOM.optDecline.classList.remove("selected");
-      } else {
-        DOM.optHappy.classList.remove("selected");
-        DOM.optDecline.classList.add("selected");
-      }
+  // Simulation Option Radio Buttons (Local development only)
+  if (isLocal) {
+    const radioInputs = document.querySelectorAll('input[name="pay_sim"]');
+    radioInputs.forEach(radio => {
+      radio.addEventListener("change", (e) => {
+        if (e.target.value === "9999") {
+          if (DOM.optHappy) DOM.optHappy.classList.remove("selected");
+          if (DOM.optDecline) DOM.optDecline.classList.add("selected");
+        } else {
+          if (DOM.optHappy) DOM.optHappy.classList.add("selected");
+          if (DOM.optDecline) DOM.optDecline.classList.remove("selected");
+        }
+      });
     });
-  });
+  }
 
   // Modal Close Button
   if (DOM.btnModalClose) {
@@ -2021,11 +2038,17 @@ function updateCheckoutSummary() {
   if (DOM.summaryBasePrice) DOM.summaryBasePrice.textContent = `$${totalBasePrice.toFixed(2)}`;
   if (DOM.summaryTotalPrice) DOM.summaryTotalPrice.textContent = `$${totalBasePrice.toFixed(2)}`;
   
-  // Set the pay sim values based on correct total price
-  const radioSuccess = document.getElementById("pay-sim-success");
-  const radioFail = document.getElementById("pay-sim-fail");
-  if (radioSuccess) radioSuccess.value = totalBasePrice;
-  if (radioFail) radioFail.value = 9999; // failure simulation amount
+  // Set the pay sim values based on correct total price (Local development only)
+  if (isLocal) {
+    const radioSuccess = DOM.paySimSuccess || document.getElementById("pay-sim-success");
+    const radioFail = DOM.paySimFail || document.getElementById("pay-sim-fail");
+    if (radioSuccess) radioSuccess.value = totalBasePrice;
+    if (radioFail) radioFail.value = 9999; // failure simulation amount
+    const successTitle = DOM.simOptSuccessTitle || document.getElementById("sim-opt-success-title");
+    if (successTitle) {
+      successTitle.textContent = `Standard Payment ($${totalBasePrice.toFixed(2)})`;
+    }
+  }
 
   if (DOM.btnProceedPay) {
     DOM.btnProceedPay.textContent = "Proceed to Payment →";
@@ -2058,9 +2081,10 @@ async function initiateSagaCheckout() {
 
   const txId = hasHold ? STATE.myHold.txId : null;
   const isPreReserved = hasHold;
-  const selectedAmount = document.querySelector('input[name="pay_sim"]:checked')
-    ? document.querySelector('input[name="pay_sim"]:checked').value
-    : "500";
+  const selectedRadio = isLocal ? document.querySelector('input[name="pay_sim"]:checked') : null;
+  const selectedAmount = (isLocal && selectedRadio)
+    ? selectedRadio.value
+    : (STATE.myHold && STATE.myHold.amount ? String(STATE.myHold.amount) : String(firstSeat.price || 500));
 
   // Validate quantity
   const quantityEl = document.getElementById("seat-quantity");
@@ -2086,7 +2110,7 @@ async function initiateSagaCheckout() {
   if (isLocal) {
     queryParams.set("sync", "true");
   }
-  if (selectedAmount === "9999") {
+  if (isLocal && selectedAmount === "9999") {
     queryParams.set("simulate_payment_decline", "true");
   }
   const queryString = queryParams.toString();
