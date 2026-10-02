@@ -1,6 +1,7 @@
 /* ==========================================================================
    CALM + RESPONSIVE LAYER  (index.html and booking.html) — load LAST.
    Fluid from 320px phones to ultrawide monitors; quieter visuals.
+   v1.1 — regression fixes (see notes marked FIX).
    ========================================================================== */
 :root{
   --calm-gap:clamp(12px,2vw,24px);
@@ -8,17 +9,20 @@
   --calm-tap:44px;
 }
 html{-webkit-text-size-adjust:100%;}
-body{overflow-x:hidden;line-height:1.55;}
-img,svg,canvas,video{max-width:100%;}
-p{max-width:75ch;}
+body{overflow-x:hidden;}
+/* FIX: removed global body line-height, p{max-width:75ch}, svg/canvas max-width
+   (they re-flowed text, shifted centered paragraphs and could distort canvases) */
+img,video{max-width:100%;height:auto;}
 :focus-visible{outline:2px solid var(--border-focus,#2997ff);outline-offset:2px;}
 
 /* ---------- Quiet visuals (less to process) ---------- */
 .pulse-dot,.pulse-dot-purple,.timer-pulse,.status-indicator,.proof-badge{animation:none!important;}
 .status-indicator{box-shadow:none!important;}
 .screen-curve{filter:none!important;}
-.screen-glow,.pm-flip{display:none;animation:none!important;}
-.pm-flip{display:revert;}
+.screen-glow{display:none;animation:none!important;}
+/* FIX: .pm-flip is added to .seat-tile (display:flex). Never set its display —
+   the old "display:revert" turned selected seats into blocks (number stuck at top). */
+.pm-flip{animation:none!important;}
 .btn-primary,.btn-primary:hover{box-shadow:none!important;}
 .hold-timer-card,.hold-timer-card.pm-urgent,.checkout-card,.panel,.proof-panel,
 .recovery-panel,.stat-card,.rec-card,.venue-container{box-shadow:none!important;}
@@ -28,9 +32,13 @@ p{max-width:75ch;}
 .rec-card-label,.fmeta-label,.scenario-label,.panel-title-area h3,
 .recovery-header h4,.legend-type-label,.eticket-seat-label,.qr-scan-instruction{
   text-transform:none!important;letter-spacing:0!important;}
-.stat-label,.event-badge,.tier-name,.screen-label{font-size:.78rem!important;}
+/* FIX: removed forced .78rem label size (changed original sizing everywhere) */
 #btn-live-booking>div{display:none!important;}           /* "Book your seats here" arrow */
 .seat-tile[data-status="AVAILABLE"]:hover{transform:none!important;box-shadow:none!important;}
+
+/* FIX: toasts — the old max-width override widened the 90%-wide index container
+   to ~90vw, so toasts hugged its LEFT edge. No toast overrides now: the original
+   bottom-right rules in style.css / booking.css apply (phone rule below). */
 
 /* =====================  BOOKING PAGE  ===================== */
 .app-header{height:auto!important;min-height:64px;flex-wrap:wrap;gap:10px 16px;
@@ -41,10 +49,15 @@ p{max-width:75ch;}
 .header-actions{flex-wrap:wrap;gap:8px 12px;margin-left:auto;}
 .booking-layout{width:100%;max-width:var(--calm-max)!important;
   grid-template-columns:minmax(0,1fr) minmax(300px,380px)!important;
-  gap:var(--calm-gap)!important;padding:var(--calm-gap)!important;
-  padding-bottom:calc(var(--calm-gap) + 72px)!important;}  /* room for the pay bar */
+  gap:var(--calm-gap)!important;padding:var(--calm-gap)!important;}
+/* FIX: extra room only while the pay bar is actually showing */
+body:has(.bottom-pay-bar.show) .booking-layout{padding-bottom:calc(var(--calm-gap) + 72px)!important;}
 .venue-container{min-width:0;padding:clamp(12px,2.2vw,28px)!important;}
-.checkout-sidebar{min-width:0;position:sticky;top:84px;align-self:start;}
+.checkout-sidebar{min-width:0;}
+/* FIX: sticky only when the whole sidebar fits the viewport (else bottom is unreachable) */
+@media (min-width:1025px) and (min-height:900px){
+  .checkout-sidebar{position:sticky;top:84px;align-self:start;}
+}
 .event-hero{flex-wrap:wrap;gap:14px;}
 .event-info{min-width:0;flex:1 1 280px;}
 .event-hero h2{font-size:clamp(1.15rem,2.4vw,1.5rem)!important;overflow-wrap:anywhere;}
@@ -54,7 +67,8 @@ p{max-width:75ch;}
 
 /* Seat map: keep the real structure (tier > row > 10 seats), just fluid */
 .seat-matrix-wrapper{min-height:0!important;align-items:stretch!important;
-  overflow-x:auto;-webkit-overflow-scrolling:touch;padding:12px 2px!important;}
+  overflow-x:auto;-webkit-overflow-scrolling:touch;
+  padding:14px!important;}   /* FIX: room so scaled/glowing selected seats aren't clipped */
 .seat-matrix{width:100%;max-width:760px!important;margin-inline:auto;min-width:330px;
   gap:clamp(14px,2.5vw,22px)!important;}
 .seat-row{gap:clamp(4px,1vw,8px)!important;}
@@ -64,7 +78,7 @@ p{max-width:75ch;}
 .seat-tile .seat-num{font-size:clamp(10px,1.4vw,12px)!important;}
 .seat-legend{flex-wrap:wrap;justify-content:center;gap:8px 18px!important;}
 .quantity-selector-bar{flex-wrap:wrap!important;gap:8px 14px!important;
-  padding:12px 16px!important;margin:16px 0!important;text-align:center;}
+  padding:12px 16px!important;margin:16px auto!important;text-align:center;}
 .quantity-selector-bar select{min-height:40px;}
 
 /* Modals: scroll inside, never overflow the viewport */
@@ -76,8 +90,6 @@ p{max-width:75ch;}
 .eticket-actions{flex-wrap:wrap;}
 .stub-code,#summary-tx-id,#ticket-tx-id{overflow-wrap:anywhere;word-break:break-all;}
 .saga-stepper .step-item{flex-wrap:wrap;}
-.toast-container{max-width:calc(100vw - 24px);}
-.toast{max-width:min(380px,calc(100vw - 24px))!important;}
 .bottom-pay-bar{padding:12px var(--calm-gap)!important;
   padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))!important;gap:12px;}
 .btn-bottom-pay{min-height:var(--calm-tap);}
@@ -99,9 +111,11 @@ p{max-width:75ch;}
 .topology-canvas-container{height:clamp(300px,55vh,640px)!important;
   touch-action:none;overscroll-behavior:contain;}
 .forensic-meta-card{flex-wrap:wrap;}
-.monkey-branch-strip{min-width:0!important;width:100%;max-width:890px;flex:1 1 360px;}
+/* FIX: monkey strip is a fixed 800–890px scene — no width/min-width override
+   (squeezing it broke its internal layout). It is hidden on phones below. */
 .nav-controls,.nav-controls-left,.nav-controls-right{flex-wrap:wrap;gap:8px;}
-.modal-dialog{max-width:min(960px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow-y:auto;}
+/* FIX: only cap size; header/footer stay fixed and .modal-body scrolls as designed */
+.modal-dialog{max-width:min(960px,calc(100vw - 24px));max-height:calc(100dvh - 24px);}
 .arch-grid,.stack-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))!important;}
 .scenario-payload-code,pre{overflow-x:auto;max-width:100%;}
 
@@ -122,7 +136,7 @@ p{max-width:75ch;}
 /* ---------- Touch devices ---------- */
 @media (pointer:coarse){
   .btn,.nav-btn,.filter-tab,.canvas-ctrl-btn,.btn-text-link{min-height:var(--calm-tap);}
-  input:not([type=checkbox]):not([type=radio]),select,textarea{font-size:16px!important;min-height:var(--calm-tap);}  /* no iOS zoom */
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=hidden]):not([type=file]):not([type=color]),select,textarea{font-size:16px!important;min-height:var(--calm-tap);}  /* no iOS zoom */
   .seat-tile{min-height:34px;}
 }
 
@@ -134,7 +148,6 @@ p{max-width:75ch;}
 
 /* ---------- Phone ---------- */
 @media (max-width:720px){
-  html,body{font-size:15px;}
   .app-header,.top-nav{position:static!important;}
   .header-nav{width:100%;}
   .header-nav .nav-btn{flex:1;justify-content:center;}
@@ -145,7 +158,7 @@ p{max-width:75ch;}
   .event-meta .meta-sep{display:none;}
   .monkey-branch-strip{display:none!important;}
   .nav-controls{width:100%;justify-content:space-between;}
-  .nav-control-divider,.nav-controls-left .btn-outline{display:none;}
+  .nav-control-divider{display:none;}   /* FIX: "How it works" button no longer hidden */
   .tx-table{min-width:520px;}
   .canvas-mode-pill,.topology-legend{display:none;}
   .modal-backdrop{align-items:flex-end!important;}
@@ -157,9 +170,6 @@ p{max-width:75ch;}
   .proof-stats,.recovery-grid,.scenario-buttons{grid-template-columns:1fr;}
   .eticket-actions .btn{min-width:100%!important;}
 }
-
-/* ---------- Large screens ---------- */
-@media (min-width:1800px){html,body{font-size:17px;}}
 
 /* ---------- Short landscape phones ---------- */
 @media (max-height:480px) and (orientation:landscape){

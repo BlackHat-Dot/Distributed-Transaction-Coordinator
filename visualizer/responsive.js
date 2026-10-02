@@ -16,6 +16,7 @@
     var pinch = null, dragging = false;
     function dist(a,b){return Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);}
     box.addEventListener("touchstart", function (e) {
+      if (e.target.closest && e.target.closest("button,a,input,select,label")) return; // canvas controls keep normal tap behaviour
       if (e.touches.length === 2) {
         if (dragging) { fire("mouseup", window, e.touches[0]); dragging = false; }
         pinch = dist(e.touches[0], e.touches[1]); return;
