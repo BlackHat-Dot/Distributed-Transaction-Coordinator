@@ -217,3 +217,213 @@ body:has(.pm-urgent){--hl-light:255,106,82;}   /* last 60s of a hold: the room t
   .hl-pre .proof-title-area h2,.hl-pre .event-hero h2,.hl-pre .proof-title-area p,.hl-pre .proof-stats,.hl-pre .event-stats{opacity:1;transform:none;}
   .btn-scenario::before,.nav-btn::after{transition:none;}
 }
+
+/* ==========================================================================
+   v1.1 — (a) quiet "saga engine" tag  (b) Service Topology as a stage plot.
+   The room is dark; only the Coordinator (the director) carries a light.
+   Colour still only names state: sand = neutral/probe, phosphor = commit,
+   tungsten = hold, ember = rollback/crash.
+   ========================================================================== */
+.app-header .brand-badge{margin:7px 0 0!important;padding:0!important;background:none!important;border:0!important;
+  box-shadow:none!important;gap:7px!important;font:500 .7rem/1 var(--font-mono)!important;letter-spacing:.02em!important;
+  text-transform:none!important;color:var(--text-muted)!important;}
+.app-header .brand-badge .pulse-dot{width:5px!important;height:5px!important;border-radius:50%;animation:none!important;
+  box-shadow:none!important;background:var(--accent-amber)!important;opacity:.75;}
+
+.topology-canvas-container{border:0!important;border-top:1px solid var(--border-subtle)!important;border-radius:0!important;
+  background:radial-gradient(ellipse 55% 70% at 52% 46%,rgba(var(--hl-light),.075),transparent 72%),var(--bg-deep)!important;}
+.canvas-grid-dot{fill:var(--text-primary)!important;opacity:.09;}
+.canvas-mode-pill{background:none!important;border:0!important;padding:0 0 0 10px!important;color:var(--text-muted)!important;
+  font:500 .72rem var(--font-mono)!important;text-transform:none!important;letter-spacing:0!important;}
+.topology-legend .legend-type-label{font-family:var(--font-mono);color:var(--text-muted);}
+.topology-legend .dot{box-shadow:none!important;}
+.dot-green{background:var(--accent-green)!important;} .dot-blue{background:var(--accent-blue)!important;}
+.dot-orange{background:var(--accent-amber)!important;} .dot-red{background:var(--accent-rose)!important;}
+.canvas-controls-bar{background:var(--bg-surface)!important;border:1px solid var(--border-strong)!important;
+  border-radius:2px!important;box-shadow:none!important;backdrop-filter:none!important;}
+.canvas-ctrl-btn{border-radius:2px!important;color:var(--text-secondary)!important;}
+.canvas-ctrl-btn:hover{color:var(--accent-amber)!important;background:none!important;}
+.canvas-zoom-label{font-family:var(--font-mono);color:var(--text-secondary);}
+.canvas-shortcuts-tooltip{background:var(--bg-surface-elevated)!important;border:1px solid var(--border-strong)!important;border-radius:2px!important;box-shadow:none!important;}
+
+/* nodes: flat plates, hairline edge; low specificity so the app's own state classes still win */
+:where(#topology-svg) .node-box{fill:var(--bg-surface);stroke:var(--border-strong);stroke-width:1;filter:none;rx:2px;ry:2px;}
+:where(#topology-svg) .node-box-db{fill:var(--bg-deep);stroke-dasharray:3 3;}
+:where(#topology-svg) .node-box-coord{fill:var(--bg-surface-elevated);stroke:var(--accent-amber);}
+:where(#topology-svg) .node-header-bar{fill:rgba(241,233,220,.06);stroke:none;rx:2px;ry:2px;}
+:where(#topology-svg) .node-title{font-family:var(--font-sans);font-weight:700;letter-spacing:.07em;fill:var(--text-primary);}
+:where(#topology-svg) .node-sub,:where(#topology-svg) .node-port-sub{font-family:var(--font-mono);fill:var(--text-secondary);}
+:where(#topology-svg) .node-stat-label{font-family:var(--font-sans);fill:var(--text-muted);}
+:where(#topology-svg) .node-stat-val{font-family:var(--font-mono);fill:var(--text-primary);}
+#topology-svg .text-success{fill:var(--accent-green);} #topology-svg .text-accent{fill:var(--accent-amber);}
+#topology-svg .text-purple{fill:var(--accent-purple);}
+#topology-svg .topo-node-group>text[text-anchor="middle"]{filter:grayscale(1);opacity:.7;}
+#topology-svg .topo-node-group>text[text-anchor="middle"]:not(#icon-coord){display:none;}
+#topology-svg .topo-node-group>circle[opacity]{display:none;}
+#topology-svg .topo-node-group>g[transform^="translate"]{stroke:var(--text-secondary)!important;}
+#topology-svg .topo-node-group line{stroke:var(--border-subtle)!important;}
+#topology-svg .topo-node-group:hover .node-box{stroke:var(--accent-amber);}
+#topology-svg text[style*="fill: #64748b"],#topology-svg tspan[fill="#64748b"]{fill:var(--text-muted)!important;}
+
+/* palette remap: legacy neon hexes (markup + app-drawn pulses) -> house colours */
+#topology-svg [fill="#38bdf8" i],
+#topology-svg [style*="fill: #38bdf8" i],
+#topology-svg [style*="fill:#38bdf8" i],
+#topology-svg [fill="#0284c7" i],
+#topology-svg [style*="fill: #0284c7" i],
+#topology-svg [style*="fill:#0284c7" i],
+#topology-svg [fill="#a5b4fc" i],
+#topology-svg [style*="fill: #a5b4fc" i],
+#topology-svg [style*="fill:#a5b4fc" i],
+#topology-svg [fill="#60a5fa" i],
+#topology-svg [style*="fill: #60a5fa" i],
+#topology-svg [style*="fill:#60a5fa" i],
+#topology-svg [fill="#3b82f6" i],
+#topology-svg [style*="fill: #3b82f6" i],
+#topology-svg [style*="fill:#3b82f6" i],
+#topology-svg [fill="#6366f1" i],
+#topology-svg [style*="fill: #6366f1" i],
+#topology-svg [style*="fill:#6366f1" i],
+#topology-svg [fill="#818cf8" i],
+#topology-svg [style*="fill: #818cf8" i],
+#topology-svg [style*="fill:#818cf8" i],
+#topology-svg [fill="#94a3b8" i],
+#topology-svg [style*="fill: #94a3b8" i],
+#topology-svg [style*="fill:#94a3b8" i]{fill:var(--accent-blue)!important}
+#topology-svg [stroke="#38bdf8" i],
+#topology-svg [style*="stroke: #38bdf8" i],
+#topology-svg [style*="stroke:#38bdf8" i],
+#topology-svg [stroke="#0284c7" i],
+#topology-svg [style*="stroke: #0284c7" i],
+#topology-svg [style*="stroke:#0284c7" i],
+#topology-svg [stroke="#a5b4fc" i],
+#topology-svg [style*="stroke: #a5b4fc" i],
+#topology-svg [style*="stroke:#a5b4fc" i],
+#topology-svg [stroke="#60a5fa" i],
+#topology-svg [style*="stroke: #60a5fa" i],
+#topology-svg [style*="stroke:#60a5fa" i],
+#topology-svg [stroke="#3b82f6" i],
+#topology-svg [style*="stroke: #3b82f6" i],
+#topology-svg [style*="stroke:#3b82f6" i],
+#topology-svg [stroke="#6366f1" i],
+#topology-svg [style*="stroke: #6366f1" i],
+#topology-svg [style*="stroke:#6366f1" i],
+#topology-svg [stroke="#818cf8" i],
+#topology-svg [style*="stroke: #818cf8" i],
+#topology-svg [style*="stroke:#818cf8" i],
+#topology-svg [stroke="#94a3b8" i],
+#topology-svg [style*="stroke: #94a3b8" i],
+#topology-svg [style*="stroke:#94a3b8" i]{stroke:var(--accent-blue)!important}
+#topology-svg [stop-color="#38bdf8" i],
+#topology-svg [stop-color="#0284c7" i],
+#topology-svg [stop-color="#a5b4fc" i],
+#topology-svg [stop-color="#60a5fa" i],
+#topology-svg [stop-color="#3b82f6" i],
+#topology-svg [stop-color="#6366f1" i],
+#topology-svg [stop-color="#818cf8" i],
+#topology-svg [stop-color="#94a3b8" i]{stop-color:var(--accent-blue)!important}
+#topology-svg [fill="#34d399" i],
+#topology-svg [style*="fill: #34d399" i],
+#topology-svg [style*="fill:#34d399" i],
+#topology-svg [fill="#10b981" i],
+#topology-svg [style*="fill: #10b981" i],
+#topology-svg [style*="fill:#10b981" i],
+#topology-svg [fill="#4ade80" i],
+#topology-svg [style*="fill: #4ade80" i],
+#topology-svg [style*="fill:#4ade80" i],
+#topology-svg [fill="#22c55e" i],
+#topology-svg [style*="fill: #22c55e" i],
+#topology-svg [style*="fill:#22c55e" i]{fill:var(--accent-green)!important}
+#topology-svg [stroke="#34d399" i],
+#topology-svg [style*="stroke: #34d399" i],
+#topology-svg [style*="stroke:#34d399" i],
+#topology-svg [stroke="#10b981" i],
+#topology-svg [style*="stroke: #10b981" i],
+#topology-svg [style*="stroke:#10b981" i],
+#topology-svg [stroke="#4ade80" i],
+#topology-svg [style*="stroke: #4ade80" i],
+#topology-svg [style*="stroke:#4ade80" i],
+#topology-svg [stroke="#22c55e" i],
+#topology-svg [style*="stroke: #22c55e" i],
+#topology-svg [style*="stroke:#22c55e" i]{stroke:var(--accent-green)!important}
+#topology-svg [stop-color="#34d399" i],
+#topology-svg [stop-color="#10b981" i],
+#topology-svg [stop-color="#4ade80" i],
+#topology-svg [stop-color="#22c55e" i]{stop-color:var(--accent-green)!important}
+#topology-svg [fill="#f59e0b" i],
+#topology-svg [style*="fill: #f59e0b" i],
+#topology-svg [style*="fill:#f59e0b" i],
+#topology-svg [fill="#fbbf24" i],
+#topology-svg [style*="fill: #fbbf24" i],
+#topology-svg [style*="fill:#fbbf24" i],
+#topology-svg [fill="#fb923c" i],
+#topology-svg [style*="fill: #fb923c" i],
+#topology-svg [style*="fill:#fb923c" i],
+#topology-svg [fill="#f97316" i],
+#topology-svg [style*="fill: #f97316" i],
+#topology-svg [style*="fill:#f97316" i]{fill:var(--accent-amber)!important}
+#topology-svg [stroke="#f59e0b" i],
+#topology-svg [style*="stroke: #f59e0b" i],
+#topology-svg [style*="stroke:#f59e0b" i],
+#topology-svg [stroke="#fbbf24" i],
+#topology-svg [style*="stroke: #fbbf24" i],
+#topology-svg [style*="stroke:#fbbf24" i],
+#topology-svg [stroke="#fb923c" i],
+#topology-svg [style*="stroke: #fb923c" i],
+#topology-svg [style*="stroke:#fb923c" i],
+#topology-svg [stroke="#f97316" i],
+#topology-svg [style*="stroke: #f97316" i],
+#topology-svg [style*="stroke:#f97316" i]{stroke:var(--accent-amber)!important}
+#topology-svg [stop-color="#f59e0b" i],
+#topology-svg [stop-color="#fbbf24" i],
+#topology-svg [stop-color="#fb923c" i],
+#topology-svg [stop-color="#f97316" i]{stop-color:var(--accent-amber)!important}
+#topology-svg [fill="#ef4444" i],
+#topology-svg [style*="fill: #ef4444" i],
+#topology-svg [style*="fill:#ef4444" i],
+#topology-svg [fill="#f87171" i],
+#topology-svg [style*="fill: #f87171" i],
+#topology-svg [style*="fill:#f87171" i],
+#topology-svg [fill="#dc2626" i],
+#topology-svg [style*="fill: #dc2626" i],
+#topology-svg [style*="fill:#dc2626" i],
+#topology-svg [fill="#ec4899" i],
+#topology-svg [style*="fill: #ec4899" i],
+#topology-svg [style*="fill:#ec4899" i],
+#topology-svg [fill="#f472b6" i],
+#topology-svg [style*="fill: #f472b6" i],
+#topology-svg [style*="fill:#f472b6" i]{fill:var(--accent-rose)!important}
+#topology-svg [stroke="#ef4444" i],
+#topology-svg [style*="stroke: #ef4444" i],
+#topology-svg [style*="stroke:#ef4444" i],
+#topology-svg [stroke="#f87171" i],
+#topology-svg [style*="stroke: #f87171" i],
+#topology-svg [style*="stroke:#f87171" i],
+#topology-svg [stroke="#dc2626" i],
+#topology-svg [style*="stroke: #dc2626" i],
+#topology-svg [style*="stroke:#dc2626" i],
+#topology-svg [stroke="#ec4899" i],
+#topology-svg [style*="stroke: #ec4899" i],
+#topology-svg [style*="stroke:#ec4899" i],
+#topology-svg [stroke="#f472b6" i],
+#topology-svg [style*="stroke: #f472b6" i],
+#topology-svg [style*="stroke:#f472b6" i]{stroke:var(--accent-rose)!important}
+#topology-svg [stop-color="#ef4444" i],
+#topology-svg [stop-color="#f87171" i],
+#topology-svg [stop-color="#dc2626" i],
+#topology-svg [stop-color="#ec4899" i],
+#topology-svg [stop-color="#f472b6" i]{stop-color:var(--accent-rose)!important}
+#topology-svg [fill="#c084fc" i],
+#topology-svg [style*="fill: #c084fc" i],
+#topology-svg [style*="fill:#c084fc" i],
+#topology-svg [fill="#a855f7" i],
+#topology-svg [style*="fill: #a855f7" i],
+#topology-svg [style*="fill:#a855f7" i]{fill:var(--accent-purple)!important}
+#topology-svg [stroke="#c084fc" i],
+#topology-svg [style*="stroke: #c084fc" i],
+#topology-svg [style*="stroke:#c084fc" i],
+#topology-svg [stroke="#a855f7" i],
+#topology-svg [style*="stroke: #a855f7" i],
+#topology-svg [style*="stroke:#a855f7" i]{stroke:var(--accent-purple)!important}
+#topology-svg [stop-color="#c084fc" i],
+#topology-svg [stop-color="#a855f7" i]{stop-color:var(--accent-purple)!important}
