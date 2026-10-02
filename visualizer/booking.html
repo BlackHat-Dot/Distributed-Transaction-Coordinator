@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Montserrat:wght@900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="booking.css?v=4.6.0">
+  <link rel="stylesheet" href="booking.css?v=6.2.0">
   <link rel="stylesheet" href="theme.css?v=2.0.0">
   <script>
     if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname === "0.0.0.0" || window.location.hostname === "::1" || window.location.hostname === "[::1]" || window.location.protocol === "file:" || !window.location.hostname) {
@@ -378,11 +378,38 @@
             </div>
             <div class="eticket-qr">
               <div class="qr-box">
-                <div id="ticket-qr-container" style="display:flex;align-items:center;justify-content:center;min-width:120px;min-height:120px;">
-                  <img id="ticket-qr-img" class="hidden" alt="Ticket QR Code" style="width: 120px; height: 120px; border-radius: 4px; display: block; background: white; padding: 4px;" />
-                  <div id="ticket-qr-spinner" style="font-size: 11px; color: #94a3b8; text-align: center;">Generating QR...</div>
+                <div class="qr-carousel-stage">
+                  <button type="button" class="qr-nav-arrow qr-nav-prev hidden" id="btn-qr-prev" aria-label="Previous seat QR" title="Previous Seat">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                  </button>
+
+                  <div id="ticket-qr-container" class="qr-code-frame" style="display:flex;align-items:center;justify-content:center;min-width:120px;min-height:120px;">
+                    <img id="ticket-qr-img" class="hidden" alt="Ticket QR Code" style="width: 112px; height: 112px; border-radius: 4px; display: block; background: white; padding: 2px;" />
+                    <div id="ticket-qr-spinner" style="font-size: 11px; color: #94a3b8; text-align: center;">Generating QR...</div>
+                  </div>
+
+                  <button type="button" class="qr-nav-arrow qr-nav-next hidden" id="btn-qr-next" aria-label="Next seat QR" title="Next Seat">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </button>
                 </div>
-                <span>SCAN AT GATE</span>
+
+                <!-- Active Seat Number directly down the QR -->
+                <div class="qr-seat-indicator hidden" id="qr-seat-indicator">
+                  <div class="qr-seat-pill" id="qr-seat-pill">
+                    <span class="qr-seat-pill-label">SEAT</span>
+                    <strong class="qr-seat-pill-val" id="qr-active-seat-label">--</strong>
+                  </div>
+                  <span class="qr-seat-counter hidden" id="qr-active-seat-counter">1 of 1</span>
+                </div>
+
+                <!-- Interactive pagination dots for multi-seat bookings -->
+                <div class="qr-dots-container hidden" id="qr-dots-container" role="tablist" aria-label="Seat selector dots"></div>
+
+                <span class="qr-scan-instruction">SCAN AT GATE</span>
               </div>
             </div>
           </div>
@@ -577,7 +604,7 @@
     </div>
   </div>
 
-  <script src="booking.js?v=6.1.0"></script>
+  <script src="booking.js?v=6.2.0"></script>
   <script src="motion.js?v=2.0.0"></script>
   <script src="monkey-branch.js?v=1.0.0"></script>
 </body>

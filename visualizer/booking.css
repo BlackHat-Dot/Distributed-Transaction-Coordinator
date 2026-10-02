@@ -1166,7 +1166,7 @@ body {
 
 .eticket-body {
   display: grid;
-  grid-template-columns: 1fr 100px;
+  grid-template-columns: 1fr auto;
   gap: 16px;
   align-items: center;
 }
@@ -1220,7 +1220,176 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+}
+
+.qr-carousel-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  position: relative;
+}
+
+.qr-code-frame {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 120px;
+  height: 120px;
+  min-width: 120px;
+  min-height: 120px;
+  position: relative;
+  overflow: hidden;
+  touch-action: pan-y;
+}
+
+#ticket-qr-img {
+  width: 112px;
+  height: 112px;
+  border-radius: 4px;
+  display: block;
+  background: white;
+  transition: opacity 0.15s cubic-bezier(0.16, 1, 0.3, 1), transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.qr-spinner {
+  font-size: 11px;
+  color: #94a3b8;
+  text-align: center;
+  padding: 8px;
+}
+
+.qr-nav-arrow {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #f1f5f9;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+}
+
+.qr-nav-arrow:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.6);
+  color: #38bdf8;
+  transform: scale(1.1);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
+}
+
+.qr-nav-arrow:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.qr-nav-arrow:disabled {
+  opacity: 0.18;
+  cursor: not-allowed;
+  pointer-events: none;
+  border-color: rgba(255, 255, 255, 0.05);
+  box-shadow: none;
+}
+
+.qr-nav-arrow:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+.qr-seat-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-top: 3px;
+}
+
+.qr-seat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(41, 151, 255, 0.14);
+  border: 1px solid rgba(41, 151, 255, 0.35);
+  border-radius: 14px;
+  padding: 2px 10px;
+  box-shadow: 0 2px 6px rgba(41, 151, 255, 0.15);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.qr-seat-pill-label {
+  font-size: 8.5px;
+  font-weight: 700;
+  color: #38bdf8;
+  font-family: var(--font-mono);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.qr-seat-pill-val {
+  font-size: 13px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 0.3px;
+}
+
+.qr-seat-counter {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: #94a3b8;
+  font-family: var(--font-mono);
+  letter-spacing: 0.4px;
+}
+
+.qr-dots-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.qr-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.22);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.qr-dot:hover {
+  background: rgba(56, 189, 248, 0.6);
+  transform: scale(1.2);
+}
+
+.qr-dot.active {
+  width: 14px;
+  background: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+}
+
+.qr-scan-instruction {
+  font-size: 8px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  letter-spacing: 1px;
+  margin-top: 2px;
+  text-transform: uppercase;
 }
 
 .qr-mock {
@@ -1229,13 +1398,6 @@ body {
   background: repeating-linear-gradient(45deg, #fff, #fff 4px, #000 4px, #000 8px);
   border-radius: 4px;
   border: 2px solid #fff;
-}
-
-.qr-box span {
-  font-size: 8px;
-  font-weight: 700;
-  font-family: var(--font-mono);
-  color: var(--text-muted);
 }
 
 /* Compensation Card */
@@ -1700,6 +1862,21 @@ body {
     letter-spacing: 0.08em;
   }
 }
+
+@media (max-width: 520px) {
+  .eticket-body {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 16px;
+  }
+  .eticket-left {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+}
+
 
 
 

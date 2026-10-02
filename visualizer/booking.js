@@ -158,6 +158,12 @@ const DOM = {
   ticketTxId: document.getElementById("ticket-tx-id"),
   ticketQrImg: document.getElementById("ticket-qr-img"),
   ticketQrSpinner: document.getElementById("ticket-qr-spinner"),
+  btnQrPrev: document.getElementById("btn-qr-prev"),
+  btnQrNext: document.getElementById("btn-qr-next"),
+  qrSeatIndicator: document.getElementById("qr-seat-indicator"),
+  qrActiveSeatLabel: document.getElementById("qr-active-seat-label"),
+  qrActiveSeatCounter: document.getElementById("qr-active-seat-counter"),
+  qrDotsContainer: document.getElementById("qr-dots-container"),
   eticketError: document.getElementById("eticket-error"),
   btnDownloadPdf: document.getElementById("btn-download-pdf"),
   btnDownloadIcs: document.getElementById("btn-download-ics"),
@@ -2458,11 +2464,219 @@ function handleSagaTerminalState(status, txId, amount, eventsData) {
 
 const autoEmailedTxIds = new Set();
 
+const TICKET_CAROUSEL = {
+  tickets: [],
+  currentIndex: 0,
+};
+
+function ensureCarouselDOMElements() {
+  if (!DOM.btnQrPrev) DOM.btnQrPrev = document.getElementById("btn-qr-prev");
+  if (!DOM.btnQrNext) DOM.btnQrNext = document.getElementById("btn-qr-next");
+  if (!DOM.qrSeatIndicator) DOM.qrSeatIndicator = document.getElementById("qr-seat-indicator");
+  if (!DOM.qrActiveSeatLabel) DOM.qrActiveSeatLabel = document.getElementById("qr-active-seat-label");
+  if (!DOM.qrActiveSeatCounter) DOM.qrActiveSeatCounter = document.getElementById("qr-active-seat-counter");
+  if (!DOM.qrDotsContainer) DOM.qrDotsContainer = document.getElementById("qr-dots-container");
+}
+
+function formatSeatNumberDisplay(label) {
+  if (!label) return "--";
+  let s = String(label).trim();
+  if (/^seat\s*[:\-]?\s*/i.test(s)) {
+    s = s.replace(/^seat\s*[:\-]?\s*/i, "");
+  }
+  return s;
+}
+
+function updateTicketCarouselView(index, { animated = true } = {}) {
+  ensureCarouselDOMElements();
+  const tickets = TICKET_CAROUSEL.tickets;
+  if (!tickets || tickets.length === 0) return;
+
+  if (index < 0) index = 0;
+  if (index >= tickets.length) index = tickets.length - 1;
+  TICKET_CAROUSEL.currentIndex = index;
+
+  const current = tickets[index];
+
+  // Update QR image with smooth crossfade animation
+  if (DOM.ticketQrImg && current.qr_code_base64) {
+    if (animated && DOM.ticketQrImg.src !== current.qr_code_base64 && !DOM.ticketQrImg.classList.contains("hidden")) {
+      DOM.ticketQrImg.style.opacity = "0.2";
+      DOM.ticketQrImg.style.transform = "scale(0.96)";
+      setTimeout(() => {
+        DOM.ticketQrImg.src = current.qr_code_base64;
+        DOM.ticketQrImg.style.opacity = "1";
+        DOM.ticketQrImg.style.transform = "scale(1)";
+      }, 100);
+    } else {
+      DOM.ticketQrImg.src = current.qr_code_base64;
+      DOM.ticketQrImg.style.opacity = "1";
+      DOM.ticketQrImg.style.transform = "scale(1)";
+    }
+    DOM.ticketQrImg.classList.remove("hidden");
+    if (DOM.ticketQrSpinner) DOM.ticketQrSpinner.classList.add("hidden");
+  }
+
+  // Update active seat number directly down the QR
+  if (DOM.qrActiveSeatLabel) {
+    DOM.qrActiveSeatLabel.textContent = formatSeatNumberDisplay(current.seat_label);
+  }
+
+  // Update seat counter (e.g. 1 of 5)
+  if (DOM.qrActiveSeatCounter) {
+    DOM.qrActiveSeatCounter.textContent = `${index + 1} of ${tickets.length}`;
+  }
+
+  // Update arrow buttons state (disabled at bounds)
+  if (DOM.btnQrPrev) {
+    DOM.btnQrPrev.disabled = (index === 0);
+    DOM.btnQrPrev.setAttribute("aria-disabled", index === 0 ? "true" : "false");
+    DOM.btnQrPrev.title = index > 0 ? `Previous Seat (${formatSeatNumberDisplay(tickets[index - 1].seat_label)})` : "First seat";
+  }
+  if (DOM.btnQrNext) {
+    DOM.btnQrNext.disabled = (index === tickets.length - 1);
+    DOM.btnQrNext.setAttribute("aria-disabled", index === tickets.length - 1 ? "true" : "false");
+    DOM.btnQrNext.title = index < tickets.length - 1 ? `Next Seat (${formatSeatNumberDisplay(tickets[index + 1].seat_label)})` : "Last seat";
+  }
+
+  // Update pagination dots
+  if (DOM.qrDotsContainer) {
+    const dots = DOM.qrDotsContainer.querySelectorAll(".qr-dot");
+    dots.forEach((dot, dIdx) => {
+      if (dIdx === index) {
+        dot.classList.add("active");
+        dot.setAttribute("aria-selected", "true");
+      } else {
+        dot.classList.remove("active");
+        dot.setAttribute("aria-selected", "false");
+      }
+    });
+  }
+}
+
+function renderTicketCarouselDots() {
+  ensureCarouselDOMElements();
+  if (!DOM.qrDotsContainer) return;
+  DOM.qrDotsContainer.innerHTML = "";
+  const tickets = TICKET_CAROUSEL.tickets;
+  if (!tickets || tickets.length <= 1) {
+    DOM.qrDotsContainer.classList.add("hidden");
+    return;
+  }
+  DOM.qrDotsContainer.classList.remove("hidden");
+
+  tickets.forEach((ticket, idx) => {
+    const dot = document.createElement("button");
+    dot.type = "button";
+    dot.className = `qr-dot ${idx === TICKET_CAROUSEL.currentIndex ? "active" : ""}`;
+    const cleanSeat = formatSeatNumberDisplay(ticket.seat_label);
+    dot.setAttribute("aria-label", `Switch to Seat ${cleanSeat}`);
+    dot.setAttribute("aria-selected", idx === TICKET_CAROUSEL.currentIndex ? "true" : "false");
+    dot.title = `Seat ${cleanSeat}`;
+    dot.onclick = (e) => {
+      e.preventDefault();
+      updateTicketCarouselView(idx);
+    };
+    DOM.qrDotsContainer.appendChild(dot);
+  });
+}
+
+let carouselListenersInitialized = false;
+function initTicketCarouselListeners() {
+  ensureCarouselDOMElements();
+  if (carouselListenersInitialized) return;
+  carouselListenersInitialized = true;
+
+  if (DOM.btnQrPrev) {
+    DOM.btnQrPrev.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (TICKET_CAROUSEL.currentIndex > 0) {
+        updateTicketCarouselView(TICKET_CAROUSEL.currentIndex - 1);
+      }
+    });
+  }
+
+  if (DOM.btnQrNext) {
+    DOM.btnQrNext.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (TICKET_CAROUSEL.currentIndex < TICKET_CAROUSEL.tickets.length - 1) {
+        updateTicketCarouselView(TICKET_CAROUSEL.currentIndex + 1);
+      }
+    });
+  }
+
+  // Keyboard navigation when modal is open
+  document.addEventListener("keydown", (e) => {
+    if (!DOM.sagaModal || DOM.sagaModal.classList.contains("hidden")) return;
+    if (!DOM.eticketCard || DOM.eticketCard.classList.contains("hidden")) return;
+    if (!TICKET_CAROUSEL.tickets || TICKET_CAROUSEL.tickets.length <= 1) return;
+
+    if (e.key === "ArrowLeft") {
+      if (TICKET_CAROUSEL.currentIndex > 0) {
+        e.preventDefault();
+        updateTicketCarouselView(TICKET_CAROUSEL.currentIndex - 1);
+      }
+    } else if (e.key === "ArrowRight") {
+      if (TICKET_CAROUSEL.currentIndex < TICKET_CAROUSEL.tickets.length - 1) {
+        e.preventDefault();
+        updateTicketCarouselView(TICKET_CAROUSEL.currentIndex + 1);
+      }
+    }
+  });
+
+  // Touch swipe support on QR container
+  const container = document.getElementById("ticket-qr-container");
+  if (container) {
+    let touchStartX = 0;
+    let touchStartY = 0;
+
+    container.addEventListener("touchstart", (e) => {
+      if (!e.touches || e.touches.length === 0) return;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    container.addEventListener("touchend", (e) => {
+      if (!e.changedTouches || e.changedTouches.length === 0) return;
+      if (!TICKET_CAROUSEL.tickets || TICKET_CAROUSEL.tickets.length <= 1) return;
+
+      const diffX = e.changedTouches[0].clientX - touchStartX;
+      const diffY = e.changedTouches[0].clientY - touchStartY;
+
+      if (Math.abs(diffX) > 35 && Math.abs(diffX) > Math.abs(diffY)) {
+        if (diffX < 0 && TICKET_CAROUSEL.currentIndex < TICKET_CAROUSEL.tickets.length - 1) {
+          updateTicketCarouselView(TICKET_CAROUSEL.currentIndex + 1);
+        } else if (diffX > 0 && TICKET_CAROUSEL.currentIndex > 0) {
+          updateTicketCarouselView(TICKET_CAROUSEL.currentIndex - 1);
+        }
+      }
+    }, { passive: true });
+  }
+}
+
 async function loadAndRenderTicket(txId) {
+  ensureCarouselDOMElements();
   const token = localStorage.getItem("dtc_auth_token") || "";
   const coordUrl = (CONFIG.coordinatorUrl || defaultCoord).replace(/\/$/, "");
 
-  // Reset QR, spinners, and error blocks
+  // Reset carousel state, QR, spinners, and error blocks
+  TICKET_CAROUSEL.tickets = [];
+  TICKET_CAROUSEL.currentIndex = 0;
+
+  if (DOM.btnQrPrev) {
+    DOM.btnQrPrev.classList.add("hidden");
+    DOM.btnQrPrev.disabled = true;
+  }
+  if (DOM.btnQrNext) {
+    DOM.btnQrNext.classList.add("hidden");
+    DOM.btnQrNext.disabled = true;
+  }
+  if (DOM.qrActiveSeatCounter) DOM.qrActiveSeatCounter.classList.add("hidden");
+  if (DOM.qrDotsContainer) {
+    DOM.qrDotsContainer.classList.add("hidden");
+    DOM.qrDotsContainer.innerHTML = "";
+  }
+  if (DOM.qrSeatIndicator) DOM.qrSeatIndicator.classList.add("hidden");
   if (DOM.ticketQrImg) DOM.ticketQrImg.classList.add("hidden");
   if (DOM.ticketQrSpinner) {
     DOM.ticketQrSpinner.classList.remove("hidden");
@@ -2525,19 +2739,36 @@ async function loadAndRenderTicket(txId) {
       }
     }
 
-    // Display seat numbers and real QR code
+    // Display seat numbers and real QR code (with multi-seat carousel support)
     if (data.tickets && data.tickets.length > 0) {
+      TICKET_CAROUSEL.tickets = data.tickets;
+      TICKET_CAROUSEL.currentIndex = 0;
+
       const labels = data.tickets.map(t => t.seat_label).join(", ");
       if (DOM.ticketSeatNumber) {
         DOM.ticketSeatNumber.textContent = `Seat: ${labels}`;
       }
 
-      const firstQr = data.tickets[0].qr_code_base64;
-      if (firstQr && DOM.ticketQrImg) {
-        DOM.ticketQrImg.src = firstQr;
-        DOM.ticketQrImg.classList.remove("hidden");
-        if (DOM.ticketQrSpinner) DOM.ticketQrSpinner.classList.add("hidden");
+      initTicketCarouselListeners();
+
+      if (data.tickets.length > 1) {
+        // Multi-seat mode: reveal navigation arrows, counter, and dots
+        if (DOM.btnQrPrev) DOM.btnQrPrev.classList.remove("hidden");
+        if (DOM.btnQrNext) DOM.btnQrNext.classList.remove("hidden");
+        if (DOM.qrActiveSeatCounter) DOM.qrActiveSeatCounter.classList.remove("hidden");
+        renderTicketCarouselDots();
+      } else {
+        // Single-seat mode: hide navigation arrows and pagination
+        if (DOM.btnQrPrev) DOM.btnQrPrev.classList.add("hidden");
+        if (DOM.btnQrNext) DOM.btnQrNext.classList.add("hidden");
+        if (DOM.qrActiveSeatCounter) DOM.qrActiveSeatCounter.classList.add("hidden");
+        if (DOM.qrDotsContainer) DOM.qrDotsContainer.classList.add("hidden");
       }
+
+      // Display active seat number down the QR for all bookings
+      if (DOM.qrSeatIndicator) DOM.qrSeatIndicator.classList.remove("hidden");
+
+      updateTicketCarouselView(0, { animated: false });
     }
   } catch (err) {
     console.error("Error fetching ticket data:", err);
