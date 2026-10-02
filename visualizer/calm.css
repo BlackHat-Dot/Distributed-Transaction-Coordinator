@@ -1,109 +1,171 @@
 /* ==========================================================================
-   CALM LAYER — loaded LAST on every page. Lowers cognitive load and makes
-   the layout fluid from 320px phones to ultrawide monitors.
-   Remove the <link> to undo everything; no other file is changed.
+   CALM + RESPONSIVE LAYER  (index.html and booking.html) — load LAST.
+   Fluid from 320px phones to ultrawide monitors; quieter visuals.
    ========================================================================== */
-:root {
-  --calm-space: clamp(12px, 2vw, 24px);
-  --calm-max: 1600px;
-  --calm-tap: 44px;
-  --border-subtle: rgba(255,255,255,.10);
-  --shadow-glow-green: none; --shadow-glow-indigo: none; --shadow-glow-red: none;
+:root{
+  --calm-gap:clamp(12px,2vw,24px);
+  --calm-max:1600px;
+  --calm-tap:44px;
 }
-[data-theme="light"] { --border-subtle: #e3e3e8; }
+html{-webkit-text-size-adjust:100%;}
+body{overflow-x:hidden;line-height:1.55;}
+img,svg,canvas,video{max-width:100%;}
+p{max-width:75ch;}
+:focus-visible{outline:2px solid var(--border-focus,#2997ff);outline-offset:2px;}
 
-/* ---- 1. Readable, quieter type ---- */
-html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
-html, body { font-size: clamp(14px, 0.9vw + 11px, 16px); line-height: 1.55; }
-p, .rec-sub, .timeline-empty p { max-width: 70ch; }
-.brand-sub, .stat-label, .rec-card-label, .fmeta-label, .scenario-label,
-.panel-title-area h3, .recovery-header h4, .section-title, .legend-type-label,
-th, .badge, .proof-badge {
-  text-transform: none !important; letter-spacing: 0 !important;
+/* ---------- Quiet visuals (less to process) ---------- */
+.pulse-dot,.pulse-dot-purple,.timer-pulse,.status-indicator,.proof-badge{animation:none!important;}
+.status-indicator{box-shadow:none!important;}
+.screen-curve{filter:none!important;}
+.screen-glow,.pm-flip{display:none;animation:none!important;}
+.pm-flip{display:revert;}
+.btn-primary,.btn-primary:hover{box-shadow:none!important;}
+.hold-timer-card,.hold-timer-card.pm-urgent,.checkout-card,.panel,.proof-panel,
+.recovery-panel,.stat-card,.rec-card,.venue-container{box-shadow:none!important;}
+.hold-timer-card.pm-urgent{border-color:var(--accent-amber,#ff9f0a);}
+.checkout-card{background:var(--bg-secondary,var(--bg-surface))!important;}
+.stat-label,.event-badge,.screen-label,.tier-name,.brand-badge,.saga-badge,
+.rec-card-label,.fmeta-label,.scenario-label,.panel-title-area h3,
+.recovery-header h4,.legend-type-label,.eticket-seat-label,.qr-scan-instruction{
+  text-transform:none!important;letter-spacing:0!important;}
+.stat-label,.event-badge,.tier-name,.screen-label{font-size:.78rem!important;}
+#btn-live-booking>div{display:none!important;}           /* "Book your seats here" arrow */
+.seat-tile[data-status="AVAILABLE"]:hover{transform:none!important;box-shadow:none!important;}
+
+/* =====================  BOOKING PAGE  ===================== */
+.app-header{height:auto!important;min-height:64px;flex-wrap:wrap;gap:10px 16px;
+  padding:10px var(--calm-gap)!important;}
+.header-brand{min-width:0;}
+.header-brand h1{flex-wrap:wrap;}
+.header-nav{flex-wrap:wrap;}
+.header-actions{flex-wrap:wrap;gap:8px 12px;margin-left:auto;}
+.booking-layout{width:100%;max-width:var(--calm-max)!important;
+  grid-template-columns:minmax(0,1fr) minmax(300px,380px)!important;
+  gap:var(--calm-gap)!important;padding:var(--calm-gap)!important;
+  padding-bottom:calc(var(--calm-gap) + 72px)!important;}  /* room for the pay bar */
+.venue-container{min-width:0;padding:clamp(12px,2.2vw,28px)!important;}
+.checkout-sidebar{min-width:0;position:sticky;top:84px;align-self:start;}
+.event-hero{flex-wrap:wrap;gap:14px;}
+.event-info{min-width:0;flex:1 1 280px;}
+.event-hero h2{font-size:clamp(1.15rem,2.4vw,1.5rem)!important;overflow-wrap:anywhere;}
+.event-meta{flex-wrap:wrap;row-gap:4px;}
+.event-stats{flex-wrap:wrap;}
+.screen-wrapper{margin:clamp(20px,4vw,36px) 0 clamp(16px,3vw,28px)!important;}
+
+/* Seat map: keep the real structure (tier > row > 10 seats), just fluid */
+.seat-matrix-wrapper{min-height:0!important;align-items:stretch!important;
+  overflow-x:auto;-webkit-overflow-scrolling:touch;padding:12px 2px!important;}
+.seat-matrix{width:100%;max-width:760px!important;margin-inline:auto;min-width:330px;
+  gap:clamp(14px,2.5vw,22px)!important;}
+.seat-row{gap:clamp(4px,1vw,8px)!important;}
+.row-label{width:clamp(18px,3vw,26px)!important;flex:none;}
+.seats-list{gap:clamp(3px,.8vw,8px)!important;min-width:0;}
+.seat-tile{min-width:0;min-height:30px;}
+.seat-tile .seat-num{font-size:clamp(10px,1.4vw,12px)!important;}
+.seat-legend{flex-wrap:wrap;justify-content:center;gap:8px 18px!important;}
+.quantity-selector-bar{flex-wrap:wrap!important;gap:8px 14px!important;
+  padding:12px 16px!important;margin:16px 0!important;text-align:center;}
+.quantity-selector-bar select{min-height:40px;}
+
+/* Modals: scroll inside, never overflow the viewport */
+.modal-overlay,.race-modal-overlay{padding:12px;overflow-y:auto;}
+.modal-card{max-height:calc(100dvh - 24px);overflow-y:auto!important;}
+.race-modal{max-height:calc(100dvh - 24px);overflow-y:auto;}
+.eticket-body{grid-template-columns:minmax(0,1fr) auto;}
+.eticket-left{min-width:0;overflow-wrap:anywhere;}
+.eticket-actions{flex-wrap:wrap;}
+.stub-code,#summary-tx-id,#ticket-tx-id{overflow-wrap:anywhere;word-break:break-all;}
+.saga-stepper .step-item{flex-wrap:wrap;}
+.toast-container{max-width:calc(100vw - 24px);}
+.toast{max-width:min(380px,calc(100vw - 24px))!important;}
+.bottom-pay-bar{padding:12px var(--calm-gap)!important;
+  padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))!important;gap:12px;}
+.btn-bottom-pay{min-height:var(--calm-tap);}
+
+/* =====================  DASHBOARD (index.html)  ===================== */
+.top-nav{padding:10px var(--calm-gap)!important;}
+.dashboard-body{width:100%;max-width:var(--calm-max);margin-inline:auto;
+  padding:var(--calm-gap)!important;display:flex;flex-direction:column;gap:var(--calm-gap);}
+.proof-header{flex-wrap:wrap;gap:var(--calm-gap);}
+.proof-stats,.recovery-grid,.scenario-buttons{display:grid!important;gap:12px;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));}
+.workspace-grid{display:grid!important;gap:var(--calm-gap);
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr))!important;}
+.workspace-grid>*,.panel{min-width:0;}
+.panel-header,.section-header{flex-wrap:wrap;gap:8px 12px;}
+.tx-table-container{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;}
+.tx-table{min-width:560px;}
+.tx-pagination-bar{flex-wrap:wrap;gap:8px;}
+.topology-canvas-container{height:clamp(300px,55vh,640px)!important;
+  touch-action:none;overscroll-behavior:contain;}
+.forensic-meta-card{flex-wrap:wrap;}
+.monkey-branch-strip{min-width:0!important;width:100%;max-width:890px;flex:1 1 360px;}
+.nav-controls,.nav-controls-left,.nav-controls-right{flex-wrap:wrap;gap:8px;}
+.modal-dialog{max-width:min(960px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow-y:auto;}
+.arch-grid,.stack-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))!important;}
+.scenario-payload-code,pre{overflow-x:auto;max-width:100%;}
+
+/* Shared auth modal (inline-styled): keep it inside the screen */
+#modal-auth{padding:12px;overflow-y:auto;}
+#modal-auth .auth-card{max-height:calc(100dvh - 24px);overflow-y:auto;}
+
+/* Monkey companion cards */
+.mb-optin-card{max-width:calc(100vw - 24px);}
+.mb-celebration-card{max-width:calc(100vw - 24px);}
+
+/* ---------- Touch devices ---------- */
+@media (pointer:coarse){
+  .btn,.nav-btn,.filter-tab,.canvas-ctrl-btn,.btn-text-link,.toggle-slider{min-height:var(--calm-tap);}
+  input,select,textarea{font-size:16px!important;min-height:var(--calm-tap);}  /* no iOS zoom */
+  .seat-tile{min-height:34px;}
 }
-.recovery-header h4, .panel-title-area h3 { font-size: 1rem; font-weight: 600; }
-.stat-label, .brand-sub, .rec-sub, .fmeta-label { font-size: .8rem; opacity: .85; }
 
-/* ---- 2. Remove decoration that competes for attention ---- */
-*, *::before, *::after { text-shadow: none !important; }
-.stat-card, .panel, .rec-card, .proof-panel, .recovery-panel, .checkout-card,
-.btn-scenario, .health-node { box-shadow: none !important; }
-.pulse-dot, .pulse-dot-purple, .timer-pulse, .proof-badge,
-.pm-urgent, .pm-urgent * { animation: none !important; }
-#btn-live-booking > div { display: none !important; }   /* "Book your seats here" arrow callout */
-.logo-mark { filter: none; }
-.proof-panel::before, .proof-panel::after,
-.checkout-card::before, .checkout-card::after { display: none !important; }
-.pm-urgent { outline: 1px solid var(--accent-amber); outline-offset: -1px; }  /* gentle, not alarming */
-
-/* ---- 3. Whitespace and a readable content width ---- */
-.dashboard-body, main, .booking-layout {
-  width: 100%; max-width: var(--calm-max); margin-inline: auto;
-  padding-inline: var(--calm-space);
-}
-.dashboard-body { display: flex; flex-direction: column; gap: var(--calm-space); padding-block: var(--calm-space); }
-.panel, .proof-panel, .recovery-panel, .checkout-card { padding: clamp(14px, 2vw, 28px); }
-.top-nav { padding: 10px var(--calm-space); }
-
-/* ---- 4. Fluid grids (replace fixed 380px / 10-column layouts) ---- */
-.booking-layout { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: var(--calm-space); }
-.seat-matrix { grid-template-columns: repeat(auto-fill, minmax(clamp(40px, 6vw, 64px), 1fr)) !important; gap: clamp(6px, 1vw, 10px); }
-.seat-tile { min-height: var(--calm-tap); }
-.proof-stats, .recovery-grid, .scenario-buttons {
-  display: grid; gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
-}
-.workspace-grid { display: grid; gap: var(--calm-space); grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); }
-.workspace-grid > * { min-width: 0; }
-
-/* ---- 5. Tables and canvases never force sideways page scroll ---- */
-.tx-table-container, .wide-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
-.tx-table { min-width: 560px; }
-.topology-canvas-container { height: clamp(300px, 52vh, 620px); touch-action: none; }
-.tx-pagination-bar { flex-wrap: wrap; gap: 8px; }
-img, svg, canvas, video { max-width: 100%; }
-
-/* ---- 6. Header: health strip was fixed at 800px wide ---- */
-.monkey-branch-strip { min-width: 0 !important; width: 100%; max-width: 890px; flex: 1 1 360px; }
-.nav-controls, .nav-controls-left, .nav-controls-right { flex-wrap: wrap; gap: 8px; }
-
-/* ---- 7. Touch-friendly controls, clear keyboard focus ---- */
-.btn, button, .filter-tab, .canvas-ctrl-btn { min-height: 36px; }
-@media (pointer: coarse) {
-  .btn, button, .filter-tab, select, input, .canvas-ctrl-btn { min-height: var(--calm-tap); }
-  input, select, textarea { font-size: 16px; }              /* stops iOS zoom-on-focus */
-}
-:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
-
-/* ---- 8. Tablet ---- */
-@media (max-width: 1024px) {
-  .booking-layout { grid-template-columns: minmax(0, 1fr); }
-  .checkout-card { position: static !important; }
+/* ---------- Tablet / small laptop ---------- */
+@media (max-width:1024px){
+  .booking-layout{grid-template-columns:minmax(0,1fr)!important;}
+  .checkout-sidebar{position:static;}
 }
 
-/* ---- 9. Phone ---- */
-@media (max-width: 720px) {
-  .top-nav { position: static; }                            /* reclaim screen space */
-  .monkey-branch-strip { display: none !important; }        /* decorative on small screens */
-  .nav-controls { width: 100%; justify-content: space-between; }
-  .nav-controls-left .btn-outline, .nav-control-divider { display: none; } /* secondary links: Architecture / Stack */
-  .scenario-buttons, .proof-stats, .recovery-grid { grid-template-columns: 1fr 1fr; }
-  .btn-scenario small, .canvas-mode-pill, .topology-legend { display: none; }
-  .modal-dialog { width: 100%; max-width: 100%; max-height: 92vh; margin: 0; border-radius: 16px 16px 0 0; overflow-y: auto; }
-  .modal-backdrop { align-items: flex-end !important; }
-  .toast-container { left: 12px; right: 12px; width: auto; }
+/* ---------- Phone ---------- */
+@media (max-width:720px){
+  html,body{font-size:15px;}
+  .app-header,.top-nav{position:static!important;}
+  .header-nav{width:100%;}
+  .header-nav .nav-btn{flex:1;justify-content:center;}
+  .header-actions{width:100%;justify-content:space-between;margin-left:0;}
+  .header-tag{display:none;}
+  .event-stats{width:100%;}
+  .stat-pill{flex:1;min-width:0!important;}
+  .event-meta .meta-sep{display:none;}
+  .monkey-branch-strip{display:none!important;}
+  .nav-controls{width:100%;justify-content:space-between;}
+  .nav-control-divider,.nav-controls-left .btn-outline{display:none;}
+  .tx-table{min-width:520px;}
+  .canvas-mode-pill,.topology-legend{display:none;}
+  .modal-backdrop{align-items:flex-end!important;}
+  .modal-dialog{width:100%;max-width:100%;border-radius:16px 16px 0 0;}
+  .eticket-body{grid-template-columns:1fr;justify-items:center;}
+  .toast-container{left:12px!important;right:12px!important;}
 }
-@media (max-width: 420px) {
-  .scenario-buttons, .proof-stats, .recovery-grid { grid-template-columns: 1fr; }
+@media (max-width:420px){
+  .proof-stats,.recovery-grid,.scenario-buttons{grid-template-columns:1fr;}
+  .eticket-actions .btn{min-width:100%!important;}
 }
 
-/* ---- 10. Large / ultrawide screens ---- */
-@media (min-width: 1800px) { html, body { font-size: 17px; } }
+/* ---------- Large screens ---------- */
+@media (min-width:1800px){html,body{font-size:17px;}}
 
-/* ---- 11. Respect user motion preference everywhere ---- */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+/* ---------- Short landscape phones ---------- */
+@media (max-height:480px) and (orientation:landscape){
+  .app-header,.top-nav{position:static!important;}
+  .topology-canvas-container{height:70vh!important;}
 }
-@supports (padding: env(safe-area-inset-top)) {
-  body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); padding-bottom: env(safe-area-inset-bottom); }
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;
+    transition-duration:.01ms!important;scroll-behavior:auto!important;}
+}
+@supports (padding:env(safe-area-inset-left)){
+  body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);}
 }
