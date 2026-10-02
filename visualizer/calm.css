@@ -1,0 +1,109 @@
+/* ==========================================================================
+   CALM LAYER — loaded LAST on every page. Lowers cognitive load and makes
+   the layout fluid from 320px phones to ultrawide monitors.
+   Remove the <link> to undo everything; no other file is changed.
+   ========================================================================== */
+:root {
+  --calm-space: clamp(12px, 2vw, 24px);
+  --calm-max: 1600px;
+  --calm-tap: 44px;
+  --border-subtle: rgba(255,255,255,.10);
+  --shadow-glow-green: none; --shadow-glow-indigo: none; --shadow-glow-red: none;
+}
+[data-theme="light"] { --border-subtle: #e3e3e8; }
+
+/* ---- 1. Readable, quieter type ---- */
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+html, body { font-size: clamp(14px, 0.9vw + 11px, 16px); line-height: 1.55; }
+p, .rec-sub, .timeline-empty p { max-width: 70ch; }
+.brand-sub, .stat-label, .rec-card-label, .fmeta-label, .scenario-label,
+.panel-title-area h3, .recovery-header h4, .section-title, .legend-type-label,
+th, .badge, .proof-badge {
+  text-transform: none !important; letter-spacing: 0 !important;
+}
+.recovery-header h4, .panel-title-area h3 { font-size: 1rem; font-weight: 600; }
+.stat-label, .brand-sub, .rec-sub, .fmeta-label { font-size: .8rem; opacity: .85; }
+
+/* ---- 2. Remove decoration that competes for attention ---- */
+*, *::before, *::after { text-shadow: none !important; }
+.stat-card, .panel, .rec-card, .proof-panel, .recovery-panel, .checkout-card,
+.btn-scenario, .health-node { box-shadow: none !important; }
+.pulse-dot, .pulse-dot-purple, .timer-pulse, .proof-badge,
+.pm-urgent, .pm-urgent * { animation: none !important; }
+#btn-live-booking > div { display: none !important; }   /* "Book your seats here" arrow callout */
+.logo-mark { filter: none; }
+.proof-panel::before, .proof-panel::after,
+.checkout-card::before, .checkout-card::after { display: none !important; }
+.pm-urgent { outline: 1px solid var(--accent-amber); outline-offset: -1px; }  /* gentle, not alarming */
+
+/* ---- 3. Whitespace and a readable content width ---- */
+.dashboard-body, main, .booking-layout {
+  width: 100%; max-width: var(--calm-max); margin-inline: auto;
+  padding-inline: var(--calm-space);
+}
+.dashboard-body { display: flex; flex-direction: column; gap: var(--calm-space); padding-block: var(--calm-space); }
+.panel, .proof-panel, .recovery-panel, .checkout-card { padding: clamp(14px, 2vw, 28px); }
+.top-nav { padding: 10px var(--calm-space); }
+
+/* ---- 4. Fluid grids (replace fixed 380px / 10-column layouts) ---- */
+.booking-layout { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: var(--calm-space); }
+.seat-matrix { grid-template-columns: repeat(auto-fill, minmax(clamp(40px, 6vw, 64px), 1fr)) !important; gap: clamp(6px, 1vw, 10px); }
+.seat-tile { min-height: var(--calm-tap); }
+.proof-stats, .recovery-grid, .scenario-buttons {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+}
+.workspace-grid { display: grid; gap: var(--calm-space); grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); }
+.workspace-grid > * { min-width: 0; }
+
+/* ---- 5. Tables and canvases never force sideways page scroll ---- */
+.tx-table-container, .wide-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+.tx-table { min-width: 560px; }
+.topology-canvas-container { height: clamp(300px, 52vh, 620px); touch-action: none; }
+.tx-pagination-bar { flex-wrap: wrap; gap: 8px; }
+img, svg, canvas, video { max-width: 100%; }
+
+/* ---- 6. Header: health strip was fixed at 800px wide ---- */
+.monkey-branch-strip { min-width: 0 !important; width: 100%; max-width: 890px; flex: 1 1 360px; }
+.nav-controls, .nav-controls-left, .nav-controls-right { flex-wrap: wrap; gap: 8px; }
+
+/* ---- 7. Touch-friendly controls, clear keyboard focus ---- */
+.btn, button, .filter-tab, .canvas-ctrl-btn { min-height: 36px; }
+@media (pointer: coarse) {
+  .btn, button, .filter-tab, select, input, .canvas-ctrl-btn { min-height: var(--calm-tap); }
+  input, select, textarea { font-size: 16px; }              /* stops iOS zoom-on-focus */
+}
+:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+
+/* ---- 8. Tablet ---- */
+@media (max-width: 1024px) {
+  .booking-layout { grid-template-columns: minmax(0, 1fr); }
+  .checkout-card { position: static !important; }
+}
+
+/* ---- 9. Phone ---- */
+@media (max-width: 720px) {
+  .top-nav { position: static; }                            /* reclaim screen space */
+  .monkey-branch-strip { display: none !important; }        /* decorative on small screens */
+  .nav-controls { width: 100%; justify-content: space-between; }
+  .nav-controls-left .btn-outline, .nav-control-divider { display: none; } /* secondary links: Architecture / Stack */
+  .scenario-buttons, .proof-stats, .recovery-grid { grid-template-columns: 1fr 1fr; }
+  .btn-scenario small, .canvas-mode-pill, .topology-legend { display: none; }
+  .modal-dialog { width: 100%; max-width: 100%; max-height: 92vh; margin: 0; border-radius: 16px 16px 0 0; overflow-y: auto; }
+  .modal-backdrop { align-items: flex-end !important; }
+  .toast-container { left: 12px; right: 12px; width: auto; }
+}
+@media (max-width: 420px) {
+  .scenario-buttons, .proof-stats, .recovery-grid { grid-template-columns: 1fr; }
+}
+
+/* ---- 10. Large / ultrawide screens ---- */
+@media (min-width: 1800px) { html, body { font-size: 17px; } }
+
+/* ---- 11. Respect user motion preference everywhere ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+@supports (padding: env(safe-area-inset-top)) {
+  body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); padding-bottom: env(safe-area-inset-bottom); }
+}
