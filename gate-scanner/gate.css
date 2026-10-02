@@ -282,3 +282,11 @@ body.gate-body {
 @media (prefers-reduced-motion: reduce) {
   .result-overlay.active, .result-overlay.active .result-countdown span { animation: none; }
 }
+
+/* Checking: shown the instant a ticket is read, replaced by the real result */
+.result-checking { background-color: var(--invalid); cursor: progress; }
+.result-checking .result-status-title::after { content: "Please wait. Do not let anyone through yet."; }
+.result-checking .result-card::before { background: none; border: 7px solid rgba(255, 255, 255, .28); border-top-color: #fff; animation: spin .8s linear infinite; }
+.result-checking .result-detail-box, .result-checking .result-footer { display: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .result-checking .result-card::before { animation: none; } }

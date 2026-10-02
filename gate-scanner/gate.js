@@ -44,6 +44,18 @@
   let lastScannedCode = null;
   let lastScannedTime = 0;
   let resetTimer = null;
+
+  // Scan pipeline guarantees: one scan at a time, one result on screen at a time,
+  // and every accepted scan ends in a visible result (nothing is dropped silently).
+  const RESULT_AUTO_DISMISS_MS = 30000; // how long a final result stays if nobody taps
+  const MIN_VISIBLE_MS = 700;           // a result can't be tapped away before it can be read
+  const SAME_TICKET_COOLDOWN_MS = 3000; // same QR still in frame right after dismissing
+  let scanLocked = false;               // true from "scan accepted" until its result is dismissed
+  let currentRaw = null;
+  let cooldownRaw = null;
+  let cooldownUntil = 0;
+  let resultShownAt = 0;
+  let hintTimer = null;
   let html5QrScanner = null;
   let dummyFileScanner = null;
 
@@ -96,6 +108,16 @@
     }
   }
 
+  // Non-blocking message under the camera (used instead of silently ignoring a scan)
+  const hintEl = document.querySelector(".scan-hint");
+  const hintDefault = hintEl ? hintEl.textContent : "";
+  function flashHint(msg) {
+    if (!hintEl) return;
+    hintEl.textContent = msg;
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => { hintEl.textContent = hintDefault; }, 2500);
+  }
+
   // --- 5. Result Display & Auto-Reset ---
   function showResult(type, details = {}) {
     resetCameraZoom();
@@ -112,7 +134,7 @@
     DOM.resultMessage.textContent = "";
 
     // Vibrate device if supported
-    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+    if (type !== "CHECKING" && typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
       try {
         if (type === "ADMIT") {
           navigator.vibrate([100, 50, 100]);
@@ -123,6 +145,13 @@
     }
 
     switch (type) {
+      case "CHECKING":
+        DOM.resultOverlay.classList.add("result-checking");
+        DOM.resultStatus.textContent = "CHECKING…";
+        DOM.resultSeatRow.classList.add("hidden");
+        DOM.resultEventRow.classList.add("hidden");
+        break;
+
       case "ADMIT":
         DOM.resultOverlay.classList.add("result-admit");
         DOM.resultStatus.textContent = "ADMIT";
@@ -176,18 +205,28 @@
         break;
     }
 
-    // Auto-reset after 30 seconds
-    resetTimer = setTimeout(() => {
-      dismissResult();
-    }, 30000);
+    // A final result is never replaced by another scan; it leaves on tap or timer
+    if (type !== "CHECKING") {
+      resultShownAt = Date.now();
+      resetTimer = setTimeout(() => {
+        dismissResult();
+      }, RESULT_AUTO_DISMISS_MS);
+    }
   }
 
   function dismissResult() {
+    // Never hide a pending check, and ignore a stray tap before the result can be read
+    if (DOM.resultOverlay.classList.contains("result-checking")) return;
+    if (Date.now() - resultShownAt < MIN_VISIBLE_MS) return;
     if (resetTimer) {
       clearTimeout(resetTimer);
       resetTimer = null;
     }
     DOM.resultOverlay.className = "result-overlay hidden";
+    // The same QR is likely still in frame: don't redeem it again by accident
+    cooldownRaw = currentRaw;
+    cooldownUntil = Date.now() + SAME_TICKET_COOLDOWN_MS;
+    scanLocked = false;
 
     // If key was rejected or cleared, return to key entry view
     if (!gateKey) {
@@ -195,10 +234,23 @@
     }
   }
 
-  DOM.resultOverlay.addEventListener("click", dismissResult);
+  DOM.resultOverlay.addEventListener("click", () => dismissResult());
 
   // --- 6. Core Scan Handler (Shared by Camera, Photo Upload, and Manual Entry) ---
   async function handleScan(rawText) {
+    const raw = typeof rawText === "string" ? rawText.trim() : "";
+    // Safety net: the lock can never outlive its overlay
+    if (scanLocked && DOM.resultOverlay.classList.contains("hidden")) scanLocked = false;
+    // A result is on screen: never replace it with another scan
+    if (scanLocked) return;
+    // Same QR still in frame right after its result was dismissed: tell the staff, don't stay silent
+    if (raw && raw === cooldownRaw && Date.now() < cooldownUntil) {
+      flashHint("That ticket was just checked. Show the next one.");
+      return;
+    }
+    scanLocked = true;
+    currentRaw = raw;
+
     if (!rawText || typeof rawText !== "string") {
       showResult("NOT_VALID", { message: "Empty scan content" });
       return;
@@ -227,19 +279,8 @@
       return;
     }
 
-    // Concurrency Lock: ignore if already in-flight
-    if (inFlight) {
-      return;
-    }
-
-    // Debounce: ignore same code scanned within 3 seconds
-    const now = Date.now();
-    if (ticketCode === lastScannedCode && (now - lastScannedTime) < 3000) {
-      return;
-    }
-    lastScannedCode = ticketCode;
-    lastScannedTime = now;
-
+    // Instant feedback: the staff sees "checking" the moment a valid ticket is read
+    showResult("CHECKING");
     inFlight = true;
 
     const controller = new AbortController();
@@ -372,6 +413,7 @@
   }
 
   function lockScanner() {
+    scanLocked = false;
     stopAutoZoomEngine();
     gateKey = "";
     DOM.gateKeyInput.value = "";
