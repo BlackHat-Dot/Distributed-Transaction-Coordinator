@@ -12,18 +12,19 @@
   /* ===== EDIT THESE: one step per dashboard section (selector is looked up inside <main>) ===== */
   var STEPS = [
     { sel: ".proof-panel", title: "1 · Live proof panel",
-      text: "EXAMPLE — Fire real scenarios from here: happy path, payment decline with compensation, a 5x race attack and a crash simulation." },
+      text: "Fire real scenarios from here: happy path, payment decline with compensation, a 5x race attack and a crash simulation." },
     { sel: ".topology-section", title: "2 · Service topology",
-      text: "EXAMPLE — Client, Coordinator, Inventory and Payment, each with its own database, plus Redis for the broker and the mutex." },
+      text: "Client, Coordinator, Inventory and Payment, each with its own database, plus Redis for the broker and the mutex." },
     { sel: ".recovery-panel", title: "3 · Crash recovery",
-      text: "EXAMPLE — Celery Beat sweeps for orphaned sagas and rolls them forward or compensates them." },
+      text: "Celery Beat sweeps for orphaned sagas and rolls them forward or compensates them." },
     { sel: ".tx-feed-panel", title: "4 · Transaction matrix",
-      text: "EXAMPLE — Every saga with its phase waterfall, status and amount. Click a row to open its audit trail." },
+      text: "Every saga with its phase waterfall, status and amount. Click a row to open its audit trail." },
     { sel: ".forensic-panel", title: "5 · Forensic audit stream",
-      text: "EXAMPLE — An append-only event log: every transition is recorded with its actor and payload." }
+      text: "An append-only event log: every transition is recorded with its actor and payload." }
   ];
   /* Timeline in "units" of scroll (1 unit = UNIT x viewport height). Everything below is a pure function of scroll. */
-  var UNIT = .45, INTRO = 6.2, PER = .6, N = STEPS.length, TOTAL = INTRO + PER * N;
+  var UNIT = .45, INTRO = 6.2, PER = .6, N = STEPS.length;
+  var OUTRO_START = INTRO + PER * N, OUTRO_DUR = 2.4, TOTAL = OUTRO_START + OUTRO_DUR;
 
   /* Side-profile teacher facing right. viewBox 270x400, shoulder (104,140), hip (102,240). */
   var TEACHER = '<svg viewBox="0 0 270 400" aria-hidden="true"><defs>' +
@@ -95,11 +96,35 @@
       screen: q(".st-screen"), sheet: q(".st-sheet"), ring: q(".st-ring"), rod: q(".st-rod"), pull: q(".st-pull"), frame: q(".st-frame"),
       cover: q(".st-cover"), holder: q(".st-holder"), shadow: q(".st-shadow"), leaf: q(".st-leaf"), paperIn: q(".st-paper-in"), roller: q(".st-roller"),
       card: q(".st-card"), title: q("h4"), text: q("p"), dots: [].slice.call(host.querySelectorAll(".st-dots i")),
-      back: q(".st-back"), next: q(".st-next"), fresh: false };
+      skip: q(".st-skip"), back: q(".st-back"), next: q(".st-next"), fresh: false };
     S.paperIn.appendChild(mkClone()); S.sheet.appendChild(mkClone());
-    S.next.onclick = function () { goto(idx >= N - 1 ? TOTAL + 1.2 : INTRO + PER * (Math.max(idx, -1) + 1) + .05); };
-    S.back.onclick = function () { goto(INTRO + PER * (idx - 1) + .05); };
-    q(".st-skip").onclick = function () { goto(TOTAL + 1.2); };
+    S.dots.forEach(function (dot, dotIdx) {
+      dot.title = "Jump to step " + (dotIdx + 1);
+      dot.onclick = function () { goto(INTRO + PER * dotIdx + .05); };
+    });
+    S.next.onclick = function () {
+      if (idx < N - 1) {
+        goto(INTRO + PER * (Math.max(idx, -1) + 1) + .05);
+      } else if (idx === N - 1) {
+        goto(OUTRO_START + .05);
+      } else {
+        window.location.href = "booking.html";
+      }
+    };
+    S.back.onclick = function () {
+      if (idx === N) {
+        goto(INTRO + PER * (N - 1) + .05);
+      } else {
+        goto(INTRO + PER * (idx - 1) + .05);
+      }
+    };
+    S.skip.onclick = function () {
+      if (idx === N) {
+        goto(0);
+      } else {
+        goto(OUTRO_START + .05);
+      }
+    };
     return true;
   }
 
@@ -119,34 +144,93 @@
     var mr = document.querySelector("main").getBoundingClientRect();
     S.paperIn.style.left = mr.left + "px"; S.paperIn.style.width = mr.width + "px";
     S.paperIn.style.top = Math.min(0, vh - S.paperIn.offsetHeight) + "px";
-    /* board takes the shape of the full dashboard so nothing is cropped */
-    var h = S.sheet.offsetHeight || 900;
-    S.pin.style.setProperty("--st-ar", clamp(1440 / h, .45, 1.7).toFixed(3));
+    /* board is locked to landscape widescreen 16:9 */
+    S.pin.style.setProperty("--st-ar", "1.778");
     var nat = S.svg.getBoundingClientRect(), pr = S.pin.getBoundingClientRect(), fr = S.frame.getBoundingClientRect();
     S.k = nat.width / VBW; S.dist = Math.max(0, nat.left - 14); S.topRel = nat.top - pr.top;
     S.bx = (fr.left + fr.width / 2 - nat.left) / S.k; S.by = (fr.top + 16 - nat.top) / S.k; S.sx = (fr.width + 20) / (136 * S.k);
     S.aimRail = aim(fr.left + fr.width / 2, fr.top + 16);
-    var SW = S.screen.clientWidth, SH = S.screen.clientHeight, fs = Math.min(SW / 1440, SH / h);
-    S.fs = fs; S.sheet.style.transform = "translate(" + (SW - 1440 * fs) / 2 + "px," + (SH - h * fs) / 2 + "px) scale(" + fs + ")";
+
+    /* Measure each step's element unscaled directly from S.sheet */
+    var prevTransition = S.sheet.style.transition;
+    S.sheet.style.transition = "none";
+    S.sheet.style.transform = "none";
+    var sr = S.sheet.getBoundingClientRect();
     S.geo = STEPS.map(function (stp) {
       var el = S.sheet.querySelector(stp.sel); if (!el) return null;
-      var r = el.getBoundingClientRect(), sr = S.sheet.getBoundingClientRect(), s = sr.width / 1440;
-      return { x: (r.left - sr.left) / s, y: (r.top - sr.top) / s, w: r.width / s, h: r.height / s };
+      var r = el.getBoundingClientRect();
+      return { x: r.left - sr.left, y: r.top - sr.top, w: r.width, h: r.height };
     });
-    pose = ""; idx = -2; render(sd);
+    void S.sheet.offsetHeight; // force reflow
+    S.sheet.style.transition = prevTransition;
+
+    var SW = S.screen.clientWidth;
+    var defaultScale = SW / 1440;
+    S.defaultScale = defaultScale;
+    if (idx >= 0 && idx < N) {
+      focus(idx);
+    } else {
+      S.sheet.style.transform = "translate(" + ((SW - 1440 * defaultScale) / 2).toFixed(1) + "px, 0px) scale(" + defaultScale.toFixed(3) + ")";
+    }
+    pose = ""; render(sd);
   }
 
   function focus(i) {
+    if (i === N) {
+      S.ring.style.opacity = 0;
+      S.card.classList.add("completed");
+      S.title.innerHTML = '<span class="st-badge-complete">✓ Tour Complete</span><br>All 5 Invariants Verified';
+      S.text.innerHTML = "You've explored the full saga coordinator architecture &mdash; from distributed mutex locks and relational idempotency to deterministic crash recovery and tamper-proof forensic audit streams.";
+      S.dots.forEach(function (d) { d.classList.add("on"); });
+      S.back.disabled = false;
+      S.skip.textContent = "Replay ↺";
+      S.next.textContent = "Live Booking ➔";
+      return;
+    }
+    S.card.classList.remove("completed");
     var g = S.geo[i]; if (!g) return;
-    var fs = S.fs, SW = S.screen.clientWidth, SH = S.screen.clientHeight, h = S.sheet.offsetHeight;
-    var tx = (SW - 1440 * fs) / 2, ty = (SH - h * fs) / 2, r = S.ring.style;
-    r.opacity = 1; r.left = g.x * fs + tx - 6 + "px"; r.top = g.y * fs + ty - 6 + "px"; r.width = g.w * fs + 12 + "px"; r.height = g.h * fs + 12 + "px";
+    var SW = S.screen.clientWidth, SH = S.screen.clientHeight;
+
+    /* Zoom in on section i so all numbers, texts, and diagrams are large, clear, and readable */
+    var padX = 28, padY = 28;
+    var availW = SW - padX * 2, availH = SH - padY * 2;
+    var scale = Math.min(availW / g.w, availH / g.h);
+    // Scale up to 0.96x fit so every section fills the landscape board with comfortable breathing room
+    var targetScale = clamp(scale * 0.96, 0.52, 0.95);
+
+    var cx = g.x + g.w / 2;
+    var cy = g.y + g.h / 2;
+    var tx = (SW / 2) - (cx * targetScale);
+    var ty = (SH / 2) - (cy * targetScale);
+
+    // Top-align step 0 (proof panel) so its header, stats, and scenarios start cleanly at the top
+    if (i === 0) {
+      ty = -(g.y * targetScale) + padY;
+    }
+
+    S.sheet.style.transform = "translate(" + tx.toFixed(1) + "px," + ty.toFixed(1) + "px) scale(" + targetScale.toFixed(3) + ")";
+
+    var rx = g.x * targetScale + tx;
+    var ry = g.y * targetScale + ty;
+    var rw = g.w * targetScale;
+    var rh = g.h * targetScale;
+
+    var r = S.ring.style;
+    r.opacity = 1;
+    r.left = (rx - 6).toFixed(1) + "px";
+    r.top = (ry - 6).toFixed(1) + "px";
+    r.width = (rw + 12).toFixed(1) + "px";
+    r.height = (rh + 12).toFixed(1) + "px";
+
     var sr = S.screen.getBoundingClientRect();
-    arms(aim(sr.left + g.x * fs + tx + g.w * fs / 2, sr.top + g.y * fs + ty + g.h * fs / 2), -6);
-    S.title.textContent = STEPS[i].title; S.text.textContent = STEPS[i].text;
+    arms(aim(sr.left + rx + rw / 2, sr.top + ry + rh / 2), -6);
+
+    S.title.textContent = STEPS[i].title;
+    S.text.textContent = STEPS[i].text;
     S.dots.forEach(function (d, n) { d.classList.toggle("on", n === i); });
     S.back.disabled = i === 0;
-    S.next.textContent = i === N - 1 ? "Continue" : "Next";
+    S.skip.textContent = "Skip tour";
+    S.next.textContent = i === N - 1 ? "Finish ➔" : "Next";
   }
 
   /* ---- the whole story as a pure function of scroll position s ---- */
@@ -189,23 +273,48 @@
     S.legB.style.transform = "rotate(" + (5 - sn * 20 * env) + "deg)";
     S.bob.style.transform = "translateY(" + -Math.abs(Math.cos(ph)) * 2.2 * env + "px)";
 
-    /* board: rod, then unroll */
+    /* board: rod, unroll during intro, then roll up during outro */
     var pG = seg(s, 5.5, 6.2), eG = ease(pG);
-    S.rod.style.opacity = s >= 5.4 ? 1 : 0;
-    S.pull.style.opacity = s >= 5.4 && pG < 1 ? 1 : 0;
-    S.pull.style.transform = "translateY(" + eG * (S.screen.clientHeight - 8) + "px)";
-    S.screen.style.clipPath = "inset(0 0 " + (1 - eG) * 100 + "% 0)";
+    var pRollUp = seg(s, OUTRO_START + .2, OUTRO_START + 1.2), eRollUp = ease(pRollUp);
+    var boardOpen = s < OUTRO_START ? eG : Math.max(0, 1 - eRollUp);
 
-    /* arm poses (arms ease between poses with CSS) */
-    var want = s < 3.1 ? "up" : s < 4.8 ? "carry" : s < 5.5 ? "rail" : s < INTRO ? "rest" : "teach";
-    if (want !== pose) {
-      pose = want;
-      if (want === "up") arms(-84, -16); else if (want === "carry") arms(-25, -55);
-      else if (want === "rail") arms(S.aimRail, -8); else if (want === "rest") arms(6, 6);
+    S.rod.style.opacity = s >= 5.4 ? 1 : 0;
+    S.pull.style.opacity = s >= 5.4 && boardOpen > 0.005 ? 1 : 0;
+    S.pull.style.transform = "translateY(" + boardOpen * (S.screen.clientHeight - 8) + "px)";
+    S.screen.style.clipPath = "inset(0 0 " + (1 - boardOpen) * 100 + "% 0)";
+
+    /* arm poses & gestures */
+    if (s < OUTRO_START) {
+      S.teacher.classList.remove("waving");
+      var want = s < 3.1 ? "up" : s < 4.8 ? "carry" : s < 5.5 ? "rail" : s < INTRO ? "rest" : "teach";
+      if (want !== pose) {
+        pose = want;
+        if (want === "up") arms(-84, -16); else if (want === "carry") arms(-25, -55);
+        else if (want === "rail") arms(S.aimRail, -8); else if (want === "rest") arms(6, 6);
+      }
+    } else {
+      pose = "outro";
+      var waving = s >= OUTRO_START + .15 && s < OUTRO_START + 1.8;
+      S.teacher.classList.toggle("waving", waving);
+      if (s < OUTRO_START + 1.8) {
+        arms(-74, -20);
+        var bow = Math.sin(seg(s, OUTRO_START + .2, OUTRO_START + 1.0) * Math.PI);
+        S.bob.style.transform = "translateY(" + (bow * 4) + "px)";
+      } else {
+        arms(6, 6);
+        S.bob.style.transform = "";
+      }
     }
-    var i = s >= INTRO ? Math.min(N - 1, Math.floor((s - INTRO) / PER)) : -1;
-    S.card.classList.toggle("show", s >= INTRO - .05);
+
+    var i = s < INTRO ? -1 : s < OUTRO_START ? Math.min(N - 1, Math.floor((s - INTRO) / PER)) : N;
+    /* hide the card just before the dissolve starts so it doesn't linger */
+    S.card.classList.toggle("show", s >= INTRO - .05 && s < OUTRO_START + 1.35);
     if (i !== idx) { idx = i; if (i >= 0) focus(i); else S.ring.style.opacity = 0; }
+
+    /* ── smooth dissolve before handing off to the footer ───────────────── */
+    /* Teacher finishes waving at OUTRO_START+1.8 (11.0); fade across ~0.7    */
+    /* units so the pin is fully transparent before it un-sticks at TOTAL.    */
+    S.pin.style.opacity = 1 - ease(seg(s, OUTRO_START + 1.4, TOTAL - 0.3));
   }
 
   /* scroll -> target; displayed value chases it a little each frame (the friction / inertia) */
@@ -250,6 +359,16 @@
     addEventListener("scroll", onScroll, { passive: true });
     addEventListener("load", function () { layout(); onScroll(); });
     onScroll();
+    var qm = window.location.search.match(/tour_pos=([\d.]+)/);
+    if (qm) {
+      setTimeout(function () {
+        var sv = parseFloat(qm[1]);
+        var top = S.track.getBoundingClientRect().top + scrollY + sv * UNIT * innerHeight;
+        window.scrollTo({ top: top, behavior: "instant" });
+        sd = st = sv;
+        render(sv);
+      }, 150);
+    }
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
   window.startScrollTour = function () { if (S) goto(0); };

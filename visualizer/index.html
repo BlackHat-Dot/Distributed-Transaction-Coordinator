@@ -761,18 +761,40 @@
   <!-- GUIDED TOUR: plays inside the page as you scroll (filled by scroll-tour.js). Edit the steps in scroll-tour.js. -->
   <section id="st-tour"></section>
 
-  <!-- FOOTER (EXAMPLE CONTENT - replace with your own) -->
+  <!-- FOOTER -->
   <footer class="site-footer">
     <div class="site-footer-grid">
       <div class="site-footer-brand">
-        <h5>Your Project Name</h5>
-        <p>EXAMPLE: One line describing what this project does and who it is for.</p>
+        <h5>Distributed Transaction Coordinator</h5>
+        <p>High-concurrency live event ticketing engine with relational idempotency, distributed mutex locks, and automated saga rollback compensation.</p>
       </div>
-      <div><h5>Product</h5><ul><li><a href="#">Live demo</a></li><li><a href="#">Architecture</a></li><li><a href="#">Tech stack</a></li></ul></div>
-      <div><h5>Resources</h5><ul><li><a href="#">Documentation</a></li><li><a href="#">GitHub</a></li><li><a href="#">Changelog</a></li></ul></div>
-      <div><h5>Contact</h5><ul><li><a href="#">Email</a></li><li><a href="#">LinkedIn</a></li><li><a href="#">Portfolio</a></li></ul></div>
+      <div>
+        <h5>Product</h5>
+        <ul>
+          <li><a href="booking.html">Live Seat Selection</a></li>
+          <li><a href="javascript:void(0)" onclick="document.getElementById('modal-architecture').classList.remove('hidden')">Architecture Rationale</a></li>
+          <li><a href="javascript:void(0)" onclick="document.getElementById('modal-stack').classList.remove('hidden')">Technology Stack</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Resources</h5>
+        <ul>
+          <li><a href="https://github.com/BlackHat-Dot/Distributed-transaction-coordinator" target="_blank" rel="noopener noreferrer">GitHub Repository</a></li>
+          <li><a href="javascript:void(0)" onclick="window.startScrollTour()">Replay Guided Tour</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Contact</h5>
+        <ul>
+          <li><a href="mailto:vijay.backend.dev@gmail.com">vijay.backend.dev@gmail.com</a></li>
+          <li><a href="https://github.com/BlackHat-Dot" target="_blank" rel="noopener noreferrer">GitHub profile</a></li>
+        </ul>
+      </div>
     </div>
-    <div class="site-footer-bottom"><span>&copy; 2026 Your Name. All rights reserved.</span><span>EXAMPLE: Built with Django, Celery, Redis, PostgreSQL</span></div>
+    <div class="site-footer-bottom">
+      <span>&copy; 2026 Vijay. All rights reserved.</span>
+      <span>Engineered with Django · Celery Beat · Redis Mutex · PostgreSQL ACID</span>
+    </div>
   </footer>
 
   <div id="modal-architecture" class="modal-backdrop hidden">
