@@ -112,9 +112,10 @@
   function focus(i) {
     var g = S.geo[i]; if (!g) return;
     var SW = S.screen.clientWidth, SH = S.screen.clientHeight;
-    var s = Math.min(SW / 1440, (SH - 28) / g.h);
-    var ty = Math.min(0, Math.max(-g.y * s + (SH - g.h * s) / 2, -(S.sheet.offsetHeight * s - SH)));
-    var tx = 1440 * s <= SW ? (SW - 1440 * s) / 2 : Math.min(0, Math.max(-g.x * s + (SW - g.w * s) / 2, SW - 1440 * s));
+    /* the WHOLE dashboard stays visible: fit sheet to the board, never zoom into a section */
+    var s = Math.min(SW / 1440, SH / S.sheet.offsetHeight);
+    var ty = (SH - S.sheet.offsetHeight * s) / 2;
+    var tx = (SW - 1440 * s) / 2;
     S.sheet.style.transform = "translate(" + tx + "px," + ty + "px) scale(" + s + ")";
     var r = S.ring.style; r.opacity = 1; r.left = g.x * s + tx - 6 + "px"; r.top = g.y * s + ty - 6 + "px"; r.width = g.w * s + 12 + "px"; r.height = g.h * s + 12 + "px";
     var sr = S.screen.getBoundingClientRect();
@@ -126,6 +127,13 @@
     S.dots.forEach(function (d, n) { d.classList.toggle("on", n === i); });
     S.back.disabled = i === 0;
     S.next.textContent = i === STEPS.length - 1 ? "Finish" : "Next";
+  }
+
+  /* make the board the same shape as the full dashboard so nothing is cropped */
+  function fit() {
+    var h = S.sheet.offsetHeight || 900;
+    S.root.style.setProperty("--st-ar", Math.max(.45, Math.min(1.7, 1440 / h)).toFixed(3));
+    measure();
   }
 
   function measure() {
@@ -177,7 +185,7 @@
       else if (e.key === "ArrowRight") S.next.click();
       else if (e.key === "ArrowLeft" && S.cur > 0) S.back.click();
     };
-    S.resize = function () { if (S.ready) { measure(); focus(S.cur); } };
+    S.resize = function () { if (S.ready) { fit(); focus(S.cur); } };
     return true;
   }
   function destroy(afterTour) {
@@ -221,6 +229,7 @@
     await animateP(S.p, 1, 1000 * (1 - S.p) + 350);
 
     /* 2. classroom fades in; teacher waits at the far left with a hand up. The roll gathers into a point above her hand. */
+    fit();
     var nat = S.svg.getBoundingClientRect();
     var dist = Math.max(0, nat.left - 14);
     S.teacher.style.transform = "translateX(" + -dist + "px)";

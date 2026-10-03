@@ -45,10 +45,10 @@
 
 /* ---------- board ---------- */
 .st-board{flex:0 0 auto;position:relative;
-  width:min(calc(96vw - clamp(130px,17vw,240px) - 40px),calc((100vh - 270px) * 1.6),1000px)}
+  width:min(calc(96vw - clamp(130px,17vw,240px) - 40px),calc((100vh - 270px) * var(--st-ar,1.6)),1100px)}
 .st-board::before,.st-board::after{content:"";position:absolute;top:calc(100% - 4px);width:10px;height:70px;background:#5a3a22;border-radius:0 0 4px 4px}
 .st-board::before{left:12%}.st-board::after{right:12%}
-.st-frame{position:relative;width:100%;aspect-ratio:16/10;
+.st-frame{position:relative;width:100%;aspect-ratio:var(--st-ar,1.6);
   background:#7b5231;border-radius:6px;box-shadow:0 30px 60px rgba(0,0,0,.55),inset 0 0 0 2px #a8754a}
 .st-frame::after{content:"";position:absolute;left:8%;right:8%;top:100%;height:9px;background:#8a6039;border-radius:0 0 4px 4px}
 .st-chalk{position:absolute;inset:14px;background:radial-gradient(ellipse at 40% 30%,#34423b,#222b27 80%)}
