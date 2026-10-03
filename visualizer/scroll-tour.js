@@ -1,4 +1,5 @@
 /* SCROLL TOUR — presentation layer. Reads the DOM once (clones <main>), never touches app state.
+   Trigger: keep scrolling past the bottom of the page (or click the Guided Tour button).
    Flow: page rolls up into a scroll -> teacher walks in carrying it -> hangs it on the board ->
    it unrolls showing your dashboard -> teacher points at each section while a caption explains it. */
 (function () {
@@ -47,21 +48,23 @@
   }
   function mk(cls, inner, tag) { var d = document.createElement(tag || "div"); d.className = cls; if (inner) d.innerHTML = inner; return d; }
 
-  /* Page rolls up (dir=1) or back down (dir=-1) by clipping <body> at the roller's edge. */
-  function roll(dir) {
+  /* p = 0..1: the roller descends from the top of the screen and the page above its edge is wrapped into it.
+     Implemented by clipping <body> at the roller's edge (the roller + stage live outside <body>). */
+  function setP(p) {
+    var H = innerHeight, edge = p * H, T = 30 + p * 26;
+    S.p = p;
+    S.roller.style.display = p > 0 ? "" : "none";
+    S.roller.style.height = T + "px";
+    S.roller.style.transform = "translateY(" + (edge - T) + "px)";
+    body.style.clipPath = p > 0 ? "inset(" + (scrollY + edge) + "px 0 0 0)" : "";
+  }
+  function animateP(from, to, D) {
     return new Promise(function (res) {
-      var H = innerHeight, sy = scrollY, docH = body.scrollHeight, roller = S.roller;
-      function apply(p) {
-        var T = 30 + p * 26, y = H - p * (H + T);
-        roller.style.height = T + "px";
-        roller.style.transform = "translateY(" + y + "px)";
-        body.style.clipPath = "inset(0 0 " + Math.max(0, docH - (sy + y)) + "px 0)";
-      }
-      if (reduce) { apply(dir > 0 ? 1 : 0); return res(); }
-      var t0 = performance.now(), D = 950;
+      if (reduce || D <= 0) { setP(to); return res(); }
+      var t0 = performance.now();
       (function f(now) {
         var t = Math.min(1, (now - t0) / D), e = t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-        apply(dir > 0 ? e : 1 - e);
+        setP(from + (to - from) * e);
         t < 1 ? requestAnimationFrame(f) : res();
       })(t0);
     });
@@ -101,10 +104,9 @@
     });
   }
 
-  async function start() {
-    if (busy) return; busy = true;
-    var main = document.querySelector("main"); if (!main) { busy = false; return; }
-    S = {};
+  function build() {
+    var main = document.querySelector("main"); if (!main) return false;
+    busy = true; S = { p: 0, o: 0 };
     /* inert snapshot of the dashboard (ids stripped so nothing collides with the live page) */
     var clone = main.cloneNode(true);
     clone.querySelectorAll("[id]").forEach(function (n) { n.removeAttribute("id"); });
@@ -125,7 +127,7 @@
     S.back = q(".st-back"); S.next = q(".st-next");
     S.sheet.appendChild(clone);
     html.appendChild(root); html.appendChild(S.roller); /* outside <body>, so the body clip never hides them */
-    html.style.overflow = "hidden";
+    S.roller.style.display = "none";
     arms(-35, 35); /* carrying pose */
     measure();
 
@@ -138,9 +140,19 @@
       else if (e.key === "ArrowLeft" && S.cur > 0) S.back.click();
     };
     S.resize = function () { if (S.ready) { measure(); focus(S.cur); } };
-    document.addEventListener("keydown", S.key); addEventListener("resize", S.resize);
+    return true;
+  }
+  function destroy(afterTour) {
+    body.style.clipPath = ""; html.style.overflow = "";
+    if (S) { S.root.remove(); S.roller.remove(); }
+    S = null; busy = false; if (afterTour) cool = performance.now() + 1200;
+  }
 
-    await roll(1);                                   /* 1. page rolls up */
+  async function play() {
+    var root = S.root, q = function (s) { return root.querySelector(s); };
+    S.playing = true; html.style.overflow = "hidden"; hint(false);
+    document.addEventListener("keydown", S.key); addEventListener("resize", S.resize);
+    await animateP(S.p, 1, 950 * (1 - S.p) + 250);   /* 1. rest of the page wraps into the roll */
     root.classList.add("on"); await wait(380);       /* 2. stage fades in */
     S.roller.style.display = "none";
     var tx = -(S.teacher.getBoundingClientRect().right + 40);
@@ -167,10 +179,39 @@
     await anim(S.screen, [{ clipPath: "inset(0 0 0% 0)" }, { clipPath: "inset(0 0 100% 0)" }], 700);
     S.root.classList.remove("on"); await wait(380);
     S.roller.style.display = "";
-    await roll(-1);                                  /* page rolls back down */
-    body.style.clipPath = ""; html.style.overflow = "";
-    S.root.remove(); S.roller.remove(); S = null; busy = false;
+    await animateP(1, 0, 950);                       /* page unrolls back */
+    destroy(true);
   }
+  function start() { if (busy || !build()) return; play(); }
+
+  /* ---- scroll-driven trigger: keep scrolling past the bottom and the page wraps up ---- */
+  var LIM = 600, cool = 0, rel = 0, lastY = 0, hintEl = null;
+  function atBottom() { return scrollY + innerHeight >= document.documentElement.scrollHeight - 2; }
+  function hint(on) { if (hintEl) hintEl.classList.toggle("show", !!on); }
+  function pull(dy) {
+    if (S && S.playing) return false;
+    if (!S) { if (reduce || performance.now() < cool || !atBottom() || dy <= 0 || busy) return false; if (!build()) return false; }
+    hint(false);
+    S.o = Math.max(0, Math.min(LIM, S.o + dy));
+    setP(S.o / LIM);
+    clearTimeout(rel);
+    if (S.o >= LIM) { play(); return true; }
+    rel = setTimeout(async function () {            /* let go early -> springs back */
+      if (!S || S.playing) return;
+      await animateP(S.p, 0, 400 * S.p + 60); destroy(); hint(atBottom());
+    }, 650);
+    return true;
+  }
+  addEventListener("wheel", function (e) {
+    var dy = e.deltaY * (e.deltaMode === 1 ? 16 : 1);
+    if (pull(dy)) e.preventDefault();
+  }, { passive: false });
+  addEventListener("touchstart", function (e) { lastY = e.touches[0].clientY; }, { passive: true });
+  addEventListener("touchmove", function (e) {
+    var y = e.touches[0].clientY, dy = (lastY - y) * 1.4; lastY = y;
+    if (pull(dy) && e.cancelable) e.preventDefault();
+  }, { passive: false });
+  addEventListener("scroll", function () { if (!S) hint(!reduce && atBottom() && performance.now() > cool); }, { passive: true });
 
   function addButton() {
     var anchor = document.getElementById("btn-view-stack");
@@ -181,6 +222,11 @@
     b.addEventListener("click", start);
     anchor.insertAdjacentElement("afterend", b);
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", addButton); else addButton();
+  function init() {
+    addButton();
+    hintEl = document.createElement("div"); hintEl.id = "st-hint"; hintEl.setAttribute("aria-hidden", "true");
+    hintEl.textContent = "Keep scrolling to roll up the page \uD83D\uDCDC"; body.appendChild(hintEl);
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
   window.startScrollTour = start;
 })();
