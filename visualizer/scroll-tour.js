@@ -23,7 +23,7 @@
       text: "EXAMPLE — An append-only event log: every transition is recorded with its actor and payload." }
   ];
   /* Timeline in "units" of scroll (1 unit = UNIT x viewport height). Everything below is a pure function of scroll. */
-  var UNIT = .8, INTRO = 6.2, PER = .9, N = STEPS.length, TOTAL = INTRO + PER * N;
+  var UNIT = .45, INTRO = 6.2, PER = .6, N = STEPS.length, TOTAL = INTRO + PER * N;
 
   /* Side-profile teacher facing right. viewBox 270x400, shoulder (104,140), hip (102,240). */
   var TEACHER = '<svg viewBox="0 0 270 400" aria-hidden="true"><defs>' +
@@ -81,7 +81,7 @@
     if (!host) { host = document.createElement("section"); host.id = "st-tour"; document.querySelector("main").insertAdjacentElement("afterend", host); }
     host.className = "st-tour"; host.setAttribute("aria-label", "Guided tour of the dashboard");
     host.innerHTML =
-      '<div class="st-track"><div class="st-pin idle">' +
+      '<div class="st-track"><div class="st-pin">' +
         '<div class="st-stage"><div class="st-row"><div class="st-teacher">' + TEACHER + '</div>' +
         '<div class="st-board"><div class="st-frame"><div class="st-chalk"></div><div class="st-screen"><div class="st-sheet"></div><div class="st-ring"></div></div><div class="st-rod"></div><div class="st-pull"></div></div></div></div></div>' +
         '<div class="st-cover"></div>' +
@@ -152,15 +152,14 @@
   /* ---- the whole story as a pure function of scroll position s ---- */
   function render(s) {
     var H = innerHeight, W = innerWidth, k = S.k, dist = S.dist;
-    S.pin.classList.toggle("idle", s <= .001);
 
     /* 1) the last screen of the page lifts off and shrinks to the centre; 2) it winds up into a roll in the centre */
-    var p1 = ease(seg(s, 0, .8)), eR = ease(seg(s, .8, 2.0)), p3 = seg(s, 2.0, 2.8);
+    var f0 = seg(s, 0, .15), p1 = ease(seg(s, .15, .9)), eR = ease(seg(s, .8, 2.0)), p3 = seg(s, 2.0, 2.8);
     var sc = 1 - .42 * p1, Tn = eR * .132 * W, Gh = H * (1 - eR) + Tn * eR, cy = (H - Gh * sc) / 2;
     S.holder.style.display = s >= 2.8 ? "none" : "";
     S.holder.style.transform = "translateY(" + cy + "px) scale(" + sc + ")";
-    S.holder.style.opacity = 1 - seg(p3, 0, .3);
-    S.cover.style.display = p1 >= 1 ? "none" : ""; S.cover.style.opacity = 1 - p1;
+    S.holder.style.opacity = (1 - seg(p3, 0, .3)) * f0;
+    S.cover.style.display = p1 >= 1 ? "none" : ""; S.cover.style.opacity = (1 - p1) * f0;
     S.leaf.style.clipPath = "inset(0 0 " + eR * 100 + "% 0 round " + (p1 * 22 / sc) + "px)";
     S.paperIn.style.transform = "translateY(" + -eR * H + "px)";
     S.shadow.style.height = (1 - eR) * H + "px"; S.shadow.style.opacity = p1; S.shadow.style.borderRadius = (p1 * 22 / sc) + "px";
@@ -212,7 +211,15 @@
   /* scroll -> target; displayed value chases it a little each frame (the friction / inertia) */
   function onScroll() {
     if (!S) return;
-    var r = S.track.getBoundingClientRect();
+    var r = S.track.getBoundingClientRect(), vh = innerHeight;
+    /* JS pinning (works even when an ancestor has overflow set, where CSS sticky silently fails) */
+    var mode = r.top > 0 ? "before" : r.bottom >= vh ? "fixed" : "after", ps = S.pin.style;
+    if (mode !== S.mode) {
+      S.mode = mode;
+      ps.position = mode === "fixed" ? "fixed" : "absolute";
+      ps.top = mode === "after" ? "" : "0"; ps.bottom = mode === "after" ? "0" : "";
+      ps.visibility = mode === "before" ? "hidden" : "visible";
+    }
     st = clamp(-r.top / (innerHeight * UNIT), 0, TOTAL);
     if (st === 0 && r.top < innerHeight * 1.5 && !S.fresh) { S.fresh = true; refresh(); }   /* fresh snapshot of live data just before it is needed */
     if (r.top > innerHeight * 2.5) S.fresh = false;
