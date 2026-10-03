@@ -92,7 +92,7 @@
         else if (S.target <= 0 && S.released) { destroy(); hint(atBottom()); }
         return;
       }
-      setP(S.p + d * .14);
+      setP(S.p + d * .085);
       S.raf = requestAnimationFrame(loop);
     })();
   }
@@ -226,7 +226,7 @@
     document.addEventListener("keydown", S.key); addEventListener("resize", S.resize);
 
     /* 1. the rest of the page winds into the roll */
-    await animateP(S.p, 1, 1000 * (1 - S.p) + 350);
+    await animateP(S.p, 1, 1500 * (1 - S.p) + 400);
 
     /* 2. classroom fades in; teacher waits at the far left with a hand up. The roll gathers into a point above her hand. */
     fit();
@@ -305,7 +305,7 @@
   }
 
   /* ---- scroll-driven trigger: keep scrolling past the bottom and the page winds up ---- */
-  var LIM = 650, rel = 0, lastY = 0, hintEl = null;
+  var LIM = 420, rel = 0, lastY = 0, hintEl = null;
   function atBottom() { return scrollY + innerHeight >= document.documentElement.scrollHeight - 2; }
   function hint(on) { if (hintEl) hintEl.classList.toggle("show", !!on); }
   function pull(dy) {
@@ -313,14 +313,16 @@
     if (!S) { if (reduce || performance.now() < cool || !atBottom() || dy <= 0 || busy) return false; if (!build()) return false; }
     hint(false);
     S.released = false;
-    S.o = Math.max(0, Math.min(LIM, S.o + dy));
+    /* friction: the further the page is wound, the harder it resists (rubber-band feel) */
+    var res = .5 * Math.pow(1 - .8 * S.o / LIM, 1.3) + .04;
+    S.o = Math.max(0, Math.min(LIM, S.o + dy * res));
     S.target = S.o / LIM;
     drive();
     clearTimeout(rel);
     if (S.o < LIM) rel = setTimeout(function () {   /* let go early -> springs back */
       if (!S || S.playing) return;
       S.o = 0; S.target = 0; S.released = true; drive();
-    }, 600);
+    }, 900);
     return true;
   }
   addEventListener("wheel", function (e) {

@@ -33,11 +33,11 @@
   opacity:0;pointer-events:none;transition:opacity .55s ease;overflow:hidden;
   background:radial-gradient(ellipse at 50% 20%,#3b2c1e,#16110c 72%)}
 #st-root.on{opacity:1;pointer-events:auto}
-#st-root::before{content:"";position:absolute;left:0;right:0;bottom:0;height:164px;
+#st-root::before{content:"";position:absolute;left:0;right:0;bottom:0;height:64px;
   background:linear-gradient(#2e2015,#17100a);border-top:1px solid rgba(255,200,130,.12)}
 
 .st-stage{position:relative;display:flex;align-items:flex-end;justify-content:center;gap:clamp(6px,2vw,28px);
-  width:96vw;max-width:1320px;padding-bottom:164px}
+  width:100vw;padding-bottom:64px}
 .st-teacher{flex:0 0 auto;width:clamp(130px,17vw,240px);will-change:transform}
 .st-teacher svg{display:block;width:100%;height:auto;overflow:visible}
 .st-uA,.st-fA{transition:transform .8s cubic-bezier(.45,0,.2,1)}
@@ -45,15 +45,15 @@
 
 /* ---------- board ---------- */
 .st-board{flex:0 0 auto;position:relative;
-  width:min(calc(96vw - clamp(130px,17vw,240px) - 40px),calc((100vh - 270px) * var(--st-ar,1.6)),1100px)}
-.st-board::before,.st-board::after{content:"";position:absolute;top:calc(100% - 4px);width:10px;height:70px;background:#5a3a22;border-radius:0 0 4px 4px}
+  width:min(calc(100vw - clamp(130px,17vw,240px) - clamp(240px,24vw,340px) - 90px),calc((100vh - 110px) * var(--st-ar,1.6)),1500px)}
+.st-board::before,.st-board::after{content:"";position:absolute;top:calc(100% - 4px);width:10px;height:44px;background:#5a3a22;border-radius:0 0 4px 4px}
 .st-board::before{left:12%}.st-board::after{right:12%}
 .st-frame{position:relative;width:100%;aspect-ratio:var(--st-ar,1.6);
   background:#7b5231;border-radius:6px;box-shadow:0 30px 60px rgba(0,0,0,.55),inset 0 0 0 2px #a8754a}
 .st-frame::after{content:"";position:absolute;left:8%;right:8%;top:100%;height:9px;background:#8a6039;border-radius:0 0 4px 4px}
 .st-chalk{position:absolute;inset:14px;background:radial-gradient(ellipse at 40% 30%,#34423b,#222b27 80%)}
 .st-screen{position:absolute;inset:14px;overflow:hidden;clip-path:inset(0 0 100% 0)}
-.st-sheet{position:absolute;left:0;top:0;width:1440px;transform-origin:0 0;background:var(--bg-deep,#0b0b0d);
+.st-sheet{position:absolute;left:0;top:0;width:1440px;padding:64px 0 28px;transform-origin:0 0;background:var(--bg-deep,#0b0b0d);
   transition:transform .9s cubic-bezier(.4,0,.2,1);pointer-events:none;user-select:none}
 .st-sheet .dashboard-body{max-width:none;margin:0}
 .st-ring{position:absolute;left:0;top:0;border:2px solid var(--accent-amber,#ff9f0a);border-radius:6px;pointer-events:none;
@@ -63,23 +63,26 @@
 .st-pull{position:absolute;left:50%;top:14px;width:70px;height:8px;margin-left:-35px;border-radius:4px;background:#d9bf92;z-index:3;opacity:0;transition:opacity .3s}
 
 /* ---------- caption card ---------- */
-.st-card{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);width:min(680px,92vw);padding:14px 18px;
+.st-card{position:absolute;right:2vw;top:50%;transform:translateY(-50%);width:clamp(240px,24vw,340px);padding:14px 18px;
   background:rgba(20,16,12,.94);border:1px solid rgba(255,159,10,.35);border-radius:12px;color:#f3e9da;
   box-shadow:0 18px 40px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .35s;font-family:var(--font-sans,system-ui,sans-serif)}
 .st-card.show{opacity:1;pointer-events:auto}
 .st-card h4{margin:0 0 4px;font-size:13px;font-weight:700;color:var(--accent-amber,#ff9f0a)}
 .st-card p{margin:0 0 12px;font-size:13.5px;line-height:1.5}
-.st-foot{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.st-foot{display:flex;flex-direction:column;align-items:stretch;gap:12px}
+.st-dots{justify-content:flex-start}.st-btns{justify-content:flex-end}
 .st-dots{display:flex;gap:6px}
 .st-dots i{width:7px;height:7px;border-radius:50%;background:#5a4a38;transition:background .3s}
 .st-dots i.on{background:var(--accent-amber,#ff9f0a)}
 .st-btns{display:flex;gap:8px}
 
 @media (max-width:800px){
+  .st-card{left:50%;right:auto;top:auto;bottom:20px;transform:translateX(-50%);width:min(680px,92vw)}
+  .st-foot{flex-direction:row;align-items:center}
   .st-stage{flex-direction:column-reverse;align-items:center;padding-bottom:200px}
   #st-root::before{height:200px}
   .st-teacher{width:110px;align-self:flex-start}
-  .st-board{width:100%}
+  .st-board{width:min(100%,calc((100vh - 330px) * var(--st-ar,1.6)))}
 }
 @media (prefers-reduced-motion:reduce){
   .st-sheet,.st-ring,.st-uA,.st-fA,#st-root,.st-card{transition:none}
