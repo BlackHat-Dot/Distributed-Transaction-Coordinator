@@ -60,7 +60,8 @@
 
   function mkClone() {
     var c = document.querySelector("main").cloneNode(true);
-    c.querySelectorAll("[id]").forEach(function (n) { n.removeAttribute("id"); });
+    /* ids are KEPT on purpose: the stylesheet scopes the topology look to #topology-svg and SVG url(#gradient/marker) refs need them.
+       The real <main> comes first in the DOM, so getElementById() in app.js still finds the live elements. */
     c.querySelectorAll("[onclick]").forEach(function (n) { n.removeAttribute("onclick"); });
     c.setAttribute("inert", ""); c.setAttribute("aria-hidden", "true");
     return c;
@@ -137,15 +138,20 @@
   /* measure everything once per resize / content refresh */
   function layout() {
     var vh = innerHeight, vw = innerWidth;
+    /* the tour starts one screen BEFORE the end of <main>, so the pinned copy replaces the real last screen with no gap */
+    S.host.style.marginTop = -vh + "px";
     S.track.style.height = (TOTAL * UNIT + 1) * vh + "px";
+    S.pin.style.height = vh + "px";
+    var narrow = vw <= 700;
+    S.pin.style.setProperty("--st-ratio", narrow ? "9 / 10" : "16 / 9");
+    S.pin.style.setProperty("--st-ar", narrow ? ".9" : "1.778");
     S.teacher.style.transform = ""; S.bob.style.transform = "";
     S.holder.style.width = vw + "px"; S.holder.style.height = vh + "px";
     /* paper = copy of the real <main>, same width and position, bottom-aligned to the last screen of the real page */
     var mr = document.querySelector("main").getBoundingClientRect();
     S.paperIn.style.left = mr.left + "px"; S.paperIn.style.width = mr.width + "px";
+    S.W = Math.max(320, Math.round(mr.width)); S.sheet.style.width = S.W + "px";
     S.paperIn.style.top = Math.min(0, vh - S.paperIn.offsetHeight) + "px";
-    /* board is locked to landscape widescreen 16:9 */
-    S.pin.style.setProperty("--st-ar", "1.778");
     var nat = S.svg.getBoundingClientRect(), pr = S.pin.getBoundingClientRect(), fr = S.frame.getBoundingClientRect();
     S.k = nat.width / VBW; S.dist = Math.max(0, nat.left - 14); S.topRel = nat.top - pr.top;
     S.bx = (fr.left + fr.width / 2 - nat.left) / S.k; S.by = (fr.top + 16 - nat.top) / S.k; S.sx = (fr.width + 20) / (136 * S.k);
@@ -165,12 +171,12 @@
     S.sheet.style.transition = prevTransition;
 
     var SW = S.screen.clientWidth;
-    var defaultScale = SW / 1440;
+    var defaultScale = SW / S.W;
     S.defaultScale = defaultScale;
     if (idx >= 0 && idx < N) {
       focus(idx);
     } else {
-      S.sheet.style.transform = "translate(" + ((SW - 1440 * defaultScale) / 2).toFixed(1) + "px, 0px) scale(" + defaultScale.toFixed(3) + ")";
+      S.sheet.style.transform = "translate(0px, 0px) scale(" + defaultScale.toFixed(3) + ")";
     }
     pose = ""; render(sd);
   }
@@ -191,36 +197,28 @@
     var g = S.geo[i]; if (!g) return;
     var SW = S.screen.clientWidth, SH = S.screen.clientHeight;
 
-    /* Zoom in on section i so all numbers, texts, and diagrams are large, clear, and readable */
-    var padX = 28, padY = 28;
-    var availW = SW - padX * 2, availH = SH - padY * 2;
-    var scale = Math.min(availW / g.w, availH / g.h);
-    // Scale up to 0.96x fit so every section fills the landscape board with comfortable breathing room
-    var targetScale = clamp(scale * 0.96, 0.52, 0.95);
+    /* Fit the section into the board. Normal sections: fit whole, centred. Very tall ones (the hero panel):
+       fit to width, align to the top and show the first board-full, with the ring closed around what is visible. */
+    var padX = 20, padY = 20, availW = SW - padX * 2, availH = SH - padY * 2;
+    var byW = availW / g.w, byH = availH / g.h;
+    var tall = byH < byW * .6;
+    var scale = tall ? byW : Math.min(byW, byH);
+    scale = clamp(scale * .98, .12, 1.25);
+    var tx = SW / 2 - (g.x + g.w / 2) * scale;
+    var ty = tall ? padY - g.y * scale : SH / 2 - (g.y + g.h / 2) * scale;
 
-    var cx = g.x + g.w / 2;
-    var cy = g.y + g.h / 2;
-    var tx = (SW / 2) - (cx * targetScale);
-    var ty = (SH / 2) - (cy * targetScale);
+    S.sheet.style.transform = "translate(" + tx.toFixed(1) + "px," + ty.toFixed(1) + "px) scale(" + scale.toFixed(3) + ")";
 
-    // Top-align step 0 (proof panel) so its header, stats, and scenarios start cleanly at the top
-    if (i === 0) {
-      ty = -(g.y * targetScale) + padY;
-    }
-
-    S.sheet.style.transform = "translate(" + tx.toFixed(1) + "px," + ty.toFixed(1) + "px) scale(" + targetScale.toFixed(3) + ")";
-
-    var rx = g.x * targetScale + tx;
-    var ry = g.y * targetScale + ty;
-    var rw = g.w * targetScale;
-    var rh = g.h * targetScale;
+    var rx = g.x * scale + tx, ry = g.y * scale + ty, rw = g.w * scale, rh = g.h * scale;
+    var visH = Math.min(rh + 12, SH - (ry - 6) - 4);
 
     var r = S.ring.style;
     r.opacity = 1;
     r.left = (rx - 6).toFixed(1) + "px";
     r.top = (ry - 6).toFixed(1) + "px";
     r.width = (rw + 12).toFixed(1) + "px";
-    r.height = (rh + 12).toFixed(1) + "px";
+    r.height = visH.toFixed(1) + "px";
+    rh = visH - 12;
 
     var sr = S.screen.getBoundingClientRect();
     arms(aim(sr.left + rx + rw / 2, sr.top + ry + rh / 2), -6);
@@ -238,7 +236,7 @@
     var H = innerHeight, W = innerWidth, k = S.k, dist = S.dist;
 
     /* 1) the last screen of the page lifts off and shrinks to the centre; 2) it winds up into a roll in the centre */
-    var f0 = seg(s, 0, .15), p1 = ease(seg(s, .15, .9)), eR = ease(seg(s, .8, 2.0)), p3 = seg(s, 2.0, 2.8);
+    var f0 = 1, p1 = ease(seg(s, .15, .9)), eR = ease(seg(s, .8, 2.0)), p3 = seg(s, 2.0, 2.8);
     var sc = 1 - .42 * p1, Tn = eR * .132 * W, Gh = H * (1 - eR) + Tn * eR, cy = (H - Gh * sc) / 2;
     S.holder.style.display = s >= 2.8 ? "none" : "";
     S.holder.style.transform = "translateY(" + cy + "px) scale(" + sc + ")";
@@ -248,7 +246,7 @@
     S.paperIn.style.transform = "translateY(" + -eR * H + "px)";
     S.shadow.style.height = (1 - eR) * H + "px"; S.shadow.style.opacity = p1; S.shadow.style.borderRadius = (p1 * 22 / sc) + "px";
     S.roller.style.height = Tn + "px"; S.roller.style.display = Tn > 1 ? "" : "none";
-    S.teacher.style.opacity = seg(s, .2, .8);
+    S.teacher.style.opacity = seg(s, 1.4, 2.0);
     S.board.style.opacity = seg(s, 1.9, 2.5);
 
     /* 3) the roll leaves the centre, flies to the raised hand (arc), is caught, lowered, carried, then hung on the board */
@@ -311,10 +309,7 @@
     S.card.classList.toggle("show", s >= INTRO - .05 && s < OUTRO_START + 1.35);
     if (i !== idx) { idx = i; if (i >= 0) focus(i); else S.ring.style.opacity = 0; }
 
-    /* ── smooth dissolve before handing off to the footer ───────────────── */
-    /* Teacher finishes waving at OUTRO_START+1.8 (11.0); fade across ~0.7    */
-    /* units so the pin is fully transparent before it un-sticks at TOTAL.    */
-    S.pin.style.opacity = 1 - ease(seg(s, OUTRO_START + 1.4, TOTAL - 0.3));
+    /* no fade-out: when the tour ends the stage simply scrolls away and the footer rises underneath it */
   }
 
   /* scroll -> target; displayed value chases it a little each frame (the friction / inertia) */
@@ -330,8 +325,8 @@
       ps.visibility = mode === "before" ? "hidden" : "visible";
     }
     st = clamp(-r.top / (innerHeight * UNIT), 0, TOTAL);
-    if (st === 0 && r.top < innerHeight * 1.5 && !S.fresh) { S.fresh = true; refresh(); }   /* fresh snapshot of live data just before it is needed */
-    if (r.top > innerHeight * 2.5) S.fresh = false;
+    if (!S.fresh && r.top < innerHeight * 1.5) { S.fresh = true; refresh(); }   /* fresh snapshot of live data just before it is needed */
+    if (r.top > innerHeight * 3) S.fresh = false;
     if (!raf) raf = requestAnimationFrame(tick);
   }
   function tick() {
@@ -357,7 +352,7 @@
     addButton(); layout();
     var t; addEventListener("resize", function () { clearTimeout(t); t = setTimeout(function () { layout(); onScroll(); }, 120); });
     addEventListener("scroll", onScroll, { passive: true });
-    addEventListener("load", function () { layout(); onScroll(); });
+    addEventListener("load", function () { layout(); onScroll(); setTimeout(function () { refresh(); onScroll(); }, 900); });
     onScroll();
     var qm = window.location.search.match(/tour_pos=([\d.]+)/);
     if (qm) {

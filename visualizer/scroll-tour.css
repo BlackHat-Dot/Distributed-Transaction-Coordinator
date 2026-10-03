@@ -1,12 +1,11 @@
 /* SCROLL TOUR (inline) — a tall track containing one sticky 100vh stage. Scrolling through the track plays the story;
    after it ends the stage scrolls away and your footer follows. Pairs with scroll-tour.js. */
 
-.st-tour{position:relative;display:block}
+.st-tour{position:relative;display:block;margin-top:-100vh}   /* JS sets the exact px; this is the no-JS-yet fallback */
 .st-track{position:relative;pointer-events:none}
 .st-pin{position:absolute;left:0;right:0;top:0;height:100vh;pointer-events:auto;overflow:hidden;z-index:10;
-  background:radial-gradient(ellipse at 50% 20%,#3b2c1e,#16110c 72%);will-change:opacity}
+  background:radial-gradient(ellipse at 50% 20%,#3b2c1e,#16110c 72%)}
 
-/* ---------- the page being wound up (starts as an exact copy of the last screen of the real page) ---------- */
 .st-cover{position:absolute;inset:0;z-index:4;background:var(--bg-deep,#0b0b0d);pointer-events:none}
 .st-holder{position:absolute;left:0;top:0;z-index:5;transform-origin:50% 0;pointer-events:none;will-change:transform,opacity}
 .st-shadow{position:absolute;left:0;right:0;top:0;box-shadow:0 30px 90px rgba(0,0,0,.7)}
@@ -26,24 +25,24 @@
   background:repeating-radial-gradient(ellipse at 50% 50%,#3a342b 0 2px,#15120e 2px 4px)}
 .st-cap.l{left:-17px}.st-cap.r{right:-17px}
 
-/* ---------- classroom ---------- */
 .st-stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-start;
-  padding-left:clamp(16px,3vw,44px);padding-right:clamp(260px,24vw,360px);box-sizing:border-box}
+  padding-left:clamp(16px,3vw,44px);
+  /* reserve exactly the caption card's width + its right margin + a gap, so board and card can never touch */
+  padding-right:calc(clamp(240px,22vw,320px) + clamp(16px,2vw,36px) + 28px);box-sizing:border-box}
 .st-row{position:relative;display:flex;align-items:flex-end;justify-content:center;gap:clamp(8px,2vw,24px);
-  width:100%;max-width:1100px;margin:0 auto}
+  width:100%;max-width:1500px;margin:0 auto}
 .st-row::after{content:"";position:absolute;left:-60vw;right:-60vw;top:calc(100% + 34px);height:60vh;z-index:-1;
   background:linear-gradient(#2e2015,#17100a);border-top:1px solid rgba(255,200,130,.12)}
-.st-teacher{flex:0 0 auto;width:clamp(110px,14vw,190px);margin-bottom:calc(clamp(110px,14vw,190px) * -.07);will-change:transform}
+.st-teacher{flex:0 0 auto;width:clamp(96px,11vw,170px);margin-bottom:calc(clamp(96px,11vw,170px) * -.07);will-change:transform}
 .st-teacher svg{display:block;width:100%;height:auto;overflow:visible}
 .st-uA,.st-fA{transition:transform .8s cubic-bezier(.45,0,.2,1)}
 .st-roll{transition:opacity .25s}
 
 .st-board{flex:1 1 auto;position:relative;
-  /* Landscape widescreen: sized to fill available width comfortably without colliding with card */
-  max-width:min(100%,calc((100vh - 150px) * 1.778),960px);width:100%}
+  max-width:min(100%,calc((100vh - 130px) * 1.778),1280px);width:100%;min-width:0}
 .st-board::before,.st-board::after{content:"";position:absolute;top:calc(100% - 4px);width:10px;height:44px;background:#5a3a22;border-radius:0 0 4px 4px}
 .st-board::before{left:12%}.st-board::after{right:12%}
-.st-frame{position:relative;width:100%;aspect-ratio:16/9;
+.st-frame{position:relative;width:100%;aspect-ratio:var(--st-ratio,16 / 9);
   background:#7b5231;border-radius:6px;box-shadow:0 30px 60px rgba(0,0,0,.55),inset 0 0 0 2px #a8754a}
 .st-frame::after{content:"";position:absolute;left:8%;right:8%;top:100%;height:9px;background:#8a6039;border-radius:0 0 4px 4px}
 .st-chalk{position:absolute;inset:14px;background:radial-gradient(ellipse at 40% 30%,#34423b,#222b27 80%)}
@@ -57,28 +56,6 @@
   background:linear-gradient(#1a1410,#5b4630 45%,#1a1410);box-shadow:0 4px 8px rgba(0,0,0,.5)}
 .st-pull{position:absolute;left:50%;top:14px;width:70px;height:8px;margin-left:-35px;border-radius:4px;background:#d9bf92;z-index:3;opacity:0;transition:opacity .3s}
 
-/* ---------- readability boost for content on the board ---------- */
-.st-sheet .proof-title-area h2{font-size:36px!important;line-height:1.05!important;margin:4px 0 10px!important;letter-spacing:-.02em!important}
-.st-sheet .proof-title-area p{font-size:13.5px!important;line-height:1.45!important;max-width:56ch!important}
-.st-sheet .panel-title-area h3,
-.st-sheet .topology-header h3,
-.st-sheet .panel-header h3{font-size:17px!important;font-weight:800!important;letter-spacing:.04em!important}
-.st-sheet .proof-card-title,
-.st-sheet .rec-card-label{font-size:13px!important;font-weight:700!important;color:var(--text-secondary,#b0b0b8)!important}
-.st-sheet .rec-card-val{font-size:26px!important;font-weight:700!important}
-.st-sheet .rec-sub{font-size:12px!important;opacity:.9!important}
-.st-sheet .tx-table th{font-size:13px!important;font-weight:700!important}
-.st-sheet .tx-table td{font-size:13.5px!important;padding:10px 12px!important}
-.st-sheet .proof-stat-val{font-size:32px!important;font-weight:800!important}
-.st-sheet .proof-stat-label{font-size:12px!important;font-weight:600!important}
-.st-sheet .scenario-item{padding:12px 14px!important;font-size:14px!important}
-.st-sheet .scenario-btn-label{font-size:13.5px!important;font-weight:700!important}
-.st-sheet .node-title{font-size:15px!important;font-weight:800!important}
-.st-sheet .node-meta{font-size:12.5px!important;opacity:.9!important}
-.st-sheet .node-metric-val{font-size:18px!important;font-weight:700!important}
-.st-sheet .forensic-stream-item{font-size:13px!important;padding:8px 12px!important}
-
-/* ---------- caption card (right side panel) ---------- */
 .st-card{position:absolute;z-index:7;right:clamp(16px,2vw,36px);top:50%;transform:translateY(-50%);width:clamp(240px,22vw,320px);padding:16px 20px;
   background:rgba(20,16,12,.94);border:1px solid rgba(255,159,10,.35);border-radius:12px;color:#f3e9da;
   box-shadow:0 18px 40px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .35s;font-family:var(--font-sans,system-ui,sans-serif)}
@@ -90,7 +67,8 @@
 .st-dots i{width:7px;height:7px;border-radius:50%;background:#5a4a38;transition:all .25s;cursor:pointer}
 .st-dots i:hover{transform:scale(1.3);background:#8a7258}
 .st-dots i.on{background:var(--accent-amber,#ff9f0a);box-shadow:0 0 6px rgba(255,159,10,.6)}
-.st-btns{display:flex;gap:8px;justify-content:flex-end}
+.st-btns{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.st-btns .btn{white-space:nowrap}
 
 .st-card.completed{border-color:rgba(255,159,10,.6);box-shadow:0 18px 45px rgba(0,0,0,.6),0 0 20px rgba(255,159,10,.12)}
 .st-badge-complete{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#30d158;background:rgba(48,209,88,.12);border:1px solid rgba(48,209,88,.28);padding:2px 8px;border-radius:999px;margin-bottom:6px}
@@ -101,19 +79,36 @@
 }
 .st-teacher.waving .st-fA{animation:st-wave .75s ease-in-out infinite!important;transition:none!important}
 
-@media (max-width:800px){
-  .st-card{left:50%;right:auto;top:auto;bottom:20px;transform:translateX(-50%);width:min(680px,92vw)}
-  .st-foot{flex-direction:row;align-items:center}
-  .st-row{flex-direction:column-reverse;align-items:center}
-  .st-teacher{width:110px;align-self:flex-start}
-  .st-board{width:min(100%,calc((100vh - 360px) * var(--st-ar,1.6)))}
+/* narrow laptops / tablets: card moves under the board */
+@media (max-width:1000px){
+  .st-stage{padding-right:clamp(12px,3vw,44px);padding-bottom:236px;align-items:center}
+  .st-card{left:50%;right:auto;top:auto;bottom:16px;transform:translateX(-50%);width:min(680px,calc(100vw - 24px));box-sizing:border-box}
+  .st-card h4{font-size:13.5px}.st-card p{font-size:13px;margin-bottom:10px;line-height:1.45}
+  .st-foot{flex-direction:row;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  .st-btns{flex-wrap:wrap}
+  .st-board{max-width:min(100%,calc((100vh - 400px) * var(--st-ar,1.778)))}
+}
+/* phones: board on top, teacher below it */
+@media (max-width:700px){
+  .st-stage{padding:12px 12px 250px}
+  .st-row{flex-direction:column-reverse;align-items:center;gap:6px}
+  .st-teacher{width:84px;align-self:flex-start;margin-bottom:0}
+  .st-board{width:100%;max-width:min(100%,calc((100vh - 430px) * var(--st-ar,.9)))}
+  .st-card{padding:12px 14px}
+  .st-btns .btn{padding:6px 10px!important;min-height:36px}
+}
+@media (max-height:520px) and (orientation:landscape){
+  .st-stage{padding-bottom:12px;padding-right:calc(clamp(220px,30vw,300px) + 28px)}
+  .st-card{left:auto;right:12px;top:50%;bottom:auto;transform:translateY(-50%);width:clamp(210px,30vw,280px)}
+  .st-board{max-width:min(100%,calc((100vh - 60px) * 1.778))}
+  .st-teacher{width:80px}
+  .st-row{flex-direction:row}
 }
 @media (prefers-reduced-motion:reduce){
   .st-uA,.st-fA,.st-card,.st-ring{transition:none}
   .st-teacher.waving .st-fA{animation:none!important}
 }
 
-/* ---------- footer ----------------------------------------- */
 .site-footer{background:var(--bg-surface,#1d1d1f);color:var(--text-secondary,#a1a1a6);border-top:1px solid var(--border-subtle,rgba(255,255,255,.08));
   padding:56px clamp(20px,5vw,72px) 28px;font-family:var(--font-sans,system-ui,sans-serif);font-size:14px}
 .site-footer-grid{display:grid;grid-template-columns:2fr repeat(3,1fr);gap:32px;max-width:1280px;margin:0 auto}
