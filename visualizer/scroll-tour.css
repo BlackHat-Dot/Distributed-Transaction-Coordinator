@@ -1,8 +1,8 @@
 /* SCROLL TOUR (inline) — a tall track containing one sticky 100vh stage. Scrolling through the track plays the story;
    after it ends the stage scrolls away and your footer follows. Pairs with scroll-tour.js. */
 
-.st-tour{position:relative;display:block;margin-top:-100vh}
-.st-track{position:relative;pointer-events:none;background:var(--bg-surface,#1d1d1f)}
+.st-tour{position:relative;display:block}
+.st-track{position:relative;pointer-events:none}
 .st-pin{position:absolute;left:0;right:0;top:0;height:100vh;pointer-events:auto;overflow:hidden;z-index:10;
   background:radial-gradient(ellipse at 50% 20%,#3b2c1e,#16110c 72%);will-change:opacity}
 
