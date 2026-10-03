@@ -1,15 +1,10 @@
-/* SCROLL TOUR (inline) — lives INSIDE the page, between <main> and your footer. Nothing is fullscreen or locked.
-   As the visitor scrolls through the section, a sticky stage plays the story, driven directly by scroll position
-   (scroll back and it rewinds). When the story ends, the stage releases and the page continues to the footer.
-
-   Story (in "screens" of scroll):
-   0.0-1.2  the page winds up into a roll at the top        2.4-3.6  she walks to the board
-   1.0-1.5  the roll gathers above her hand                  3.6-4.3  she hangs the roll on the board
-   1.2-2.0  it drops into her raised hand                    4.3-5.0  it unrolls showing the dashboard
-   2.0-2.4  she catches it and lowers it                     5.0+     she stands still and teaches, 1 step per 0.9 screen
-
-   Placeholder:  <section id="st-tour"></section> in index.html (created automatically after <main> if missing).
-   Presentation only: it clones <main> and never touches app state. */
+/* SCROLL TOUR (inline) — sits between <main> and your footer and plays as the visitor scrolls (scroll back = rewind).
+   It overlaps the LAST SCREEN of the real page with an identical copy, so the hand-over is seamless:
+   0.0-0.8  the last screen of your page lifts off and shrinks to the middle of the screen
+   0.8-2.0  it winds up into a roll (the roll ends up in the centre)       2.0-2.8  the roll flies to the teacher's raised hand
+   2.8-3.5  she catches it and lowers it       3.6-4.8  she walks to the board       5.0-5.5  hangs it
+   5.5-6.2  it unrolls       6.2+  she stands still and teaches (0.9 per step), then the page continues to the footer.
+   Presentation only: clones <main>, never touches app state. */
 (function () {
   "use strict";
   var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -27,11 +22,12 @@
     { sel: ".forensic-panel", title: "5 · Forensic audit stream",
       text: "EXAMPLE — An append-only event log: every transition is recorded with its actor and payload." }
   ];
-  var INTRO = 5.0, PER = 0.9, N = STEPS.length, TOTAL = INTRO + PER * N;   /* TOTAL = screens of scroll the tour uses */
+  /* Timeline in "units" of scroll (1 unit = UNIT x viewport height). Everything below is a pure function of scroll. */
+  var UNIT = .8, INTRO = 6.2, PER = .9, N = STEPS.length, TOTAL = INTRO + PER * N;
 
   /* Side-profile teacher facing right. viewBox 270x400, shoulder (104,140), hip (102,240). */
   var TEACHER = '<svg viewBox="0 0 270 400" aria-hidden="true"><defs>' +
-    '<linearGradient id="st-par" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4e3bd"/><stop offset=".55" stop-color="#d8bd8a"/><stop offset="1" stop-color="#a98a58"/></linearGradient></defs>' +
+    '<linearGradient id="st-roll" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5a5040"/><stop offset=".5" stop-color="#2a251d"/><stop offset="1" stop-color="#110e0b"/></linearGradient><linearGradient id="st-par" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4e3bd"/><stop offset=".55" stop-color="#d8bd8a"/><stop offset="1" stop-color="#a98a58"/></linearGradient></defs>' +
     '<ellipse cx="108" cy="384" rx="62" ry="8" fill="rgba(0,0,0,.45)"/>' +
     '<g class="st-legB" style="transform-origin:102px 240px;transform:rotate(5deg)"><rect x="91" y="236" width="24" height="126" rx="10" fill="#1f2027"/><path d="M89 358h26q18 2 24 14v8H89z" fill="#0e0e12"/></g>' +
     '<g class="st-legA" style="transform-origin:102px 240px;transform:rotate(-5deg)"><rect x="91" y="236" width="24" height="126" rx="10" fill="#2e303b"/><path d="M89 358h26q18 2 24 14v8H89z" fill="#17171c"/></g>' +
@@ -46,15 +42,15 @@
       '<circle cx="118" cy="82" r="9" fill="rgba(255,255,255,.14)" stroke="#2b2622" stroke-width="3"/><path d="M109 82H92" stroke="#2b2622" stroke-width="3"/><circle cx="120" cy="83" r="2.4" fill="#2b2622"/>' +
       '<path d="M111 70q7-4 15 0" stroke="#2b2622" stroke-width="3" fill="none" stroke-linecap="round"/>' +
       '<path d="M118 102q6 3 12-1" stroke="#8a4b3a" stroke-width="3" fill="none" stroke-linecap="round"/>' +
-      '<g class="st-roll" style="opacity:0;transform:translate(190px,-900px)"><rect x="-62" y="-9" width="124" height="18" rx="9" fill="url(#st-par)"/>' +
-        '<path d="M-56 -3H56M-56 3H56" stroke="#8a6d42" stroke-opacity=".45" stroke-width="1"/>' +
-        '<rect x="-68" y="-8" width="10" height="16" rx="4" fill="#3a2b1d"/><rect x="58" y="-8" width="10" height="16" rx="4" fill="#3a2b1d"/></g>' +
+      '<g class="st-roll" style="opacity:0;transform:translate(190px,-900px)"><rect x="-62" y="-9" width="124" height="18" rx="9" fill="url(#st-roll)" stroke="#ff9f0a" stroke-opacity=".35"/>' +
+        '<path d="M-56 -3H56M-56 3H56" stroke="#fff" stroke-opacity=".08" stroke-width="1"/>' +
+        '<rect x="-68" y="-8" width="10" height="16" rx="4" fill="#d8bd8a"/><rect x="58" y="-8" width="10" height="16" rx="4" fill="#d8bd8a"/></g>' +
       '<g class="st-uA" style="transform-origin:104px 140px;transform:rotate(5deg)"><rect x="95" y="134" width="18" height="52" rx="9" fill="#e9e9e6"/>' +
         '<g class="st-fA" style="transform-origin:104px 180px;transform:rotate(5deg)"><rect x="96" y="174" width="16" height="48" rx="8" fill="#f4cfae"/><circle cx="104" cy="226" r="9" fill="#f4cfae"/></g></g>' +
     '</g></svg>';
   var VBW = 270, SHX = 104, SHY = 140;
 
-  var S = null, sd = 0, st = 0, raf = 0, pose = "", idx = -2, cloned = false;
+  var S = null, sd = 0, st = 0, raf = 0, pose = "", idx = -2;
   var clamp = function (v, a, b) { return Math.max(a, Math.min(b, v)); };
   var seg = function (s, a, b) { return clamp((s - a) / (b - a), 0, 1); };
   var ease = function (t) { return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
@@ -85,46 +81,51 @@
     if (!host) { host = document.createElement("section"); host.id = "st-tour"; document.querySelector("main").insertAdjacentElement("afterend", host); }
     host.className = "st-tour"; host.setAttribute("aria-label", "Guided tour of the dashboard");
     host.innerHTML =
-      '<div class="st-track"><div class="st-pin">' +
-        '<div class="st-stage"><div class="st-teacher">' + TEACHER + '</div>' +
-        '<div class="st-board"><div class="st-frame"><div class="st-chalk"></div><div class="st-screen"><div class="st-sheet"></div><div class="st-ring"></div></div><div class="st-rod"></div><div class="st-pull"></div></div></div></div>' +
-        '<div class="st-edge"></div><div class="st-paper"><div class="st-paper-in"></div></div>' +
-        '<div class="st-roller"><i class="st-cap l"></i><i class="st-cap r"></i></div>' +
+      '<div class="st-track"><div class="st-pin idle">' +
+        '<div class="st-stage"><div class="st-row"><div class="st-teacher">' + TEACHER + '</div>' +
+        '<div class="st-board"><div class="st-frame"><div class="st-chalk"></div><div class="st-screen"><div class="st-sheet"></div><div class="st-ring"></div></div><div class="st-rod"></div><div class="st-pull"></div></div></div></div></div>' +
+        '<div class="st-cover"></div>' +
+        '<div class="st-holder"><div class="st-shadow"></div><div class="st-leaf"><div class="st-paper-in"></div></div><div class="st-roller"><i class="st-cap l"></i><i class="st-cap r"></i></div></div>' +
         '<div class="st-card"><h4></h4><p></p><div class="st-foot"><div class="st-dots">' + STEPS.map(function () { return "<i></i>"; }).join("") + '</div>' +
         '<div class="st-btns"><button class="btn btn-outline btn-sm st-skip">Skip tour</button><button class="btn btn-outline btn-sm st-back">Back</button><button class="btn btn-primary btn-sm st-next">Next</button></div></div></div>' +
       '</div></div>';
     var q = function (s) { return host.querySelector(s); };
-    S = { host: host, track: q(".st-track"), pin: q(".st-pin"), teacher: q(".st-teacher"), svg: q(".st-teacher svg"),
+    S = { host: host, track: q(".st-track"), pin: q(".st-pin"), teacher: q(".st-teacher"), board: q(".st-board"), svg: q(".st-teacher svg"),
       uA: q(".st-uA"), fA: q(".st-fA"), legA: q(".st-legA"), legB: q(".st-legB"), bob: q(".st-bob"), roll: q(".st-roll"),
       screen: q(".st-screen"), sheet: q(".st-sheet"), ring: q(".st-ring"), rod: q(".st-rod"), pull: q(".st-pull"), frame: q(".st-frame"),
-      paper: q(".st-paper"), paperIn: q(".st-paper-in"), roller: q(".st-roller"), edge: q(".st-edge"),
+      cover: q(".st-cover"), holder: q(".st-holder"), shadow: q(".st-shadow"), leaf: q(".st-leaf"), paperIn: q(".st-paper-in"), roller: q(".st-roller"),
       card: q(".st-card"), title: q("h4"), text: q("p"), dots: [].slice.call(host.querySelectorAll(".st-dots i")),
-      back: q(".st-back"), next: q(".st-next") };
+      back: q(".st-back"), next: q(".st-next"), fresh: false };
     S.paperIn.appendChild(mkClone()); S.sheet.appendChild(mkClone());
-    S.next.onclick = function () { goto(idx >= N - 1 ? TOTAL + .9 : INTRO + PER * (Math.max(idx, -1) + 1) + .05); };
+    S.next.onclick = function () { goto(idx >= N - 1 ? TOTAL + 1.2 : INTRO + PER * (Math.max(idx, -1) + 1) + .05); };
     S.back.onclick = function () { goto(INTRO + PER * (idx - 1) + .05); };
-    q(".st-skip").onclick = function () { goto(TOTAL + .9); };
+    q(".st-skip").onclick = function () { goto(TOTAL + 1.2); };
     return true;
   }
 
   function goto(sv) {
-    var top = S.track.getBoundingClientRect().top + scrollY + sv * innerHeight;
+    var top = S.track.getBoundingClientRect().top + scrollY + sv * UNIT * innerHeight;
     scrollTo({ top: top, behavior: reduce ? "auto" : "smooth" });
   }
+  function refresh() { S.paperIn.replaceChildren(mkClone()); S.sheet.replaceChildren(mkClone()); layout(); }
 
   /* measure everything once per resize / content refresh */
   function layout() {
-    var vh = innerHeight;
-    S.track.style.height = (TOTAL + 1) * vh + "px";
+    var vh = innerHeight, vw = innerWidth;
+    S.track.style.height = (TOTAL * UNIT + 1) * vh + "px";
     S.teacher.style.transform = ""; S.bob.style.transform = "";
+    S.holder.style.width = vw + "px"; S.holder.style.height = vh + "px";
+    /* paper = copy of the real <main>, same width and position, bottom-aligned to the last screen of the real page */
+    var mr = document.querySelector("main").getBoundingClientRect();
+    S.paperIn.style.left = mr.left + "px"; S.paperIn.style.width = mr.width + "px";
+    S.paperIn.style.top = Math.min(0, vh - S.paperIn.offsetHeight) + "px";
     /* board takes the shape of the full dashboard so nothing is cropped */
     var h = S.sheet.offsetHeight || 900;
     S.pin.style.setProperty("--st-ar", clamp(1440 / h, .45, 1.7).toFixed(3));
     var nat = S.svg.getBoundingClientRect(), pr = S.pin.getBoundingClientRect(), fr = S.frame.getBoundingClientRect();
-    S.k = nat.width / VBW; S.dist = Math.max(0, nat.left - 14); S.topRel = nat.top - pr.top; S.hx = 14 + 190 * S.k;
+    S.k = nat.width / VBW; S.dist = Math.max(0, nat.left - 14); S.topRel = nat.top - pr.top;
     S.bx = (fr.left + fr.width / 2 - nat.left) / S.k; S.by = (fr.top + 16 - nat.top) / S.k; S.sx = (fr.width + 20) / (136 * S.k);
     S.aimRail = aim(fr.left + fr.width / 2, fr.top + 16);
-    /* sheet fitted whole inside the board */
     var SW = S.screen.clientWidth, SH = S.screen.clientHeight, fs = Math.min(SW / 1440, SH / h);
     S.fs = fs; S.sheet.style.transform = "translate(" + (SW - 1440 * fs) / 2 + "px," + (SH - h * fs) / 2 + "px) scale(" + fs + ")";
     S.geo = STEPS.map(function (stp) {
@@ -132,9 +133,6 @@
       var r = el.getBoundingClientRect(), sr = S.sheet.getBoundingClientRect(), s = sr.width / 1440;
       return { x: (r.left - sr.left) / s, y: (r.top - sr.top) / s, w: r.width / s, h: r.height / s };
     });
-    /* paper: the page clone, scaled to the viewport width and bottom-aligned so it continues the real page */
-    var sc = innerWidth / 1440, ph = S.paperIn.offsetHeight * sc;
-    S.paperIn.style.transform = "translateY(" + Math.min(0, vh - ph) + "px) scale(" + sc + ")";
     pose = ""; idx = -2; render(sd);
   }
 
@@ -151,54 +149,56 @@
     S.next.textContent = i === N - 1 ? "Continue" : "Next";
   }
 
-  /* ---- the whole story as a pure function of scroll position s (in screens) ---- */
+  /* ---- the whole story as a pure function of scroll position s ---- */
   function render(s) {
-    var H = innerHeight, k = S.k, dist = S.dist;
-    /* wind-up */
-    var pA = seg(s, 0, 1.2), eA = ease(pA), pB = seg(s, 1.0, 1.5);
-    S.paper.style.display = s < 1.2 ? "" : "none";
-    S.paper.style.transform = "translateY(" + -eA * H + "px)";
-    S.edge.style.display = pA > 0 && pA < 1 ? "" : "none";
-    S.edge.style.top = H * (1 - eA) + "px";
-    S.roller.style.display = s > 0 && s < 1.5 ? "" : "none";
-    S.roller.style.height = 22 + eA * 56 + "px";
-    S.roller.style.transformOrigin = S.hx + "px 0";
-    S.roller.style.transform = "scaleX(" + (1 - .9 * ease(pB)) + ")";
-    S.roller.style.opacity = pB > .75 ? 1 - (pB - .75) / .25 : 1;
+    var H = innerHeight, W = innerWidth, k = S.k, dist = S.dist;
+    S.pin.classList.toggle("idle", s <= .001);
 
-    /* roll: drop -> catch -> carry -> hang */
-    var x = 190, y, rot, sc = 1;
-    if (s < 2.0) {
-      var pC = seg(s, 1.2, 2.0), y0 = -(S.topRel / k) - 80;
-      if (pC < .78) { var t = pC / .78; y = y0 + (126 - y0) * t * t; rot = 190 + (-196) * ease(t); }
-      else if (pC < .9) { y = 126 + 12 * quad((pC - .78) / .12); rot = -6; }
-      else { y = 138 - 6 * quad((pC - .9) / .1); rot = -6; }
-    } else if (s < 3.8) {
-      var eD = ease(seg(s, 2.0, 2.4)); y = 132 + 58 * eD; rot = -6 - 6 * eD;
-    } else {
-      var q = ease(seg(s, 3.8, 4.3));
-      x = 190 + (S.bx - 190) * q; y = 190 + (S.by - 190) * q; rot = -12 * (1 - q); sc = 1 + (S.sx - 1) * q;
+    /* 1) the last screen of the page lifts off and shrinks to the centre; 2) it winds up into a roll in the centre */
+    var p1 = ease(seg(s, 0, .8)), eR = ease(seg(s, .8, 2.0)), p3 = seg(s, 2.0, 2.8);
+    var sc = 1 - .42 * p1, Tn = eR * .132 * W, Gh = H * (1 - eR) + Tn * eR, cy = (H - Gh * sc) / 2;
+    S.holder.style.display = s >= 2.8 ? "none" : "";
+    S.holder.style.transform = "translateY(" + cy + "px) scale(" + sc + ")";
+    S.holder.style.opacity = 1 - seg(p3, 0, .3);
+    S.cover.style.display = p1 >= 1 ? "none" : ""; S.cover.style.opacity = 1 - p1;
+    S.leaf.style.clipPath = "inset(0 0 " + eR * 100 + "% 0 round " + (p1 * 22 / sc) + "px)";
+    S.paperIn.style.transform = "translateY(" + -eR * H + "px)";
+    S.shadow.style.height = (1 - eR) * H + "px"; S.shadow.style.opacity = p1; S.shadow.style.borderRadius = (p1 * 22 / sc) + "px";
+    S.roller.style.height = Tn + "px"; S.roller.style.display = Tn > 1 ? "" : "none";
+    S.teacher.style.opacity = seg(s, .2, .8);
+    S.board.style.opacity = seg(s, 1.9, 2.5);
+
+    /* 3) the roll leaves the centre, flies to the raised hand (arc), is caught, lowered, carried, then hung on the board */
+    var x = 190, y = 132, rot = -6, scl = 1;
+    if (s < 2.8) {
+      var e = ease(p3), x0 = (W / 2 - 14) / k, y0 = (H / 2 - S.topRel) / k, s0 = W * sc / (136 * k);
+      x = x0 + (190 - x0) * e; y = y0 + (132 - y0) * e - Math.sin(Math.PI * p3) * 80; rot = -6 * e; scl = s0 + (1 - s0) * Math.pow(e, .8);
+    } else if (s < 3.1) { y = 132 + 10 * Math.sin(Math.PI * seg(s, 2.8, 3.1)); }
+    else if (s < 5.0) { var eD = ease(seg(s, 3.1, 3.5)); y = 132 + 58 * eD; rot = -6 - 6 * eD; }
+    else {
+      var q = ease(seg(s, 5.0, 5.5));
+      x = 190 + (S.bx - 190) * q; y = 190 + (S.by - 190) * q; rot = -12 * (1 - q); scl = 1 + (S.sx - 1) * q;
     }
-    S.roll.style.opacity = s >= 1.2 && s < 4.3 ? 1 : 0;
-    S.roll.style.transform = "translate(" + x + "px," + y + "px) rotate(" + rot + "deg) scale(" + sc + ",1)";
+    S.roll.style.opacity = s < 2.0 ? 0 : s < 5.5 ? seg(s, 2.0, 2.2) : 0;
+    S.roll.style.transform = "translate(" + x + "px," + y + "px) rotate(" + rot + "deg) scale(" + (s >= 5.0 ? scl + "," + 1 : scl + "," + scl) + ")";
 
     /* walk: position and gait share one clock so she plants her feet exactly at the end */
-    var pE = seg(s, 2.4, 3.6), e = quad(pE), env = pE > 0 && pE < 1 ? Math.min(1, pE * 6, (1 - pE) * 6) : 0;
-    var ph = dist * e / (150 * k) * 2 * Math.PI, sn = Math.sin(ph);
-    S.teacher.style.transform = "translateX(" + -dist * (1 - e) + "px)";
+    var pE = seg(s, 3.6, 4.8), w = quad(pE), env = pE > 0 && pE < 1 ? Math.min(1, pE * 6, (1 - pE) * 6) : 0;
+    var ph = dist * w / (150 * k) * 2 * Math.PI, sn = Math.sin(ph);
+    S.teacher.style.transform = "translateX(" + -dist * (1 - w) + "px)";
     S.legA.style.transform = "rotate(" + (-5 + sn * 20 * env) + "deg)";
     S.legB.style.transform = "rotate(" + (5 - sn * 20 * env) + "deg)";
     S.bob.style.transform = "translateY(" + -Math.abs(Math.cos(ph)) * 2.2 * env + "px)";
 
     /* board: rod, then unroll */
-    var pG = seg(s, 4.3, 5.0), eG = ease(pG);
-    S.rod.style.opacity = s >= 4.2 ? 1 : 0;
-    S.pull.style.opacity = s >= 4.2 && pG < 1 ? 1 : 0;
+    var pG = seg(s, 5.5, 6.2), eG = ease(pG);
+    S.rod.style.opacity = s >= 5.4 ? 1 : 0;
+    S.pull.style.opacity = s >= 5.4 && pG < 1 ? 1 : 0;
     S.pull.style.transform = "translateY(" + eG * (S.screen.clientHeight - 8) + "px)";
     S.screen.style.clipPath = "inset(0 0 " + (1 - eG) * 100 + "% 0)";
 
     /* arm poses (arms ease between poses with CSS) */
-    var want = s < 2.0 ? "up" : s < 3.6 ? "carry" : s < 4.3 ? "rail" : s < INTRO ? "rest" : "teach";
+    var want = s < 3.1 ? "up" : s < 4.8 ? "carry" : s < 5.5 ? "rail" : s < INTRO ? "rest" : "teach";
     if (want !== pose) {
       pose = want;
       if (want === "up") arms(-84, -16); else if (want === "carry") arms(-25, -55);
@@ -212,15 +212,16 @@
   /* scroll -> target; displayed value chases it a little each frame (the friction / inertia) */
   function onScroll() {
     if (!S) return;
-    st = clamp(-S.track.getBoundingClientRect().top / innerHeight, 0, TOTAL);
+    var r = S.track.getBoundingClientRect();
+    st = clamp(-r.top / (innerHeight * UNIT), 0, TOTAL);
+    if (st === 0 && r.top < innerHeight * 1.5 && !S.fresh) { S.fresh = true; refresh(); }   /* fresh snapshot of live data just before it is needed */
+    if (r.top > innerHeight * 2.5) S.fresh = false;
     if (!raf) raf = requestAnimationFrame(tick);
   }
   function tick() {
     raf = 0;
-    if (!cloned && st > 0) { cloned = true; S.paperIn.replaceChildren(mkClone()); S.sheet.replaceChildren(mkClone()); layout(); }  /* fresh snapshot of live data */
-    if (cloned && st === 0 && sd < .001) cloned = false;
     var d = st - sd;
-    sd = reduce || Math.abs(d) < .0005 ? st : sd + d * .1;
+    sd = reduce || Math.abs(d) < .0005 ? st : sd + d * .12;
     render(sd);
     if (sd !== st) raf = requestAnimationFrame(tick);
   }

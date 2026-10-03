@@ -1,43 +1,44 @@
 /* SCROLL TOUR (inline) — a tall track containing one sticky 100vh stage. Scrolling through the track plays the story;
    after it ends the stage scrolls away and your footer follows. Pairs with scroll-tour.js. */
 
-.st-tour{position:relative;display:block}
+.st-tour{position:relative;display:block;margin-top:-100vh}
 .st-track{position:relative}
-.st-pin{position:sticky;top:0;height:100vh;overflow:hidden;
+.st-pin.idle{pointer-events:none}
+.st-pin{position:sticky;top:0;height:100vh;overflow:hidden;z-index:10;
   background:radial-gradient(ellipse at 50% 20%,#3b2c1e,#16110c 72%)}
-.st-pin::before{content:"";position:absolute;left:0;right:0;bottom:0;height:64px;
-  background:linear-gradient(#2e2015,#17100a);border-top:1px solid rgba(255,200,130,.12)}
 
-/* ---------- the page being wound up ---------- */
-.st-paper{position:absolute;inset:0;z-index:5;overflow:hidden;background:var(--bg-deep,#0b0b0d);will-change:transform;pointer-events:none}
-.st-paper-in{position:absolute;left:0;top:0;width:1440px;transform-origin:0 0}
-.st-paper .dashboard-body,.st-sheet .dashboard-body{max-width:none;margin:0}
+/* ---------- the page being wound up (starts as an exact copy of the last screen of the real page) ---------- */
+.st-cover{position:absolute;inset:0;z-index:4;background:var(--bg-deep,#0b0b0d);pointer-events:none}
+.st-holder{position:absolute;left:0;top:0;z-index:5;transform-origin:50% 0;pointer-events:none;will-change:transform,opacity}
+.st-shadow{position:absolute;left:0;right:0;top:0;box-shadow:0 30px 90px rgba(0,0,0,.7)}
+.st-leaf{position:absolute;inset:0;overflow:hidden;background:var(--bg-deep,#0b0b0d)}
+.st-paper-in{position:absolute;left:0;top:0;transform-origin:0 0;box-sizing:border-box;will-change:transform}
+.st-paper-in>main{margin:0!important;max-width:none!important;width:100%!important;box-sizing:border-box}
+.st-sheet .dashboard-body{max-width:none;margin:0}
 
-.st-roller{position:absolute;left:0;right:0;top:0;height:22px;z-index:6;pointer-events:none;will-change:height,transform;
+.st-roller{position:absolute;left:-10px;right:-10px;top:0;height:0;border-radius:999px;
   background:
-    linear-gradient(180deg,rgba(0,0,0,.55) 0%,rgba(255,255,255,.16) 16%,rgba(255,255,255,0) 34%,rgba(0,0,0,.18) 70%,rgba(0,0,0,.7) 100%),
-    linear-gradient(180deg,var(--bg-surface,#1d1d1f),var(--bg-deep,#0b0b0d));
-  box-shadow:0 2px 0 rgba(255,159,10,.35),0 12px 28px rgba(0,0,0,.55)}
-.st-roller::before{content:"";position:absolute;inset:0;opacity:.5;
+    linear-gradient(180deg,rgba(0,0,0,.6) 0%,rgba(255,255,255,.22) 18%,rgba(255,255,255,0) 38%,rgba(0,0,0,.2) 70%,rgba(0,0,0,.75) 100%),
+    linear-gradient(180deg,#4a4234,#14110d);
+  box-shadow:0 0 0 1px rgba(255,159,10,.3),0 18px 40px rgba(0,0,0,.6)}
+.st-roller::before{content:"";position:absolute;inset:0;border-radius:inherit;opacity:.5;
   background:repeating-linear-gradient(90deg,transparent 0 46px,rgba(255,255,255,.05) 46px 47px)}
-.st-roller::after{content:"";position:absolute;left:0;right:0;top:100%;height:84px;
-  background:linear-gradient(180deg,rgba(0,0,0,.62) 0%,rgba(0,0,0,.28) 28%,rgba(255,255,255,.035) 52%,transparent 100%)}
-.st-cap{position:absolute;top:0;bottom:0;width:26px;border-radius:50%;
+.st-cap{position:absolute;top:0;bottom:0;width:calc(100% * 0 + 34px);border-radius:50%;
   background:repeating-radial-gradient(ellipse at 50% 50%,#3a342b 0 2px,#15120e 2px 4px)}
-.st-cap.l{left:-13px}.st-cap.r{right:-13px}
-.st-edge{position:absolute;left:0;right:0;height:70px;z-index:4;pointer-events:none;display:none;
-  background:linear-gradient(rgba(0,0,0,.65),transparent)}
+.st-cap.l{left:-17px}.st-cap.r{right:-17px}
 
 /* ---------- classroom ---------- */
-.st-stage{position:absolute;inset:0;display:flex;align-items:flex-end;justify-content:center;
-  gap:clamp(6px,2vw,28px);padding-bottom:64px}
-.st-teacher{flex:0 0 auto;width:clamp(130px,17vw,240px);will-change:transform}
+.st-stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+.st-row{position:relative;display:flex;align-items:flex-end;justify-content:center;gap:clamp(6px,2vw,28px)}
+.st-row::after{content:"";position:absolute;left:-60vw;right:-60vw;top:calc(100% + 34px);height:60vh;z-index:-1;
+  background:linear-gradient(#2e2015,#17100a);border-top:1px solid rgba(255,200,130,.12)}
+.st-teacher{flex:0 0 auto;width:clamp(130px,17vw,240px);margin-bottom:calc(clamp(130px,17vw,240px) * -.07);will-change:transform}
 .st-teacher svg{display:block;width:100%;height:auto;overflow:visible}
 .st-uA,.st-fA{transition:transform .8s cubic-bezier(.45,0,.2,1)}
 .st-roll{transition:opacity .25s}
 
 .st-board{flex:0 0 auto;position:relative;
-  width:min(calc(100vw - clamp(130px,17vw,240px) - clamp(240px,24vw,340px) - 90px),calc((100vh - 110px) * var(--st-ar,1.6)),1500px)}
+  width:min(calc(100vw - clamp(130px,17vw,240px) - clamp(240px,24vw,340px) - 90px),calc((100vh - 200px) * var(--st-ar,1.6)),1500px)}
 .st-board::before,.st-board::after{content:"";position:absolute;top:calc(100% - 4px);width:10px;height:44px;background:#5a3a22;border-radius:0 0 4px 4px}
 .st-board::before{left:12%}.st-board::after{right:12%}
 .st-frame{position:relative;width:100%;aspect-ratio:var(--st-ar,1.6);
@@ -69,10 +70,9 @@
 @media (max-width:800px){
   .st-card{left:50%;right:auto;top:auto;bottom:20px;transform:translateX(-50%);width:min(680px,92vw)}
   .st-foot{flex-direction:row;align-items:center}
-  .st-stage{flex-direction:column-reverse;align-items:center;padding-bottom:200px}
-  .st-pin::before{height:200px}
+  .st-row{flex-direction:column-reverse;align-items:center}
   .st-teacher{width:110px;align-self:flex-start}
-  .st-board{width:min(100%,calc((100vh - 330px) * var(--st-ar,1.6)))}
+  .st-board{width:min(100%,calc((100vh - 360px) * var(--st-ar,1.6)))}
 }
 @media (prefers-reduced-motion:reduce){
   .st-uA,.st-fA,.st-card,.st-ring{transition:none}
