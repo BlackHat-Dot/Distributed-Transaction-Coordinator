@@ -1,0 +1,148 @@
+/* ==========================================================================
+   FINALE LAYER  v1.0 — load AFTER seat-story.css. Pairs with finale.js
+   Scope: everything AFTER the "Saga forensic audit stream" panel:
+          seat-story chapter, guided tour room, closing scene, footer.
+   The dashboard above (and the dashboard copy shown on the tour board)
+   is NOT touched.
+
+   PALETTE  "Obsidian & Ivory, one Signal accent"
+   Brand-grade restraint: near-black ink, warm ivory type, hairline borders,
+   ONE cool accent used sparingly, green kept only for "verified/committed".
+   No rainbow gradients, no wood, no amber glow.
+   ========================================================================== */
+:root{
+  --fx-ink:#07080a;
+  --fx-ink-2:#0c0e11;
+  --fx-ink-3:#13161b;
+  --fx-ink-4:#1b1f26;
+  --fx-line:rgba(255,255,255,.08);
+  --fx-line-2:rgba(255,255,255,.15);
+  --fx-ivory:#f3f1ec;
+  --fx-text-2:#a4a9b1;
+  --fx-text-3:#646a73;
+  --fx-accent:#3d8bff;
+  --fx-accent-hi:#9fceff;
+  --fx-accent-rgb:61,139,255;
+  --fx-ok:#3ddc97;
+}
+
+/* ---------- 1. Seat story chapter: remap the old amber/green to the new tokens ---------- */
+.ss,.ss-stage{
+  --accent-amber:var(--fx-accent);
+  --accent-green:var(--fx-ok);
+  --bg-deep:var(--fx-ink);
+  --text-primary:var(--fx-ivory);
+  --text-secondary:var(--fx-text-2);
+  --border-subtle:var(--fx-line);
+}
+.ss-w[data-i="3"].now{color:var(--fx-ok)}
+.ss-tile.s1{background:rgba(var(--fx-accent-rgb),.10)}
+.ss-tile.s2{color:#04101f}
+.ss-tile.s3{border-color:var(--fx-ok);background:var(--fx-ok);color:#04150d}
+.ss-ln em{color:var(--fx-ok)}
+.ss-head{box-shadow:0 0 0 4px rgba(var(--fx-accent-rgb),.2)}
+.ss-scan{box-shadow:0 0 14px 3px rgba(var(--fx-accent-rgb),.65)}
+.ss-rw{background:linear-gradient(180deg,#ffffff,var(--fx-accent-hi) 60%,var(--fx-accent));
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.ss-rew svg{fill:var(--fx-accent-hi)}
+.ss-tkwrap{--paper:#f1f1ee;--ink:#0b0d10;--ink2:#5d636c;--rule:rgba(11,13,16,.2);--ok:#14854b}
+.ss-tk-head b{background:#14854b}
+
+/* ---------- 2. Guided tour room: graphite studio instead of a wooden classroom ---------- */
+.st-pin{background:radial-gradient(ellipse at 50% 18%,#161b24,var(--fx-ink) 72%)}
+.st-cover,.st-leaf,.st-sheet{background:var(--fx-ink)}
+.st-sheet{background:var(--bg-deep,#000)}  /* the dashboard copy keeps the real dashboard background */
+.st-beam::before{background:linear-gradient(180deg,rgba(159,206,255,0),rgba(159,206,255,.07))}
+.st-mote{background:#d6e8ff}
+.st-endbg{background:linear-gradient(180deg,rgba(7,8,10,.6) 0%,rgba(7,8,10,.55) 45%,var(--st-end,#07080a) 100%)}
+.st-row::after{background:linear-gradient(#10141a,var(--fx-ink));border-top:1px solid rgba(255,255,255,.07)}
+.st-board::before,.st-board::after{background:#242a33}
+.st-frame{background:#1b1f26;box-shadow:0 30px 60px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,255,255,.14),inset 0 1px 0 rgba(255,255,255,.22)}
+.st-frame::after{background:#2a303a}
+.st-chalk{background:radial-gradient(ellipse at 40% 30%,#171b22,#0a0c10 80%)}
+.st-rod{background:linear-gradient(#0a0c0f,#3b424d 45%,#0a0c0f)}
+.st-pull{background:#aeb6c2}
+.st-ring{border-color:var(--fx-accent);box-shadow:0 0 0 9999px rgba(0,0,0,.55),0 0 18px rgba(var(--fx-accent-rgb),.5)}
+.st-roller{background:
+    linear-gradient(180deg,rgba(0,0,0,.6) 0%,rgba(255,255,255,.2) 18%,rgba(255,255,255,0) 38%,rgba(0,0,0,.2) 70%,rgba(0,0,0,.75) 100%),
+    linear-gradient(180deg,#444b56,#101318);
+  box-shadow:0 0 0 1px rgba(159,206,255,.28),0 18px 40px rgba(0,0,0,.6)}
+.st-cap{background:repeating-radial-gradient(ellipse at 50% 50%,#323944 0 2px,#12151a 2px 4px)}
+.st-card{background:rgba(10,12,15,.93);border:1px solid var(--fx-line-2);color:var(--fx-ivory);
+  box-shadow:0 18px 40px rgba(0,0,0,.55);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.st-card h4{color:var(--fx-accent-hi)}
+.st-card.completed{border-color:rgba(var(--fx-accent-rgb),.55);box-shadow:0 18px 45px rgba(0,0,0,.6),0 0 0 1px rgba(var(--fx-accent-rgb),.12)}
+.st-dots i{background:#2b313a}
+.st-dots i:hover{background:#4a525e}
+.st-dots i.on{background:var(--fx-accent);box-shadow:0 0 6px rgba(var(--fx-accent-rgb),.6)}
+.st-badge-complete{color:var(--fx-ok);background:rgba(61,220,151,.1);border-color:rgba(61,220,151,.28)}
+
+/* teacher figure: inline SVG colours (CSS beats presentation attributes) */
+#st-roll stop:nth-child(1){stop-color:#4a515c}
+#st-roll stop:nth-child(2){stop-color:#23282f}
+#st-roll stop:nth-child(3){stop-color:#0d0f12}
+#st-par stop:nth-child(1){stop-color:#f3f1ec}
+#st-par stop:nth-child(2){stop-color:#cfd3d9}
+#st-par stop:nth-child(3){stop-color:#9ea4ad}
+.st-roll rect{stroke:var(--fx-accent)!important}
+.st-roll rect[fill="#d8bd8a"]{fill:#aeb6c2}
+.st-bob path[fill="#9a3b32"]{fill:var(--fx-accent)}
+
+/* buttons that live in the tour card and the finale: ivory primary, ghost secondary (no blue->indigo gradient) */
+.st-card .btn-primary,.fx .btn-primary,.site-footer .btn-primary{
+  background:var(--fx-ivory)!important;color:#07080a!important;border:1px solid transparent!important;
+  box-shadow:none!important;filter:none!important;opacity:1!important;font-weight:600}
+.st-card .btn-primary:hover,.fx .btn-primary:hover{background:#fff!important}
+.st-card .btn-outline,.fx .btn-outline,.site-footer .btn-outline{
+  background:transparent!important;color:var(--fx-ivory)!important;border:1px solid var(--fx-line-2)!important}
+.st-card .btn-outline:hover,.fx .btn-outline:hover{border-color:var(--fx-accent-hi)!important;color:#fff!important;background:rgba(255,255,255,.04)!important}
+
+/* the old text-only closing scene is replaced by the interactive finale below */
+.st-end{display:none!important}
+
+/* ---------- 3. Footer = finale ---------- */
+.site-footer{background:var(--fx-ink)!important;color:var(--fx-text-2);border-top:0;
+  padding:0 0 28px!important;box-shadow:0 -40px 90px rgba(0,0,0,.65)}
+.site-footer::before{left:0;right:0;background:linear-gradient(90deg,transparent,rgba(159,206,255,.55),transparent);z-index:3}
+.site-footer h5{color:var(--fx-ivory)}
+.site-footer a:hover{color:var(--fx-accent-hi)}
+.site-footer-grid,.site-footer-bottom{padding-inline:clamp(20px,5vw,72px);box-sizing:border-box;width:100%}
+.site-footer-grid{margin-top:clamp(40px,7vw,88px)}
+.site-footer-bottom{border-top:0;position:relative}
+.site-footer-bottom::before{content:"";position:absolute;top:0;left:clamp(20px,5vw,72px);right:clamp(20px,5vw,72px);height:1px;background:var(--fx-line)}
+.site-wordmark span{background:linear-gradient(180deg,rgba(255,255,255,.13),rgba(255,255,255,.015) 85%);
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* ---------- 4. The interactive hero ---------- */
+.fx{position:relative;min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:space-between;
+  overflow:hidden;color:var(--fx-ivory);font-family:var(--font-sans,system-ui,sans-serif);touch-action:pan-y;
+  background:radial-gradient(ellipse 90% 55% at 50% 0%,#10151d 0%,transparent 70%),var(--fx-ink)}
+.fx::after{content:"";position:absolute;left:0;right:0;bottom:0;height:24%;z-index:1;pointer-events:none;background:linear-gradient(rgba(7,8,10,0),var(--fx-ink))}
+.fx-cv{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:1;opacity:0;transition:opacity .6s}
+.fx.fx-ready .fx-cv{opacity:1}
+.fx-ui{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;justify-content:space-between;
+  padding:clamp(22px,4vh,40px) clamp(20px,4vw,72px) clamp(24px,4.5vh,48px);pointer-events:none}
+.fx-top,.fx-low{display:flex;justify-content:space-between;align-items:flex-start;gap:20px 32px;flex-wrap:wrap}
+.fx-low{align-items:flex-end}
+.fx-eyebrow{margin:0;display:flex;align-items:center;gap:12px;font:600 11.5px/1 var(--font-mono,ui-monospace,monospace);
+  letter-spacing:.18em;text-transform:uppercase;color:var(--fx-text-2)}
+.fx-eyebrow i{width:28px;height:1px;background:var(--fx-accent)}
+.fx-meter{margin:0;font:500 11.5px/1.5 var(--font-mono,ui-monospace,monospace);letter-spacing:.06em;color:var(--fx-text-2);text-align:right}
+.fx-meter b{color:var(--fx-ivory);font-weight:600;font-variant-numeric:tabular-nums}
+.fx-meter .sep{display:inline-block;width:18px;height:1px;background:var(--fx-line-2);vertical-align:middle;margin:0 10px}
+.fx-sub{margin:0;max-width:44ch;font-size:clamp(14px,1.25vw,17px);line-height:1.62;color:var(--fx-text-2)}
+.fx-cta{display:flex;gap:12px;flex-wrap:wrap;pointer-events:auto}
+.fx-cta .btn{text-decoration:none}
+
+/* real headline: kept for screen readers / no-JS; hidden once the canvas is ready */
+.fx-h{margin:0;font-family:"Big Shoulders Display","Schibsted Grotesk",system-ui,sans-serif;font-weight:900;text-transform:uppercase;
+  font-size:clamp(40px,10vw,150px);line-height:.92;text-align:center;padding:4vh 0}
+.fx.fx-ready .fx-h{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+@media (max-width:760px){
+  .fx-meter{text-align:left;width:100%}
+  .fx-low{flex-direction:column;align-items:flex-start}
+  .fx-cta{width:100%}
+  .fx-cta .btn{flex:1;justify-content:center;text-align:center}
+}
+@media (prefers-reduced-motion:reduce){.fx-cv{transition:none}}
