@@ -51,6 +51,16 @@
     '</g></svg>';
   var VBW = 270, SHX = 104, SHY = 140;
 
+  /* ceiling light-beam with drifting dust (shown while the board is open) */
+  var BEAM = '<div class="st-beam">' + [0,1,2,3,4,5,6,7,8,9,10,11,12,13].map(function (n) {
+    return '<i class="st-mote" style="left:' + (28 + (n * 37) % 46) + '%;top:' + ((n * 23) % 62) + '%;--s:' + (2 + n % 3) + 'px;--t:' + (5 + n % 5) + 's;--d:-' + (n * 0.9).toFixed(1) + 's"></i>';
+  }).join("") + '</div>';
+  /* closing scene: replaces the empty room after the board rolls up, and bridges into the footer colour */
+  var END = '<div class="st-endbg"></div><div class="st-end"><p class="st-eyebrow">Tour complete</p>' +
+    '<h3 class="st-headline"><span class="st-ln"><span>Every seat,</span></span><span class="st-ln"><span class="st-amber">sold exactly once.</span></span></h3>' +
+    '<p class="st-sub">Idempotent sagas, Redis mutex locks and automatic compensation. Proven live, not just promised.</p>' +
+    '<div class="st-cta"><a class="btn btn-primary" href="booking.html">Book a seat \u2794</a><button class="btn btn-outline st-replay" type="button">Replay tour \u21BA</button></div></div>';
+
   var S = null, sd = 0, st = 0, raf = 0, pose = "", idx = -2;
   var clamp = function (v, a, b) { return Math.max(a, Math.min(b, v)); };
   var seg = function (s, a, b) { return clamp((s - a) / (b - a), 0, 1); };
@@ -83,13 +93,13 @@
     if (!host) { host = document.createElement("section"); host.id = "st-tour"; document.querySelector("main").insertAdjacentElement("afterend", host); }
     host.className = "st-tour"; host.setAttribute("aria-label", "Guided tour of the dashboard");
     host.innerHTML =
-      '<div class="st-track"><div class="st-pin">' +
+      '<div class="st-track"><div class="st-pin">' + BEAM +
         '<div class="st-stage"><div class="st-row"><div class="st-teacher">' + TEACHER + '</div>' +
         '<div class="st-board"><div class="st-frame"><div class="st-chalk"></div><div class="st-screen"><div class="st-sheet"></div><div class="st-ring"></div></div><div class="st-rod"></div><div class="st-pull"></div></div></div></div></div>' +
         '<div class="st-cover"></div>' +
         '<div class="st-holder"><div class="st-shadow"></div><div class="st-leaf"><div class="st-paper-in"></div></div><div class="st-roller"><i class="st-cap l"></i><i class="st-cap r"></i></div></div>' +
         '<div class="st-card"><h4></h4><p></p><div class="st-foot"><div class="st-dots">' + STEPS.map(function () { return "<i></i>"; }).join("") + '</div>' +
-        '<div class="st-btns"><button class="btn btn-outline btn-sm st-skip">Skip tour</button><button class="btn btn-outline btn-sm st-back">Back</button><button class="btn btn-primary btn-sm st-next">Next</button></div></div></div>' +
+        '<div class="st-btns"><button class="btn btn-outline btn-sm st-skip">Skip tour</button><button class="btn btn-outline btn-sm st-back">Back</button><button class="btn btn-primary btn-sm st-next">Next</button></div></div></div>' + END +
       '</div></div>';
     var q = function (s) { return host.querySelector(s); };
     S = { host: host, track: q(".st-track"), pin: q(".st-pin"), teacher: q(".st-teacher"), board: q(".st-board"), svg: q(".st-teacher svg"),
@@ -97,8 +107,10 @@
       screen: q(".st-screen"), sheet: q(".st-sheet"), ring: q(".st-ring"), rod: q(".st-rod"), pull: q(".st-pull"), frame: q(".st-frame"),
       cover: q(".st-cover"), holder: q(".st-holder"), shadow: q(".st-shadow"), leaf: q(".st-leaf"), paperIn: q(".st-paper-in"), roller: q(".st-roller"),
       card: q(".st-card"), title: q("h4"), text: q("p"), dots: [].slice.call(host.querySelectorAll(".st-dots i")),
+      beam: q(".st-beam"), endbg: q(".st-endbg"), end: q(".st-end"), lns: [].slice.call(host.querySelectorAll(".st-ln>span")), eyebrow: q(".st-eyebrow"), sub: q(".st-sub"), cta: q(".st-cta"),
       skip: q(".st-skip"), back: q(".st-back"), next: q(".st-next"), fresh: false };
     S.paperIn.appendChild(mkClone()); S.sheet.appendChild(mkClone());
+    q(".st-replay").onclick = function () { goto(0); };
     S.dots.forEach(function (dot, dotIdx) {
       dot.title = "Jump to step " + (dotIdx + 1);
       dot.onclick = function () { goto(INTRO + PER * dotIdx + .05); };
@@ -156,6 +168,9 @@
     S.k = nat.width / VBW; S.dist = Math.max(0, nat.left - 14); S.topRel = nat.top - pr.top;
     S.bx = (fr.left + fr.width / 2 - nat.left) / S.k; S.by = (fr.top + 16 - nat.top) / S.k; S.sx = (fr.width + 20) / (136 * S.k);
     S.aimRail = aim(fr.left + fr.width / 2, fr.top + 16);
+    S.beam.style.left = (fr.left - pr.left - fr.width * .04) + "px"; S.beam.style.width = fr.width * 1.08 + "px"; S.beam.style.height = Math.max(0, fr.top - pr.top + 8) + "px";
+    var ft = document.querySelector(".site-footer"), fc = ft ? getComputedStyle(ft).backgroundColor : "";
+    S.pin.style.setProperty("--st-end", fc && !/rgba\(0, 0, 0, 0\)|transparent/.test(fc) ? fc : "#1d1d1f");
 
     /* Measure each step's element unscaled directly from S.sheet */
     var prevTransition = S.sheet.style.transition;
@@ -181,8 +196,10 @@
     pose = ""; render(sd);
   }
 
+  function swap() { S.card.classList.remove("swap"); void S.card.offsetWidth; S.card.classList.add("swap"); }
   function focus(i) {
     if (i === N) {
+      swap();
       S.ring.style.opacity = 0;
       S.card.classList.add("completed");
       S.title.innerHTML = '<span class="st-badge-complete">✓ Tour Complete</span><br>All 5 Invariants Verified';
@@ -223,6 +240,7 @@
     var sr = S.screen.getBoundingClientRect();
     arms(aim(sr.left + rx + rw / 2, sr.top + ry + rh / 2), -6);
 
+    swap();
     S.title.textContent = STEPS[i].title;
     S.text.textContent = STEPS[i].text;
     S.dots.forEach(function (d, n) { d.classList.toggle("on", n === i); });
@@ -246,8 +264,8 @@
     S.paperIn.style.transform = "translateY(" + -eR * H + "px)";
     S.shadow.style.height = (1 - eR) * H + "px"; S.shadow.style.opacity = p1; S.shadow.style.borderRadius = (p1 * 22 / sc) + "px";
     S.roller.style.height = Tn + "px"; S.roller.style.display = Tn > 1 ? "" : "none";
-    S.teacher.style.opacity = seg(s, 1.4, 2.0);
-    S.board.style.opacity = seg(s, 1.9, 2.5);
+    S.teacher.style.opacity = seg(s, 1.4, 2.0) * (1 - seg(s, OUTRO_START + 1.9, TOTAL - .1));
+    S.board.style.opacity = seg(s, 1.9, 2.5) * (1 - seg(s, OUTRO_START + 1.3, OUTRO_START + 1.9));
 
     /* 3) the roll leaves the centre, flies to the raised hand (arc), is caught, lowered, carried, then hung on the board */
     var x = 190, y = 132, rot = -6, scl = 1;
@@ -280,6 +298,17 @@
     S.pull.style.opacity = s >= 5.4 && boardOpen > 0.005 ? 1 : 0;
     S.pull.style.transform = "translateY(" + boardOpen * (S.screen.clientHeight - 8) + "px)";
     S.screen.style.clipPath = "inset(0 0 " + (1 - boardOpen) * 100 + "% 0)";
+
+    /* light beam follows the board; the closing scene takes over once the room is empty */
+    S.beam.style.opacity = (s < OUTRO_START ? eG : Math.max(0, 1 - eRollUp)) * .9;
+    var ep = seg(s, OUTRO_START + 1.3, OUTRO_START + 2.2), ee = ease(seg(s, OUTRO_START + .9, OUTRO_START + 2.2));
+    S.endbg.style.opacity = ee;
+    S.end.style.visibility = ep > 0 ? "visible" : "hidden"; S.end.style.pointerEvents = ep > .6 ? "auto" : "none";
+    S.lns.forEach(function (l, n) { var t = ease(clamp(ep * 1.7 - n * .3, 0, 1)); l.style.transform = "translateY(" + (1 - t) * 108 + "%)"; });
+    S.eyebrow.style.opacity = ease(clamp(ep * 2, 0, 1));
+    var t2 = ease(clamp(ep * 1.6 - .6, 0, 1)), t3 = ease(clamp(ep * 1.6 - .8, 0, 1));
+    S.sub.style.opacity = t2; S.sub.style.transform = "translateY(" + (1 - t2) * 14 + "px)";
+    S.cta.style.opacity = t3; S.cta.style.transform = "translateY(" + (1 - t3) * 14 + "px)";
 
     /* arm poses & gestures */
     if (s < OUTRO_START) {
@@ -347,8 +376,23 @@
     anchor.insertAdjacentElement("afterend", b);
   }
 
+  /* footer: staggered reveal, hairline that draws in, oversized cropped wordmark, back-to-top */
+  function enhanceFooter() {
+    var f = document.querySelector(".site-footer"); if (!f || f.dataset.stDone) return;
+    f.dataset.stDone = "1"; f.classList.add("st-js");
+    var wm = document.createElement("div"); wm.className = "site-wordmark"; wm.setAttribute("aria-hidden", "true");
+    wm.innerHTML = "DTC".split("").map(function (c, n) { return '<span style="transition-delay:' + (n * 90 + 250) + 'ms">' + c + "</span>"; }).join("");
+    f.appendChild(wm);
+    var bt = f.querySelector(".site-footer-bottom");
+    if (bt) { var a = document.createElement("a"); a.href = "#"; a.className = "st-top"; a.textContent = "Back to top \u2191";
+      a.addEventListener("click", function (e) { e.preventDefault(); scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" }); }); bt.appendChild(a); }
+    if (reduce || !("IntersectionObserver" in window)) { f.classList.add("in"); return; }
+    new IntersectionObserver(function (en, o) { if (en[0].isIntersecting) { f.classList.add("in"); o.disconnect(); } }, { threshold: .18 }).observe(f);
+  }
+
   function init() {
     if (!build()) return;
+    enhanceFooter();
     addButton(); layout();
     var t; addEventListener("resize", function () { clearTimeout(t); t = setTimeout(function () { layout(); onScroll(); }, 120); });
     addEventListener("scroll", onScroll, { passive: true });
