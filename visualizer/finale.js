@@ -13,7 +13,7 @@
   "use strict";
   var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
   var clamp = function (v, a, b) { return Math.min(b, Math.max(a, v)); };
-  var WORD = "ONCE.", SC = .5, LIFE = 1050;
+  var WORD = "ONCE.", SC = .5, LIFE = 1900, TS = 448, TCSS = 520, TAU = 6.2832;
 
   function init() {
     var footer = document.querySelector(".site-footer");
@@ -62,43 +62,66 @@
         vid.addEventListener("loadeddata", function () { mediaOK = true; }); vid.addEventListener("error", function () { mediaOK = false; });
       } else { img = new Image(); img.onload = function () { mediaOK = true; }; img.src = MEDIA; }
     }
-    function drawMedia(x) {
-      var el = vid || img, w = vid ? vid.videoWidth : img.naturalWidth, h = vid ? vid.videoHeight : img.naturalHeight;
-      if (!w || !h) return false;
-      var k = Math.max(W / w, H / h), dw = w * k, dh = h * k; x.drawImage(el, (W - dw) / 2, (H - dh) / 2, dw, dh); return true;
-    }
-
-    /* procedural foam: cream masses, amber cells, clear glass bubbles. Seamless tile so it can drift forever. */
-    function makeFoam(t, S, withBase, scale, count) {
-      t.c.width = t.c.height = Math.round(S * dpr);
-      var x = t.x; x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, S, S);
-      var tile = function (cx, cy, r, fn) { for (var ox = -S; ox <= S; ox += S) for (var oy = -S; oy <= S; oy += S) { var X = cx + ox, Y = cy + oy; if (X + r < 0 || X - r > S || Y + r < 0 || Y - r > S) continue; fn(X, Y); } };
-      if (withBase) {
-        x.fillStyle = "#6e4623"; x.fillRect(0, 0, S, S);
-        for (var q = 0; q < 170; q++) {
-          var bx = rnd() * S, by = rnd() * S, br = (36 + rnd() * 90) * scale, amber = rnd() > .84;
-          tile(bx, by, br, function (X, Y) {
-            var g = x.createRadialGradient(X, Y, 0, X, Y, br);
-            g.addColorStop(0, amber ? "rgba(224,160,70,.9)" : "rgba(252,250,244,1)"); g.addColorStop(.6, amber ? "rgba(200,135,50,.6)" : "rgba(240,234,222,.92)"); g.addColorStop(1, "rgba(232,226,214,0)");
-            x.fillStyle = g; x.fillRect(X - br, Y - br, br * 2, br * 2);
-          });
-        }
-      }
-      var list = [], i;
-      for (i = 0; i < count; i++) list.push({ x: rnd() * S, y: rnd() * S, r: (2.5 + 42 * Math.pow(rnd(), 3.1)) * scale, tint: rnd() });
+    var spec = function (nx, ny, nz, p) { return Math.pow(Math.max(0, -.45 * nx - .55 * ny + .7 * nz), p); };
+    function envFn(L, a, b, sp) { return function (nx, ny, nz, h, o) { var t = clamp(.5 + .5 * (nx * a + ny * b), 0, 1), i = (t * 255 | 0) * 3, s = sp ? spec(nx, ny, nz, 40) * 255 * sp : 0;
+        o[0] = Math.min(255, L[i] + s); o[1] = Math.min(255, L[i + 1] + s); o[2] = Math.min(255, L[i + 2] + s); }; }
+    var BUILD = [
+      function chrome() { var f = mkFbm(3, 3, .5), w = mkFbm(2, 2, .5);
+        return bake(function (u, v) { return f(u + .22 * w(u, v), v + .22 * w(v + .3, u)); }, 220,
+          envFn(lut([[0, 6, 8, 12], [.16, 70, 88, 115], [.28, 255, 255, 255], [.4, 14, 20, 30], [.58, 150, 175, 210], [.76, 255, 255, 255], [.9, 26, 36, 54], [1, 8, 10, 16]]), 1.5, 1.1, .25)); },
+      function foilBlue() { var f = mkFbm(3, 3, .5);
+        return bake(function (u, v) { var n = 1 - Math.abs(2 * f(u, v) - 1); return n * n; }, 75,
+          envFn(lut([[0, 4, 8, 40], [.22, 20, 60, 200], [.42, 90, 170, 255], [.58, 235, 248, 255], [.74, 30, 80, 220], [1, 6, 14, 70]]), 1.3, 1.3, .6)); },
+      function cream() { var f = mkFbm(3, 2, .5), L = [-.4, -.5, .77];
+        return bake(function (u, v) { return .5 + .5 * Math.sin(TAU * 6 * f(u, v)); }, 26, function (nx, ny, nz, h, o) {
+          var dif = clamp(L[0] * nx + L[1] * ny + L[2] * nz, 0, 1), sp = spec(nx, ny, nz, 36) * 255, k = .42 + .7 * dif;
+          o[0] = Math.min(255, 250 * k + sp); o[1] = Math.min(255, 150 * k + sp * .9); o[2] = Math.min(255, 190 * k + sp * .95); }); },
+      function foilGold() { var f = mkFbm(3, 3, .5);
+        return bake(function (u, v) { var n = 1 - Math.abs(2 * f(u, v) - 1); return n * n; }, 60,
+          envFn(lut([[0, 70, 42, 18], [.24, 196, 140, 66], [.44, 255, 230, 168], [.6, 255, 250, 235], [.78, 190, 132, 62], [1, 60, 36, 16]]), 1.2, 1.4, .5)); },
+      function wrap() { var cols = 9, rows = 10;
+        function hf(u, v) { var r = Math.floor(v * rows), best = 0, dr, dc; for (dr = -1; dr <= 1; dr++) { var rr = r + dr, off = (((rr % 2) + 2) % 2) * .5 / cols, cy = (rr + .5) / rows, c0 = Math.floor((u - off) * cols);
+            for (dc = -1; dc <= 1; dc++) { var du = u - ((c0 + dc + .5) / cols + off), dv = v - cy; du -= Math.round(du); dv -= Math.round(dv);
+              var q = Math.sqrt(du * du + dv * dv) / (.47 / cols); if (q < 1) { var hh = Math.sqrt(1 - q * q); if (hh > best) best = hh; } } } return best; }
+        return bake(hf, 34, function (nx, ny, nz, h, o) {
+          if (h < .04) { o[0] = 12; o[1] = 14; o[2] = 22; return; }
+          var t = (1 - nz) * 1.8 + h * .3, b = .5 + .5 * nz, sp = spec(nx, ny, nz, 30) * 255, rim = Math.pow(1 - nz, 2) * 90;
+          o[0] = Math.min(255, (.84 + .16 * Math.cos(TAU * t)) * 235 * b + sp + rim); o[1] = Math.min(255, (.84 + .16 * Math.cos(TAU * (t + .33))) * 235 * b + sp + rim); o[2] = Math.min(255, (.84 + .16 * Math.cos(TAU * (t + .67))) * 245 * b + sp + rim); }); }
+    ];
+    function makeFoam() {
+      var S = 640, c = document.createElement("canvas"); c.width = c.height = Math.round(S * dpr); var x = c.getContext("2d"); x.setTransform(dpr, 0, 0, dpr, 0, 0);
+      var sc = clamp(W / 1440, .7, 1.25), tile = function (cx, cy, r, fn) { for (var ox = -S; ox <= S; ox += S) for (var oy = -S; oy <= S; oy += S) { var X = cx + ox, Y = cy + oy; if (X + r < 0 || X - r > S || Y + r < 0 || Y - r > S) continue; fn(X, Y); } };
+      x.fillStyle = "#6e4623"; x.fillRect(0, 0, S, S);
+      for (var q = 0; q < 170; q++) { var bx = rnd() * S, by = rnd() * S, br = (36 + rnd() * 90) * sc, am = rnd() > .84;
+        tile(bx, by, br, function (X, Y) { var g = x.createRadialGradient(X, Y, 0, X, Y, br);
+          g.addColorStop(0, am ? "rgba(224,160,70,.9)" : "rgba(252,250,244,1)"); g.addColorStop(.6, am ? "rgba(200,135,50,.6)" : "rgba(240,234,222,.92)"); g.addColorStop(1, "rgba(232,226,214,0)"); x.fillStyle = g; x.fillRect(X - br, Y - br, br * 2, br * 2); }); }
+      var list = [], i; for (i = 0; i < 1400; i++) list.push({ x: rnd() * S, y: rnd() * S, r: (2.5 + 42 * Math.pow(rnd(), 3.1)) * sc, tint: rnd() });
       list.sort(function (a, b) { return b.r - a.r; });
-      list.forEach(function (b) {
-        tile(b.x, b.y, b.r, function (cx, cy) {
-          var r = b.r, body = x.createRadialGradient(cx - r * .2, cy - r * .25, r * .05, cx, cy, r);
-          body.addColorStop(0, "rgba(255,252,246,.14)"); body.addColorStop(.62, "rgba(240,232,218,.20)");
-          body.addColorStop(.86, "rgba(90,60,35,.16)"); body.addColorStop(.96, "rgba(255,255,255,.9)"); body.addColorStop(1, "rgba(255,255,255,0)");
-          x.fillStyle = body; x.beginPath(); x.arc(cx, cy, r, 0, 6.2832); x.fill();
-          if (b.tint > .94 && r > 6) { var cg = x.createRadialGradient(cx + r * .25, cy + r * .4, 0, cx + r * .25, cy + r * .4, r * .75);
-            cg.addColorStop(0, "rgba(130,175,255,.22)"); cg.addColorStop(1, "rgba(120,170,255,0)"); x.fillStyle = cg; x.beginPath(); x.arc(cx, cy, r * .93, 0, 6.2832); x.fill(); }
-          if (r > 4) { x.fillStyle = "rgba(255,255,255,.95)"; x.beginPath(); x.ellipse(cx - r * .38, cy - r * .42, r * .2, r * .11, -.6, 0, 6.2832); x.fill();
-            x.fillStyle = "rgba(255,255,255,.4)"; x.beginPath(); x.arc(cx + r * .42, cy + r * .46, r * .09, 0, 6.2832); x.fill(); }
-        });
-      });
+      list.forEach(function (b) { tile(b.x, b.y, b.r, function (cx, cy) { var r = b.r, body = x.createRadialGradient(cx - r * .2, cy - r * .25, r * .05, cx, cy, r);
+        body.addColorStop(0, "rgba(255,252,246,.14)"); body.addColorStop(.62, "rgba(240,232,218,.2)"); body.addColorStop(.86, "rgba(90,60,35,.16)"); body.addColorStop(.96, "rgba(255,255,255,.9)"); body.addColorStop(1, "rgba(255,255,255,0)");
+        x.fillStyle = body; x.beginPath(); x.arc(cx, cy, r, 0, TAU); x.fill();
+        if (b.tint > .94 && r > 6) { var cg = x.createRadialGradient(cx + r * .25, cy + r * .4, 0, cx + r * .25, cy + r * .4, r * .75); cg.addColorStop(0, "rgba(130,175,255,.22)"); cg.addColorStop(1, "rgba(130,175,255,0)"); x.fillStyle = cg; x.beginPath(); x.arc(cx, cy, r * .93, 0, TAU); x.fill(); }
+        if (r > 4) { x.fillStyle = "rgba(255,255,255,.95)"; x.beginPath(); x.ellipse(cx - r * .38, cy - r * .42, r * .2, r * .11, -.6, 0, TAU); x.fill(); x.fillStyle = "rgba(255,255,255,.4)"; x.beginPath(); x.arc(cx + r * .42, cy + r * .46, r * .09, 0, TAU); x.fill(); } }); });
+      return { c: c, css: S, sp: .022, pat: null };
+    }
+    var TILES = [], NV = 1 + BUILD.length + MEDIA.length, vz = [0, 2, 4, 1, 3], zt = [0, 0, 0, 0, 0], built = 0, timer = 0;
+    MEDIA.forEach(function (src) { src = src.trim(); var m = { media: true, ok: false };
+      if (/\.(mp4|webm|mov|m4v)(\?|$)/i.test(src)) { m.el = document.createElement("video"); m.el.src = src; m.el.muted = true; m.el.loop = true; m.el.playsInline = true; m.el.preload = "auto"; m.el.setAttribute("muted", "");
+        m.el.addEventListener("loadeddata", function () { m.ok = true; }); }
+      else { m.el = new Image(); m.el.onload = function () { m.ok = true; }; m.el.src = src; }
+      TILES[1 + BUILD.length + MEDIA.indexOf(src)] = m; });
+    function queueBuild() { if (timer || built >= BUILD.length) return; timer = setTimeout(function () { timer = 0; seed = 7 + built * 31; TILES[1 + built] = BUILD[built](); built++; kick(); queueBuild(); }, built ? 220 : 500); }
+    function drawMedia(x, m, bx, by, bw, bh) { var el = m.el, w = el.videoWidth || el.naturalWidth, h = el.videoHeight || el.naturalHeight; if (!m.ok || !w || !h) return false;
+      if (el.paused && el.play) { var pr = el.play(); if (pr && pr.catch) pr.catch(function () {}); }
+      var k = Math.max(W / w, H / h), dw = w * k, dh = h * k; x.drawImage(el, (W - dw) / 2, (H - dh) / 2, dw, dh); return true; }
+    function paintZone(b, i, x0, y0, w, h, t) {
+      var v = vz[i], T = TILES[v]; if (!T || (T.media && !T.ok)) T = TILES[0]; if (!T) return;
+      b.save(); b.beginPath(); b.rect(x0, y0, w, h); b.clip();
+      if (T.media) drawMedia(b, T);
+      else { if (!T.pat) T.pat = B.x.createPattern(T.c, "repeat"); var px = (W / 2 - cur.x) * .08, py = (H / 2 - cur.y) * .08, ph = i * 173;
+        if (T.pat.setTransform && window.DOMMatrix) T.pat.setTransform(new DOMMatrix().translate(-t * T.sp + px + ph, -t * T.sp * .55 + py + ph * .6).scale(T.css / T.c.width));
+        b.fillStyle = T.pat; b.fillRect(x0, y0, w, h); }
+      b.restore();
     }
 
     function ls(x, px) { if ("letterSpacing" in x) x.letterSpacing = px + "px"; }
@@ -109,11 +132,8 @@
       [cv, txt.c, mask.c, B.c].forEach(function (c) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); });
       fw = Math.ceil(W * SC); fh = Math.ceil(H * SC); F.c.width = M.c.width = fw; F.c.height = M.c.height = fh;
       [txt.x, mask.x, B.x, ctx].forEach(function (x) { x.setTransform(dpr, 0, 0, dpr, 0, 0); });
-      R = clamp(W * .085, 64, 190);
-      seed = 11; var sc = clamp(W / 1440, .7, 1.25);
-      makeFoam(foamA, S1, true, sc, 1400); makeFoam(foamB, S2, false, sc * .55, 800);
-      pA = B.x.createPattern(foamA.c, "repeat"); pB = B.x.createPattern(foamB.c, "repeat");
-
+      R = clamp(W * .09, 66, 200);
+      seed = 11; TILES[0] = makeFoam(); queueBuild();
       var x = txt.x; x.font = "900 100px " + FONT; ls(x, -2);
       var em = x.measureText(WORD).width / 100, m = x.measureText("O"), asc = (m.actualBoundingBoxAscent || 72) / 100, capEm = asc + (m.actualBoundingBoxDescent || 0) / 100;
       var topR = tp.offsetHeight + 30, lowR = low.offsetHeight + 30, padX = clamp(W * .012, 8, 24);
@@ -122,6 +142,8 @@
       [txt.x, mask.x].forEach(function (c) { c.clearRect(0, 0, W, H); c.font = "900 " + fs + "px " + FONT; ls(c, -fs * .02); c.textAlign = "center"; c.textBaseline = "alphabetic"; });
       txt.x.fillStyle = IVORY; txt.x.fillRect(0, 0, W, H); txt.x.fillStyle = INK; txt.x.fillText(WORD, W / 2, base);
       mask.x.fillStyle = "#fff"; mask.x.fillText(WORD, W / 2, base);
+      var tot = txt.x.measureText(WORD).width, x0 = W / 2 - tot / 2, i; ZL = []; ZR = [];       /* one zone per letter */
+      for (i = 0; i < WORD.length; i++) { ZL.push(i ? ZR[i - 1] : -1e4); ZR.push(i === WORD.length - 1 ? 1e4 : x0 + txt.x.measureText(WORD.slice(0, i + 1)).width); }
       cur.x = tgt.x = last.x = clamp(cur.x || W / 2, 0, W); cur.y = tgt.y = last.y = clamp(cur.y || H / 2, 0, H);
       ready = true; fx.classList.add("fx-ready"); kick();
     }
@@ -129,8 +151,7 @@
     /* ---------- goo: stamps + drips -> soft field -> threshold ---------- */
     function addStamp(x, y, now, r, life, drip) { stamps.push({ x: x, y: y, t: now, r: r, life: life, jx: drip ? 0 : (rnd() - .5) * .55, jy: drip ? 0 : (rnd() - .5) * .55, d: drip }); if (stamps.length > 340) stamps.shift(); }
     function field(now) {
-      var f = F.x, i, s, x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-      f.clearRect(0, 0, fw, fh);
+      var f = F.x, i, s, x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; f.clearRect(0, 0, fw, fh);
       var put = function (x, y, r) { var rr = r * 1.3 * SC; f.drawImage(spr, x * SC - rr, y * SC - rr, rr * 2, rr * 2);
         x0 = Math.min(x0, x * SC - rr); y0 = Math.min(y0, y * SC - rr); x1 = Math.max(x1, x * SC + rr); y1 = Math.max(y1, y * SC + rr); };
       for (i = stamps.length - 1; i >= 0; i--) {
@@ -164,13 +185,10 @@
       var bb = field(now); if (!bb) return;
       var sx = bb.x0 / SC, sy = bb.y0 / SC, sw = bb.w / SC, sh = bb.h / SC;
       var bx = Math.max(0, Math.floor(sx)), by = Math.max(0, Math.floor(sy)), bw = Math.min(W, Math.ceil(sx + sw)) - bx, bh = Math.min(H, Math.ceil(sy + sh)) - by;
-      ctx.drawImage(M.c, bb.x0, bb.y0, bb.w, bb.h, sx, sy, sw, sh);   /* 1. the goo itself: plain black */
-      var b = B.x; b.save(); b.beginPath(); b.rect(bx, by, bw, bh); b.clip();   /* 2. foam, only inside letters AND goo, only in the dirty rect */
-      b.globalCompositeOperation = "source-over"; b.clearRect(bx, by, bw, bh);
-      var t = reduce ? 0 : now - T0, drew = false;
-      if (mediaOK) { if (vid && vid.paused) { var pr = vid.play(); if (pr && pr.catch) pr.catch(function () {}); } drew = drawMedia(b); }
-      if (!drew) { var px = (W / 2 - cur.x) * .1, py = (H / 2 - cur.y) * .1;
-        fill(b, pA, -t * .022 + px, -t * .012 + py, bx, by, bw, bh); fill(b, pB, t * .03 - px * 1.6, -t * .02 - py * 1.6, bx, by, bw, bh); }
+      ctx.drawImage(M.c, bb.x0, bb.y0, bb.w, bb.h, sx, sy, sw, sh);
+      var b = B.x; b.globalCompositeOperation = "source-over"; b.clearRect(bx, by, bw, bh);
+      var t = reduce ? 0 : now - T0;
+      for (var i = 0; i < ZL.length; i++) { var z0 = Math.max(bx, ZL[i]), z1 = Math.min(bx + bw, ZR[i]); if (z1 > z0) paintZone(b, i, z0, by, z1 - z0, bh, t); }
       b.globalCompositeOperation = "destination-in";
       b.drawImage(mask.c, bx * dpr, by * dpr, bw * dpr, bh * dpr, bx, by, bw, bh);
       b.drawImage(M.c, bb.x0, bb.y0, bb.w, bb.h, sx, sy, sw, sh);
@@ -193,10 +211,15 @@
       headR += ((active ? R * .9 : 0) - headR) * (1 - Math.exp(-dt / (active ? 90 : 160)));
       var spd = 0;
       if (active) {
-        var kf = 1 - Math.exp(-dt / (inside ? 55 : 150)); cur.x += (tgt.x - cur.x) * kf; cur.y += (tgt.y - cur.y) * kf;
-        var dx = cur.x - last.x, dy = cur.y - last.y, dist = Math.sqrt(dx * dx + dy * dy), gap = R * .16; spd = dist / dt;
-        if (dist > gap) { var n = Math.min(24, Math.floor(dist / gap)); for (var j = 1; j <= n; j++) { var q = j / n; addStamp(last.x + dx * q, last.y + dy * q, now, R * (.8 + rnd() * .3), LIFE, false); } last.x = cur.x; last.y = cur.y; }
-        if (now - lastDrip > (spd > 1 ? 110 : 1100)) { lastDrip = now; if (spd > .35 || inside) spawnDrip(now, cur.x, cur.y); }
+        var dx = cur.x - last.x, dy = cur.y - last.y, dist = Math.sqrt(dx * dx + dy * dy), gap = R * .15;
+        if (dist > gap) { var m = Math.min(26, Math.floor(dist / gap)), j, q, rr;
+          for (j = 1; j <= m; j++) { q = j / m; rr = headR * (.78 + rnd() * .22); var px = last.x + dx * q, py = last.y + dy * q;
+            addStamp(px, py, now, rr, LIFE, false);
+            if (rnd() < .4) { var a = rnd() * TAU, o = rr * (.85 + rnd() * .5); addStamp(px + Math.cos(a) * o, py + Math.sin(a) * o, now, rr * (.16 + rnd() * .22), LIFE * .55, false); }  /* ragged lumps on the edge */
+          } last.x = cur.x; last.y = cur.y; }
+        if (spd > 1.5 && now - lastFling > 90) { lastFling = now; for (i = 0; i < 2; i++) drip(now, cur.x, cur.y, vel.x * (.12 + rnd() * .2) + (rnd() - .5) * .3, vel.y * (.12 + rnd() * .2) - .1 - rnd() * .2, 7 + rnd() * R * .12, 520 + rnd() * 380, .0016); }  /* whip the mouse = splatter */
+        if (now - lastDrip > 190 && stamps.length > 24) { lastDrip = now; var sp = stamps[Math.floor(rnd() * stamps.length * .6)]; if (sp && !sp.d) drip(now, sp.x, sp.y + R * .2, 0, .02, 8 + rnd() * R * .07, 900 + rnd() * 500, .00009); }  /* long drips from the old trail */
+        for (i = 0; i < ZL.length; i++) if (headR > R * .3 && cur.x + R * .5 > ZL[i] && cur.x - R * .5 < ZR[i]) { if (zt[i] && now - zt[i] > 2000) vz[i] = (vz[i] + 1) % NV; zt[i] = now; }   /* come back to a letter = a new material */
       }
       for (var i = drips.length - 1; i >= 0; i--) { var d = drips[i], age = now - d.t;
         if (age > d.life) { drips.splice(i, 1); continue; }
