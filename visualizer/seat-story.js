@@ -43,19 +43,19 @@
     var tx = liveTx();
     el.innerHTML =
       '<div class="ss-top"><span>Chapter 01<i></i>The life of one seat</span><span class="ss-tx">tx ' + tx.id + '</span></div>' +
-      '<div class="ss-main">' +
+      '<div class="ss-main"><div class="ss-story">' +
         '<div class="ss-left"><div class="ss-words">' + BEATS.map(function (b, i) { return '<span class="ss-w" data-i="' + i + '">' + b.w + '</span>'; }).join("") + '</div>' +
           '<div class="ss-sents">' + BEATS.map(function (b) { return '<p class="ss-s">' + b.s + '</p>'; }).join("") + '</div></div>' +
         '<div class="ss-right"><div class="ss-tile s0">' +
           '<svg class="ss-ring" viewBox="0 0 100 100" preserveAspectRatio="none"><rect x="0" y="0" width="100" height="100" rx="14" pathLength="1"/></svg>' +
           '<span class="ss-tl">SEAT</span><span class="ss-num">B7</span>' +
           '<svg class="ss-tick" viewBox="0 0 24 24"><path d="M3 12.5l6 6L21 6" pathLength="1"/></svg></div>' +
-          '<div class="ss-log">' + lines(tx).map(function (l) { return '<div class="ss-ln" data-b="' + l[0] + '"><span>' + l[1] + '</span><em>' + l[2] + '</em></div>'; }).join("") + '</div></div>' +
+          '<div class="ss-log">' + lines(tx).map(function (l) { return '<div class="ss-ln" data-b="' + l[0] + '"><span>' + l[1] + '</span><em>' + l[2] + '</em></div>'; }).join("") + '</div></div></div><i class="ss-line"></i>' +
         '<div class="ss-rew"><svg viewBox="0 0 48 24"><path d="M24 0v24L8 12zM48 0v24L32 12z"/></svg><div class="ss-rw"><span>Rewind</span></div><p>Replaying from the start</p></div>' +
       '</div>' +
       '<div class="ss-rail"><i class="ss-track"></i><i class="ss-fill"></i><i class="ss-head"></i><span>AVAILABLE</span><span>HELD</span><span>CHARGED</span><span>COMMITTED</span></div>';
     var q = function (s) { return el.querySelector(s); }, qa = function (s) { return [].slice.call(el.querySelectorAll(s)); };
-    return { el: el, bi: -1, top: q(".ss-top"), left: q(".ss-left"), right: q(".ss-right"), tile: q(".ss-tile"), ring: q(".ss-ring rect"), tick: q(".ss-tick path"),
+    return { el: el, bi: -1, top: q(".ss-top"), story: q(".ss-story"), line: q(".ss-line"), left: q(".ss-left"), right: q(".ss-right"), tile: q(".ss-tile"), ring: q(".ss-ring rect"), tick: q(".ss-tick path"),
       words: qa(".ss-w"), sents: qa(".ss-s"), lns: qa(".ss-ln"), rail: qa(".ss-rail span"), fill: q(".ss-fill"), head: q(".ss-head"),
       rew: q(".ss-rew"), rw: q(".ss-rw span"), rp: q(".ss-rew p"), rs: q(".ss-rew svg"), tx: q(".ss-tx") };
   }
@@ -63,7 +63,7 @@
   /* pure function of progress p (0..1 through the chapter) and entrance e (0..1 as it scrolls into view) */
   function paint(R, p, e) {
     var bp = clamp((p - .04) / .8, 0, 1) * 4, bi = Math.min(3, Math.floor(bp)), t = bp - bi;
-    var story = 1 - seg(p, .84, .9), rw = seg(p, .86, .98), ent = ease(seg(e, .2, 1));
+    var q = seg(p, .83, .89), rw = seg(p, .9, .99), ent = ease(seg(e, .2, 1));
     if (R.bi !== bi) {
       R.bi = bi;
       R.words.forEach(function (w, i) { w.className = "ss-w" + (i === bi ? " now" : i < bi ? " past" : ""); });
@@ -76,16 +76,21 @@
     }
     R.ring.style.strokeDashoffset = bi === 1 ? (t * .6).toFixed(3) : bi > 1 ? .6 : 0;
     R.tick.style.strokeDashoffset = (1 - ease(seg(bp, 3.05, 3.6))).toFixed(3);
-    var vis = ent * story;
-    R.top.style.opacity = ent; R.left.style.opacity = R.right.style.opacity = vis;
-    R.left.style.transform = R.right.style.transform = "translateY(" + ((1 - ent) * 28 - (1 - story) * 26).toFixed(1) + "px)";
-    var rv = ease(seg(rw, 0, .7));
+    /* EXIT: the story powers off like a CRT: it squashes to a bright line, the line shrinks to a dot,
+       then the same line grows and slits open to reveal REWIND. Nothing overlaps: the story is gone before REWIND starts. */
+    var sy = q < .6 ? 1 - ease(q / .6) * .996 : .004, sx = q < .6 ? 1 : 1 - ease((q - .6) / .4);
+    R.top.style.opacity = ent;
+    R.story.style.opacity = q >= 1 ? 0 : ent;
+    R.story.style.transform = "translateY(" + ((1 - ent) * 28).toFixed(1) + "px) scale(" + sx.toFixed(4) + "," + sy.toFixed(4) + ")";
+    var lx = q < .6 ? 1 : q < 1 ? sx : ease(seg(rw, 0, .3));
+    R.line.style.opacity = (seg(q, .45, .7) * (1 - seg(rw, .35, .6))).toFixed(3);
+    R.line.style.transform = "scaleX(" + lx.toFixed(4) + ")";
     R.rew.style.opacity = rw > 0 ? 1 : 0;
-    R.rw.style.transform = "translateY(" + ((1 - rv) * 105).toFixed(1) + "%)";
-    R.rs.style.opacity = R.rp.style.opacity = ease(seg(rw, .35, 1));
-    var fill = p < .86 ? bp / 4 : 1 - ease(seg(p, .86, 1));
+    R.rew.style.clipPath = "inset(" + ((1 - ease(seg(rw, .15, .7))) * 50).toFixed(2) + "% 0)";
+    R.rs.style.opacity = R.rp.style.opacity = ease(seg(rw, .55, 1));
+    var fill = p < .9 ? bp / 4 : 1 - ease(seg(p, .9, 1));
     R.fill.style.transform = "scaleX(" + fill.toFixed(4) + ")"; R.head.style.left = (fill * 100).toFixed(2) + "%";
-    var on = p < .86 ? bi + 1 : Math.ceil(fill * 4 - .001);
+    var on = p < .9 ? bi + 1 : Math.ceil(fill * 4 - .001);
     if (R.on !== on) { R.on = on; R.rail.forEach(function (s, i) { s.className = i < on ? "on" : ""; }); }
   }
 

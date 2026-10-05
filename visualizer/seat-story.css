@@ -8,7 +8,9 @@
 .ss-top i{display:inline-block;width:28px;height:1px;background:var(--accent-amber,#ff9f0a);vertical-align:middle;margin:0 10px}
 .ss-tx{letter-spacing:.06em;text-transform:none}
 
-.ss-main{position:relative;flex:1;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);align-items:center;gap:clamp(20px,4vw,72px)}
+.ss-main{position:relative;flex:1}
+.ss-story{position:absolute;inset:0;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);align-items:center;gap:clamp(20px,4vw,72px);will-change:transform,opacity}
+.ss-line{position:absolute;left:0;right:0;top:50%;height:2px;margin-top:-1px;background:#ffd9a0;box-shadow:0 0 18px 3px rgba(255,159,10,.75);opacity:0;pointer-events:none}
 .ss-left,.ss-right{will-change:opacity,transform}
 .ss-words{position:relative;height:.9em;font-family:"Big Shoulders Display","Schibsted Grotesk",system-ui,sans-serif;font-weight:900;text-transform:uppercase;
   font-size:clamp(54px,11.2vw,220px);line-height:.9;overflow:hidden;letter-spacing:-.005em}
@@ -42,7 +44,7 @@
 .ss-ln.on{display:flex}.ss-ln.cur{opacity:1;color:var(--text-primary,#f5f5f7)}
 .ss-ln em{font-style:normal;color:#30d158;white-space:nowrap}
 
-.ss-rew{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;pointer-events:none;text-align:center}
+.ss-rew{position:absolute;inset:0;clip-path:inset(50% 0);display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;pointer-events:none;text-align:center}
 .ss-rw{overflow:hidden;font-family:"Big Shoulders Display",system-ui,sans-serif;font-weight:900;text-transform:uppercase;font-size:clamp(64px,16vw,300px);line-height:.92;
   background:linear-gradient(90deg,#ffb84d,#ff9f0a 55%,#ff7a1a);-webkit-background-clip:text;background-clip:text;color:transparent}
 .ss-rw span{display:block;will-change:transform}
@@ -57,7 +59,7 @@
 .ss-head{position:absolute;top:-4px;left:0;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:var(--accent-amber,#ff9f0a);box-shadow:0 0 0 4px rgba(255,159,10,.18)}
 
 @media (max-width:900px){
-  .ss-main{grid-template-columns:1fr;align-content:center;gap:18px}
+  .ss-story{grid-template-columns:1fr;align-content:center;gap:18px}
   .ss-words{font-size:clamp(46px,15vw,120px)}
   .ss-sents{height:6.4em}
   .ss-right{--tile:min(40vw,24vh);align-items:flex-start;justify-self:start}
