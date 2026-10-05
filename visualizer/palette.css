@@ -1,83 +1,90 @@
 /* ==========================================================================
-   PALETTE v1.0  "Warm Obsidian & Brass"  — load LAST (index.html + booking.html)
-   One ink, one ivory, one metal. Everything else is a state colour, muted.
-     INK    warm near-black, no blue in it       (backgrounds, one value everywhere)
-     IVORY  warm off-white                        (type, the finale page)
-     BRASS  aged champagne metal — THE accent     (hold / focus / progress)
-     SAGE   verdigris green  — committed / verified only
-     CLAY   terracotta       — rollback / failure only
-   Why: luxury and heritage brands (watchmakers, fashion houses, auction houses)
-   get "expensive" from restraint: low-saturation neutrals + a single metal.
-   No gradients between hues, no glow, no neon; contrast stays high for reading.
+   PALETTE v2.0  "Velvet House & Tungsten Gold" — load LAST (index + booking)
+   The dashboard's warm house-lights look is the reference; everything after the
+   Saga panel now speaks the same language, with MORE light, not less.
+     HOUSE   warm oxblood-black (#120e0b) — a theatre with the lights down
+     GOLD    tungsten gold -> ember, the only "hot" colour; used as LIGHT
+             (glows, beams, headline words, primary buttons), never as fill
+     SAGE    phosphor green — committed / verified only
+     EMBER   coral red — rollback / urgency only
+     IVORY   warm cream — type and the finale page
+   Hues never leave the warm family, so the eye is led by brightness, not by
+   a rainbow. Blue / indigo / violet are gone everywhere.
    ========================================================================== */
 :root{
-  --fx-ink:#0e0c0a; --fx-ink-2:#14110e; --fx-ink-3:#1b1713; --fx-ink-4:#241f19;
-  --fx-line:rgba(239,233,220,.10); --fx-line-2:rgba(239,233,220,.20);
-  --fx-ivory:#efe9dc; --fx-text-2:#b3a995; --fx-text-3:#7d7464;
-  --fx-accent:#cda763; --fx-accent-hi:#e6d0a0; --fx-accent-rgb:205,167,99;
-  --fx-ok:#8dc3a2;
-
-  --bg-deep:#0e0c0a; --bg-surface:#171410; --bg-surface-elevated:#211d18;
-  --bg-surface-subtle:#121010; --bg-input:#171410;
-  --border-subtle:rgba(239,233,220,.12); --border-strong:rgba(239,233,220,.28);
-  --border-focus:#e6d0a0;
-  --text-primary:#efe9dc; --text-secondary:#b3a995; --text-muted:#8a8070; --text-code:#d9c49a;
-
-  --accent-amber:#cda763;            /* HOLD  (brass)  */
-  --accent-green:#8dc3a2;            /* COMMIT (sage)  */
-  --accent-rose:#d4705c;             /* ROLLBACK (clay) */
-  --accent-blue:#d9c08c; --accent-indigo:#b89a68; --accent-purple:#c49a8e;
-  --accent-green-glow:rgba(141,195,162,.10);
-  --pm-signal:#cda763; --pm-signal-2:#b89a68; --pm-ring:rgba(205,167,99,.5);
-  --hl-light:205,167,99;
+  --fx-ink:#120e0b; --fx-ink-2:#1a1511; --fx-ink-3:#251e18; --fx-ink-4:#2e251d;
+  --fx-line:rgba(241,233,220,.12); --fx-line-2:rgba(241,233,220,.24);
+  --fx-ivory:#f6ecda; --fx-text-2:#b9ad9b; --fx-text-3:#968a79;
+  --fx-accent:#ffb020; --fx-accent-hi:#ffd98a; --fx-accent-rgb:255,176,32;
+  --fx-ok:#7fe0a8;
+  --gold-grad:linear-gradient(90deg,#ffd98a,#ffb020 55%,#ff7a3d);
+  --gold-btn:linear-gradient(135deg,#ffdc92,#ffb020 58%,#ff8a3d);
 }
-[data-theme="light"]{
-  --bg-deep:#ece7dc; --bg-surface:#f4f0e7; --bg-surface-elevated:#faf7f0; --bg-surface-subtle:#e8e3d8;
-  --border-focus:#6e5424; --accent-amber:#7a5a1e; --accent-green:#2f6b4a; --accent-rose:#a8402c;
-  --hl-light:122,90,30;
-}
-body:has(.pm-urgent){--hl-light:212,112,92;}
 
-/* ---------- Chapter 01 (seat story): continue the dashboard's light, same ink ---------- */
+/* ---------- Chapter 01: same house, the spotlight finds the seat ---------- */
 .ss,.ss-stage{--bg-deep:var(--fx-ink)}
+.ss-stage{background:
+  radial-gradient(ellipse 52% 48% at 78% 52%,rgba(255,176,32,.13),transparent 70%),
+  radial-gradient(ellipse 90% 34% at 50% 0,rgba(255,106,82,.09),transparent 72%),
+  radial-gradient(ellipse 60% 30% at 8% 100%,rgba(255,150,40,.07),transparent 70%),
+  var(--fx-ink)}
 .ss::before{content:"";position:absolute;top:0;left:0;right:0;height:1px;z-index:6;pointer-events:none;
-  background:linear-gradient(90deg,transparent,rgba(var(--fx-accent-rgb),.45),transparent)}
-.ss-stage{background:radial-gradient(ellipse 70% 38% at 50% 0,rgba(var(--fx-accent-rgb),.07),transparent 70%),var(--fx-ink)}
-.ss-tile.s2{color:#16110a}
-.ss-tile.s3{color:#0b140e}
-.ss-tkwrap{--paper:#f2ece0;--ink:#17120c;--ink2:#6b5f50;--rule:rgba(23,18,12,.2);--ok:#2f7d52}
-.ss-tk-head b{background:#2f7d52}
+  background:linear-gradient(90deg,transparent,rgba(255,176,32,.7),transparent)}
+.ss-tile.s1{background:rgba(255,176,32,.12);box-shadow:0 0 60px rgba(255,176,32,.14)}
+.ss-tile.s2{color:#1a0f03;box-shadow:0 0 90px rgba(255,176,32,.28)}
+.ss-tile.s3{color:#07140b;box-shadow:0 0 90px rgba(127,224,168,.22)}
+.ss-head{box-shadow:0 0 0 4px rgba(255,176,32,.22),0 0 14px rgba(255,176,32,.6)}
+.ss-scan{box-shadow:0 0 16px 4px rgba(255,176,32,.7)}
+.ss-rw{background:var(--gold-grad);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 0 40px rgba(255,150,30,.25))}
+.ss-rew svg{fill:var(--fx-accent)}
+.ss-tkwrap{--paper:#f4ead8;--ink:#1a130b;--ink2:#6e6150;--rule:rgba(26,19,11,.2);--ok:#1f8a4c}
+.ss-tk-head b{background:#1f8a4c}
+.ss-ticket{box-shadow:0 40px 90px rgba(0,0,0,.65),0 0 120px rgba(255,150,30,.14)}
 
-/* ---------- Guided tour room: dark studio, warm graphite, brass trim ---------- */
-.st-pin{background:radial-gradient(ellipse at 50% 18%,#1d1813,var(--fx-ink) 72%)}
-.st-beam::before{background:linear-gradient(180deg,rgba(230,208,160,0),rgba(230,208,160,.07))}
-.st-mote{background:#f0dfb8}
-.st-endbg{background:linear-gradient(180deg,rgba(14,12,10,.6) 0%,rgba(14,12,10,.55) 45%,var(--st-end,#0e0c0a) 100%)}
-.st-row::after{background:linear-gradient(#15110d,var(--fx-ink));border-top:1px solid var(--fx-line)}
-.st-board::before,.st-board::after{background:#2a231c}
-.st-frame{background:#1f1a15;box-shadow:0 30px 60px rgba(0,0,0,.6),inset 0 0 0 1px rgba(239,233,220,.14),inset 0 1px 0 rgba(239,233,220,.2)}
-.st-frame::after{background:#302820}
-.st-chalk{background:radial-gradient(ellipse at 40% 30%,#1a1612,#0c0a08 80%)}
-.st-rod{background:linear-gradient(#0c0a08,#473d30 45%,#0c0a08)}
-.st-pull{background:#bfb29a}
+/* ---------- Guided tour: a warm theatre, the board is the lit stage ---------- */
+.st-pin{background:radial-gradient(ellipse at 50% 12%,#3a2616,#1c130d 52%,#120e0b 82%)}
+.st-beam::before{background:linear-gradient(180deg,rgba(255,190,110,0),rgba(255,190,110,.22))}
+.st-mote{background:#ffd9a0}
+.st-endbg{background:linear-gradient(180deg,rgba(18,14,11,.6),rgba(18,14,11,.55) 45%,var(--st-end,#120e0b))}
+.st-row::after{background:linear-gradient(#2a1c12,#140f0b);border-top:1px solid rgba(255,200,130,.16)}
+.st-board::before,.st-board::after{background:#3a2a1c}
+.st-frame{background:#2b1f15;box-shadow:0 30px 70px rgba(0,0,0,.6),0 0 90px rgba(255,150,30,.12),inset 0 0 0 1px rgba(255,200,130,.3),inset 0 1px 0 rgba(255,220,170,.35)}
+.st-frame::after{background:#43311f}
+.st-chalk{background:radial-gradient(ellipse at 40% 30%,#241b14,#0d0a08 80%)}
+.st-rod{background:linear-gradient(#120d09,#6a5238 45%,#120d09)}
+.st-pull{background:#e0c48e}
+.st-ring{border-color:#ffb020;box-shadow:0 0 0 9999px rgba(0,0,0,.55),0 0 22px rgba(255,176,32,.6)}
 .st-roller{background:
-    linear-gradient(180deg,rgba(0,0,0,.6) 0%,rgba(255,255,255,.18) 18%,rgba(255,255,255,0) 38%,rgba(0,0,0,.2) 70%,rgba(0,0,0,.75) 100%),
-    linear-gradient(180deg,#4a4034,#120f0b);
-  box-shadow:0 0 0 1px rgba(230,208,160,.28),0 18px 40px rgba(0,0,0,.6)}
-.st-cap{background:repeating-radial-gradient(ellipse at 50% 50%,#3a3229 0 2px,#14110e 2px 4px)}
-.st-card{background:rgba(18,15,12,.94)}
-.st-dots i{background:#302a22}
-.st-dots i:hover{background:#4d4538}
-#st-roll stop:nth-child(1){stop-color:#4d4437}
-#st-roll stop:nth-child(2){stop-color:#272019}
-#st-roll stop:nth-child(3){stop-color:#0f0c09}
-#st-par stop:nth-child(1){stop-color:#f1ebdd}
-#st-par stop:nth-child(2){stop-color:#d6cdb9}
-#st-par stop:nth-child(3){stop-color:#a89e89}
-.st-roll rect[fill="#d8bd8a"]{fill:#bfb29a}
+  linear-gradient(180deg,rgba(0,0,0,.6),rgba(255,255,255,.2) 18%,rgba(255,255,255,0) 38%,rgba(0,0,0,.2) 70%,rgba(0,0,0,.75)),
+  linear-gradient(180deg,#5a4a34,#15110d);
+  box-shadow:0 0 0 1px rgba(255,176,32,.35),0 18px 40px rgba(0,0,0,.6)}
+.st-cap{background:repeating-radial-gradient(ellipse at 50% 50%,#4a3d2c 0 2px,#17120d 2px 4px)}
+.st-card{background:rgba(24,17,12,.95);border:1px solid rgba(255,176,32,.32);box-shadow:0 18px 44px rgba(0,0,0,.55),0 0 40px rgba(255,150,30,.07)}
+.st-card h4{color:#ffc65a}
+.st-card.completed{border-color:rgba(255,176,32,.7);box-shadow:0 18px 45px rgba(0,0,0,.6),0 0 34px rgba(255,150,30,.2)}
+.st-dots i{background:#4a3b2b}.st-dots i:hover{background:#8a7258}
+.st-dots i.on{background:#ffb020;box-shadow:0 0 8px rgba(255,176,32,.8)}
+.st-badge-complete{color:#7fe0a8;background:rgba(127,224,168,.1);border-color:rgba(127,224,168,.3)}
+#st-roll stop:nth-child(1){stop-color:#5a4a34}#st-roll stop:nth-child(2){stop-color:#2a2118}#st-roll stop:nth-child(3){stop-color:#120e0b}
+#st-par stop:nth-child(1){stop-color:#f6e6c2}#st-par stop:nth-child(2){stop-color:#e2cb9a}#st-par stop:nth-child(3){stop-color:#b09660}
+.st-roll rect{stroke:#ffb020!important}
+.st-roll rect[fill="#d8bd8a"]{fill:#d8bd8a}
+.st-bob path[fill="#9a3b32"]{fill:#ff6a52}
 
-/* ---------- Footer / finale ---------- */
-.site-footer::before{background:linear-gradient(90deg,transparent,rgba(var(--fx-accent-rgb),.5),transparent)}
-.site-wordmark span{background:linear-gradient(180deg,rgba(239,233,220,.13),rgba(239,233,220,.015) 85%);
+/* primary action = a lit gold button (this is where the "flash" lives) */
+.st-card .btn-primary,.fx .btn-primary,.site-footer .btn-primary{
+  background:var(--gold-btn)!important;color:#1a0f03!important;border:1px solid transparent!important;
+  box-shadow:0 6px 26px rgba(255,150,30,.30)!important;font-weight:700}
+.st-card .btn-primary:hover,.fx .btn-primary:hover,.site-footer .btn-primary:hover{
+  background:var(--gold-btn)!important;filter:brightness(1.08)!important;box-shadow:0 8px 32px rgba(255,150,30,.42)!important}
+.st-card .btn-outline,.fx .btn-outline,.site-footer .btn-outline{border-color:rgba(255,200,130,.35)!important}
+.st-card .btn-outline:hover,.fx .btn-outline:hover{border-color:#ffd98a!important;background:rgba(255,176,32,.08)!important}
+
+/* ---------- Footer: the house lights come back up, warm ---------- */
+.site-footer{background:radial-gradient(ellipse 70% 55% at 50% 0,rgba(255,150,40,.12),transparent 70%),#120e0b!important;
+  box-shadow:0 -40px 90px rgba(0,0,0,.65)}
+.site-footer::before{background:linear-gradient(90deg,transparent,rgba(255,176,32,.75),transparent)}
+.site-footer a:hover{color:#ffc65a}
+.site-wordmark span{background:linear-gradient(180deg,rgba(255,176,32,.42),rgba(255,176,32,.03) 85%);
   -webkit-background-clip:text;background-clip:text;color:transparent}
-.fx{background:var(--fx-ivory)}

@@ -103,7 +103,7 @@
       x.fillStyle = "#3d2412"; x.fillRect(0, 0, S, S);
       for (var q = 0; q < 230; q++) { var bx = rnd() * S, by = rnd() * S, br = (36 + rnd() * 90) * sc, am = rnd() > .84;
         tile(bx, by, br, function (X, Y) { var g = x.createRadialGradient(X, Y, 0, X, Y, br);
-          g.addColorStop(0, am ? "rgba(205,167,99,.95)" : "rgba(255,255,252,1)"); g.addColorStop(.7, am ? "rgba(168,132,70,.7)" : "rgba(246,241,231,.97)"); g.addColorStop(1, "rgba(232,226,214,0)"); x.fillStyle = g; x.fillRect(X - br, Y - br, br * 2, br * 2); }); }
+          g.addColorStop(0, am ? "rgba(255,178,40,.95)" : "rgba(255,255,252,1)"); g.addColorStop(.7, am ? "rgba(214,118,30,.75)" : "rgba(246,241,231,.97)"); g.addColorStop(1, "rgba(232,226,214,0)"); x.fillStyle = g; x.fillRect(X - br, Y - br, br * 2, br * 2); }); }
       var list = [], i; for (i = 0; i < 1400; i++) list.push({ x: rnd() * S, y: rnd() * S, r: (2.5 + 42 * Math.pow(rnd(), 3.1)) * sc, tint: rnd() });
       list.sort(function (a, b) { return b.r - a.r; });
       list.forEach(function (b) { tile(b.x, b.y, b.r, function (cx, cy) { var r = b.r, body = x.createRadialGradient(cx - r * .2, cy - r * .25, r * .05, cx, cy, r);
