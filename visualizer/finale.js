@@ -103,13 +103,13 @@
       x.fillStyle = "#3d2412"; x.fillRect(0, 0, S, S);
       for (var q = 0; q < 230; q++) { var bx = rnd() * S, by = rnd() * S, br = (36 + rnd() * 90) * sc, am = rnd() > .84;
         tile(bx, by, br, function (X, Y) { var g = x.createRadialGradient(X, Y, 0, X, Y, br);
-          g.addColorStop(0, am ? "rgba(226,150,52,.95)" : "rgba(255,255,252,1)"); g.addColorStop(.7, am ? "rgba(190,115,35,.7)" : "rgba(246,241,231,.97)"); g.addColorStop(1, "rgba(232,226,214,0)"); x.fillStyle = g; x.fillRect(X - br, Y - br, br * 2, br * 2); }); }
+          g.addColorStop(0, am ? "rgba(205,167,99,.95)" : "rgba(255,255,252,1)"); g.addColorStop(.7, am ? "rgba(168,132,70,.7)" : "rgba(246,241,231,.97)"); g.addColorStop(1, "rgba(232,226,214,0)"); x.fillStyle = g; x.fillRect(X - br, Y - br, br * 2, br * 2); }); }
       var list = [], i; for (i = 0; i < 1400; i++) list.push({ x: rnd() * S, y: rnd() * S, r: (2.5 + 42 * Math.pow(rnd(), 3.1)) * sc, tint: rnd() });
       list.sort(function (a, b) { return b.r - a.r; });
       list.forEach(function (b) { tile(b.x, b.y, b.r, function (cx, cy) { var r = b.r, body = x.createRadialGradient(cx - r * .2, cy - r * .25, r * .05, cx, cy, r);
         body.addColorStop(0, "rgba(255,252,246,.22)"); body.addColorStop(.55, "rgba(236,226,210,.12)"); body.addColorStop(.8, "rgba(80,52,30,.34)"); body.addColorStop(.92, "rgba(255,255,255,.98)"); body.addColorStop(1, "rgba(255,255,255,0)");
         x.fillStyle = body; x.beginPath(); x.arc(cx, cy, r, 0, TAU); x.fill();
-        if (b.tint > .94 && r > 6) { var cg = x.createRadialGradient(cx + r * .25, cy + r * .4, 0, cx + r * .25, cy + r * .4, r * .75); cg.addColorStop(0, "rgba(130,175,255,.22)"); cg.addColorStop(1, "rgba(130,175,255,0)"); x.fillStyle = cg; x.beginPath(); x.arc(cx, cy, r * .93, 0, TAU); x.fill(); }
+        if (b.tint > .94 && r > 6) { var cg = x.createRadialGradient(cx + r * .25, cy + r * .4, 0, cx + r * .25, cy + r * .4, r * .75); cg.addColorStop(0, "rgba(230,208,160,.22)"); cg.addColorStop(1, "rgba(230,208,160,0)"); x.fillStyle = cg; x.beginPath(); x.arc(cx, cy, r * .93, 0, TAU); x.fill(); }
         if (r > 4) { x.fillStyle = "rgba(255,255,255,1)"; x.beginPath(); x.ellipse(cx - r * .36, cy - r * .42, r * .27, r * .14, -.6, 0, TAU); x.fill(); x.fillStyle = "rgba(255,255,255,.4)"; x.beginPath(); x.arc(cx + r * .42, cy + r * .46, r * .09, 0, TAU); x.fill(); } }); });
       return { c: c, css: S, sp: .022, pat: null };
     }
