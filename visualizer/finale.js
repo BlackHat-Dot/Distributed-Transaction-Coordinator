@@ -10,11 +10,12 @@
   "use strict";
   var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
   var clamp = function (v, a, b) { return Math.min(b, Math.max(a, v)); };
-  var WORD = "ONCE.", SC = .5, LIFE = 1900, TS = 448, TCSS = 520, TAU = 6.2832;
+  var WORD = window.FINALE_WORD || "ONCE.", SC = .6, LIFE = 2700, TS = 448, TCSS = 520, TAU = 6.2832;
 
   function init() {
     var footer = document.querySelector(".site-footer");
     if (!footer || footer.querySelector(".fx")) return;
+    var ROTATE = footer.getAttribute("data-rotate") === "true";
     var MEDIA = window.FINALE_MEDIA || footer.getAttribute("data-media") || "";
     if (typeof MEDIA === "string") MEDIA = MEDIA ? MEDIA.split(",") : [];
 
@@ -99,20 +100,20 @@
     function makeFoam() {
       var S = 640, c = document.createElement("canvas"); c.width = c.height = Math.round(S * dpr); var x = c.getContext("2d"); x.setTransform(dpr, 0, 0, dpr, 0, 0);
       var sc = clamp(W / 1440, .7, 1.25), tile = function (cx, cy, r, fn) { for (var ox = -S; ox <= S; ox += S) for (var oy = -S; oy <= S; oy += S) { var X = cx + ox, Y = cy + oy; if (X + r < 0 || X - r > S || Y + r < 0 || Y - r > S) continue; fn(X, Y); } };
-      x.fillStyle = "#6e4623"; x.fillRect(0, 0, S, S);
-      for (var q = 0; q < 170; q++) { var bx = rnd() * S, by = rnd() * S, br = (36 + rnd() * 90) * sc, am = rnd() > .84;
+      x.fillStyle = "#3d2412"; x.fillRect(0, 0, S, S);
+      for (var q = 0; q < 230; q++) { var bx = rnd() * S, by = rnd() * S, br = (36 + rnd() * 90) * sc, am = rnd() > .84;
         tile(bx, by, br, function (X, Y) { var g = x.createRadialGradient(X, Y, 0, X, Y, br);
-          g.addColorStop(0, am ? "rgba(224,160,70,.9)" : "rgba(252,250,244,1)"); g.addColorStop(.6, am ? "rgba(200,135,50,.6)" : "rgba(240,234,222,.92)"); g.addColorStop(1, "rgba(232,226,214,0)"); x.fillStyle = g; x.fillRect(X - br, Y - br, br * 2, br * 2); }); }
+          g.addColorStop(0, am ? "rgba(226,150,52,.95)" : "rgba(255,255,252,1)"); g.addColorStop(.7, am ? "rgba(190,115,35,.7)" : "rgba(246,241,231,.97)"); g.addColorStop(1, "rgba(232,226,214,0)"); x.fillStyle = g; x.fillRect(X - br, Y - br, br * 2, br * 2); }); }
       var list = [], i; for (i = 0; i < 1400; i++) list.push({ x: rnd() * S, y: rnd() * S, r: (2.5 + 42 * Math.pow(rnd(), 3.1)) * sc, tint: rnd() });
       list.sort(function (a, b) { return b.r - a.r; });
       list.forEach(function (b) { tile(b.x, b.y, b.r, function (cx, cy) { var r = b.r, body = x.createRadialGradient(cx - r * .2, cy - r * .25, r * .05, cx, cy, r);
-        body.addColorStop(0, "rgba(255,252,246,.14)"); body.addColorStop(.62, "rgba(240,232,218,.2)"); body.addColorStop(.86, "rgba(90,60,35,.16)"); body.addColorStop(.96, "rgba(255,255,255,.9)"); body.addColorStop(1, "rgba(255,255,255,0)");
+        body.addColorStop(0, "rgba(255,252,246,.22)"); body.addColorStop(.55, "rgba(236,226,210,.12)"); body.addColorStop(.8, "rgba(80,52,30,.34)"); body.addColorStop(.92, "rgba(255,255,255,.98)"); body.addColorStop(1, "rgba(255,255,255,0)");
         x.fillStyle = body; x.beginPath(); x.arc(cx, cy, r, 0, TAU); x.fill();
         if (b.tint > .94 && r > 6) { var cg = x.createRadialGradient(cx + r * .25, cy + r * .4, 0, cx + r * .25, cy + r * .4, r * .75); cg.addColorStop(0, "rgba(130,175,255,.22)"); cg.addColorStop(1, "rgba(130,175,255,0)"); x.fillStyle = cg; x.beginPath(); x.arc(cx, cy, r * .93, 0, TAU); x.fill(); }
-        if (r > 4) { x.fillStyle = "rgba(255,255,255,.95)"; x.beginPath(); x.ellipse(cx - r * .38, cy - r * .42, r * .2, r * .11, -.6, 0, TAU); x.fill(); x.fillStyle = "rgba(255,255,255,.4)"; x.beginPath(); x.arc(cx + r * .42, cy + r * .46, r * .09, 0, TAU); x.fill(); } }); });
+        if (r > 4) { x.fillStyle = "rgba(255,255,255,1)"; x.beginPath(); x.ellipse(cx - r * .36, cy - r * .42, r * .27, r * .14, -.6, 0, TAU); x.fill(); x.fillStyle = "rgba(255,255,255,.4)"; x.beginPath(); x.arc(cx + r * .42, cy + r * .46, r * .09, 0, TAU); x.fill(); } }); });
       return { c: c, css: S, sp: .022, pat: null };
     }
-    var TILES = [], NV = 1 + BUILD.length + MEDIA.length, vz = [0, 2, 4, 1, 3], zt = [0, 0, 0, 0, 0], built = 0, timer = 0;
+    var TILES = [], NV = 1 + BUILD.length + MEDIA.length, vz = [MEDIA.length ? 1 + BUILD.length : 0], zt = [0, 0, 0, 0, 0], built = 0, timer = 0;
     MEDIA.forEach(function (src) { src = src.trim(); var m = { media: true, ok: false };
       if (/\.(mp4|webm|mov|m4v)(\?|$)/i.test(src)) { m.el = document.createElement("video"); m.el.src = src; m.el.muted = true; m.el.loop = true; m.el.playsInline = true; m.el.preload = "auto"; m.el.setAttribute("muted", "");
         m.el.addEventListener("loadeddata", function () { m.ok = true; }); }
@@ -140,7 +141,7 @@
       [cv, txt.c, mask.c, B.c].forEach(function (c) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); });
       fw = Math.ceil(W * SC); fh = Math.ceil(H * SC); F.c.width = M.c.width = fw; F.c.height = M.c.height = fh;
       [txt.x, mask.x, B.x, ctx].forEach(function (x) { x.setTransform(dpr, 0, 0, dpr, 0, 0); });
-      R = clamp(W * .09, 66, 200);
+      R = clamp(W * .125, 80, 270);
       seed = 11; TILES[0] = makeFoam(); queueBuild();
       var x = txt.x; x.font = "900 100px " + FONT; ls(x, -2);
       var em = x.measureText(WORD).width / 100, m = x.measureText("O"), asc = (m.actualBoundingBoxAscent || 72) / 100, capEm = asc + (m.actualBoundingBoxDescent || 0) / 100;
@@ -149,7 +150,7 @@
       var cy = topR + (H - topR - lowR) / 2 + (W < 760 ? 0 : H * .03), base = cy + (asc * fs - capEm * fs / 2);
       [txt.x, mask.x].forEach(function (c) { c.clearRect(0, 0, W, H); c.font = "900 " + fs + "px " + FONT; ls(c, -fs * .02); c.textAlign = "center"; c.textBaseline = "alphabetic"; });
       txt.x.fillStyle = IVORY; txt.x.fillRect(0, 0, W, H); txt.x.fillStyle = INK; txt.x.fillText(WORD, W / 2, base);
-      mask.x.fillStyle = "#fff"; mask.x.fillText(WORD, W / 2, base);
+      mask.x.fillStyle = "#fff"; mask.x.fillText(WORD, W / 2, base); mask.x.strokeStyle = "#fff"; mask.x.lineJoin = "round"; mask.x.lineWidth = fs * .014; mask.x.strokeText(WORD, W / 2, base);
       var tot = txt.x.measureText(WORD).width, x0 = W / 2 - tot / 2, i; ZL = []; ZR = [];       /* one zone per letter */
       for (i = 0; i < WORD.length; i++) { ZL.push(i ? ZR[i - 1] : -1e4); ZR.push(i === WORD.length - 1 ? 1e4 : x0 + txt.x.measureText(WORD.slice(0, i + 1)).width); }
       cur.x = tgt.x = last.x = clamp(cur.x || W / 2, 0, W); cur.y = tgt.y = last.y = clamp(cur.y || H / 2, 0, H);
@@ -160,7 +161,7 @@
     function addStamp(x, y, now, r, life, drip) { stamps.push({ x: x, y: y, t: now, r: r, life: life, d: drip, jx: drip ? 0 : (rnd() - .5) * .5, jy: drip ? 0 : (rnd() - .5) * .5, ph: rnd() * TAU }); if (stamps.length > 560) stamps.shift(); }
     function field(now) {
       var f = F.x, i, s, x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; f.clearRect(0, 0, fw, fh);
-      var put = function (x, y, r) { var rr = r * 1.3 * SC; f.drawImage(spr, x * SC - rr, y * SC - rr, rr * 2, rr * 2);
+      var put = function (x, y, r) { if (r * SC < 3) return; var rr = r * 1.3 * SC; f.drawImage(spr, x * SC - rr, y * SC - rr, rr * 2, rr * 2);
         x0 = Math.min(x0, x * SC - rr); y0 = Math.min(y0, y * SC - rr); x1 = Math.max(x1, x * SC + rr); y1 = Math.max(y1, y * SC + rr); };
       for (i = stamps.length - 1; i >= 0; i--) {
         s = stamps[i]; var age = now - s.t; if (age > s.life) { stamps.splice(i, 1); continue; }
@@ -187,7 +188,7 @@
       ctx.drawImage(M.c, bb.x0, bb.y0, bb.w, bb.h, sx, sy, sw, sh);
       var b = B.x; b.globalCompositeOperation = "source-over"; b.clearRect(bx, by, bw, bh);
       var t = reduce ? 0 : now - T0;
-      for (var i = 0; i < ZL.length; i++) { var z0 = Math.max(bx, ZL[i]), z1 = Math.min(bx + bw, ZR[i]); if (z1 > z0) paintZone(b, i, z0, by, z1 - z0, bh, t); }
+      paintZone(b, 0, bx, by, bw, bh, t);
       b.globalCompositeOperation = "destination-in";
       b.drawImage(mask.c, bx * dpr, by * dpr, bw * dpr, bh * dpr, bx, by, bw, bh); b.drawImage(M.c, bb.x0, bb.y0, bb.w, bb.h, sx, sy, sw, sh);
       b.globalCompositeOperation = "source-over";
@@ -219,7 +220,7 @@
           } last.x = cur.x; last.y = cur.y; }
         if (spd > 1.5 && now - lastFling > 90) { lastFling = now; for (i = 0; i < 2; i++) drip(now, cur.x, cur.y, vel.x * (.12 + rnd() * .2) + (rnd() - .5) * .3, vel.y * (.12 + rnd() * .2) - .1 - rnd() * .2, 7 + rnd() * R * .12, 520 + rnd() * 380, .0016); }  /* whip the mouse = splatter */
         if (now - lastDrip > 190 && stamps.length > 24) { lastDrip = now; var sp = stamps[Math.floor(rnd() * stamps.length * .6)]; if (sp && !sp.d) drip(now, sp.x, sp.y + R * .2, 0, .02, 8 + rnd() * R * .07, 900 + rnd() * 500, .00009); }  /* long drips from the old trail */
-        for (i = 0; i < ZL.length; i++) if (headR > R * .3 && cur.x + R * .5 > ZL[i] && cur.x - R * .5 < ZR[i]) { if (zt[i] && now - zt[i] > 2000) vz[i] = (vz[i] + 1) % NV; zt[i] = now; }   /* come back to a letter = a new material */
+        if (ROTATE) { if (headR > R * .3) { if (zt[0] && now - zt[0] > 2000) vz[0] = (vz[0] + 1) % NV; zt[0] = 0; } else if (!zt[0]) zt[0] = now; }   /* come back to a letter = a new material */
       }
       for (i = drips.length - 1; i >= 0; i--) { var d = drips[i], age = now - d.t; if (age > d.life) { drips.splice(i, 1); continue; }
         d.vy += d.g * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.acc += Math.abs(d.vy * dt) + Math.abs(d.vx * dt);
