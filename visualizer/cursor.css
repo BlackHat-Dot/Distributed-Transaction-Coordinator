@@ -22,17 +22,20 @@ html.gc-on select,html.gc-on select *{cursor:default!important}
 .gc-pill span{display:block;transition:opacity .16s ease,transform .22s cubic-bezier(.2,.8,.2,1)}
 .gc-pill.swap span{opacity:0;transform:translateY(5px)}
 
-/* the click word: blooms from the cursor tip (scale only, anchored at the tip) and rests just left of it */
-.gc-mark{--tx:calc(-100% - 12px);left:0;top:0;opacity:0;translate:var(--tx) -2px;transform-origin:100% 50%;
-  color:var(--text-primary,#f6ecda);font:700 15px/1 var(--font-sans,"Schibsted Grotesk",system-ui,sans-serif);letter-spacing:.02em;
-  text-shadow:0 1px 10px rgba(0,0,0,.65);animation:gc-mark .85s cubic-bezier(.2,.8,.2,1) forwards}
-.gc-mark.r{--tx:26px;transform-origin:0 50%}
-[data-theme="light"] .gc-mark{color:#120e0b;text-shadow:0 1px 8px rgba(255,255,255,.6)}
+/* the click word: born exactly at the click point (scale/blur anchored on the tip), then rests just left of it, in a bordered tag */
+.gc-mark{--tx:calc(-100% - 12px);--ty:-8px;--ox:calc(100% + 12px);
+  left:0;top:0;opacity:0;translate:var(--tx) var(--ty);transform-origin:var(--ox) calc(var(--ty) * -1);
+  padding:6px 10px;border-radius:9px;border:1.5px solid var(--accent-amber,#ffb020);background:rgba(18,14,11,.78);
+  color:var(--text-primary,#f6ecda);font:700 14px/1 var(--font-sans,"Schibsted Grotesk",system-ui,sans-serif);letter-spacing:.04em;
+  box-shadow:0 6px 20px rgba(0,0,0,.45),0 0 14px rgba(255,176,32,.22);
+  animation:gc-mark .85s cubic-bezier(.2,.8,.2,1) forwards}
+.gc-mark.r{--tx:26px;--ox:-26px}
+[data-theme="light"] .gc-mark{background:rgba(246,236,218,.9);color:#120e0b}
 @keyframes gc-mark{
-  0%{opacity:0;scale:0}
-  24%{opacity:1;scale:1.1}
-  38%{scale:1}
-  74%{opacity:1;scale:1;translate:var(--tx) -2px}
-  100%{opacity:0;scale:1;translate:var(--tx) -10px}}
+  0%{opacity:0;scale:0;filter:blur(6px)}
+  22%{opacity:1;scale:1.08;filter:blur(0)}
+  36%{scale:1}
+  74%{opacity:1;scale:1;translate:var(--tx) var(--ty)}
+  100%{opacity:0;scale:1;translate:var(--tx) calc(var(--ty) - 10px)}}
 
 @media (hover:none),(pointer:coarse),(prefers-reduced-motion:reduce){.gc,.gc-pill,.gc-mark{display:none}}

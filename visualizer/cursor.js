@@ -73,7 +73,7 @@
   function init() {
     build();
     addEventListener("pointermove", onMove, { passive: true });
-    /* click: the word "DTC" blooms out of the cursor tip and rests just left of it (no travel, no slide-in), then fades */
+    /* click: the word "DTC" is born at the click point and rests just left of the tip, then fades */
     addEventListener("pointerdown", function (e) {
       if ((e.pointerType && e.pointerType !== "mouse") || e.button !== 0) return;
       clearTimeout(upT); downAt = performance.now(); cur.classList.add("down");
