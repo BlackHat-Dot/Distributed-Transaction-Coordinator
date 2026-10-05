@@ -1,5 +1,6 @@
 /* SEAT STORY - chapter between the live dashboard and the guided tour. Pairs with seat-story.js */
-.ss{position:relative;height:520vh;background:var(--bg-deep,#000);color:var(--text-primary,#f5f5f7)}
+/* v1.2: taller track (600vh) to give the new exit room to play; CRT-style .ss-line removed */
+.ss{position:relative;height:600vh;background:var(--bg-deep,#000);color:var(--text-primary,#f5f5f7)}
 .ss-stage{position:relative;z-index:5;height:100vh;overflow:hidden;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;
   padding:clamp(18px,3.4vh,40px) clamp(20px,4.5vw,84px);background:var(--bg-deep,#000);font-family:var(--font-sans,system-ui,sans-serif)}
 .st-paper-in .ss-stage{position:relative;top:auto;width:100%;height:100vh}
@@ -10,7 +11,6 @@
 
 .ss-main{position:relative;flex:1}
 .ss-story{position:absolute;inset:0;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);align-items:center;gap:clamp(20px,4vw,72px);will-change:transform,opacity}
-.ss-line{position:absolute;left:0;right:0;top:50%;height:2px;margin-top:-1px;background:#ffd9a0;box-shadow:0 0 18px 3px rgba(255,159,10,.75);opacity:0;pointer-events:none}
 .ss-left,.ss-right{will-change:opacity,transform}
 .ss-words{position:relative;height:.9em;font-family:"Big Shoulders Display","Schibsted Grotesk",system-ui,sans-serif;font-weight:900;text-transform:uppercase;
   font-size:clamp(54px,11.2vw,220px);line-height:.9;overflow:hidden;letter-spacing:-.005em}
@@ -18,6 +18,11 @@
 .ss-w.now{transform:none}.ss-w.past{transform:translateY(-105%)}
 .ss-w[data-i="1"].now,.ss-w[data-i="2"].now{color:var(--accent-amber,#ff9f0a)}
 .ss-w[data-i="3"].now{color:#30d158}
+/* individual letters of "Committed": scroll-driven transforms are written by seat-story.js (no CSS transition, so they scrub) */
+.ss-ch{display:inline-block;font-style:normal;will-change:transform}
+/* while the exit plays the letters must be free to leave the word's mask; the other words stay hidden */
+.ss-exit .ss-words{overflow:visible}
+.ss-exit .ss-w:not(.now){visibility:hidden}
 .ss-sents{position:relative;height:5.2em;max-width:34em;margin-top:clamp(14px,3vh,30px);font-size:clamp(14px,1.25vw,18px);line-height:1.6;color:var(--text-secondary,#a1a1a6)}
 .ss-s{position:absolute;inset:0 0 auto 0;margin:0;opacity:0;transform:translateY(10px);transition:opacity .5s,transform .6s cubic-bezier(.2,.8,.2,1)}
 .ss-s.now{opacity:1;transform:none;transition-delay:.18s}
@@ -39,15 +44,22 @@
 .ss-tick path{stroke-dasharray:1;stroke-dashoffset:1}
 .ss-tile.s3 .ss-tick{opacity:1}
 
+/* the tile's "uh oh..." speech bubble: shown only while it hangs in mid-air (opacity is scroll-driven) */
+.ss-oops{position:absolute;left:50%;bottom:calc(100% + 16px);transform:translateX(-50%);white-space:nowrap;padding:8px 14px;border-radius:999px;
+  background:var(--text-primary,#f5f5f7);color:#120d07;font:600 12.5px/1 var(--font-mono,ui-monospace,monospace);letter-spacing:.04em;opacity:0;pointer-events:none}
+.ss-oops::after{content:"";position:absolute;left:50%;top:100%;margin-left:-6px;border:6px solid transparent;border-top-color:var(--text-primary,#f5f5f7);border-bottom:0}
+
 .ss-log{width:min(100%,520px);margin-top:clamp(16px,3vh,28px);font:12.5px/1.7 var(--font-mono,ui-monospace,monospace);min-height:6.2em}
 .ss-ln{display:none;justify-content:space-between;gap:16px;padding:3px 0;border-top:1px solid var(--border-subtle,rgba(255,255,255,.1));color:var(--text-secondary,#a1a1a6);opacity:.5}
 .ss-ln.on{display:flex}.ss-ln.cur{opacity:1;color:var(--text-primary,#f5f5f7)}
 .ss-ln em{font-style:normal;color:#30d158;white-space:nowrap}
 
-.ss-rew{position:absolute;inset:0;clip-path:inset(50% 0);display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;pointer-events:none;text-align:center}
-.ss-rw{overflow:hidden;font-family:"Big Shoulders Display",system-ui,sans-serif;font-weight:900;text-transform:uppercase;font-size:clamp(64px,16vw,300px);line-height:.92;
+/* REWIND: rises out of a mask into the emptied frame (transforms/opacity are scroll-driven from seat-story.js) */
+.ss-rew{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;pointer-events:none;text-align:center}
+.ss-rw{overflow:hidden;padding:.04em 0;font-family:"Big Shoulders Display",system-ui,sans-serif;font-weight:900;text-transform:uppercase;font-size:clamp(64px,16vw,300px);line-height:.92}
+/* gradient lives on the span itself so background-clip:text still works while the span is transformed */
+.ss-rw span{display:block;will-change:transform;
   background:linear-gradient(90deg,#ffb84d,#ff9f0a 55%,#ff7a1a);-webkit-background-clip:text;background-clip:text;color:transparent}
-.ss-rw span{display:block;will-change:transform}
 .ss-rew svg{width:clamp(34px,4vw,60px);fill:var(--accent-amber,#ff9f0a);margin-bottom:clamp(8px,2vh,20px)}
 .ss-rew p{margin:clamp(10px,2vh,22px) 0 0;font:600 12px/1 var(--font-mono,ui-monospace,monospace);letter-spacing:.2em;text-transform:uppercase;color:var(--text-secondary,#a1a1a6)}
 
