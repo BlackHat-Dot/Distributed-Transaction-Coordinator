@@ -10,7 +10,7 @@
 (function () {
   "use strict";
 
-  var WORD = window.FINALE_WORD || "ONCE";
+  var WORD = window.FINALE_WORD || "ONCE.";
   var SIM_RES = 256;
   var DYE_RES = 512;
   var VEL_DISSIPATION = 0.962;
@@ -455,14 +455,22 @@
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, revealCanvas);
 
-    // Mask layer matching once.mp4 3D text geometry
+    // Mask layer matching once.mp4 3D text geometry (crisp vector SVG with full stop)
     var maskImg = new Image();
     var maskReady = false;
     maskImg.onload = function () {
       maskReady = true;
       updateBaseTexture();
     };
-    maskImg.src = "once_mask.png";
+    maskImg.onerror = function () {
+      if (maskImg.src.indexOf(".png") === -1) {
+        maskImg.src = "once_mask.png";
+      }
+    };
+    maskImg.src = "once_mask.svg";
+    if (maskImg.complete && maskImg.naturalWidth) {
+      maskReady = true;
+    }
 
     // Rasterize base texture (ivory background + inky letters matching video geometry)
     var W = 0, H = 0, dpr = 1;
@@ -480,6 +488,8 @@
       baseCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
       baseCtx.fillStyle = IVORY;
       baseCtx.fillRect(0, 0, W, H);
+      baseCtx.imageSmoothingEnabled = true;
+      baseCtx.imageSmoothingQuality = "high";
 
       var sAsp = W / H;
       var vAsp = videoAspect;
@@ -709,7 +719,15 @@
       maskLoaded = true;
       draw();
     };
-    mask.src = "once_mask.png";
+    mask.onerror = function () {
+      if (mask.src.indexOf(".png") === -1) {
+        mask.src = "once_mask.png";
+      }
+    };
+    mask.src = "once_mask.svg";
+    if (mask.complete && mask.naturalWidth) {
+      maskLoaded = true;
+    }
 
     function draw() {
       var r = cv.parentElement.getBoundingClientRect();
