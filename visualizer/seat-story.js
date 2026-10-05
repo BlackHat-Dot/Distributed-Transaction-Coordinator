@@ -2,25 +2,28 @@
    Presentation only: reads the first completed row of the live transaction table for a real id/amount, writes nothing to app state.
    Exposes SeatStory.endFrame() so scroll-tour.js can lift off this chapter's exact last screen.
 
-   v1.2 EXIT ("the floor gives way"): once COMMITTED has settled, the letters shiver, lose their grip and tumble off one by one,
-   the caption and log lines slide off after them, then the seat tile hangs in mid-air like a cartoon coyote ("uh oh..."),
-   shakes, and drops. Then REWIND rises into the empty frame. Every motion is scrubbed by scroll, so it plays backwards too. */
+   v1.3 EXIT ("tip-up seat"): one continuous hinge motion, scrubbed by scroll (so it plays backwards too).
+     1. The B7 tile gets a small push toward you (wind-up), then glides up on its top edge like a cinema seat when someone stands.
+     2. The whole COMMITTED window follows on the same kind of hinge, shading out as it turns edge-on.
+     3. Both land on one glowing hinge line along the top of the stage.
+     4. REWIND swings down from that same line, settles with a small bounce, and is the exact last frame handed to the tour.
+   Every stage begins at identity (rotation 0) and ends at rest, so nothing appears or disappears abruptly. */
 (function () {
   "use strict";
-  var PI = Math.PI;
   var clamp = function (v, a, b) { return Math.min(b, Math.max(a, v)); };
   var seg = function (x, a, b) { return clamp((x - a) / (b - a), 0, 1); };
   var ease = function (t) { return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+  /* swing: a small wind-up the "wrong way" (smooth bump, zero slope at both ends), then an ease-in-out glide that
+     decelerates into the hinge. 0 -> 90 degrees with no overshoot, so it never slams or flips past edge-on. */
+  var swing = function (t, wind) { var u = seg(t, 0, .35), b = Math.sin(Math.PI * u); return 90 * ease(t) - wind * b * b; };
+  /* back-out: overshoots then settles (used for REWIND dropping onto its hinge). */
+  var backOut = function (t, c) { var u = t - 1; return 1 + (c + 1) * u * u * u + c * u * u; };
+  var fold = function (deg, persp) { return "perspective(" + persp + "px) rotateX(" + (-deg).toFixed(2) + "deg)"; };
 
   /* chapter timeline (fractions of the pinned scroll distance) */
   var T_BEAT0 = .03, T_BEATLEN = .60;   /* the four beats: .03 -> .63 */
-  var T_EXIT0 = .68, T_EXIT1 = .87;     /* COMMITTED holds .63 -> .68, then the fall plays .68 -> .87 */
-  var T_RW1 = .99;                      /* REWIND rises .87 -> .99 */
-
-  /* per-letter chaos for "Committed": fall order, sideways drift, spin */
-  var ORDER = [4, 0, 7, 2, 8, 1, 5, 3, 6];
-  var DX = [-40, 25, -15, 50, -60, 30, -25, 45, -35];
-  var ROT = [-70, 95, -120, 80, -90, 130, -60, 110, -100];
+  var T_EXIT0 = .66, T_EXIT1 = .88;     /* COMMITTED holds .63 -> .66, then the folds play .66 -> .88 */
+  var T_RW1 = .99;                      /* REWIND swings down .88 -> .99 */
 
   var BEATS = [
     { w: "Available", s: "B7 is free. Any number of people can see it and reach for it at the same instant." },
@@ -53,66 +56,28 @@
     ];
   }
 
-  /* one place to write an element's transform; empty string when it is at rest */
-  function put(el, x, y, r, s) {
-    var sc = s && s !== 1;
-    el.style.transform = (x || y || r || sc)
-      ? "translate(" + x.toFixed(1) + "px," + y.toFixed(1) + "px) rotate(" + r.toFixed(2) + "deg)" + (sc ? " scale(" + s.toFixed(3) + ")" : "")
-      : "";
-  }
-
   function makeStage() {
     var el = document.createElement("div"); el.className = "ss-stage";
     var tx = liveTx();
-    var wordHtml = function (b, i) {
-      /* the last word is split into letters so each one can fall on its own */
-      var inner = i === 3 ? b.w.split("").map(function (c) { return '<i class="ss-ch">' + c + '</i>'; }).join("") : b.w;
-      return '<span class="ss-w" data-i="' + i + '">' + inner + '</span>';
-    };
     el.innerHTML =
       '<div class="ss-top"><span>Chapter 01<i></i>The life of one seat</span><span class="ss-tx">tx ' + tx.id + '</span></div>' +
       '<div class="ss-main"><div class="ss-story">' +
-        '<div class="ss-left"><div class="ss-words">' + BEATS.map(wordHtml).join("") + '</div>' +
+        '<div class="ss-left"><div class="ss-words">' + BEATS.map(function (b, i) { return '<span class="ss-w" data-i="' + i + '">' + b.w + '</span>'; }).join("") + '</div>' +
           '<div class="ss-sents">' + BEATS.map(function (b) { return '<p class="ss-s">' + b.s + '</p>'; }).join("") + '</div></div>' +
         '<div class="ss-right"><div class="ss-tile s0">' +
           '<svg class="ss-ring" viewBox="0 0 100 100" preserveAspectRatio="none"><rect x="0" y="0" width="100" height="100" rx="14" pathLength="1"/></svg>' +
           '<span class="ss-tl">SEAT</span><span class="ss-num">B7</span>' +
-          '<svg class="ss-tick" viewBox="0 0 24 24"><path d="M3 12.5l6 6L21 6" pathLength="1"/></svg>' +
-          '<span class="ss-oops" aria-hidden="true">uh oh\u2026</span></div>' +
+          '<svg class="ss-tick" viewBox="0 0 24 24"><path d="M3 12.5l6 6L21 6" pathLength="1"/></svg></div>' +
           '<div class="ss-log">' + lines(tx).map(function (l) { return '<div class="ss-ln" data-b="' + l[0] + '"><span>' + l[1] + '</span><em>' + l[2] + '</em></div>'; }).join("") + '</div></div></div>' +
-        '<div class="ss-rew"><svg viewBox="0 0 48 24"><path d="M24 0v24L8 12zM48 0v24L32 12z"/></svg><div class="ss-rw"><span>Rewind</span></div><p>Replaying from the start</p></div>' +
+        '<i class="ss-hinge"></i>' +
+        '<div class="ss-rew"><svg viewBox="0 0 48 24"><path d="M24 0v24L8 12zM48 0v24L32 12z"/></svg><div class="ss-rw">Rewind</div><p>Replaying from the start</p></div>' +
       '</div>' +
       '<div class="ss-rail"><i class="ss-track"></i><i class="ss-fill"></i><i class="ss-head"></i><span>AVAILABLE</span><span>HELD</span><span>CHARGED</span><span>COMMITTED</span></div>';
     var q = function (s) { return el.querySelector(s); }, qa = function (s) { return [].slice.call(el.querySelectorAll(s)); };
     return { el: el, bi: -1, top: q(".ss-top"), story: q(".ss-story"), left: q(".ss-left"), right: q(".ss-right"), tile: q(".ss-tile"), ring: q(".ss-ring rect"), tick: q(".ss-tick path"),
-      words: qa(".ss-w"), chars: qa(".ss-ch"), sentBox: q(".ss-sents"), sents: qa(".ss-s"), lns: qa(".ss-ln"), oops: q(".ss-oops"),
+      words: qa(".ss-w"), sents: qa(".ss-s"), lns: qa(".ss-ln"), hinge: q(".ss-hinge"),
       rail: qa(".ss-rail span"), fill: q(".ss-fill"), head: q(".ss-head"),
-      rew: q(".ss-rew"), rw: q(".ss-rw span"), rp: q(".ss-rew p"), rs: q(".ss-rew svg"), tx: q(".ss-tx") };
-  }
-
-  /* THE EXIT. q = 0..1 through the fall. D = a distance that is always off the bottom of the screen. */
-  function exitFx(R, q, D) {
-    var shiver = seg(q, 0, .12);
-
-    /* 1. letters wobble, then each one hops a little and drops, in a scrambled order */
-    R.chars.forEach(function (c, i) {
-      var s = .12 + ORDER[i] * .045, t = seg(q, s, s + .34);
-      if (t <= 0) { put(c, 0, 0, Math.sin(q * 150 + i * 1.9) * 3.2 * shiver); return; }
-      put(c, DX[i] * t, D * t * t - Math.sin(Math.min(1, t * 3.2) * PI) * 16, ROT[i] * t);
-    });
-
-    /* 2. caption and log lines follow, tilting as they go */
-    var ts = seg(q, .26, .66);
-    put(R.sentBox, -20 * ts, D * ts * ts, -6 * ts);
-    R.lns.forEach(function (l, i) {
-      var t = seg(q, .2 + i * .03, .54 + i * .03), side = i % 2 ? 1 : -1;
-      put(l, side * 30 * t, D * t * t, side * 14 * t);
-    });
-
-    /* 3. the seat tile is last: it hangs in the air, realises, shakes, then drops */
-    var amp = seg(q, .3, .36) * (1 - seg(q, .5, .52)), tt = seg(q, .52, .92);
-    put(R.tile, Math.sin(q * 260) * 6 * amp, D * tt * tt, -26 * tt + Math.sin(q * 190) * 1.5 * amp, 1 + .04 * amp);
-    R.oops.style.opacity = seg(q, .32, .38).toFixed(3);
+      rew: q(".ss-rew"), rp: q(".ss-rew p"), tx: q(".ss-tx") };
   }
 
   /* pure function of progress p (0..1 through the chapter) and entrance e (0..1 as it scrolls into view) */
@@ -132,21 +97,27 @@
     R.ring.style.strokeDashoffset = bi === 1 ? (t * .6).toFixed(3) : bi > 1 ? .6 : 0;
     R.tick.style.strokeDashoffset = (1 - ease(seg(bp, 3.05, 3.6))).toFixed(3);
 
-    /* exit: let letters leave their mask only while falling; reset everything when scrolled back up */
-    var exiting = q > 0;
-    if (R.exit !== exiting) { R.exit = exiting; R.el.classList.toggle("ss-exit", exiting); }
-    if (exiting || R.fx) { exitFx(R, q, innerHeight * 1.3); R.fx = exiting; }
+    /* ---- EXIT: two nested folds on a shared hinge ---- */
+    var fT = seg(q, 0, .5);     /* the seat tile folds first  (0 = flat, 1 = edge-on) */
+    var fW = seg(q, .4, 1);     /* then the whole window, starting before the tile has finished so it flows */
+    var aT = swing(fT, 10), aW = swing(fW, 5);   /* the small negative start is the wind-up toward you */
+    R.tile.style.transformOrigin = "50% 0";
+    R.tile.style.transform = fT > 0 ? fold(aT, 1000) : "";
+    R.tile.style.opacity = fT > .8 ? (1 - seg(fT, .8, 1)).toFixed(3) : "";
 
     R.top.style.opacity = ent;
-    R.story.style.opacity = q >= 1 ? 0 : ent;
-    R.story.style.transform = "translateY(" + ((1 - ent) * 28).toFixed(1) + "px)";
+    R.story.style.opacity = q >= 1 ? 0 : (ent * (1 - seg(fW, .75, 1))).toFixed(3);   /* shades out as it turns edge-on */
+    R.story.style.transform = "translateY(" + ((1 - ent) * 28).toFixed(1) + "px)" + (fW > 0 ? " " + fold(aW, 1600) : "");
 
-    /* REWIND rises out of the empty frame, the double arrow slides in, the caption fades up */
-    R.rew.style.opacity = rw > 0 ? 1 : 0;
-    R.rw.style.transform = "translateY(" + ((1 - ease(seg(rw, 0, .55))) * 105).toFixed(2) + "%)";
-    var ic = ease(seg(rw, .3, .75));
-    R.rs.style.opacity = ic; R.rs.style.transform = "translateX(" + ((1 - ic) * 36).toFixed(1) + "px)";
-    R.rp.style.opacity = ease(seg(rw, .65, 1));
+    /* the hinge line: the folded window's edge, which REWIND then hangs from */
+    R.hinge.style.opacity = (seg(q, .8, 1) * (1 - seg(rw, .15, .6))).toFixed(3);
+    R.hinge.style.transform = "scaleX(" + ease(seg(q, .72, 1)).toFixed(4) + ")";
+
+    /* ---- REWIND: swings down from the hinge and settles with a small bounce ---- */
+    var rf = seg(rw, 0, .8), aR = 90 * (1 - backOut(rf, 1.2));
+    R.rew.style.opacity = rw > 0 ? ease(seg(rw, 0, .3)).toFixed(3) : 0;
+    R.rew.style.transform = rf < 1 ? fold(aR, 1400) : "";
+    R.rp.style.opacity = ease(seg(rw, .6, 1));
 
     var fill = p < T_EXIT1 ? bp / 4 : 1 - ease(seg(p, T_EXIT1, 1));
     R.fill.style.transform = "scaleX(" + fill.toFixed(4) + ")"; R.head.style.left = (fill * 100).toFixed(2) + "%";
