@@ -254,9 +254,10 @@
       "  return clamp(uv * ratio + (1.0 - ratio) * 0.5, 0.001, 0.999);",
       "}",
       "void main() {",
+      "  vec2 texUv = vec2(vUv.x, 1.0 - vUv.y);",
       "  float dye = texture2D(uDye, vUv).r;",
-      "  vec4 baseColor = texture2D(uBaseTexture, vUv);",
-      "  vec2 revUv = coverUv(vUv, uVideoAspect, uScreenAspect);",
+      "  vec4 baseColor = texture2D(uBaseTexture, texUv);",
+      "  vec2 revUv = coverUv(texUv, uVideoAspect, uScreenAspect);",
       "  vec4 revealColor = texture2D(uRevealTexture, revUv);",
       "  float raw = dye * uRevealSize;",
       "  float mask = smoothstep(uEdgeSoftness, uEdgeSoftness + uEdgeWidth, raw);",
@@ -454,7 +455,16 @@
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, revealCanvas);
 
-    // Rasterize crisp vector text for Base Texture matching video alignment
+    // Mask layer matching once.mp4 3D text geometry
+    var maskImg = new Image();
+    var maskReady = false;
+    maskImg.onload = function () {
+      maskReady = true;
+      updateBaseTexture();
+    };
+    maskImg.src = "once_mask.png";
+
+    // Rasterize base texture (ivory background + inky letters matching video geometry)
     var W = 0, H = 0, dpr = 1;
     function updateBaseTexture() {
       var r = fx.getBoundingClientRect();
@@ -471,26 +481,27 @@
       baseCtx.fillStyle = IVORY;
       baseCtx.fillRect(0, 0, W, H);
 
-      var FONT = '"Montserrat","Schibsted Grotesk",Arial Black,system-ui,sans-serif';
       var sAsp = W / H;
       var vAsp = videoAspect;
 
-      // Cover dimensions
+      // Cover dimensions matching coverUv in WebGL shader
       var covW = (sAsp > vAsp) ? W : (H * vAsp);
       var covH = (sAsp > vAsp) ? (W / vAsp) : H;
+      var offsetX = (W - covW) * 0.5;
+      var offsetY = (H - covH) * 0.5;
 
-      // Text height in video is ~37% of video height; text width is ~84.5% of video width
-      var targetTextH = covH * 0.369;
-      var fs = targetTextH * 1.05;
-
-      baseCtx.font = "900 " + fs + "px " + FONT;
-      baseCtx.textAlign = "center";
-      baseCtx.textBaseline = "middle";
-      baseCtx.fillStyle = INK;
-
-      // Letter spacing adjustment to match 3D balloon font width
-      var cy = H / 2;
-      baseCtx.fillText(WORD, W / 2, cy);
+      if (maskReady && maskImg.naturalWidth) {
+        baseCtx.drawImage(maskImg, offsetX, offsetY, covW, covH);
+      } else {
+        var FONT = '"Montserrat","Schibsted Grotesk",Arial Black,system-ui,sans-serif';
+        var targetTextH = covH * 0.369;
+        var fs = targetTextH * 1.05;
+        baseCtx.font = "900 " + fs + "px " + FONT;
+        baseCtx.textAlign = "center";
+        baseCtx.textBaseline = "middle";
+        baseCtx.fillStyle = INK;
+        baseCtx.fillText(WORD, W / 2, H / 2);
+      }
 
       gl.bindTexture(gl.TEXTURE_2D, baseTexture);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -692,6 +703,14 @@
   function fallback2D(cv, word, ink, ivory, tp, low) {
     var ctx = cv.getContext("2d");
     if (!ctx) return;
+    var mask = new Image();
+    var maskLoaded = false;
+    mask.onload = function () {
+      maskLoaded = true;
+      draw();
+    };
+    mask.src = "once_mask.png";
+
     function draw() {
       var r = cv.parentElement.getBoundingClientRect();
       var w = Math.round(r.width), h = Math.round(r.height);
@@ -701,14 +720,25 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = ivory;
       ctx.fillRect(0, 0, w, h);
-      var topR = (tp ? tp.offsetHeight : 0) + 30;
-      var lowR = (low ? low.offsetHeight : 0) + 30;
-      var fs = Math.min(w * 0.22, (h - topR - lowR) * 0.95);
-      ctx.font = "900 " + fs + "px sans-serif";
-      ctx.fillStyle = ink;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(word, w / 2, topR + (h - topR - lowR) / 2);
+      var vAsp = 1890 / 1080;
+      var sAsp = w / h;
+      var covW = (sAsp > vAsp) ? w : (h * vAsp);
+      var covH = (sAsp > vAsp) ? (w / vAsp) : h;
+      var offsetX = (w - covW) * 0.5;
+      var offsetY = (h - covH) * 0.5;
+
+      if (maskLoaded && mask.naturalWidth) {
+        ctx.drawImage(mask, offsetX, offsetY, covW, covH);
+      } else {
+        var topR = (tp ? tp.offsetHeight : 0) + 30;
+        var lowR = (low ? low.offsetHeight : 0) + 30;
+        var fs = Math.min(w * 0.22, (h - topR - lowR) * 0.95);
+        ctx.font = "900 " + fs + "px sans-serif";
+        ctx.fillStyle = ink;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(word, w / 2, topR + (h - topR - lowR) / 2);
+      }
     }
     window.addEventListener("resize", draw);
     draw();
