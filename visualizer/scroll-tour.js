@@ -68,6 +68,8 @@
   var quad = function (t) { return t < .5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t); };
   function mk(cls, inner, tag) { var d = document.createElement(tag || "div"); d.className = cls; if (inner) d.innerHTML = inner; return d; }
 
+  /* the tour lifts off the LAST SCREEN OF THE PAGE: that is now the chapter's final frame (REWIND), when seat-story.js is present */
+  function mkEnd() { return window.SeatStory ? window.SeatStory.endFrame() : mkClone(); }
   function mkClone() {
     var c = document.querySelector("main").cloneNode(true);
     /* ids are KEPT on purpose: the stylesheet scopes the topology look to #topology-svg and SVG url(#gradient/marker) refs need them.
@@ -111,7 +113,7 @@
       card: q(".st-card"), title: q("h4"), text: q("p"), dots: [].slice.call(host.querySelectorAll(".st-dots i")),
       beam: q(".st-beam"), endbg: q(".st-endbg"), end: q(".st-end"), lns: [].slice.call(host.querySelectorAll(".st-ln>span")), eyebrow: q(".st-eyebrow"), more: q(".st-more"), headline: q(".st-headline"), sub: q(".st-sub"), cta: q(".st-cta"),
       skip: q(".st-skip"), back: q(".st-back"), next: q(".st-next"), fresh: false };
-    S.paperIn.appendChild(mkClone()); S.sheet.appendChild(mkClone());
+    S.paperIn.appendChild(mkEnd()); S.sheet.appendChild(mkClone());
     q(".st-replay").onclick = function () { goto(0); };
     S.dots.forEach(function (dot, dotIdx) {
       dot.title = "Jump to step " + (dotIdx + 1);
@@ -152,11 +154,11 @@
   function syncClones() {
     if (!S || !S.fresh || document.hidden || sd > OUTRO_START + 1.2) return;
     var h0 = document.querySelector("main").offsetHeight;
-    if (sd < 2.8) S.paperIn.replaceChildren(mkClone());
+    if (sd < 2.8) S.paperIn.replaceChildren(mkEnd());
     if (sd >= 2.0) S.sheet.replaceChildren(mkClone());
     if (Math.abs(h0 - (S.mainH || 0)) > 1) layout();
   }
-  function refresh() { S.paperIn.replaceChildren(mkClone()); S.sheet.replaceChildren(mkClone()); layout(); }
+  function refresh() { S.paperIn.replaceChildren(mkEnd()); S.sheet.replaceChildren(mkClone()); layout(); }
 
   /* measure everything once per resize / content refresh */
   function layout() {
@@ -173,7 +175,7 @@
     S.holder.style.width = vw + "px"; S.holder.style.height = vh + "px";
     /* paper = copy of the real <main>, same width and position, bottom-aligned to the last screen of the real page */
     var mr = document.querySelector("main").getBoundingClientRect();
-    S.paperIn.style.left = mr.left + "px"; S.paperIn.style.width = mr.width + "px";
+    S.paperIn.style.left = (window.SeatStory ? 0 : mr.left) + "px"; S.paperIn.style.width = (window.SeatStory ? vw : mr.width) + "px";
     S.W = Math.max(320, Math.round(mr.width)); S.sheet.style.width = S.W + "px";
     S.paperIn.style.top = Math.min(0, vh - S.paperIn.offsetHeight) + "px";
     var nat = S.svg.getBoundingClientRect(), pr = S.pin.getBoundingClientRect(), fr = S.frame.getBoundingClientRect();
