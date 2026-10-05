@@ -128,9 +128,6 @@ body:has(.pm-urgent){--hl-light:255,106,82;}   /* last 60s of a hold: the room t
 .btn-scenario-comp,.btn-scenario-crash{border-left-color:var(--accent-rose)!important;}
 .btn-scenario::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--text-primary);
   transform:scaleX(0);transform-origin:left;transition:transform .5s var(--ease-light);}
-.btn-scenario:hover::before,.btn-scenario:focus-visible::before{transform:scaleX(1);}
-.btn-scenario:hover,.btn-scenario:focus-visible{color:#120e0b!important;}
-.btn-scenario:hover small,.btn-scenario:hover strong{color:#120e0b!important;}
 .btn-scenario .btn-text strong{font:800 clamp(1.3rem,2.6vw,2rem)/1 var(--font-display);text-transform:uppercase;display:block;}
 .btn-scenario .btn-text small{color:var(--text-secondary);font-size:.85rem;}
 .panel,.recovery-panel,.topology-section,.modal-dialog,.modal-card,.race-modal,.auth-card{
