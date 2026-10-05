@@ -10,7 +10,7 @@
 (function () {
   "use strict";
 
-  var WORD = window.FINALE_WORD || "ONCE.";
+  var WORD = window.FINALE_WORD || "ONCE";
   var SIM_RES = 256;
   var DYE_RES = 512;
   var VEL_DISSIPATION = 0.962;
@@ -27,7 +27,7 @@
     var footer = document.querySelector(".site-footer");
     if (!footer || footer.querySelector(".fx")) return;
 
-    var MEDIA = window.FINALE_MEDIA || footer.getAttribute("data-media") || "";
+    var MEDIA = window.FINALE_MEDIA || footer.getAttribute("data-media") || "once.mp4";
     if (typeof MEDIA === "string") MEDIA = MEDIA ? MEDIA.split(",")[0].trim() : "";
 
     var fx = document.createElement("div");
@@ -247,10 +247,17 @@
       "uniform float uEdgeSoftness;",
       "uniform float uEdgeWidth;",
       "uniform vec3 uInkColor;",
+      "uniform float uScreenAspect;",
+      "uniform float uVideoAspect;",
+      "vec2 coverUv(vec2 uv, float vAsp, float sAsp) {",
+      "  vec2 ratio = vec2(min(sAsp / vAsp, 1.0), min(vAsp / sAsp, 1.0));",
+      "  return clamp(uv * ratio + (1.0 - ratio) * 0.5, 0.001, 0.999);",
+      "}",
       "void main() {",
       "  float dye = texture2D(uDye, vUv).r;",
       "  vec4 baseColor = texture2D(uBaseTexture, vUv);",
-      "  vec4 revealColor = texture2D(uRevealTexture, vUv);",
+      "  vec2 revUv = coverUv(vUv, uVideoAspect, uScreenAspect);",
+      "  vec4 revealColor = texture2D(uRevealTexture, revUv);",
       "  float raw = dye * uRevealSize;",
       "  float mask = smoothstep(uEdgeSoftness, uEdgeSoftness + uEdgeWidth, raw);",
       "  mask = clamp(mask, 0.0, 1.0);",
@@ -375,13 +382,16 @@
     var revealCtx = revealCanvas.getContext("2d");
     var revealTexture = gl.createTexture();
 
-    // Video Layer Support (uses custom video if provided, defaults to noth.in 3D chrome video)
+    // Video Layer Support
     var videoEl = null;
     var videoReady = false;
-    var videoSrc = MEDIA || "https://noth-in.b-cdn.net/nothin-sharp-high.mp4";
+    var videoAspect = 1890 / 1080;
+    var videoSrc = MEDIA || "once.mp4";
     if (videoSrc) {
       videoEl = document.createElement("video");
-      videoEl.crossOrigin = "anonymous";
+      if (/^https?:\/\//i.test(videoSrc)) {
+        videoEl.crossOrigin = "anonymous";
+      }
       videoEl.src = videoSrc;
       videoEl.muted = true;
       videoEl.loop = true;
@@ -390,8 +400,17 @@
       videoEl.setAttribute("muted", "");
       videoEl.addEventListener("canplay", function () {
         videoReady = true;
+        if (videoEl.videoWidth && videoEl.videoHeight) {
+          videoAspect = videoEl.videoWidth / videoEl.videoHeight;
+        }
         var p = videoEl.play();
         if (p && p.catch) p.catch(function () {});
+      });
+      videoEl.addEventListener("loadedmetadata", function () {
+        if (videoEl.videoWidth && videoEl.videoHeight) {
+          videoAspect = videoEl.videoWidth / videoEl.videoHeight;
+          updateBaseTexture();
+        }
       });
       videoEl.load();
     }
@@ -435,7 +454,7 @@
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, revealCanvas);
 
-    // Rasterize crisp vector text for Base Texture
+    // Rasterize crisp vector text for Base Texture matching video alignment
     var W = 0, H = 0, dpr = 1;
     function updateBaseTexture() {
       var r = fx.getBoundingClientRect();
@@ -453,21 +472,25 @@
       baseCtx.fillRect(0, 0, W, H);
 
       var FONT = '"Montserrat","Schibsted Grotesk",Arial Black,system-ui,sans-serif';
-      var topR = (tp ? tp.offsetHeight : 0) + 30;
-      var lowR = (low ? low.offsetHeight : 0) + 30;
-      var padX = Math.max(16, W * 0.02);
+      var sAsp = W / H;
+      var vAsp = videoAspect;
 
-      baseCtx.font = "900 100px " + FONT;
-      var em = baseCtx.measureText(WORD).width / 100;
-      var fs = Math.min((W - padX * 2) / em, (H - topR - lowR) * 0.95);
-      var cy = topR + (H - topR - lowR) / 2 + (W < 760 ? 0 : H * 0.03);
-      var base = cy + fs * 0.35;
+      // Cover dimensions
+      var covW = (sAsp > vAsp) ? W : (H * vAsp);
+      var covH = (sAsp > vAsp) ? (W / vAsp) : H;
+
+      // Text height in video is ~37% of video height; text width is ~84.5% of video width
+      var targetTextH = covH * 0.369;
+      var fs = targetTextH * 1.05;
 
       baseCtx.font = "900 " + fs + "px " + FONT;
       baseCtx.textAlign = "center";
-      baseCtx.textBaseline = "alphabetic";
+      baseCtx.textBaseline = "middle";
       baseCtx.fillStyle = INK;
-      baseCtx.fillText(WORD, W / 2, base);
+
+      // Letter spacing adjustment to match 3D balloon font width
+      var cy = H / 2;
+      baseCtx.fillText(WORD, W / 2, cy);
 
       gl.bindTexture(gl.TEXTURE_2D, baseTexture);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -602,7 +625,7 @@
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoEl);
       }
 
-      // 8. Mask Composite (noth.in threshold render)
+      // 8. Mask Composite (noth.in threshold render with cover UV)
       gl.useProgram(compositeProg.program);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, baseTexture);
@@ -620,6 +643,8 @@
       gl.uniform1f(compositeProg.uniforms.uEdgeSoftness, EDGE_SOFTNESS);
       gl.uniform1f(compositeProg.uniforms.uEdgeWidth, EDGE_WIDTH);
       gl.uniform3f(compositeProg.uniforms.uInkColor, inkRgb[0], inkRgb[1], inkRgb[2]);
+      gl.uniform1f(compositeProg.uniforms.uScreenAspect, W / H);
+      gl.uniform1f(compositeProg.uniforms.uVideoAspect, videoAspect);
 
       blit(null); // Draw directly to canvas
     }
