@@ -98,6 +98,13 @@
     function upd() {
       raf = 0;
       var r = sec.getBoundingClientRect(), vh = innerHeight, span = r.height - vh;
+      /* pinned by JS (same method as the tour): position:sticky is unreliable here because the page's body clips overflow */
+      var mode = r.top > 0 ? "before" : r.bottom >= vh ? "fixed" : "after";
+      if (R.mode !== mode) {
+        R.mode = mode; var s = R.el.style;
+        s.position = mode === "fixed" ? "fixed" : "absolute"; s.left = "0"; s.right = "0"; s.width = "auto";
+        s.top = mode === "after" ? "auto" : "0"; s.bottom = mode === "after" ? "0" : "auto";
+      }
       if (r.top > vh * 1.2 || r.bottom < -vh * .2) return;
       paint(R, clamp(-r.top / span, 0, 1), clamp(1 - r.top / vh, 0, 1));
     }
