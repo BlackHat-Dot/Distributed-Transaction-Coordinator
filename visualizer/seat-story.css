@@ -1,6 +1,6 @@
 /* SEAT STORY - chapter between the live dashboard and the guided tour. Pairs with seat-story.js */
-/* v1.3: tip-up seat exit. 600vh track gives the folds room to play. */
-.ss{position:relative;height:600vh;background:var(--bg-deep,#000);color:var(--text-primary,#f5f5f7)}
+/* v1.4: after COMMITTED the e-ticket is laid onto the stage, scanned, then REWIND rises in. 720vh track gives the ticket room to hold. */
+.ss{position:relative;height:720vh;background:var(--bg-deep,#000);color:var(--text-primary,#f5f5f7)}
 .ss-stage{position:relative;z-index:5;height:100vh;overflow:hidden;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;
   padding:clamp(18px,3.4vh,40px) clamp(20px,4.5vw,84px);background:var(--bg-deep,#000);font-family:var(--font-sans,system-ui,sans-serif)}
 .st-paper-in .ss-stage{position:relative;top:auto;width:100%;height:100vh}
@@ -10,9 +10,8 @@
 .ss-tx{letter-spacing:.06em;text-transform:none}
 
 .ss-main{position:relative;flex:1}
-/* HINGE: the window and REWIND both pivot on the top edge of .ss-main, so they share one fold line */
 .ss-story{position:absolute;inset:0;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);align-items:center;gap:clamp(20px,4vw,72px);
-  transform-origin:50% 0;will-change:transform,opacity}
+  transform-origin:50% 50%;will-change:transform,opacity}
 .ss-left,.ss-right{will-change:opacity,transform}
 .ss-words{position:relative;height:.9em;font-family:"Big Shoulders Display","Schibsted Grotesk",system-ui,sans-serif;font-weight:900;text-transform:uppercase;
   font-size:clamp(54px,11.2vw,220px);line-height:.9;overflow:hidden;letter-spacing:-.005em}
@@ -25,10 +24,8 @@
 .ss-s.now{opacity:1;transform:none;transition-delay:.18s}
 
 .ss-right{--tile:min(30vw,40vh,400px);display:flex;flex-direction:column;align-items:flex-start;justify-self:center}
-/* the tile tips up on its own top edge (the backrest bar); transform/opacity are scroll-driven, so no transition on them */
 .ss-tile{position:relative;width:var(--tile);aspect-ratio:1;box-sizing:border-box;border:2px solid rgba(255,255,255,.28);border-radius:14%;
   display:flex;align-items:center;justify-content:center;color:var(--text-secondary,#a1a1a6);
-  transform-origin:50% 0;will-change:transform,opacity;
   transition:background .6s,border-color .6s,color .6s}
 .ss-tile::before{content:"";position:absolute;left:16%;right:16%;top:9%;height:4.5%;border-radius:99px;background:currentColor;opacity:.3}
 .ss-tl{position:absolute;left:12%;bottom:9%;font:600 11px/1 var(--font-mono,ui-monospace,monospace);letter-spacing:.2em}
@@ -48,13 +45,10 @@
 .ss-ln.on{display:flex}.ss-ln.cur{opacity:1;color:var(--text-primary,#f5f5f7)}
 .ss-ln em{font-style:normal;color:#30d158;white-space:nowrap}
 
-/* the glowing fold line along the top edge: where the window lands and REWIND hangs from */
-.ss-hinge{position:absolute;left:0;right:0;top:0;height:2px;margin-top:-1px;background:#ffd9a0;box-shadow:0 0 18px 3px rgba(255,159,10,.75);
-  opacity:0;transform-origin:50% 50%;pointer-events:none;will-change:transform,opacity}
 
-/* REWIND: swings down from the hinge (transform/opacity are scroll-driven from seat-story.js) */
+/* REWIND: rises into place (transform/opacity are scroll-driven from seat-story.js) */
 .ss-rew{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;pointer-events:none;text-align:center;
-  transform-origin:50% 0;will-change:transform,opacity}
+  transform-origin:50% 50%;will-change:transform,opacity}
 .ss-rw{font-family:"Big Shoulders Display",system-ui,sans-serif;font-weight:900;text-transform:uppercase;font-size:clamp(64px,16vw,300px);line-height:.92;
   background:linear-gradient(90deg,#ffb84d,#ff9f0a 55%,#ff7a1a);-webkit-background-clip:text;background-clip:text;color:transparent}
 .ss-rew svg{width:clamp(34px,4vw,60px);fill:var(--accent-amber,#ff9f0a);margin-bottom:clamp(8px,2vh,20px)}
@@ -66,6 +60,65 @@
 .ss-track{background:var(--border-subtle,rgba(255,255,255,.12))}
 .ss-fill{background:var(--accent-amber,#ff9f0a);transform-origin:0 50%;transform:scaleX(0)}
 .ss-head{position:absolute;top:-4px;left:0;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:var(--accent-amber,#ff9f0a);box-shadow:0 0 0 4px rgba(255,159,10,.18)}
+
+
+/* ---------- TICKET: the e-ticket this seat produced (same fields as booking.html). Scroll-driven from seat-story.js ---------- */
+.ss-tkwrap{--paper:#f4efe6;--ink:#17120c;--ink2:#6b5f50;--rule:rgba(23,18,12,.2);--ok:#1b8a3f;
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(14px,3vh,28px);
+  opacity:0;visibility:hidden;pointer-events:none;will-change:transform,opacity;transform-origin:50% 60%}
+.ss-ticket{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;width:min(880px,100%);
+  background:var(--paper);color:var(--ink);border-radius:18px;font-family:var(--font-sans,system-ui,sans-serif);
+  box-shadow:0 40px 90px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.06)}
+.ss-tk-main{padding:clamp(18px,2.6vw,30px) clamp(20px,3vw,36px)}
+.ss-tk-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:12px;border-bottom:1px dashed var(--rule);
+  font:700 11.5px/1 var(--font-mono,ui-monospace,monospace);letter-spacing:.04em;color:var(--ink2)}
+.ss-tk-head b{font-size:11px;letter-spacing:.02em;color:#fff;background:var(--ok);padding:4px 10px;border-radius:99px}
+.ss-tk-title{margin:clamp(12px,2vh,20px) 0 0;font-size:clamp(20px,2.6vw,30px);font-weight:800;line-height:1.1;letter-spacing:-.01em}
+.ss-tk-venue{margin:6px 0 0;font-size:clamp(12.5px,1.2vw,14.5px);color:var(--ink2)}
+.ss-tk-seat{display:flex;align-items:center;gap:clamp(16px,3vw,32px);margin-top:clamp(14px,2.4vh,24px)}
+.ss-tk-big{display:flex;flex-direction:column;padding:4px clamp(14px,2vw,22px) 6px 0;border-right:2px solid var(--ink)}
+.ss-tk-big small{font:700 11px/1 var(--font-mono,ui-monospace,monospace);color:var(--ink2);letter-spacing:.04em}
+.ss-tk-big strong{font-family:"Big Shoulders Display",system-ui,sans-serif;font-weight:900;font-size:clamp(56px,8vw,104px);line-height:.88}
+.ss-tk-seat dl{margin:0;display:grid;gap:8px}
+.ss-tk-seat dl div{display:flex;gap:12px;align-items:baseline}
+.ss-tk-seat dt{width:3.2em;font:600 11.5px/1.2 var(--font-mono,ui-monospace,monospace);color:var(--ink2)}
+.ss-tk-seat dd{margin:0;font-size:clamp(14px,1.3vw,16.5px);font-weight:700}
+.ss-tk-ref{margin-top:clamp(12px,2vh,20px);font-size:11.5px;color:var(--ink2);display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.ss-tk-ref code{font:600 12px/1.3 var(--font-mono,ui-monospace,monospace);color:var(--ink);overflow-wrap:anywhere}
+
+/* tear line: dashed seam + two notches cut out of the paper */
+.ss-tk-stub{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  padding:clamp(18px,2.6vw,30px) clamp(20px,3vw,40px);border-left:2px dashed var(--rule)}
+.ss-tk-stub::before,.ss-tk-stub::after{content:"";position:absolute;left:-12px;width:22px;height:22px;border-radius:50%;background:var(--bg-deep,#000)}
+.ss-tk-stub::before{top:-11px}.ss-tk-stub::after{bottom:-11px}
+.ss-qr{position:relative;width:clamp(104px,13vw,148px);aspect-ratio:1;color:var(--ink)}
+.ss-qr-code{position:absolute;inset:0;transition:opacity .3s}
+.ss-qr-code svg{display:block;width:100%;height:100%}
+.ss-scan{position:absolute;left:-8px;right:-8px;top:0;height:3px;margin-top:-1px;border-radius:2px;opacity:0;pointer-events:none;
+  background:var(--accent-amber,#ff9f0a);box-shadow:0 0 14px 3px rgba(255,159,10,.7)}
+.ss-qr-ok{position:absolute;inset:18%;width:64%;height:64%;fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;
+  background:var(--ok);border-radius:50%;padding:14%;box-sizing:border-box;opacity:0;transition:opacity .3s}
+.ss-qr-ok path{stroke-dasharray:1;stroke-dashoffset:1}
+.ss-ticket.ok .ss-qr-code{opacity:.12}
+.ss-ticket.ok .ss-qr-ok{opacity:1}
+.ss-tk-cap{position:relative;display:grid;font:700 11px/1 var(--font-mono,ui-monospace,monospace);letter-spacing:.04em;color:var(--ink2);text-align:center}
+.ss-tk-cap em{grid-area:1/1;font-style:normal;transition:opacity .3s}
+.ss-tk-cap em+em{opacity:0;color:var(--ok)}
+.ss-ticket.ok .ss-tk-cap em:first-child{opacity:0}
+.ss-ticket.ok .ss-tk-cap em+em{opacity:1}
+.ss-tk-note{margin:0;max-width:40em;text-align:center;opacity:0;font-size:clamp(13px,1.2vw,16px);line-height:1.6;color:var(--text-secondary,#a1a1a6)}
+
+@media (max-width:700px){
+  .ss-ticket{grid-template-columns:1fr}
+  .ss-tk-stub{flex-direction:row;justify-content:center;border-left:0;border-top:2px dashed var(--rule);padding:14px 20px;gap:16px}
+  .ss-tk-stub::before,.ss-tk-stub::after{top:-11px;bottom:auto}
+  .ss-tk-stub::before{left:-11px}.ss-tk-stub::after{left:auto;right:-11px}
+  .ss-qr{width:clamp(76px,22vw,96px)}
+  .ss-tk-big strong{font-size:clamp(48px,16vw,72px)}
+  .ss-tk-seat{gap:14px}
+  .ss-tk-note{display:none}
+}
+@media (max-height:640px){.ss-tk-note{display:none}.ss-tk-title{margin-top:8px}.ss-tk-seat{margin-top:8px}.ss-tk-ref{margin-top:8px}}
 
 @media (max-width:900px){
   .ss-story{grid-template-columns:1fr;align-content:center;gap:18px}
