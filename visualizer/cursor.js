@@ -50,13 +50,18 @@
     return "";
   }
   function setLabel(next) {
+    next = (next || "").replace(/\s+/g, " ").trim();
     if (next === label) return;
-    var had = !!label; label = next;
+    label = next;
     clearTimeout(swapT);
-    if (!next) { pill.classList.remove("on"); return; }
-    if (!had) { txt.textContent = next; pill.classList.add("on"); measure(); return; }
-    pill.classList.add("swap");
-    swapT = setTimeout(function () { txt.textContent = next; pill.classList.remove("swap"); measure(); }, 130);
+    pill.classList.remove("swap");
+    if (!next) {
+      pill.classList.remove("on");
+      return;
+    }
+    txt.textContent = next;
+    pill.classList.add("on");
+    measure();
   }
   function measure() { pw = pill.offsetWidth; ph = pill.offsetHeight; }
   function kick() { if (!raf) { t0 = performance.now(); raf = requestAnimationFrame(tick); } }

@@ -17,10 +17,10 @@ html.gc-on select,html.gc-on select *{cursor:default!important}
 
 .gc-pill{opacity:0;padding:8px 14px;border-radius:10px;white-space:nowrap;
   background:var(--text-primary,#f6ecda);color:#120e0b;font:600 13px/1 var(--font-sans,system-ui,sans-serif);
-  box-shadow:0 8px 24px rgba(0,0,0,.45);transition:opacity .22s ease;transform-origin:0 0}
+  box-shadow:0 8px 24px rgba(0,0,0,.45);transition:opacity .18s ease;transform-origin:0 0}
 .gc-pill.on{opacity:1}
-.gc-pill span{display:block;transition:opacity .16s ease,transform .22s cubic-bezier(.2,.8,.2,1)}
-.gc-pill.swap span{opacity:0;transform:translateY(5px)}
+.gc-pill span{display:block}
+.gc-pill:empty,.gc-pill span:empty{display:none!important;opacity:0!important}
 
 /* the click word: born exactly where clicked, pops straight up and floats up */
 .gc-mark{position:fixed;z-index:2147483000;pointer-events:none;will-change:transform,opacity;
