@@ -1252,6 +1252,12 @@ button, input, select, textarea {
   overflow: hidden;
   user-select: none;
   cursor: grab;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.topology-canvas-container.is-active {
+  border-color: rgba(229, 169, 79, 0.95);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(229, 169, 79, 0.35), 0 0 24px rgba(229, 169, 79, 0.16);
 }
 
 .topology-canvas-container.is-panning {
@@ -1262,6 +1268,11 @@ button, input, select, textarea {
   background: #fbfbfd;
   border: 1.5px solid #a1a1a6;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .topology-canvas-container.is-active {
+  border-color: #0071e3;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 113, 227, 0.35), 0 0 20px rgba(0, 113, 227, 0.14);
 }
 
 #topology-svg {

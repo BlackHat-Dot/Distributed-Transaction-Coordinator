@@ -2075,6 +2075,25 @@ const CanvasEngine = {
   isPanning: false,
   panStartMouse: { x: 0, y: 0 },
   panStartPos: { x: 0, y: 0 },
+  isActive: false,
+
+  activate() {
+    if (this.isActive) return;
+    this.isActive = true;
+    if (this.container) {
+      this.container.classList.add("is-active");
+    }
+    window.dispatchEvent(new CustomEvent("dtc-cursor-refresh"));
+  },
+
+  deactivate() {
+    if (!this.isActive) return;
+    this.isActive = false;
+    if (this.container) {
+      this.container.classList.remove("is-active");
+    }
+    window.dispatchEvent(new CustomEvent("dtc-cursor-refresh"));
+  },
 
   init() {
     this.container = document.getElementById("topology-canvas-container");
@@ -2133,7 +2152,20 @@ const CanvasEngine = {
 
   bindEvents() {
     this.container.addEventListener("wheel", (e) => this.onWheel(e), { passive: false });
-    this.container.addEventListener("mousedown", (e) => this.onMouseDown(e));
+    this.container.addEventListener("mousedown", (e) => {
+      this.activate();
+      this.onMouseDown(e);
+    });
+    document.addEventListener("pointerdown", (e) => {
+      if (this.container && !this.container.contains(e.target)) {
+        this.deactivate();
+      }
+    });
+    this.container.addEventListener("mouseleave", () => {
+      if (!this.isPanning && !this.isDraggingNode) {
+        this.deactivate();
+      }
+    });
     window.addEventListener("mousemove", (e) => this.onMouseMove(e));
     window.addEventListener("mouseup", (e) => this.onMouseUp(e));
 
@@ -2153,6 +2185,9 @@ const CanvasEngine = {
     }
 
     window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        this.deactivate();
+      }
       if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
       if (e.key === "+" || e.key === "=") {
         e.preventDefault();
@@ -2183,7 +2218,7 @@ const CanvasEngine = {
   },
 
   onMouseDown(e) {
-    if (e.target.closest(".topo-node-group")) return;
+    if (e.target.closest(".topo-node-group") || e.target.closest(".canvas-controls-bar")) return;
     this.isPanning = true;
     this.panStartMouse = { x: e.clientX, y: e.clientY };
     this.panStartPos = { x: this.panX, y: this.panY };
@@ -2191,6 +2226,7 @@ const CanvasEngine = {
   },
 
   onNodeMouseDown(e, group) {
+    this.activate();
     e.stopPropagation();
     const key = group.getAttribute("data-node-key");
     if (!key || !this.nodes[key]) return;
@@ -2220,7 +2256,7 @@ const CanvasEngine = {
     }
   },
 
-  onMouseUp() {
+  onMouseUp(e) {
     if (this.isPanning) {
       this.isPanning = false;
       this.container.style.cursor = "grab";
@@ -2234,9 +2270,13 @@ const CanvasEngine = {
       this.container.style.cursor = "grab";
       this.saveNodes();
     }
+    if (this.container && !this.container.matches(":hover")) {
+      this.deactivate();
+    }
   },
 
   onWheel(e) {
+    if (!this.isActive) return;
     e.preventDefault();
     const rect = this.container.getBoundingClientRect();
     const cursorX = e.clientX - rect.left;
@@ -2445,6 +2485,7 @@ const CanvasEngine = {
     );
   }
 };
+window.CanvasEngine = CanvasEngine;
 
 const TECH_STACK_CONFIG = [
   {

@@ -36,10 +36,13 @@
 
   function labelFor(t) {
     if (!t || !t.closest) return "";
+    var topo = t.closest("#topology-canvas-container");
+    if (topo && !t.closest("button,a,input,select,label")) {
+      return topo.classList.contains("is-active") ? "Scroll to zoom \u00B7 Drag" : "Click to zoom \u00B7 Drag";
+    }
     var d = t.closest("[data-cursor]"); if (d) return d.getAttribute("data-cursor");
     var s = t.closest(".seat-tile");
     if (s) return { AVAILABLE: "Select seat", SELECTED: "Deselect seat", HELD: "Held", BOOKED: "Booked" }[s.getAttribute("data-status")] || "Seat";
-    if (t.closest("#topology-canvas-container") && !t.closest("button,a,input,select,label")) return "Drag \u00B7 scroll to zoom";
     var b = t.closest("button,[role=button],.btn,.nav-btn,.filter-tab,summary");
     if (b) {
       if (b.disabled || b.getAttribute("aria-disabled") === "true") return "Unavailable";
@@ -137,6 +140,12 @@
     doc.addEventListener("mouseleave", function () { cur.classList.remove("on"); pill.classList.remove("on"); label = ""; last = null; });
     doc.addEventListener("mouseenter", function () { if (shown) cur.classList.add("on"); });
     addEventListener("blur", function () { cur.classList.remove("down"); });
+    window.addEventListener("dtc-cursor-refresh", function () {
+      if (last) {
+        var native = last.closest && last.closest(NATIVE);
+        setLabel(native ? "" : labelFor(last));
+      }
+    });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })();
