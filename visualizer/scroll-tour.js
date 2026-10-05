@@ -73,6 +73,8 @@
     /* ids are KEPT on purpose: the stylesheet scopes the topology look to #topology-svg and SVG url(#gradient/marker) refs need them.
        The real <main> comes first in the DOM, so getElementById() in app.js still finds the live elements. */
     c.querySelectorAll("[onclick]").forEach(function (n) { n.removeAttribute("onclick"); });
+    /* house-lights.js nudges the live hero heading with an inline `translate`; a copy must start un-nudged or its top gets cropped */
+    c.querySelectorAll("[style*='translate']").forEach(function (n) { n.style.translate = ""; });
     c.setAttribute("inert", ""); c.setAttribute("aria-hidden", "true");
     return c;
   }
@@ -145,11 +147,21 @@
     var top = S.track.getBoundingClientRect().top + scrollY + sv * UNIT * innerHeight;
     scrollTo({ top: top, behavior: reduce ? "auto" : "smooth" });
   }
+  /* The copies are re-taken from the LIVE page while they can be seen, so every number (countdown, saga counts,
+     table rows) on the "snapshot" is the user's real, current data, not a frozen capture. */
+  function syncClones() {
+    if (!S || !S.fresh || document.hidden || sd > OUTRO_START + 1.2) return;
+    var h0 = document.querySelector("main").offsetHeight;
+    if (sd < 2.8) S.paperIn.replaceChildren(mkClone());
+    if (sd >= 2.0) S.sheet.replaceChildren(mkClone());
+    if (Math.abs(h0 - (S.mainH || 0)) > 1) layout();
+  }
   function refresh() { S.paperIn.replaceChildren(mkClone()); S.sheet.replaceChildren(mkClone()); layout(); }
 
   /* measure everything once per resize / content refresh */
   function layout() {
     var vh = innerHeight, vw = innerWidth;
+    S.mainH = document.querySelector("main").offsetHeight;
     /* the tour starts one screen BEFORE the end of <main>, so the pinned copy replaces the real last screen with no gap */
     S.host.style.marginTop = -vh + "px";
     S.track.style.height = (TOTAL * UNIT + 1) * vh + "px";
@@ -410,6 +422,7 @@
     if (!build()) return;
     enhanceFooter();
     addButton(); layout();
+    setInterval(syncClones, 400);
     var t; addEventListener("resize", function () { clearTimeout(t); t = setTimeout(function () { layout(); onScroll(); }, 120); });
     addEventListener("scroll", onScroll, { passive: true });
     addEventListener("load", function () { layout(); onScroll(); setTimeout(function () { refresh(); onScroll(); }, 900); });
