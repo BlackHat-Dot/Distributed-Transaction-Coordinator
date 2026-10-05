@@ -6,7 +6,7 @@ html.gc-on input:not([type=button]):not([type=submit]):not([type=reset]):not([ty
 html.gc-on [contenteditable=""],html.gc-on [contenteditable="true"]{cursor:text!important}
 html.gc-on select,html.gc-on select *{cursor:default!important}
 
-.gc,.gc-pill,.gc-mark{position:fixed;left:0;top:0;z-index:2147483000;pointer-events:none;will-change:transform,opacity}
+.gc,.gc-pill{position:fixed;left:0;top:0;z-index:2147483000;pointer-events:none;will-change:transform,opacity}
 .gc{opacity:0;transition:opacity .2s ease}
 .gc.on{opacity:1}.gc.hide{opacity:0}
 .gc-arrow{position:absolute;left:-3px;top:-3px;width:22px;height:22px;transform-origin:3px 3px;
@@ -23,19 +23,19 @@ html.gc-on select,html.gc-on select *{cursor:default!important}
 .gc-pill.swap span{opacity:0;transform:translateY(5px)}
 
 /* the click word: born exactly where clicked, pops straight up and floats up */
-.gc-mark{--tx:-50%;--ty:-12px;
-  left:0;top:0;opacity:0;translate:var(--tx) var(--ty);transform-origin:50% 100%;
-  padding:5px 9px;border-radius:8px;border:1.5px solid var(--accent-amber,#ffb020);background:rgba(18,14,11,.84);
+.gc-mark{position:fixed;z-index:2147483000;pointer-events:none;will-change:transform,opacity;
+  padding:5px 9px;border-radius:8px;border:1.5px solid var(--accent-amber,#ffb020);background:rgba(18,14,11,.86);
   backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
   color:var(--text-primary,#f6ecda);font:700 13px/1 var(--font-sans,"Schibsted Grotesk",system-ui,sans-serif);letter-spacing:.04em;
   box-shadow:0 6px 20px rgba(0,0,0,.45),0 0 14px rgba(255,176,32,.22);
+  transform-origin:50% 50%;
   animation:gc-mark .75s cubic-bezier(.16,1,.3,1) forwards}
 [data-theme="light"] .gc-mark{background:rgba(246,236,218,.92);color:#120e0b}
 @keyframes gc-mark{
-  0%{opacity:0;scale:.4;translate:var(--tx) 4px;filter:blur(2px)}
-  22%{opacity:1;scale:1.06;translate:var(--tx) -12px;filter:blur(0)}
-  36%{scale:1;translate:var(--tx) -14px}
-  68%{opacity:1;scale:1;translate:var(--tx) -20px}
-  100%{opacity:0;scale:.94;translate:var(--tx) -32px}}
+  0%{opacity:0;transform:translate(-50%, -50%) scale(.35)}
+  20%{opacity:1;transform:translate(-50%, -85%) scale(1.06)}
+  36%{transform:translate(-50%, -80%) scale(1)}
+  68%{opacity:1;transform:translate(-50%, -95%) scale(1)}
+  100%{opacity:0;transform:translate(-50%, -135%) scale(.92)}}
 
 @media (hover:none),(pointer:coarse),(prefers-reduced-motion:reduce){.gc,.gc-pill,.gc-mark{display:none}}

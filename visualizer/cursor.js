@@ -78,7 +78,8 @@
       if ((e.pointerType && e.pointerType !== "mouse") || e.button !== 0) return;
       clearTimeout(upT); downAt = performance.now(); cur.classList.add("down");
       var m = document.createElement("div"); m.className = "gc-mark"; m.setAttribute("aria-hidden", "true"); m.textContent = "DTC";
-      m.style.transform = "translate3d(" + e.clientX + "px," + e.clientY + "px,0)";
+      m.style.left = e.clientX + "px";
+      m.style.top = e.clientY + "px";
       m.addEventListener("animationend", function () { m.remove(); });
       document.body.appendChild(m);
     }, { passive: true });
