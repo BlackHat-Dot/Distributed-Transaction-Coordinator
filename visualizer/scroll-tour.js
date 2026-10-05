@@ -407,7 +407,7 @@
     var anchor = document.getElementById("btn-view-stack");
     if (!anchor || document.getElementById("btn-scroll-tour")) return;
     var b = document.createElement("button");
-    b.id = "btn-scroll-tour"; b.className = "btn btn-outline"; b.title = "Jump to the guided tour of this dashboard";
+    b.id = "btn-scroll-tour"; b.className = "btn btn-outline"; b.setAttribute("aria-label", "Jump to the guided tour of this dashboard");
     b.innerHTML = "\uD83D\uDCDC Guided Tour";
     b.addEventListener("click", function () { goto(0); });
     anchor.insertAdjacentElement("afterend", b);

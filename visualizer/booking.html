@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="calm.css?v=1.0.0">
   <link rel="stylesheet" href="house-lights.css?v=1.1.0">
   <link rel="stylesheet" href="palette.css?v=2.0.0">
-  <link rel="stylesheet" href="cursor.css?v=1.6.0">
+  <link rel="stylesheet" href="cursor.css?v=1.7.0">
   <style>
     /* Fix: "Inspect Forensic Audit Log" link rendered without button padding/font. Loaded last so it wins. */
     #btn-view-forensics {
@@ -79,7 +79,7 @@
 
     <!-- Nav Switcher -->
     <div class="header-nav">
-      <a href="index.html" class="nav-btn" title="Switch to Observability Console">
+      <a href="index.html" class="nav-btn" aria-label="Switch to Observability Console">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
         <span>Observability Console</span>
       </a>
@@ -92,20 +92,20 @@
     <!-- Service Health & Controls -->
     <div class="header-actions">
       <!-- Fan Identity Button -->
-      <button id="btn-open-auth" class="btn btn-secondary btn-sm" title="Fan Identity & Authentication" style="display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(56, 189, 248, 0.4); background: rgba(56, 189, 248, 0.1); color: #38bdf8; font-weight: 600; padding: 6px 12px; font-size: 12px;">
+      <button id="btn-open-auth" class="btn btn-secondary btn-sm" aria-label="Fan Identity & Authentication" style="display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(56, 189, 248, 0.4); background: rgba(56, 189, 248, 0.1); color: #38bdf8; font-weight: 600; padding: 6px 12px; font-size: 12px;">
         <span id="user-avatar-icon">👤</span>
         <span id="user-email-label">Fan Login (Email OTP)</span>
       </button>
 
-      <div class="service-pill" id="health-indicator" title="Inventory Service Status">
+      <div class="service-pill" id="health-indicator" aria-label="Inventory Service Status">
         <span class="status-indicator online"></span>
         <span id="health-text">Inventory: Online</span>
       </div>
 
       <!-- Interactive Monkey Toggle -->
-      <div class="sliding-toggle-group monkey-toggle-container" id="monkey-toggle-wrap" title="Toggle interactive Monkey Companion">
+      <div class="sliding-toggle-group monkey-toggle-container" id="monkey-toggle-wrap" aria-label="Toggle interactive Monkey Companion">
         <span class="toggle-side-icon" id="monkey-toggle-icon" style="font-size: 13px;" onclick="window.toggleMonkeyCompanion()">🐒</span>
-        <label class="switch-toggle" for="toggle-monkey-mode" title="Toggle Monkey Companion">
+        <label class="switch-toggle" for="toggle-monkey-mode" aria-label="Toggle Monkey Companion">
           <input type="checkbox" id="toggle-monkey-mode" aria-label="Toggle Monkey Companion" />
           <span class="toggle-slider">
             <span class="toggle-knob"></span>
@@ -114,7 +114,7 @@
         <span class="toggle-side-label" id="monkey-toggle-label" onclick="window.toggleMonkeyCompanion()">MONKEY</span>
       </div>
 
-      <button id="btn-restock" class="btn btn-outline btn-sm" title="Reset all 30 seats to AVAILABLE">
+      <button id="btn-restock" class="btn btn-outline btn-sm" aria-label="Reset all 30 seats to AVAILABLE">
         <span>Reset Venue Seats</span>
       </button>
     </div>
@@ -226,7 +226,7 @@
             <span class="timer-pulse"></span>
             <span>EPHEMERAL HOLD ACTIVE</span>
           </div>
-          <button id="btn-cancel-hold" class="btn-text-link" title="Release seat back to venue">Release</button>
+          <button id="btn-cancel-hold" class="btn-text-link" aria-label="Release seat back to venue">Release</button>
         </div>
         <div class="timer-display">
           <div class="timer-clock" id="hold-clock">10:00</div>
@@ -397,7 +397,7 @@
             <div class="eticket-qr">
               <div class="qr-box">
                 <div class="qr-carousel-stage">
-                  <button type="button" class="qr-nav-arrow qr-nav-prev hidden" id="btn-qr-prev" aria-label="Previous seat QR" title="Previous Seat">
+                  <button type="button" class="qr-nav-arrow qr-nav-prev hidden" id="btn-qr-prev" aria-label="Previous seat QR">
                     <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
                       <polyline points="15 18 9 12 15 6"></polyline>
                     </svg>
@@ -408,7 +408,7 @@
                     <div id="ticket-qr-spinner" style="font-size: 11px; color: #94a3b8; text-align: center;">Generating QR...</div>
                   </div>
 
-                  <button type="button" class="qr-nav-arrow qr-nav-next hidden" id="btn-qr-next" aria-label="Next seat QR" title="Next Seat">
+                  <button type="button" class="qr-nav-arrow qr-nav-next hidden" id="btn-qr-next" aria-label="Next seat QR">
                     <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
                       <polyline points="9 18 15 12 9 6"></polyline>
                     </svg>
@@ -608,7 +608,7 @@
   <!-- CENTER BOOKING CELEBRATION OVERLAY (FEASIBLE LENGTH) -->
   <div id="mb-center-celebration" class="mb-celebration-overlay hidden">
     <div class="mb-celebration-card">
-      <button class="mb-celebration-close" id="btn-close-celebration" title="Close">×</button>
+      <button class="mb-celebration-close" id="btn-close-celebration" aria-label="Close">×</button>
       <div class="mb-celebration-badge">🎉 BOOKING CONFIRMED</div>
       <div class="mb-celebration-avatar">
         <svg id="mb-celeb-svg" width="90" height="90" viewBox="0 0 90 90"></svg>
@@ -627,7 +627,7 @@
   <script src="responsive.js?v=1.0.0"></script>
   <script src="monkey-branch.js?v=1.0.0"></script>
   <script src="house-lights.js?v=1.0.0" defer></script>
-  <script src="cursor.js?v=1.6.0" defer></script>
+  <script src="cursor.js?v=1.7.0" defer></script>
 </body>
 </html>
 

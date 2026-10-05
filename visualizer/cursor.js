@@ -16,6 +16,24 @@
     pill = document.createElement("div"); pill.className = "gc-pill"; pill.setAttribute("aria-hidden", "true"); pill.innerHTML = "<span></span>"; txt = pill.firstChild;
     document.body.appendChild(cur); document.body.appendChild(pill);
   }
+  /* Strip native HTML 'title' tooltips so the browser never displays its default tooltip over the custom cursor phrase */
+  function stripNativeTitle(el) {
+    if (!el || !el.getAttribute) return;
+    var t = el.getAttribute("title");
+    if (t) {
+      if (!el.getAttribute("data-title")) el.setAttribute("data-title", t);
+      if (!el.getAttribute("aria-label") && el.tagName !== "BODY" && el.tagName !== "HTML") {
+        el.setAttribute("aria-label", t);
+      }
+      el.removeAttribute("title");
+    }
+  }
+  function stripAllTitles(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    var els = scope.querySelectorAll("[title]");
+    for (var i = 0; i < els.length; i++) stripNativeTitle(els[i]);
+  }
+
   function labelFor(t) {
     if (!t || !t.closest) return "";
     var d = t.closest("[data-cursor]"); if (d) return d.getAttribute("data-cursor");
@@ -25,8 +43,8 @@
     var b = t.closest("button,[role=button],.btn,.nav-btn,.filter-tab,summary");
     if (b) {
       if (b.disabled || b.getAttribute("aria-disabled") === "true") return "Unavailable";
-      var w = (b.getAttribute("aria-label") || b.title || b.textContent || "").replace(/\s+/g, " ").trim();
-      return w && w.length <= 22 && /[A-Za-z]/.test(w) ? w : "Click";
+      var raw = (b.getAttribute("data-cursor") || b.textContent || "").replace(/[^\x20-\x7E]/g, " ").replace(/\s+/g, " ").trim();
+      return raw && raw.length <= 18 && /[A-Za-z]/.test(raw) ? raw : (b.matches("a[href]") ? "Open" : "Click");
     }
     if (t.closest("a[href]")) return "Open";
     return "";
@@ -72,6 +90,30 @@
   }
   function init() {
     build();
+    stripAllTitles(document);
+    if (window.MutationObserver) {
+      var obs = new MutationObserver(function (mutations) {
+        for (var i = 0; i < mutations.length; i++) {
+          var m = mutations[i];
+          if (m.type === "attributes" && m.attributeName === "title" && m.target) {
+            stripNativeTitle(m.target);
+          } else if (m.addedNodes && m.addedNodes.length) {
+            for (var j = 0; j < m.addedNodes.length; j++) {
+              var n = m.addedNodes[j];
+              if (n.nodeType === 1) {
+                if (n.hasAttribute && n.hasAttribute("title")) stripNativeTitle(n);
+                stripAllTitles(n);
+              }
+            }
+          }
+        }
+      });
+      obs.observe(doc, { childList: true, subtree: true, attributes: true, attributeFilter: ["title"] });
+    }
+    addEventListener("pointerover", function (e) {
+      var el = e.target && e.target.closest ? e.target.closest("[title]") : null;
+      if (el) stripNativeTitle(el);
+    }, { passive: true, capture: true });
     addEventListener("pointermove", onMove, { passive: true });
     /* click: the word "DTC" pops up right where clicked and floats up */
     addEventListener("pointerdown", function (e) {
