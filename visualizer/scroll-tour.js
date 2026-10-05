@@ -23,7 +23,7 @@
       text: "An append-only event log: every transition is recorded with its actor and payload." }
   ];
   /* Timeline in "units" of scroll (1 unit = UNIT x viewport height). Everything below is a pure function of scroll. */
-  var UNIT = .45, INTRO = 6.2, PER = .6, N = STEPS.length;
+  var UNIT = .6, INTRO = 6.2, PER = .6, N = STEPS.length;
   var OUTRO_START = INTRO + PER * N, OUTRO_DUR = 2.4, TOTAL = OUTRO_START + OUTRO_DUR;
 
   /* Side-profile teacher facing right. viewBox 270x400, shoulder (104,140), hip (102,240). */
@@ -57,14 +57,15 @@
   }).join("") + '</div>';
   /* closing scene: replaces the empty room after the board rolls up, and bridges into the footer colour */
   var END = '<div class="st-endbg"></div><div class="st-end"><p class="st-eyebrow">Tour complete</p>' +
-    '<h3 class="st-headline"><span class="st-ln"><span>Every seat,</span></span><span class="st-ln"><span class="st-amber">sold exactly once.</span></span></h3>' +
-    '<div class="st-more"><p class="st-sub">Idempotent sagas, Redis mutex locks and automatic compensation. Proven live, not just promised.</p>' +
+    '<h3 class="st-headline"><span class="st-ln"><span>Ask a thousand times.</span></span><span class="st-ln"><span class="st-amber">Booked exactly once.</span></span></h3>' +
+    '<div class="st-more"><p class="st-sub">Double clicks, retries, races and crashes can\u2019t double-book a seat or double-charge a card. Every failure rolls itself back. Proven live, not just promised.</p>' +
     '<div class="st-cta"><a class="btn btn-primary" href="booking.html">Book a seat \u2794</a><button class="btn btn-outline st-replay" type="button">Replay tour \u21BA</button></div></div></div>';
 
   var S = null, sd = 0, st = 0, raf = 0, pose = "", idx = -2;
   var clamp = function (v, a, b) { return Math.max(a, Math.min(b, v)); };
   var seg = function (s, a, b) { return clamp((s - a) / (b - a), 0, 1); };
   var ease = function (t) { return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+  var soft = function (t) { return .5 - Math.cos(Math.PI * t) / 2; };   /* sine in-out: gentler than cubic, no abrupt mid-section */
   var quad = function (t) { return t < .5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t); };
   function mk(cls, inner, tag) { var d = document.createElement(tag || "div"); d.className = cls; if (inner) d.innerHTML = inner; return d; }
 
@@ -151,7 +152,9 @@
   }
   /* The copies are re-taken from the LIVE page while they can be seen, so every number (countdown, saga counts,
      table rows) on the "snapshot" is the user's real, current data, not a frozen capture. */
+  var lastScrollAt = 0;
   function syncClones() {
+    if (performance.now() - lastScrollAt < 350) return;   /* never re-clone mid-scroll: that is the hitch */
     if (!S || !S.fresh || document.hidden || sd > OUTRO_START + 1.2) return;
     var h0 = document.querySelector("main").offsetHeight;
     if (sd < 2.8) S.paperIn.replaceChildren(mkEnd());
@@ -283,7 +286,7 @@
     var H = innerHeight, W = innerWidth, k = S.k, dist = S.dist;
 
     /* 1) the last screen of the page lifts off and shrinks to the centre; 2) it winds up into a roll in the centre */
-    var f0 = 1, p1 = ease(seg(s, .15, .9)), eR = ease(seg(s, .8, 2.0)), p3 = seg(s, 2.0, 2.8);
+    var f0 = 1, p1 = soft(seg(s, .15, .9)), eR = soft(seg(s, .7, 2.0)), p3 = seg(s, 2.0, 2.8);
     var sc = 1 - .42 * p1, Tn = eR * .132 * W, Gh = H * (1 - eR) + Tn * eR, cy = (H - Gh * sc) / 2;
     S.holder.style.display = s >= 2.8 ? "none" : "";
     S.holder.style.transform = "translateY(" + cy + "px) scale(" + sc + ")";
@@ -382,18 +385,22 @@
       ps.top = mode === "after" ? "" : "0"; ps.bottom = mode === "after" ? "0" : "";
       ps.visibility = mode === "before" ? "hidden" : "visible";
     }
+    lastScrollAt = performance.now();
     st = clamp(-r.top / (innerHeight * UNIT), 0, TOTAL);
     if (!S.fresh && r.top < innerHeight * 1.5) { S.fresh = true; refresh(); }   /* fresh snapshot of live data just before it is needed */
     if (r.top > innerHeight * 3) S.fresh = false;
     dockUpdate();
     if (!raf) raf = requestAnimationFrame(tick);
   }
-  function tick() {
+  var lastT = 0;
+  function tick(now) {
     raf = 0;
+    var dt = lastT ? Math.min(.05, (now - lastT) / 1000) : .016; lastT = now;
     var d = st - sd;
-    sd = reduce || Math.abs(d) < .0005 ? st : sd + d * .12;
+    /* time-based exponential chase: same glide at 60, 120 or 144 Hz */
+    sd = reduce || Math.abs(d) < .0005 ? st : sd + d * (1 - Math.exp(-dt * 7));
     render(sd);
-    if (sd !== st) raf = requestAnimationFrame(tick);
+    if (sd !== st) raf = requestAnimationFrame(tick); else lastT = 0;
   }
 
   function addButton() {
@@ -424,7 +431,7 @@
     if (!build()) return;
     enhanceFooter();
     addButton(); layout();
-    setInterval(syncClones, 400);
+    setInterval(syncClones, 1200);
     var t; addEventListener("resize", function () { clearTimeout(t); t = setTimeout(function () { layout(); onScroll(); }, 120); });
     addEventListener("scroll", onScroll, { passive: true });
     addEventListener("load", function () { layout(); onScroll(); setTimeout(function () { refresh(); onScroll(); }, 900); });

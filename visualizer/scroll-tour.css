@@ -36,7 +36,7 @@ html:has(#dtc-entry-screen:not(.fade-out):not([style*="display: none"])) body{ov
   text-align:center;padding:0 clamp(16px,5vw,72px) 8vh;pointer-events:none;color:#f3e9da;font-family:var(--font-sans,system-ui,sans-serif)}
 .st-eyebrow{margin:0;padding-bottom:clamp(10px,2vh,20px);overflow:hidden;font-size:12.5px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--accent-amber,#ff9f0a)}
 .st-headline{margin:0;font-family:"Big Shoulders Display","Schibsted Grotesk",system-ui,sans-serif;font-weight:900;text-transform:uppercase;
-  font-size:clamp(40px,9vw,128px);line-height:.92;letter-spacing:-.005em}
+  font-size:clamp(34px,8vw,120px);line-height:.92;letter-spacing:-.005em}
 .st-ln{display:block;overflow:hidden;padding:.04em 0 .08em}
 .st-ln>span{display:block;will-change:transform}
 .st-amber{background:linear-gradient(90deg,#ffb84d,#ff9f0a 55%,#ff7a1a);-webkit-background-clip:text;background-clip:text;color:transparent}
