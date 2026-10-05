@@ -47,7 +47,7 @@
 
     var spr = document.createElement("canvas"); spr.width = spr.height = 96;
     (function () { var g = spr.getContext("2d"), r = g.createRadialGradient(48, 48, 0, 48, 48, 48);
-      r.addColorStop(0, "rgba(0,0,0,1)"); r.addColorStop(.45, "rgba(0,0,0,.92)"); r.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = r; g.fillRect(0, 0, 96, 96); })();
+      r.addColorStop(0, "rgba(0,0,0,1)"); r.addColorStop(.72, "rgba(0,0,0,.97)"); r.addColorStop(.88, "rgba(0,0,0,.6)"); r.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = r; g.fillRect(0, 0, 96, 96); })();
 
     var stamps = [], drips = [], cur = { x: 0, y: 0 }, vel = { x: 0, y: 0 }, tgt = { x: 0, y: 0 }, last = { x: 0, y: 0 }, headR = 0, spd = 0;
     var inside = false, userUsed = false, ready = false, visible = false, running = false, raf = 0, lastT = 0, lastDrip = 0, lastFling = 0, T0 = performance.now();
@@ -141,7 +141,7 @@
       [cv, txt.c, mask.c, B.c].forEach(function (c) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); });
       fw = Math.ceil(W * SC); fh = Math.ceil(H * SC); F.c.width = M.c.width = fw; F.c.height = M.c.height = fh;
       [txt.x, mask.x, B.x, ctx].forEach(function (x) { x.setTransform(dpr, 0, 0, dpr, 0, 0); });
-      R = clamp(W * .125, 80, 270);
+      R = clamp(W * .072, 60, 130);
       seed = 11; TILES[0] = makeFoam(); queueBuild();
       var x = txt.x; x.font = "900 100px " + FONT; ls(x, -2);
       var em = x.measureText(WORD).width / 100, m = x.measureText("O"), asc = (m.actualBoundingBoxAscent || 72) / 100, capEm = asc + (m.actualBoundingBoxDescent || 0) / 100;
@@ -169,10 +169,7 @@
         /* the tail snakes sideways and sags with gravity the older it gets */
         put(s.x + s.jx * r + Math.sin(now * .0034 + s.ph) * a * R * .2, s.y + s.jy * r + a * a * R * .42, r);
       }
-      if (headR > .8) { var an = now * .0021, hr = headR * (1 + .06 * Math.sin(now * .008)), st = clamp(spd * .5, 0, .6), ux = spd > .05 ? vel.x / (spd * 1000 / 1000 + 1e-6) : 0;
-        put(cur.x, cur.y, hr);                                                              /* the head is a lumpy mass that trails behind the motion */
-        put(cur.x + Math.cos(an) * hr * .5 - vel.x * 70 * st, cur.y + Math.sin(an * 1.3) * hr * .45 - vel.y * 70 * st, hr * .66);
-        put(cur.x + Math.cos(-an * .8 + 2) * hr * .56 - vel.x * 120 * st, cur.y + Math.sin(an * .9 + 1) * hr * .5 - vel.y * 120 * st, hr * .55); }
+      if (headR > .8) { put(cur.x, cur.y, headR); }   /* single clean circle — noth.in style tight spotlight */
       if (x1 < x0) return null;
       x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(fw, Math.ceil(x1)); y1 = Math.min(fh, Math.ceil(y1));
       var w = x1 - x0, h = y1 - y0; if (w < 2 || h < 2) return null;
@@ -202,7 +199,7 @@
     function step(now) {
       raf = 0; if (!ready || !visible) { running = false; return; }
       var dt = clamp(now - (lastT || now - 16), 1, 40); lastT = now;
-      var auto = !reduce && !inside && !userUsed, active = inside || auto, i;
+      var auto = false, active = inside;
       if (auto) { var g = ghostPos(now); if (!stamps.length && headR < 1) { cur.x = last.x = g.x; cur.y = last.y = g.y; } tgt.x = g.x; tgt.y = g.y; }
       if (active) {                                              /* the head is a heavy spring: it lags, overshoots a little, wobbles */
         var K = inside ? .0011 : .0006, C = 2 * .6 * Math.sqrt(K), n = Math.ceil(dt / 8), h = dt / n, s;
@@ -226,7 +223,7 @@
         d.vy += d.g * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.acc += Math.abs(d.vy * dt) + Math.abs(d.vx * dt);
         if (d.acc > d.r * .35) { d.acc = 0; addStamp(d.x, d.y, now, d.r * (1 - age / d.life * .45), 460, true); } }
       render(now);
-      if (stamps.length || drips.length || headR > .8 || auto) { running = true; raf = requestAnimationFrame(step); } else { running = false; lastT = 0; }
+      if (stamps.length || drips.length || headR > .8 || inside) { running = true; raf = requestAnimationFrame(step); } else { running = false; lastT = 0; }
     }
     function kick() { if (!running && !raf) { running = true; raf = requestAnimationFrame(step); } }
     function setPtr(e) { var r = fx.getBoundingClientRect(); tgt.x = e.clientX - r.left; tgt.y = e.clientY - r.top;
