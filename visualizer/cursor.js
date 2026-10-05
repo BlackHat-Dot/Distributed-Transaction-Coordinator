@@ -12,7 +12,7 @@
 
   function build() {
     cur = document.createElement("div"); cur.className = "gc"; cur.setAttribute("aria-hidden", "true");
-    cur.innerHTML = '<svg class="gc-arrow" viewBox="0 0 22 22"><path d="M3 3l14 6.2-6 2-2.2 6.3z"/></svg>';
+    cur.innerHTML = '<svg class="gc-arrow" viewBox="0 0 22 22"><defs><linearGradient id="gc-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffdc92"/><stop offset=".58" stop-color="#ffb020"/><stop offset="1" stop-color="#ff8a3d"/></linearGradient></defs><path d="M3 3l14 6.2-6 2-2.2 6.3z"/></svg>';
     pill = document.createElement("div"); pill.className = "gc-pill"; pill.setAttribute("aria-hidden", "true"); pill.innerHTML = "<span></span>"; txt = pill.firstChild;
     document.body.appendChild(cur); document.body.appendChild(pill);
   }
@@ -73,12 +73,13 @@
   function init() {
     build();
     addEventListener("pointermove", onMove, { passive: true });
-    /* click: the arrow turns into a small "DTC" stamp that pops, holds while pressed, then lifts away */
+    /* click: the word "DTC" blooms out of the cursor tip and rests just left of it (no travel, no slide-in), then fades */
     addEventListener("pointerdown", function (e) {
       if ((e.pointerType && e.pointerType !== "mouse") || e.button !== 0) return;
       clearTimeout(upT); downAt = performance.now(); cur.classList.add("down");
       var m = document.createElement("div"); m.className = "gc-mark"; m.setAttribute("aria-hidden", "true"); m.textContent = "DTC";
       m.style.transform = "translate3d(" + e.clientX + "px," + e.clientY + "px,0)";
+      if (e.clientX < 70) m.classList.add("r");                  /* near the left edge: rest on the right of the tip instead */
       m.addEventListener("animationend", function () { m.remove(); });
       document.body.appendChild(m);
     }, { passive: true });
