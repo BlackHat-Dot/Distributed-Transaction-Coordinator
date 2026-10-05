@@ -58,8 +58,8 @@
   /* closing scene: replaces the empty room after the board rolls up, and bridges into the footer colour */
   var END = '<div class="st-endbg"></div><div class="st-end"><p class="st-eyebrow">Tour complete</p>' +
     '<h3 class="st-headline"><span class="st-ln"><span>Every seat,</span></span><span class="st-ln"><span class="st-amber">sold exactly once.</span></span></h3>' +
-    '<p class="st-sub">Idempotent sagas, Redis mutex locks and automatic compensation. Proven live, not just promised.</p>' +
-    '<div class="st-cta"><a class="btn btn-primary" href="booking.html">Book a seat \u2794</a><button class="btn btn-outline st-replay" type="button">Replay tour \u21BA</button></div></div>';
+    '<div class="st-more"><p class="st-sub">Idempotent sagas, Redis mutex locks and automatic compensation. Proven live, not just promised.</p>' +
+    '<div class="st-cta"><a class="btn btn-primary" href="booking.html">Book a seat \u2794</a><button class="btn btn-outline st-replay" type="button">Replay tour \u21BA</button></div></div></div>';
 
   var S = null, sd = 0, st = 0, raf = 0, pose = "", idx = -2;
   var clamp = function (v, a, b) { return Math.max(a, Math.min(b, v)); };
@@ -107,7 +107,7 @@
       screen: q(".st-screen"), sheet: q(".st-sheet"), ring: q(".st-ring"), rod: q(".st-rod"), pull: q(".st-pull"), frame: q(".st-frame"),
       cover: q(".st-cover"), holder: q(".st-holder"), shadow: q(".st-shadow"), leaf: q(".st-leaf"), paperIn: q(".st-paper-in"), roller: q(".st-roller"),
       card: q(".st-card"), title: q("h4"), text: q("p"), dots: [].slice.call(host.querySelectorAll(".st-dots i")),
-      beam: q(".st-beam"), endbg: q(".st-endbg"), end: q(".st-end"), lns: [].slice.call(host.querySelectorAll(".st-ln>span")), eyebrow: q(".st-eyebrow"), sub: q(".st-sub"), cta: q(".st-cta"),
+      beam: q(".st-beam"), endbg: q(".st-endbg"), end: q(".st-end"), lns: [].slice.call(host.querySelectorAll(".st-ln>span")), eyebrow: q(".st-eyebrow"), more: q(".st-more"), headline: q(".st-headline"), sub: q(".st-sub"), cta: q(".st-cta"),
       skip: q(".st-skip"), back: q(".st-back"), next: q(".st-next"), fresh: false };
     S.paperIn.appendChild(mkClone()); S.sheet.appendChild(mkClone());
     q(".st-replay").onclick = function () { goto(0); };
@@ -169,7 +169,9 @@
     S.bx = (fr.left + fr.width / 2 - nat.left) / S.k; S.by = (fr.top + 16 - nat.top) / S.k; S.sx = (fr.width + 20) / (136 * S.k);
     S.aimRail = aim(fr.left + fr.width / 2, fr.top + 16);
     S.beam.style.left = (fr.left - pr.left - fr.width * .04) + "px"; S.beam.style.width = fr.width * 1.08 + "px"; S.beam.style.height = Math.max(0, fr.top - pr.top + 8) + "px";
-    var ft = document.querySelector(".site-footer"), fc = ft ? getComputedStyle(ft).backgroundColor : "";
+    var ft = S.ft = document.querySelector(".site-footer"), fc = ft ? getComputedStyle(ft).backgroundColor : "";
+    S.more.style.maxHeight = ""; S.eyebrow.style.maxHeight = "";
+    S.moreH = S.more.scrollHeight; S.eyH = S.eyebrow.scrollHeight; S.hh = S.headline.offsetHeight; S.ftH = ft ? ft.offsetHeight : 0;
     S.pin.style.setProperty("--st-end", fc && !/rgba\(0, 0, 0, 0\)|transparent/.test(fc) ? fc : "#1d1d1f");
 
     /* Measure each step's element unscaled directly from S.sheet */
@@ -193,9 +195,22 @@
     } else {
       S.sheet.style.transform = "translate(0px, 0px) scale(" + defaultScale.toFixed(3) + ")";
     }
-    pose = ""; render(sd);
+    pose = ""; render(sd); dockUpdate();
   }
 
+  /* The footer slides up over the pinned closing scene. The headline is the SAME element: as the footer rises it
+     drops its sub-text, scales down and stays centred in whatever room is left above the footer, so there is never a void. */
+  function dockUpdate() {
+    if (!S || !S.ft || !S.ftH) return;
+    var vh = innerHeight, fr = S.ft.getBoundingClientRect(), h = clamp(vh - fr.top, 0, S.ftH), d = h / S.ftH;
+    var fade = ease(seg(d, .05, .4)), keep = S.keep = 1 - fade, avail = vh - h;
+    S.eyebrow.style.opacity = (S.epE || 0) * keep; S.eyebrow.style.maxHeight = S.eyH * keep + "px";
+    S.more.style.maxHeight = S.moreH * keep + "px"; S.more.style.opacity = keep;
+    var B = S.hh + (S.eyH + S.moreH) * keep, sc = clamp((avail - 56) / B, .3, 1), ty = Math.min(0, avail / 2 - vh * .46);
+    S.end.style.transform = "translateY(" + ty.toFixed(1) + "px) scale(" + sc.toFixed(3) + ")";
+    S.end.style.opacity = avail < 150 ? clamp((avail - 70) / 80, 0, 1) : 1;
+    S.endbg.style.setProperty("--dk", ease(seg(d, .05, .8)).toFixed(3));
+  }
   function swap() { S.card.classList.remove("swap"); void S.card.offsetWidth; S.card.classList.add("swap"); }
   function focus(i) {
     if (i === N) {
@@ -305,7 +320,7 @@
     S.endbg.style.opacity = ee;
     S.end.style.visibility = ep > 0 ? "visible" : "hidden"; S.end.style.pointerEvents = ep > .6 ? "auto" : "none";
     S.lns.forEach(function (l, n) { var t = ease(clamp(ep * 1.7 - n * .3, 0, 1)); l.style.transform = "translateY(" + (1 - t) * 108 + "%)"; });
-    S.eyebrow.style.opacity = ease(clamp(ep * 2, 0, 1));
+    S.epE = ease(clamp(ep * 2, 0, 1)); S.eyebrow.style.opacity = S.epE * (S.keep == null ? 1 : S.keep);
     var t2 = ease(clamp(ep * 1.6 - .6, 0, 1)), t3 = ease(clamp(ep * 1.6 - .8, 0, 1));
     S.sub.style.opacity = t2; S.sub.style.transform = "translateY(" + (1 - t2) * 14 + "px)";
     S.cta.style.opacity = t3; S.cta.style.transform = "translateY(" + (1 - t3) * 14 + "px)";
@@ -346,7 +361,7 @@
     if (!S) return;
     var r = S.track.getBoundingClientRect(), vh = innerHeight;
     /* JS pinning (works even when an ancestor has overflow set, where CSS sticky silently fails) */
-    var mode = r.top > 0 ? "before" : r.bottom >= vh ? "fixed" : "after", ps = S.pin.style;
+    var mode = r.top > 0 ? "before" : "fixed", ps = S.pin.style;   /* stays pinned: the footer slides OVER the closing scene */
     if (mode !== S.mode) {
       S.mode = mode;
       ps.position = mode === "fixed" ? "fixed" : "absolute";
@@ -356,6 +371,7 @@
     st = clamp(-r.top / (innerHeight * UNIT), 0, TOTAL);
     if (!S.fresh && r.top < innerHeight * 1.5) { S.fresh = true; refresh(); }   /* fresh snapshot of live data just before it is needed */
     if (r.top > innerHeight * 3) S.fresh = false;
+    dockUpdate();
     if (!raf) raf = requestAnimationFrame(tick);
   }
   function tick() {

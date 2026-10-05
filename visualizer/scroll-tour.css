@@ -34,18 +34,21 @@ html:has(#dtc-entry-screen:not(.fade-out):not([style*="display: none"])) body{ov
   background:linear-gradient(180deg,rgba(10,8,6,.6) 0%,rgba(10,8,6,.55) 45%,var(--st-end,#1d1d1f) 100%)}
 .st-end{position:absolute;inset:0;z-index:8;visibility:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
   text-align:center;padding:0 clamp(16px,5vw,72px) 8vh;pointer-events:none;color:#f3e9da;font-family:var(--font-sans,system-ui,sans-serif)}
-.st-eyebrow{margin:0 0 clamp(10px,2vh,20px);font-size:12.5px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--accent-amber,#ff9f0a)}
+.st-eyebrow{margin:0;padding-bottom:clamp(10px,2vh,20px);overflow:hidden;font-size:12.5px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--accent-amber,#ff9f0a)}
 .st-headline{margin:0;font-family:"Big Shoulders Display","Schibsted Grotesk",system-ui,sans-serif;font-weight:900;text-transform:uppercase;
   font-size:clamp(40px,9vw,128px);line-height:.92;letter-spacing:-.005em}
 .st-ln{display:block;overflow:hidden;padding:.04em 0 .08em}
 .st-ln>span{display:block;will-change:transform}
 .st-amber{background:linear-gradient(90deg,#ffb84d,#ff9f0a 55%,#ff7a1a);-webkit-background-clip:text;background-clip:text;color:transparent}
+.st-more{overflow:hidden;display:flex;flex-direction:column;align-items:center;padding:6px;margin:-6px}
+.st-endbg::after{content:"";position:absolute;inset:0;background:var(--st-end,#1d1d1f);opacity:var(--dk,0)}
+.st-end{transform-origin:50% 46%;will-change:transform}
 .st-sub{margin:clamp(14px,3vh,28px) 0 0;max-width:46ch;font-size:clamp(14px,1.4vw,17px);line-height:1.6;color:#c9bba6}
 .st-cta{margin-top:clamp(18px,4vh,34px);display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
 .st-cta .btn{text-decoration:none}
 
 /* footer: seamless join + reveal */
-.site-footer{position:relative;overflow:hidden;border-top-color:transparent}
+.site-footer{position:relative;z-index:20;overflow:hidden;border-top-color:transparent;box-shadow:0 -30px 70px rgba(0,0,0,.45)}
 .site-footer::before{content:"";position:absolute;top:0;left:8%;right:8%;height:1px;transform:scaleX(0);transform-origin:50% 50%;
   background:linear-gradient(90deg,transparent,rgba(255,159,10,.6),transparent);transition:transform 1.2s cubic-bezier(.2,.8,.2,1)}
 .site-footer.in::before{transform:none}
