@@ -375,12 +375,14 @@
     var revealCtx = revealCanvas.getContext("2d");
     var revealTexture = gl.createTexture();
 
-    // Video Layer Support
+    // Video Layer Support (uses custom video if provided, defaults to noth.in 3D chrome video)
     var videoEl = null;
     var videoReady = false;
-    if (MEDIA) {
+    var videoSrc = MEDIA || "https://noth-in.b-cdn.net/nothin-sharp-high.mp4";
+    if (videoSrc) {
       videoEl = document.createElement("video");
-      videoEl.src = MEDIA;
+      videoEl.crossOrigin = "anonymous";
+      videoEl.src = videoSrc;
       videoEl.muted = true;
       videoEl.loop = true;
       videoEl.playsInline = true;
