@@ -16,7 +16,7 @@
   transform:scaleX(var(--b));transform-origin:left;pointer-events:none}
 /* the lens: blur + dim by distance from the cursor, bump on the focused row */
 .btn-scenario .btn-text,.btn-scenario .btn-icon{
-  filter:blur(calc((1 - var(--v)) * 5px));opacity:calc(.28 + .72 * var(--v));
+  filter:blur(calc((1 - var(--v)) * 4px));opacity:calc(.28 + .72 * var(--v));
   transform:translate3d(calc(var(--b) * 10px),0,0);will-change:filter,opacity,transform}
 .btn-scenario .scenario-info-btn{opacity:calc(.35 + .65 * var(--v));transform:translate3d(calc(var(--b) * -4px),0,0)}
 .btn-scenario:focus-visible{outline:2px solid var(--accent-amber,#ffb020);outline-offset:-2px}
@@ -28,3 +28,5 @@
 @media (prefers-reduced-motion:reduce){
   .btn-scenario .btn-text,.btn-scenario .btn-icon,.btn-scenario .scenario-info-btn{filter:none!important;transform:none!important}
 }
+
+html.sf-in #hl-spot{opacity:0!important}

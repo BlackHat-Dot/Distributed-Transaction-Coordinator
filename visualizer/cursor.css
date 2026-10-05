@@ -1,0 +1,38 @@
+/* GOLD CURSOR — site-wide. Pairs with cursor.js (load on index.html and booking.html).
+   The native cursor is hidden only after JS confirms a real mouse, so nothing breaks without it. */
+html.gc-on,html.gc-on *{cursor:none!important}
+html.gc-on textarea,
+html.gc-on input:not([type=button]):not([type=submit]):not([type=reset]):not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]),
+html.gc-on [contenteditable=""],html.gc-on [contenteditable="true"]{cursor:text!important}
+html.gc-on select,html.gc-on select *{cursor:default!important}
+
+.gc,.gc-pill,.gc-mark{position:fixed;left:0;top:0;z-index:2147483000;pointer-events:none;will-change:transform,opacity}
+.gc{opacity:0;transition:opacity .2s ease}
+.gc.on{opacity:1}.gc.hide{opacity:0}
+.gc-arrow{position:absolute;left:-3px;top:-3px;width:22px;height:22px;transform-origin:3px 3px;
+  transition:transform .28s cubic-bezier(.2,.9,.25,1.3);filter:drop-shadow(0 2px 6px rgba(0,0,0,.5))}
+.gc.act .gc-arrow{transform:scale(1.18)}
+.gc.down .gc-arrow{transform:scale(.5);opacity:0;transition:transform .14s ease,opacity .14s ease}
+.gc-arrow{transition:transform .28s cubic-bezier(.2,.9,.25,1.3),opacity .2s ease}
+.gc-arrow path{fill:var(--accent-amber,#ffb020);stroke:#120e0b;stroke-width:1.2;stroke-linejoin:round}
+
+.gc-pill{opacity:0;padding:8px 14px;border-radius:10px;white-space:nowrap;
+  background:var(--text-primary,#f6ecda);color:#120e0b;font:600 13px/1 var(--font-sans,system-ui,sans-serif);
+  box-shadow:0 8px 24px rgba(0,0,0,.45);transition:opacity .22s ease;transform-origin:0 0}
+.gc-pill.on{opacity:1}
+.gc-pill span{display:block;transition:opacity .16s ease,transform .22s cubic-bezier(.2,.8,.2,1)}
+.gc-pill.swap span{opacity:0;transform:translateY(5px)}
+
+/* the click stamp: a little bigger than the arrow, centred on the click point */
+.gc-mark{margin:-13px 0 0 -19px;height:26px;padding:0 10px;display:flex;align-items:center;border-radius:8px;opacity:0;
+  background:var(--accent-amber,#ffb020);color:#120e0b;font:800 13px/1 var(--font-display,"Big Shoulders Display",system-ui,sans-serif);
+  letter-spacing:.08em;box-shadow:0 6px 18px rgba(255,150,30,.35),0 0 0 1px rgba(18,14,11,.35);
+  animation:gc-mark .75s cubic-bezier(.2,.8,.2,1) forwards}
+@keyframes gc-mark{
+  0%{opacity:0;scale:.35;translate:0 2px}
+  22%{opacity:1;scale:1.08;translate:0 0}
+  38%{scale:1}
+  72%{opacity:1;scale:1;translate:0 0}
+  100%{opacity:0;scale:.96;translate:0 -9px}}
+
+@media (hover:none),(pointer:coarse),(prefers-reduced-motion:reduce){.gc,.gc-pill,.gc-mark{display:none}}
