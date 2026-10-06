@@ -80,7 +80,7 @@ body:has(.pm-urgent){--hl-light:255,106,82;}   /* last 60s of a hold: the room t
   transform:scaleX(0);transform-origin:left;transition:transform .45s var(--ease-light);}
 .nav-btn:hover::after,.nav-btn.active::after{transform:scaleX(1);}
 .nav-btn.active,.nav-btn:hover{color:var(--text-primary)!important;}
-#user-avatar-icon,#main-user-avatar-icon,#monkey-toggle-icon,.empty-icon,.btn-icon{display:none!important;}
+#user-avatar-icon,#main-user-avatar-icon,#monkey-toggle-icon,.empty-icon{display:none!important;}
 .toggle-icon-light,.toggle-icon-dark{font-size:0!important;cursor:pointer;}
 .toggle-icon-light::after{content:"Day";font-size:12px;} .toggle-icon-dark::after{content:"Night";font-size:12px;}
 .toggle-icon-light.active::after,.toggle-icon-dark.active::after{color:var(--accent-amber);}

@@ -1198,7 +1198,7 @@
     <div class="modal-dialog">
       <div class="modal-header">
         <h3>Architecture & Design Rationale</h3>
-        <button class="btn btn-icon btn-close-modal" id="btn-close-arch">✕</button>
+        <button type="button" class="btn btn-close-modal" id="btn-close-arch" aria-label="Close Architecture Modal">&times;</button>
       </div>
       <div class="modal-body arch-grid">
         <div class="arch-card">
@@ -1237,6 +1237,9 @@
           <p>Three independent Django services, three separate PostgreSQL databases. Zero shared database state. Completely isolated domain boundaries.</p>
         </div>
       </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; align-items: center;">
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-close-arch-footer">Close</button>
+      </div>
     </div>
   </div>
 
@@ -1247,7 +1250,7 @@
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
           <h3 style="margin: 0;">Tech Stack</h3>
         </div>
-        <button class="btn btn-icon btn-close-modal" id="btn-close-stack">✕</button>
+        <button type="button" class="btn btn-close-modal" id="btn-close-stack" aria-label="Close Stack Modal">&times;</button>
       </div>
       <div class="modal-body stack-grid" id="stack-items-container">
         <!-- Rendered statically / dynamically from manifest parser -->
@@ -1270,7 +1273,7 @@
             <span id="scen-info-badge" class="badge badge-success">3-Phase Forward Saga</span>
           </div>
         </div>
-        <button class="btn btn-icon btn-close-modal" id="btn-close-scen-info">✕</button>
+        <button type="button" class="btn btn-close-modal" id="btn-close-scen-info" aria-label="Close Scenario Modal">&times;</button>
       </div>
       <div class="modal-body scenario-info-body">
         <div class="scenario-info-card">

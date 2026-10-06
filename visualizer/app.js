@@ -460,6 +460,11 @@ function closeScenarioInfoModal() {
 
 if (DOM.btnCloseScenInfo) DOM.btnCloseScenInfo.addEventListener("click", closeScenarioInfoModal);
 if (DOM.btnDismissScenInfo) DOM.btnDismissScenInfo.addEventListener("click", closeScenarioInfoModal);
+if (DOM.modalScenInfo) {
+  DOM.modalScenInfo.addEventListener("click", (e) => {
+    if (e.target === DOM.modalScenInfo) closeScenarioInfoModal();
+  });
+}
 
 if (DOM.btnRunFromModal) {
   DOM.btnRunFromModal.addEventListener("click", () => {
@@ -1947,8 +1952,30 @@ if (DOM.toggleTheme) {
   });
 }
 
-DOM.btnHowItWorks.addEventListener("click", () => DOM.modalArch.classList.remove("hidden"));
-DOM.btnCloseArch.addEventListener("click", () => DOM.modalArch.classList.add("hidden"));
+if (DOM.btnHowItWorks && DOM.modalArch) {
+  DOM.btnHowItWorks.addEventListener("click", () => DOM.modalArch.classList.remove("hidden"));
+}
+if (DOM.btnCloseArch && DOM.modalArch) {
+  DOM.btnCloseArch.addEventListener("click", () => DOM.modalArch.classList.add("hidden"));
+}
+const btnCloseArchFooter = document.getElementById("btn-close-arch-footer");
+if (btnCloseArchFooter && DOM.modalArch) {
+  btnCloseArchFooter.addEventListener("click", () => DOM.modalArch.classList.add("hidden"));
+}
+if (DOM.modalArch) {
+  DOM.modalArch.addEventListener("click", (e) => {
+    if (e.target === DOM.modalArch) {
+      DOM.modalArch.classList.add("hidden");
+    }
+  });
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    DOM.modalArch?.classList.add("hidden");
+    DOM.modalStack?.classList.add("hidden");
+    document.getElementById("modal-scenario-info")?.classList.add("hidden");
+  }
+});
 
 async function fetchRecoveryStatus() {
   if (STATE.isSimulatedMode) return;

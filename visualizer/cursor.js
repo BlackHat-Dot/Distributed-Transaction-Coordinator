@@ -38,7 +38,7 @@
     if (!t || !t.closest) return "";
     var topo = t.closest("#topology-canvas-container");
     if (topo && !t.closest("button,a,input,select,label")) {
-      return topo.classList.contains("is-active") ? "Scroll to zoom \u00B7 Drag" : "Click to zoom \u00B7 Drag";
+      return topo.classList.contains("is-active") ? "Scroll to zoom · Drag to pan" : "Click to activate canvas";
     }
     var d = t.closest("[data-cursor]"); if (d) return d.getAttribute("data-cursor");
     var s = t.closest(".seat-tile");

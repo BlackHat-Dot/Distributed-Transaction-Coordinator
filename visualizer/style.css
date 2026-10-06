@@ -2168,6 +2168,40 @@ button, input, select, textarea {
   color: var(--text-primary);
 }
 
+.btn-close-modal {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary, #94a3b8);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  transition: all 0.2s ease;
+}
+
+.btn-close-modal:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary, #ffffff);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+[data-theme="light"] .btn-close-modal {
+  background: #f1f1f4;
+  border-color: #d2d2d7;
+  color: #636366;
+}
+
+[data-theme="light"] .btn-close-modal:hover {
+  background: #e5e5ea;
+  color: #1d1d1f;
+}
+
 .modal-body {
   padding: 20px;
   overflow-y: auto;
