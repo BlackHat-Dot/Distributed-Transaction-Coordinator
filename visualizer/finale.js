@@ -12,16 +12,16 @@
 
   var WORD = window.FINALE_WORD || "ONCE.";
   var SIM_RES = 256;
-  var DYE_RES = 512;
+  var DYE_RES = 1024;
   var VEL_DISSIPATION = 0.962;
   var DYE_DISSIPATION = 0.988;
   var PRESSURE_ITER = 20;
   var CURL_STRENGTH = 0.0;
-  var SPLAT_RADIUS = 0.00018;
-  var SPLAT_FORCE = 5900.0;
+  var SPLAT_RADIUS = 0.0007;
+  var SPLAT_FORCE = 1800.0;
   var REVEAL_SIZE = 3.9;
-  var EDGE_SOFTNESS = 0.50;
-  var EDGE_WIDTH = 0.01;
+  var EDGE_SOFTNESS = 1.6;
+  var EDGE_WIDTH = 0.30;
 
   function init() {
     var footer = document.querySelector(".site-footer");
@@ -59,11 +59,7 @@
     var INK = tok("--fx-ink", "#07080a");
     var IVORY = tok("--fx-ivory", "#f6ecda");
 
-    var inkRgb = [
-      (parseInt(INK.slice(1, 3), 16) || 7) / 255,
-      (parseInt(INK.slice(3, 5), 16) || 8) / 255,
-      (parseInt(INK.slice(5, 7), 16) || 10) / 255
-    ];
+    var inkRgb = [7 / 255, 8 / 255, 10 / 255]; /* identical to the letter fill in once_mask.svg */
 
     // Try WebGL2 first, then WebGL1
     var gl = cv.getContext("webgl2", { alpha: false, depth: false, antialias: false, preserveDrawingBuffer: false }) ||
@@ -264,11 +260,13 @@
       "  float dye = texture2D(uDye, vUv).r;",
       "  vec4 baseColor = texture2D(uBaseTexture, texUv);",
       "  vec2 revUv = coverUv(texUv, uVideoAspect, uScreenAspect);",
-      "  vec4 revealColor = texture2D(uRevealTexture, revUv);",
+      "  vec3 revealColor = texture2D(uRevealTexture, revUv).rgb;",
       "  float raw = dye * uRevealSize;",
-      "  float mask = smoothstep(uEdgeSoftness, uEdgeSoftness + uEdgeWidth, raw);",
-      "  mask = clamp(mask, 0.0, 1.0);",
-      "  gl_FragColor = mix(baseColor, revealColor, mask);",
+      "  float blob = smoothstep(uEdgeSoftness, uEdgeSoftness + uEdgeWidth, raw);",
+      "  float lum = dot(baseColor.rgb, vec3(0.299, 0.587, 0.114));",
+      "  float letter = 1.0 - smoothstep(0.35, 0.65, lum);",
+      "  vec3 inBlob = mix(uInkColor, revealColor, letter);",
+      "  gl_FragColor = vec4(mix(baseColor.rgb, inBlob, blob), 1.0);",
       "}"
     ].join("\n");
 
