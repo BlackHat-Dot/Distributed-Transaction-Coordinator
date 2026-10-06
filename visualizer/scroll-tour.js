@@ -25,6 +25,7 @@
   /* Timeline in "units" of scroll (1 unit = UNIT x viewport height). Everything below is a pure function of scroll. */
   var UNIT = .6, INTRO = 6.2, PER = .6, N = STEPS.length;
   var OUTRO_START = INTRO + PER * N, OUTRO_DUR = 2.4, TOTAL = OUTRO_START + OUTRO_DUR;
+  window.ST_TIMELINE = { UNIT: UNIT, OUTRO_START: OUTRO_START, TOTAL: TOTAL };   /* read by finale.js so the closing phrase is born the moment the room empties */
 
   /* Side-profile teacher facing right. viewBox 270x400, shoulder (104,140), hip (102,240). */
   var TEACHER = '<svg viewBox="0 0 270 400" aria-hidden="true"><defs>' +
@@ -450,15 +451,12 @@
     anchor.insertAdjacentElement("afterend", b);
   }
 
-  /* footer: staggered reveal, hairline that draws in, oversized cropped wordmark, back-to-top */
+  /* footer: staggered reveal, hairline that draws in, back-to-top */
   function enhanceFooter() {
     var f = document.querySelector(".site-footer"); if (!f || f.dataset.stDone) return;
     f.dataset.stDone = "1"; f.classList.add("st-js");
-    var wm = document.createElement("div"); wm.className = "site-wordmark"; wm.setAttribute("aria-hidden", "true");
-    wm.innerHTML = "DTC".split("").map(function (c, n) { return '<span style="transition-delay:' + (n * 90 + 250) + 'ms">' + c + "</span>"; }).join("");
-    f.appendChild(wm);
     var bt = f.querySelector(".site-footer-bottom");
-    if (bt) { var a = document.createElement("a"); a.href = "#"; a.className = "st-top"; a.textContent = "Back to top \u2191";
+    if (bt && !bt.querySelector(".st-top")) { var a = document.createElement("a"); a.href = "#"; a.className = "st-top"; a.textContent = "Back to top \u2191";
       a.addEventListener("click", function (e) { e.preventDefault(); scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" }); }); bt.appendChild(a); }
     if (reduce || !("IntersectionObserver" in window)) { f.classList.add("in"); return; }
     new IntersectionObserver(function (en, o) { if (en[0].isIntersecting) { f.classList.add("in"); o.disconnect(); } }, { threshold: .18 }).observe(f);

@@ -67,7 +67,6 @@
       var st_ = rows[i].style;
       st_.setProperty("--v", nv.toFixed(3));
       st_.setProperty("--b", nb.toFixed(3));
-      st_.setProperty("--mx", s.mx.toFixed(0) + "px");
     }
     raf = busy ? requestAnimationFrame(tick) : 0;
   }

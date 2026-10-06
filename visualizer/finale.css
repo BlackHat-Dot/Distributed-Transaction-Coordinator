@@ -1,5 +1,5 @@
 /* ==========================================================================
-   FINALE LAYER  v1.1 — load AFTER seat-story.css. Pairs with finale.js
+   FINALE LAYER  v1.2 — load AFTER seat-story.css. Pairs with finale.js
    STRUCTURE ONLY. The v1.0 recolouring of the seat-story chapter, the guided
    tour room and the buttons has been removed, so those sections render with
    their own original colours (seat-story.css / scroll-tour.css).
@@ -59,7 +59,7 @@
 .fx-links a:hover::after,.fx-links button:hover::after{right:0}
 
 /* ---- stage furniture: corner marks + hint ---- */
-.fx-stage{z-index:2;position:absolute;inset:clamp(22px,4vh,40px) clamp(18px,2.6vw,44px) clamp(190px,24vh,250px);pointer-events:none}
+.fx-stage{z-index:2;position:absolute;inset:clamp(22px,4vh,40px) clamp(18px,2.6vw,44px) clamp(150px,20vh,210px);pointer-events:none}
 .fx-c{position:absolute;width:14px;height:14px;border:0 solid var(--hair2)}
 .fx-c.tl{left:0;top:0;border-width:1px 0 0 1px}.fx-c.tr{right:0;top:0;border-width:1px 1px 0 0}
 .fx-c.bl{left:0;bottom:0;border-width:0 0 1px 1px}.fx-c.br{right:0;bottom:0;border-width:0 1px 1px 0}
@@ -71,7 +71,7 @@
 .fx.fx-touched .fx-hint{opacity:0}
 
 /* ---- foot: statement + live ledger ---- */
-.fx-foot{margin-top:auto;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:clamp(20px,4vw,72px);align-items:end;padding-bottom:clamp(14px,2.4vh,26px)}
+.fx-foot{margin-top:auto;display:block;padding-bottom:clamp(28px,5vh,56px)}
 .fx-eyebrow{margin:0 0 clamp(10px,1.6vh,18px);display:flex;align-items:center;gap:10px;font:600 10.5px/1 ui-monospace,"SF Mono",Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--amb)}
 .fx-eyebrow::before{content:"";width:22px;height:1px;background:currentColor}
 .fx-h{margin:0;font-weight:400;font-size:clamp(28px,3.2vw,58px);line-height:1;letter-spacing:-.035em}
@@ -118,3 +118,14 @@
   .fx-cv,.fx-r{transition:none}.fx-r{opacity:1;transform:none}
   .fx-track,.fx-pulse::after,.fx-hint i{animation:none}
 }
+
+/* ---------- PHRASE FLIGHT (pairs with finale.js phraseFlight) ----------
+   The clone sits inside .fx, so it shares the headline's font, tokens and colours: same box, same look. */
+.fx-h{white-space:nowrap}
+.fx-fly{position:fixed;left:0;top:0;margin:0;z-index:3;pointer-events:none;visibility:hidden;transform-origin:0 0;will-change:transform,opacity;
+  width:max-content;max-width:none}
+.fx-fly span{width:fit-content}
+/* while the clone is in flight the real headline waits; its sub-line arrives after the landing */
+.fx.fx-fly-on .fx-h{visibility:hidden}
+.fx.fx-fly-on .fx-sub{opacity:0!important;transition:none!important}
+@media (max-width:360px){.fx-h{font-size:25px}}

@@ -4,7 +4,6 @@
   "use strict";
   var root = document.documentElement;
   var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var fine = window.matchMedia && matchMedia("(hover:hover) and (pointer:fine)").matches;
   var KEY = "dtc_hl_from";
   function el(id) { var d = document.createElement("div"); d.id = id; d.setAttribute("aria-hidden", "true"); document.body.appendChild(d); return d; }
   function go() { root.classList.add("hl-go"); }
@@ -45,18 +44,7 @@
     window.addEventListener("pageshow", function (ev) { if (ev.persisted) curtain.className = ""; }); /* bfcache back */
   }
 
-  /* 3. Spotlight follows the pointer; widens over things you can act on. */
-  if (!reduce && fine) {
-    var spot = el("hl-spot"), x = 0, y = 0, raf = 0;
-    addEventListener("pointermove", function (e) {
-      x = e.clientX; y = e.clientY; spot.classList.add("on");
-      spot.classList.toggle("big", !!(e.target.closest && e.target.closest("a,button,.seat-tile,select,.btn-scenario")));
-      if (!raf) raf = requestAnimationFrame(function () { spot.style.transform = "translate3d(" + x + "px," + y + "px,0)"; raf = 0; });
-    }, { passive: true });
-    document.addEventListener("pointerleave", function () { spot.classList.remove("on"); });
-  }
-
-  /* 4. Scroll-linked: progress rule + hero drift (first viewport only). */
+  /* 3. Scroll-linked: progress rule + hero drift (first viewport only). */
   if (!reduce) {
     var rule = el("hl-rule"), h2 = document.querySelector(".proof-title-area h2"), ticking = false;
     var upd = function () {

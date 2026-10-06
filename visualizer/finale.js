@@ -23,6 +23,84 @@
   var EDGE_SOFTNESS = 0.50;
   var EDGE_WIDTH = 0.01;
 
+  /* LIQUID PALETTE - 4 colours that flow slowly through the cursor liquid (tint, glowing edge, halo).
+     Google:  ["#4285F4","#EA4335","#FBBC04","#34A853"]
+     Stripe:  ["#635BFF","#00D4FF","#7A73FF","#FF80B5"]
+     Spotify: ["#1DB954","#1ED760","#9BF0C0","#0E7C3A"]                                              */
+  var LIQUID_PALETTE = ["#4285F4", "#EA4335", "#FBBC04", "#34A853"];
+  function hexRgb(h) { return [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255]; }
+
+
+  /* PHRASE FLIGHT — "Ask a thousand times. Booked exactly once."
+     It is BORN in the centre of the empty room the moment the tour's board has rolled away (so there is no dead gap),
+     rests there, then, as the finale panel rises, drifts to the exact spot of the real headline and hands over to it.
+     Everything is a pure function of scroll, so it also reverses. The clone lives inside .fx (same font / colours /
+     tokens as the real headline); the real <h2> is hidden only while the clone is in flight. Presentation only. */
+  function phraseFlight(footer, fx) {
+    var h2 = fx.querySelector(".fx-h");
+    if (!h2 || (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches)) return;
+    var fl = h2.cloneNode(true);
+    fl.className = "fx-h fx-fly"; fl.setAttribute("aria-hidden", "true");
+    var lines = [].slice.call(fl.children), lw = [0, 0], w = 0, h = 0, raf = 0, flying = null;
+    fx.appendChild(fl);
+
+    var clamp = function (v, a, b) { return Math.min(b, Math.max(a, v)); };
+    var seg = function (x, a, b) { return clamp((x - a) / (b - a), 0, 1); };
+    var sine = function (t) { return .5 - .5 * Math.cos(Math.PI * t); };
+    var soft = function (t) { return t * t * t * (t * (6 * t - 15) + 10); };
+    var lerp = function (a, b, t) { return a + (b - a) * t; };
+
+    var GO0 = .2;                   /* after the tour: rests until the panel has risen this far, then drifts to its place (arrives at 1) */
+    var BIG = 1.7;                  /* size at centre relative to final */
+    var BORN_FROM = 1.15;           /* birth starts this many tour-steps after the outro begins (= when the old closing headline used to) */
+    var C0 = [183, 171, 152], C1 = [109, 100, 86];   /* line-1 colour: brighter at centre, settles to the finale grey */
+
+    function tl() {
+      var T = window.ST_TIMELINE;
+      if (T) return T;
+      var n = document.querySelectorAll(".st-dots i").length || 5, o = 6.2 + .6 * n;   /* fallback if scroll-tour.js is older */
+      return (window.ST_TIMELINE = { UNIT: .6, OUTRO_START: o, TOTAL: o + 2.4 });
+    }
+    function measure() {
+      w = fl.offsetWidth; h = fl.offsetHeight;
+      lines.forEach(function (l, i) { lw[i] = l.offsetWidth; });
+      update();
+    }
+    function update() {
+      raf = 0;
+      var vh = innerHeight, vw = innerWidth, ft = footer.getBoundingClientRect().top, p = clamp(1 - ft / vh, 0, 1);
+      /* how far the tour has played (its own scroll coordinate), derived from where its track ends (= footer top) */
+      var T = tl(), s = T.TOTAL - Math.max(0, ft - vh) / (T.UNIT * vh);
+      var born = ft <= vh ? 1 : seg(s, T.OUTRO_START + BORN_FROM, T.TOTAL);
+      var on = born > 0 && p < .9995;
+      if (on !== flying) { flying = on; fx.classList.toggle("fx-fly-on", on); fl.style.visibility = on ? "visible" : "hidden"; }
+      if (!on || !w) return;
+
+      var m = soft(sine(seg(p, GO0, 1)));
+      var b1 = soft(seg(born, 0, .7)), b2 = soft(seg(born, .3, 1)), bs = [b1, b2];
+      var S0 = Math.min(BIG, (vw * .86) / w), s0 = S0 * (.95 + .05 * soft(born)), sc = lerp(s0, 1, m);
+      var t = h2.getBoundingClientRect();                         /* live target: the real headline, wherever it is now */
+      var x0 = (vw - w * s0) / 2, y0 = vh * .47 - h * s0 / 2;
+      fl.style.transform = "translate3d(" + lerp(x0, t.left, m).toFixed(2) + "px," + lerp(y0, t.top, m).toFixed(2) + "px,0) scale(" + sc.toFixed(4) + ")";
+      /* a soft warm halo blooms while it is born and is gone once it has settled */
+      var halo = Math.sin(Math.PI * born) * (1 - m);
+      fl.style.filter = "drop-shadow(0 6px 24px rgba(8,6,4,.55))" + (halo > .02 ? " drop-shadow(0 0 " + (38 * halo).toFixed(1) + "px rgba(255,190,90," + (.3 * halo).toFixed(3) + "))" : "");
+      fl.style.setProperty("--faint", "rgb(" + C0.map(function (c, i) { return Math.round(lerp(c, C1[i], m)); }).join(",") + ")");
+      /* each line is born in turn: rises, un-blurs, fades in; and slides from centred to left-aligned during the drift */
+      lines.forEach(function (l, i) {
+        var b = bs[i], st = l.style;
+        st.opacity = b >= 1 ? "" : b.toFixed(3);
+        st.filter = b >= 1 ? "" : "blur(" + ((1 - b) * 10).toFixed(1) + "px)";
+        st.transform = "translate(" + ((1 - m) * (w - lw[i]) / 2).toFixed(2) + "px," + ((1 - b) * 20).toFixed(1) + "px)";
+      });
+    }
+    var go = function () { if (!raf) raf = requestAnimationFrame(update); };
+    addEventListener("scroll", go, { passive: true });
+    addEventListener("resize", measure);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(measure);
+    measure();
+  }
+
   function init() {
     var footer = document.querySelector(".site-footer");
     if (!footer || footer.querySelector(".fx")) return;
@@ -33,21 +111,18 @@
     var fx = document.createElement("div");
     fx.className = "fx";
     fx.id = "fx-finale";
-    var TICK = '<span>POST /hold <em><b>201</b> seat A-12 held \u00b7 ttl 600s</em></span><span>POST /pay <em>idempotency-key <em>7f3a\u2026c1</em> \u2192 <b>replayed 200</b></em></span><span>POST /pay <em>duplicate in flight \u2192 <u>409 rejected</u></em></span><span>SAGA <em>charge \u2192 reserve \u2192 issue \u00b7 <b>committed</b></em></span><span>SAGA <em>payment timeout \u2192 <u>compensating tx</u> \u2192 released</em></span><span>LOCK <em>seat A-12 \u00b7 optimistic version <em>v7</em> \u00b7 <b>no conflict</b></em></span>';
     fx.innerHTML =
       '<canvas class="fx-cv" aria-hidden="true"></canvas>' +
-      '<div class="fx-stage" aria-hidden="true"><i class="fx-c tl"></i><i class="fx-c tr"></i><i class="fx-c bl"></i><i class="fx-c br"></i><span class="fx-hint"><i></i>Move through the word</span></div>' +
+      '<div class="fx-stage" aria-hidden="true"><i class="fx-c tl"></i><i class="fx-c tr"></i><i class="fx-c bl"></i><i class="fx-c br"></i></div>' +
       '<div class="fx-ui">' +
         '<div class="fx-foot">' +
           '<div class="fx-copy">' +
             '<h2 class="fx-h fx-r" style="--d:.65s"><span class="l1">Ask a thousand times.</span><span class="l2">Booked exactly once.</span></h2>' +
-            '<p class="fx-sub fx-r" style="--d:.8s">Double clicks, retries, races and crashes can\u2019t double-book a seat or double-charge a card. Not promised \u2014 demonstrated.</p></div>' +
-          '<div class="fx-panel">' +
-            '<a class="fx-btn fx-r" style="--d:.95s" href="booking.html"><span>Book a seat</span><span class="fx-btn-a" aria-hidden="true"><span>\u2192</span><span>\u2192</span></span></a></div>' +
+            '<p class="fx-sub fx-r" style="--d:.35s">Double clicks, retries, races and crashes can\u2019t double-book a seat or double-charge a card. Not promised \u2014 demonstrated.</p></div>' +
         '</div>' +
-        '<div class="fx-ticker fx-r" style="--d:1.1s" aria-hidden="true"><div class="fx-track">' + TICK + TICK + '</div></div>' +
       '</div>';
     footer.insertBefore(fx, footer.firstChild);
+    phraseFlight(footer, fx);
 
     var replayBtn = fx.querySelector(".fx-replay");
     if (replayBtn) {
@@ -56,15 +131,6 @@
       });
     }
 
-    fx.addEventListener("pointermove", function () { fx.classList.add("fx-touched"); }, { passive: true, once: true });
-    var btn = fx.querySelector(".fx-btn");
-    if (btn && !matchMedia("(prefers-reduced-motion: reduce)").matches && matchMedia("(hover:hover)").matches) {
-      btn.addEventListener("pointermove", function (e) {
-        var r = btn.getBoundingClientRect();
-        btn.style.transform = "translate(" + ((e.clientX - r.left - r.width / 2) * 0.12).toFixed(1) + "px," + ((e.clientY - r.top - r.height / 2) * 0.22).toFixed(1) + "px)";
-      });
-      btn.addEventListener("pointerleave", function () { btn.style.transform = ""; });
-    }
     var cv = fx.querySelector(".fx-cv");
     var tp = fx.querySelector(".fx-nav");
     var low = fx.querySelector(".fx-foot");
@@ -267,9 +333,18 @@
       "uniform float uScreenAspect;",
       "uniform float uVideoAspect;",
       "uniform float uTime;",
+      "uniform vec3 uC0;", "uniform vec3 uC1;", "uniform vec3 uC2;", "uniform vec3 uC3;",
       "vec2 coverUv(vec2 uv, float vAsp, float sAsp) {",
       "  vec2 ratio = vec2(min(sAsp / vAsp, 1.0), min(vAsp / sAsp, 1.0));",
       "  return clamp(uv * ratio + (1.0 - ratio) * 0.5, 0.001, 0.999);",
+      "}",
+      "vec3 palette(float t) {",
+      "  t = fract(t) * 4.0;",
+      "  float f = smoothstep(0.0, 1.0, fract(t));",
+      "  if (t < 1.0) return mix(uC0, uC1, f);",
+      "  if (t < 2.0) return mix(uC1, uC2, f);",
+      "  if (t < 3.0) return mix(uC2, uC3, f);",
+      "  return mix(uC3, uC0, f);",
       "}",
       "void main() {",
       "  vec2 texUv = vec2(vUv.x, 1.0 - vUv.y);",
@@ -280,10 +355,13 @@
       "  float raw = dye * uRevealSize;",
       "  float mask = smoothstep(uEdgeSoftness, uEdgeSoftness + uEdgeWidth, raw);",
       "  mask = clamp(mask, 0.0, 1.0);",
-      "  vec3 col = mix(baseColor.rgb, revealColor.rgb, mask);",
-      "  float halo = smoothstep(uEdgeSoftness - 1.2, uEdgeSoftness, raw) * (1.0 - mask);",
+      "  float lum = max(revealColor.r, max(revealColor.g, revealColor.b));",
+      "  vec3 hue = palette(vUv.x * 0.55 - vUv.y * 0.35 + uTime * 0.035);",
+      "  vec3 liquid = revealColor.rgb + hue * 0.5 * (1.0 - smoothstep(0.02, 0.35, lum));",
+      "  vec3 col = mix(baseColor.rgb, liquid, mask);",
+      "  float halo = smoothstep(0.12, uEdgeSoftness, raw) * (1.0 - mask);",
       "  float rim = mask * (1.0 - smoothstep(uEdgeSoftness + uEdgeWidth, uEdgeSoftness + uEdgeWidth + 0.8, raw));",
-      "  col += vec3(1.0, 0.69, 0.13) * (halo * 0.09 + rim * 0.34);",
+      "  col += hue * (halo * 0.16 + rim * 0.4);",
       "  float g = fract(sin(dot(gl_FragCoord.xy + uTime * 61.0, vec2(12.9898, 78.233))) * 43758.5453);",
       "  col += (g - 0.5) * 0.026;",
       "  gl_FragColor = vec4(col, 1.0);",
@@ -410,7 +488,7 @@
     var videoEl = null;
     var videoReady = false;
     var videoAspect = 1890 / 1080;
-    var videoSrc = MEDIA || "once.mp4";
+    var videoSrc = "";
     if (videoSrc) {
       videoEl = document.createElement("video");
       if (/^https?:\/\//i.test(videoSrc)) {
@@ -622,20 +700,7 @@
       }
     }
 
-    fx.addEventListener("pointermove", onPointerMove, { passive: true });
-    fx.addEventListener("pointerdown", function (e) {
-      inside = false;
-      onPointerMove(e);
-      if (videoEl && videoEl.paused) {
-        videoEl.play().catch(function () {});
-      }
-      if (inside) {
-        splat(mouse.x, mouse.y, 0.0, 0.0, 1.0);
-      }
-    }, { passive: true });
-    fx.addEventListener("pointerleave", resetPointer);
-    document.addEventListener("mouseleave", resetPointer);
-    window.addEventListener("blur", resetPointer);
+    /* cursor-following liquid reveal removed: no pointer listeners, the word stays a static ivory mark */
 
     // Step Simulation
     var visible = true;
@@ -754,6 +819,11 @@
       gl.uniform1f(compositeProg.uniforms.uScreenAspect, W / H);
       gl.uniform1f(compositeProg.uniforms.uVideoAspect, videoAspect);
       gl.uniform1f(compositeProg.uniforms.uTime, (performance.now() * 0.001) % 50.0);
+      var pc = LIQUID_PALETTE.map(hexRgb);
+      gl.uniform3f(compositeProg.uniforms.uC0, pc[0][0], pc[0][1], pc[0][2]);
+      gl.uniform3f(compositeProg.uniforms.uC1, pc[1][0], pc[1][1], pc[1][2]);
+      gl.uniform3f(compositeProg.uniforms.uC2, pc[2][0], pc[2][1], pc[2][2]);
+      gl.uniform3f(compositeProg.uniforms.uC3, pc[3][0], pc[3][1], pc[3][2]);
 
       blit(null); // Draw directly to canvas
     }

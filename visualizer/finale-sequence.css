@@ -1,0 +1,6 @@
+/* FINALE SEQUENCE — load AFTER finale.css. Pairs with finale-sequence.js.
+   Only adds the overlay canvas the sequence is drawn on; nothing else in the page is restyled. */
+.fx-seq{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:1;opacity:0;transition:opacity .45s ease;pointer-events:none}
+.fx.fx-seq-on .fx-seq{opacity:1}
+.fx.fx-seq-live .fx-cv{display:none}      /* the WebGL word is hidden once the overlay has fully taken over */
+.fx.fx-seq-lock{touch-action:none}

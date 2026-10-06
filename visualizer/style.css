@@ -3060,3 +3060,142 @@ button, input, select, textarea {
     letter-spacing: 0.08em;
   }
 }
+
+/* ==========================================================================
+   SOFTWARE STACK MOVING MARQUEE (Rightward Flow)
+   ========================================================================== */
+.tech-marquee-wrapper {
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+  padding: 28px 0 14px;
+  margin-top: 28px;
+  background: transparent;
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
+}
+
+.tech-marquee-header {
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.tech-marquee-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--accent-amber, #ff9f0a);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0.85;
+}
+
+.tech-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: techMarqueeScrollRight 60s linear infinite;
+  will-change: transform;
+}
+
+.tech-marquee-track:hover {
+  animation-play-state: paused;
+}
+
+@keyframes techMarqueeScrollRight {
+  0% {
+    transform: translate3d(-50%, 0, 0);
+  }
+  100% {
+    transform: translate3d(0%, 0, 0);
+  }
+}
+
+.tech-marquee-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-right: 16px;
+}
+
+.tech-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  cursor: default;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.tech-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 159, 10, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 12px rgba(255, 159, 10, 0.15);
+}
+
+.tech-card-icon {
+  --ti: #ffffff;
+  --tg: #ffffff;
+  width: 36px;
+  height: 36px;
+  padding: 7px;
+  box-sizing: border-box;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--tg);
+  background: color-mix(in srgb, var(--ti) 16%, #0f0d0b);
+  border: 1px solid color-mix(in srgb, var(--ti) 30%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s;
+}
+
+.tech-card:hover .tech-card-icon {
+  transform: scale(1.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 14px color-mix(in srgb, var(--ti) 45%, transparent);
+}
+
+.tech-card-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.tech-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tech-card-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.tech-card-role {
+  font-size: 10px;
+  font-weight: 500;
+  color: #94a3b8;
+  letter-spacing: 0.02em;
+  font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tech-marquee-track {
+    animation: none;
+  }
+}

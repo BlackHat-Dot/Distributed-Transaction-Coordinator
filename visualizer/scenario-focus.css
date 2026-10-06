@@ -1,15 +1,14 @@
 /* SCENARIO FOCUS LENS — load AFTER house-lights.css / palette.css. Pairs with scenario-focus.js
    Replaces the white fill hover: rows you move away from soften into a blur,
-   the row under the cursor stays razor sharp, nudges forward and gets a warm
-   cursor-following glow + an underline that draws in. Transform/opacity/filter only. */
+   the row under the cursor stays razor sharp, nudges forward and gets an underline that draws in. Transform/opacity/filter only. */
 .scenario-buttons{--v:1}
 .btn-scenario{--v:1;--b:0;--mx:50%}
 /* kill the old white wipe + dark-text flip */
 .btn-scenario:hover,.btn-scenario:focus-visible{color:var(--text-primary,#f6ecda)!important}
 .btn-scenario:hover strong,.btn-scenario:hover small{color:inherit!important}
 .btn-scenario:hover small{color:var(--text-secondary)!important}
-.btn-scenario::before{transform:none!important;transition:none!important;opacity:var(--b);
-  background:radial-gradient(320px circle at var(--mx) 50%,rgba(255,176,32,.14),transparent 70%)!important}
+/* the old cursor-following glow is removed: no ::before fill at all */
+.btn-scenario::before{content:none!important}
 /* underline draws in from the left, following the focus */
 .btn-scenario::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;z-index:1;
   background:linear-gradient(90deg,var(--accent-amber,#ffb020),transparent 85%);
@@ -29,4 +28,3 @@
   .btn-scenario .btn-text,.btn-scenario .btn-icon,.btn-scenario .scenario-info-btn{filter:none!important;transform:none!important}
 }
 
-html.sf-in #hl-spot{opacity:0!important}
