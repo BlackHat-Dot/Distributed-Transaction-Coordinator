@@ -268,9 +268,7 @@
       "  float raw = dye * uRevealSize;",
       "  float mask = smoothstep(uEdgeSoftness, uEdgeSoftness + uEdgeWidth, raw);",
       "  mask = clamp(mask, 0.0, 1.0);",
-      "  float isText = 1.0 - smoothstep(0.12, 0.48, baseColor.r);",
-      "  vec4 fluidLayer = mix(vec4(uInkColor, 1.0), revealColor, isText);",
-      "  gl_FragColor = mix(baseColor, fluidLayer, mask);",
+      "  gl_FragColor = mix(baseColor, revealColor, mask);",
       "}"
     ].join("\n");
 
@@ -401,18 +399,24 @@
       }
       videoEl.src = videoSrc;
       videoEl.muted = true;
+      videoEl.defaultMuted = true;
+      videoEl.autoplay = true;
       videoEl.loop = true;
       videoEl.playsInline = true;
       videoEl.setAttribute("playsinline", "");
       videoEl.setAttribute("muted", "");
-      videoEl.addEventListener("canplay", function () {
+
+      var startPlay = function () {
         videoReady = true;
         if (videoEl.videoWidth && videoEl.videoHeight) {
           videoAspect = videoEl.videoWidth / videoEl.videoHeight;
         }
         var p = videoEl.play();
         if (p && p.catch) p.catch(function () {});
-      });
+      };
+      startPlay();
+      videoEl.addEventListener("loadeddata", startPlay, { once: true });
+      videoEl.addEventListener("canplay", startPlay, { once: true });
       videoEl.addEventListener("loadedmetadata", function () {
         if (videoEl.videoWidth && videoEl.videoHeight) {
           videoAspect = videoEl.videoWidth / videoEl.videoHeight;
@@ -592,12 +596,18 @@
       mouse.x = x;
       mouse.y = y;
       mouseHasMoved = true;
+      if (videoEl && videoEl.paused) {
+        videoEl.play().catch(function () {});
+      }
     }
 
     fx.addEventListener("pointermove", onPointerMove, { passive: true });
     fx.addEventListener("pointerdown", function (e) {
       inside = false;
       onPointerMove(e);
+      if (videoEl && videoEl.paused) {
+        videoEl.play().catch(function () {});
+      }
       if (inside) {
         splat(mouse.x, mouse.y, 0.0, 0.0, 1.0);
       }
