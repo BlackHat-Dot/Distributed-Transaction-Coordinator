@@ -28,7 +28,7 @@
 
   /* Side-profile teacher facing right. viewBox 270x400, shoulder (104,140), hip (102,240). */
   var TEACHER = '<svg viewBox="0 0 270 400" aria-hidden="true"><defs>' +
-    '<linearGradient id="st-roll" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5a5040"/><stop offset=".5" stop-color="#2a251d"/><stop offset="1" stop-color="#110e0b"/></linearGradient><linearGradient id="st-par" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4e3bd"/><stop offset=".55" stop-color="#d8bd8a"/><stop offset="1" stop-color="#a98a58"/></linearGradient></defs>' +
+    '<linearGradient id="st-roll" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6b6a65"/><stop offset=".18" stop-color="#dad8d3"/><stop offset=".4" stop-color="#a6a39d"/><stop offset=".72" stop-color="#726f6a"/><stop offset="1" stop-color="#343230"/></linearGradient><radialGradient id="st-capg" cx=".5" cy=".5" r=".2" spreadMethod="repeat"><stop offset="0" stop-color="#8d8a83"/><stop offset=".5" stop-color="#8d8a83"/><stop offset=".5" stop-color="#2b2926"/><stop offset="1" stop-color="#2b2926"/></radialGradient><linearGradient id="st-par" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4e3bd"/><stop offset=".55" stop-color="#d8bd8a"/><stop offset="1" stop-color="#a98a58"/></linearGradient></defs>' +
     '<ellipse cx="108" cy="384" rx="62" ry="8" fill="rgba(0,0,0,.45)"/>' +
     '<g class="st-legB" style="transform-origin:102px 240px;transform:rotate(5deg)"><rect x="91" y="236" width="24" height="126" rx="10" fill="#1f2027"/><path d="M89 358h26q18 2 24 14v8H89z" fill="#0e0e12"/></g>' +
     '<g class="st-legA" style="transform-origin:102px 240px;transform:rotate(-5deg)"><rect x="91" y="236" width="24" height="126" rx="10" fill="#2e303b"/><path d="M89 358h26q18 2 24 14v8H89z" fill="#17171c"/></g>' +
@@ -43,12 +43,37 @@
       '<circle cx="118" cy="82" r="9" fill="rgba(255,255,255,.14)" stroke="#2b2622" stroke-width="3"/><path d="M109 82H92" stroke="#2b2622" stroke-width="3"/><circle cx="120" cy="83" r="2.4" fill="#2b2622"/>' +
       '<path d="M111 70q7-4 15 0" stroke="#2b2622" stroke-width="3" fill="none" stroke-linecap="round"/>' +
       '<path d="M118 102q6 3 12-1" stroke="#8a4b3a" stroke-width="3" fill="none" stroke-linecap="round"/>' +
-      '<g class="st-roll" style="opacity:0;transform:translate(190px,-900px)"><rect x="-62" y="-9" width="124" height="18" rx="9" fill="url(#st-roll)" stroke="#ff9f0a" stroke-opacity=".35"/>' +
-        '<path d="M-56 -3H56M-56 3H56" stroke="#fff" stroke-opacity=".08" stroke-width="1"/>' +
-        '<rect x="-68" y="-8" width="10" height="16" rx="4" fill="#d8bd8a"/><rect x="58" y="-8" width="10" height="16" rx="4" fill="#d8bd8a"/></g>' +
+      '<g class="st-roll" style="opacity:0;transform:translate(190px,-900px)"><rect class="st-rb" x="-62" y="-9" width="124" height="18" rx="9" fill="url(#st-roll)"/>' +
+        '<rect class="st-rh" x="-53" y="-6.5" width="106" height="1.2" rx=".5" fill="#fff" fill-opacity=".32"/>' +
+        '<line class="st-rg" stroke="#000" stroke-linecap="round"/><line class="st-rg" stroke="#000" stroke-linecap="round"/><line class="st-rg" stroke="#000" stroke-linecap="round"/>' +
+        '<ellipse class="st-rl" cx="-62" cy="0" rx="2.6" ry="9" fill="url(#st-capg)"/><ellipse class="st-rr" cx="62" cy="0" rx="2.6" ry="9" fill="url(#st-capg)"/></g>' +
       '<g class="st-uA" style="transform-origin:104px 140px;transform:rotate(5deg)"><rect x="95" y="134" width="18" height="52" rx="9" fill="#e9e9e6"/>' +
         '<g class="st-fA" style="transform-origin:104px 180px;transform:rotate(5deg)"><rect x="96" y="174" width="16" height="48" rx="8" fill="#f4cfae"/><circle cx="104" cy="226" r="9" fill="#f4cfae"/></g></g>' +
     '</g></svg>';
+  /* ---- ONE roll, three bodies (the big roller, the roll in her hand, the rod on the board) ----
+     They share the same steel, the same spiral end caps and the same three score lines running along the barrel.
+     The lines travel around the cylinder as paper winds on or off, so you can SEE it turning. phi is continuous across
+     the hand-over: roller ends at PHI0, the roll in the air holds PHI0, the rod starts at PHI0 and unwinds by PHI_ROD. */
+  var RL = 142, RCW = 2.6, RW = RL - 2 * RCW, RH = 18, PHI0 = 9, PHI_ROD = 7;
+  function grooves(phi, put) {
+    for (var i = 0; i < 3; i++) {
+      var a = phi + i * 2.0944, c = Math.cos(a);
+      put(i, 50 - 46 * Math.sin(a), c > 0 ? Math.min(1, c * 2.4) * .85 : 0);   /* front-facing lines only */
+    }
+  }
+  /* re-draws the flying roll at length w, diameter h (svg units). It is never stretched: caps stay round and the barrel keeps its shading. */
+  function shapeRoll(w, h) {
+    var P = S.rp, hw = w / 2, hh = h / 2, cw = Math.max(RCW, h * .12), sw = Math.max(.6, h * .045);
+    P.rb.setAttribute("x", -hw); P.rb.setAttribute("y", -hh); P.rb.setAttribute("width", w); P.rb.setAttribute("height", h); P.rb.setAttribute("rx", hh);
+    P.rh.setAttribute("x", -hw + hh); P.rh.setAttribute("width", Math.max(0, w - h)); P.rh.setAttribute("y", -hh + h * .13); P.rh.setAttribute("height", Math.max(.7, h * .06));
+    P.cl.setAttribute("cx", -hw); P.cl.setAttribute("rx", cw); P.cl.setAttribute("ry", hh);
+    P.cr.setAttribute("cx", hw); P.cr.setAttribute("rx", cw); P.cr.setAttribute("ry", hh);
+    grooves(PHI0, function (i, y, o) {
+      var l = P.rg[i], yy = -hh + h * y / 100;
+      l.setAttribute("x1", -hw + hh); l.setAttribute("x2", hw - hh); l.setAttribute("y1", yy); l.setAttribute("y2", yy);
+      l.setAttribute("stroke-width", sw); l.setAttribute("stroke-opacity", (o * .42).toFixed(3));
+    });
+  }
   var VBW = 270, SHX = 104, SHY = 140;
 
   /* ceiling light-beam with drifting dust (shown while the board is open) */
@@ -100,9 +125,9 @@
     host.innerHTML =
       '<div class="st-track"><div class="st-pin">' + BEAM +
         '<div class="st-stage"><div class="st-row"><div class="st-teacher">' + TEACHER + '</div>' +
-        '<div class="st-board"><div class="st-frame"><div class="st-chalk"></div><div class="st-screen"><div class="st-sheet"></div><div class="st-ring"></div></div><div class="st-rod"></div><div class="st-pull"></div></div></div></div></div>' +
+        '<div class="st-board"><div class="st-frame"><div class="st-chalk"></div><div class="st-screen"><div class="st-sheet"></div><div class="st-ring"></div></div><div class="st-rod"><i class="st-rc l"></i><i class="st-rc r"></i><i class="st-gv"></i><i class="st-gv"></i><i class="st-gv"></i></div><div class="st-pull"></div></div></div></div></div>' +
         '<div class="st-cover"></div>' +
-        '<div class="st-holder"><div class="st-shadow"></div><div class="st-leaf"><div class="st-paper-in"></div></div><div class="st-roller"><i class="st-cap l"></i><i class="st-cap r"></i></div></div>' +
+        '<div class="st-holder"><div class="st-shadow"></div><div class="st-leaf"><div class="st-paper-in"></div></div><div class="st-roller"><i class="st-cap l"></i><i class="st-cap r"></i><i class="st-gv"></i><i class="st-gv"></i><i class="st-gv"></i></div></div>' +
         '<div class="st-card"><h4></h4><p></p><div class="st-foot"><div class="st-dots">' + STEPS.map(function () { return "<i></i>"; }).join("") + '</div>' +
         '<div class="st-btns"><button class="btn btn-outline btn-sm st-skip">Skip tour</button><button class="btn btn-outline btn-sm st-back">Back</button><button class="btn btn-primary btn-sm st-next">Next</button></div></div></div>' + END +
       '</div></div>';
@@ -113,7 +138,10 @@
       cover: q(".st-cover"), holder: q(".st-holder"), shadow: q(".st-shadow"), leaf: q(".st-leaf"), paperIn: q(".st-paper-in"), roller: q(".st-roller"),
       card: q(".st-card"), title: q("h4"), text: q("p"), dots: [].slice.call(host.querySelectorAll(".st-dots i")),
       beam: q(".st-beam"), endbg: q(".st-endbg"), end: q(".st-end"), lns: [].slice.call(host.querySelectorAll(".st-ln>span")), eyebrow: q(".st-eyebrow"), more: q(".st-more"), headline: q(".st-headline"), sub: q(".st-sub"), cta: q(".st-cta"),
-      skip: q(".st-skip"), back: q(".st-back"), next: q(".st-next"), fresh: false };
+      skip: q(".st-skip"), back: q(".st-back"), next: q(".st-next"), fresh: false,
+      rp: { rb: q(".st-rb"), rh: q(".st-rh"), cl: q(".st-rl"), cr: q(".st-rr"), rg: [].slice.call(host.querySelectorAll(".st-rg")) },
+      gvR: [].slice.call(host.querySelectorAll(".st-roller .st-gv")), gvD: [].slice.call(host.querySelectorAll(".st-rod .st-gv")) };
+    shapeRoll(RW, RH);
     S.paperIn.appendChild(mkEnd()); S.sheet.appendChild(mkClone());
     q(".st-replay").onclick = function () { goto(0); };
     S.dots.forEach(function (dot, dotIdx) {
@@ -185,6 +213,8 @@
     S.k = nat.width / VBW; S.dist = Math.max(0, nat.left - 14); S.topRel = nat.top - pr.top;
     S.bx = (fr.left + fr.width / 2 - nat.left) / S.k; S.by = (fr.top + 16 - nat.top) / S.k; S.sx = (fr.width + 20) / (136 * S.k);
     S.aimRail = aim(fr.left + fr.width / 2, fr.top + 16);
+    /* the roll lands as a real roll: board-wide, thick while it still holds the whole sheet (rT0), thinning to a bare rod (rT1) as the sheet unrolls */
+    S.rodW = (fr.width + 20) / S.k; S.rT0 = clamp(fr.width * .075, 26, 56); S.rT1 = clamp(fr.width * .018, 10, 16);
     S.beam.style.left = (fr.left - pr.left - fr.width * .04) + "px"; S.beam.style.width = fr.width * 1.08 + "px"; S.beam.style.height = Math.max(0, fr.top - pr.top + 8) + "px";
     var ft = S.ft = document.querySelector(".site-footer"), fc = ft ? getComputedStyle(ft).backgroundColor : "";
     S.more.style.maxHeight = ""; S.eyebrow.style.maxHeight = "";
@@ -296,22 +326,26 @@
     S.paperIn.style.transform = "translateY(" + -eR * H + "px)";
     S.shadow.style.height = (1 - eR) * H + "px"; S.shadow.style.opacity = p1; S.shadow.style.borderRadius = (p1 * 22 / sc) + "px";
     S.roller.style.height = Tn + "px"; S.roller.style.display = Tn > 1 ? "" : "none";
+    S.roller.style.setProperty("--rt", Tn.toFixed(2) + "px");
+    if (Tn > 1) { var gf = clamp((Tn - 10) / 20, 0, 1); grooves(PHI0 * eR, function (i, y, o) { var g = S.gvR[i]; g.style.top = y + "%"; g.style.opacity = (o * gf).toFixed(3); }); }
     S.teacher.style.opacity = seg(s, 1.4, 2.0) * (1 - seg(s, OUTRO_START + 1.9, TOTAL - .1));
     S.board.style.opacity = seg(s, 1.9, 2.5) * (1 - seg(s, OUTRO_START + 1.3, OUTRO_START + 1.9));
 
     /* 3) the roll leaves the centre, flies to the raised hand (arc), is caught, lowered, carried, then hung on the board */
-    var x = 190, y = 132, rot = -6, scl = 1;
+    var x = 190, y = 132, rot = -6, scl = 1, rw = RW, rh = RH;
     if (s < 2.8) {
-      var e = ease(p3), x0 = (W / 2 - 14) / k, y0 = (H / 2 - S.topRel) / k, s0 = W * sc / (136 * k);
+      var e = ease(p3), x0 = (W / 2 - 14) / k, y0 = (H / 2 - S.topRel) / k, s0 = (1.0304 * W + 20) * sc / (RL * k);
       x = x0 + (190 - x0) * e; y = y0 + (132 - y0) * e - Math.sin(Math.PI * p3) * 80; rot = -6 * e; scl = s0 + (1 - s0) * Math.pow(e, .8);
     } else if (s < 3.1) { y = 132 + 10 * Math.sin(Math.PI * seg(s, 2.8, 3.1)); }
     else if (s < 5.0) { var eD = ease(seg(s, 3.1, 3.5)); y = 132 + 58 * eD; rot = -6 - 6 * eD; }
     else {
       var q = ease(seg(s, 5.0, 5.5));
-      x = 190 + (S.bx - 190) * q; y = 190 + (S.by - 190) * q; rot = -12 * (1 - q); scl = 1 + (S.sx - 1) * q;
+      x = 190 + (S.bx - 190) * q; y = 190 + (S.by - 190) * q; rot = -12 * (1 - q); rw = RW + (S.rodW - RW) * q; rh = RH + (S.rT0 / k - RH) * q;
     }
     S.roll.style.opacity = s < 2.0 ? 0 : s < 5.5 ? seg(s, 2.0, 2.2) : 0;
-    S.roll.style.transform = "translate(" + x + "px," + y + "px) rotate(" + rot + "deg) scale(" + (s >= 5.0 ? scl + "," + 1 : scl + "," + scl) + ")";
+    var rkey = rw.toFixed(1) + "," + rh.toFixed(2);
+    if (rkey !== S.rk) { S.rk = rkey; shapeRoll(rw, rh); }
+    S.roll.style.transform = "translate(" + x + "px," + y + "px) rotate(" + rot + "deg) scale(" + scl + ")";
 
     /* walk: position and gait share one clock so she plants her feet exactly at the end */
     var pE = seg(s, 3.6, 4.8), w = quad(pE), env = pE > 0 && pE < 1 ? Math.min(1, pE * 6, (1 - pE) * 6) : 0;
@@ -326,8 +360,11 @@
     var pRollUp = seg(s, OUTRO_START + .2, OUTRO_START + 1.2), eRollUp = ease(pRollUp);
     var boardOpen = s < OUTRO_START ? eG : Math.max(0, 1 - eRollUp);
 
-    S.rod.style.opacity = s >= 5.4 ? 1 : 0;
-    S.pull.style.opacity = s >= 5.4 && boardOpen > 0.005 ? 1 : 0;
+    S.rod.style.opacity = s >= 5.5 ? 1 : 0;
+    var rT = S.rT1 + (S.rT0 - S.rT1) * (1 - boardOpen), rf = clamp((rT - 9) / 24, 0, 1);
+    S.rod.style.height = rT.toFixed(2) + "px"; S.rod.style.top = (16 - rT / 2).toFixed(2) + "px"; S.rod.style.setProperty("--rt", rT.toFixed(2) + "px");
+    grooves(PHI0 - PHI_ROD * boardOpen, function (i, y, o) { var g = S.gvD[i]; g.style.top = y + "%"; g.style.opacity = (o * rf).toFixed(3); });
+    S.pull.style.opacity = s >= 5.5 && boardOpen > 0.005 ? 1 : 0;
     S.pull.style.transform = "translateY(" + boardOpen * (S.screen.clientHeight - 8) + "px)";
     S.screen.style.clipPath = "inset(0 0 " + (1 - boardOpen) * 100 + "% 0)";
 

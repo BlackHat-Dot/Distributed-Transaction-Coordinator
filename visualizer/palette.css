@@ -1,9 +1,53 @@
 /* ==========================================================================
-   PALETTE v3.0 — intentionally empty.
-   The "Velvet House & Tungsten Gold" recolour was removed: it painted a gold
-   rule, radial spotlights and glow shadows over Chapter 01, the tour and the
-   footer, which no longer matched the dashboard above them.
-   Colours after the Saga panel now come from seat-story.css / scroll-tour.css
-   (original amber + green on the house-lights background).
-   The warm --fx-* tokens used by the finale hero live in finale.css.
+   PALETTE v3.2 — guided-tour room, neutral + ONE consistent roll.  Load AFTER scroll-tour.css.
+   Pairs with scroll-tour.js v1.5.
+   - Room: flat near-black, no coloured light, beam/dust hidden (v3.1).
+   - Roll: the big roller, the roll in the teacher's hand and the rod on the board
+     are now the same object: same steel, same spiral end caps, same three score
+     lines that travel around the barrel as paper winds on or off.
+   - Amber is kept only for "this is highlighted" (focus ring, active dot, card
+     outline). Never as a glow. Only .st-* selectors: safe to share with booking.html.
    ========================================================================== */
+
+/* ---------- Room: flat, quiet, one faint neutral top light ---------- */
+.st-pin{background:
+  radial-gradient(ellipse 60% 42% at 50% 0,rgba(255,255,255,.04),transparent 72%),
+  #0a0908}
+.st-beam,.st-mote{display:none!important}
+.st-row::after{background:linear-gradient(#14110e,#0a0908);border-top:1px solid rgba(255,255,255,.07)}
+.st-endbg{background:linear-gradient(180deg,rgba(10,9,8,.6),rgba(10,9,8,.55) 45%,var(--st-end,#120e0b))}
+
+/* the teacher (and the roll she throws) must draw IN FRONT of the board, otherwise the roll vanishes behind the frame */
+.st-teacher{position:relative;z-index:2}
+
+/* ---------- One roll material: big roller + rod ---------- */
+.st-roller,.st-rod{background:
+    linear-gradient(180deg,rgba(0,0,0,.45) 0%,rgba(255,255,255,.38) 18%,rgba(255,255,255,0) 40%,rgba(0,0,0,.16) 72%,rgba(0,0,0,.55) 100%),
+    linear-gradient(180deg,#c3c0b9,#6f6c66);
+  box-shadow:0 0 0 1px rgba(255,255,255,.24),0 14px 28px rgba(0,0,0,.6)}
+.st-roller::before{opacity:.35}
+
+/* the rod is the landed roll: capsule shape, hand-over from the flying roll is instant */
+.st-rod{border-radius:999px;transition:none;
+  box-shadow:0 0 0 1px rgba(255,255,255,.24),0 10px 16px -4px rgba(0,0,0,.6)}
+
+/* spiral end caps = the wound layers you see at the end of a roll. Size follows the roll's diameter (--rt, set by JS) */
+.st-cap,.st-rc{border-radius:50%;
+  background:repeating-radial-gradient(ellipse at 50% 50%,#8d8a83 0 2px,#2b2926 2px 4px)}
+.st-cap{width:calc(var(--rt,147px) * .23)}
+.st-cap.l{left:calc(var(--rt,147px) * -.115)}.st-cap.r{right:calc(var(--rt,147px) * -.115)}
+.st-rc{position:absolute;top:0;bottom:0;width:calc(var(--rt,16px) * .24)}
+.st-rc.l{left:calc(var(--rt,16px) * -.12)}.st-rc.r{right:calc(var(--rt,16px) * -.12)}
+
+/* score lines along the barrel: JS moves them around the cylinder, front-facing ones only */
+.st-gv{position:absolute;left:3%;right:3%;top:50%;height:1px;margin-top:-.5px;border-radius:1px;
+  background:rgba(0,0,0,.45);box-shadow:0 1px 0 rgba(255,255,255,.18);opacity:0;pointer-events:none}
+
+/* pull handle at the sheet's free edge */
+.st-pull{background:#c9c6bf}
+
+/* ---------- Remove glow, keep function ---------- */
+.st-ring{box-shadow:0 0 0 9999px rgba(0,0,0,.5)}
+.st-frame{box-shadow:0 30px 60px rgba(0,0,0,.55),inset 0 0 0 2px #a8754a}
+.st-card.completed{box-shadow:0 18px 45px rgba(0,0,0,.6)}
+.st-dots i.on{box-shadow:none}
