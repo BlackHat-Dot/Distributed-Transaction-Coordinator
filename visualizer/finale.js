@@ -36,19 +36,13 @@
     var TICK = '<span>POST /hold <em><b>201</b> seat A-12 held \u00b7 ttl 600s</em></span><span>POST /pay <em>idempotency-key <em>7f3a\u2026c1</em> \u2192 <b>replayed 200</b></em></span><span>POST /pay <em>duplicate in flight \u2192 <u>409 rejected</u></em></span><span>SAGA <em>charge \u2192 reserve \u2192 issue \u00b7 <b>committed</b></em></span><span>SAGA <em>payment timeout \u2192 <u>compensating tx</u> \u2192 released</em></span><span>LOCK <em>seat A-12 \u00b7 optimistic version <em>v7</em> \u00b7 <b>no conflict</b></em></span>';
     fx.innerHTML =
       '<canvas class="fx-cv" aria-hidden="true"></canvas>' +
-      '<div class="fx-stage" aria-hidden="true"><i class="fx-c tl"></i><i class="fx-c tr"></i><i class="fx-c bl"></i><i class="fx-c br"></i><span class="fx-fig">Fig. 01 \u2014 The coordinator</span><span class="fx-hint"><i></i>Move through the word</span></div>' +
+      '<div class="fx-stage" aria-hidden="true"><i class="fx-c tl"></i><i class="fx-c tr"></i><i class="fx-c bl"></i><i class="fx-c br"></i><span class="fx-hint"><i></i>Move through the word</span></div>' +
       '<div class="fx-ui">' +
-        '<header class="fx-nav fx-r" style="--d:.15s"><a class="fx-brand" href="#top" aria-label="DTC"><span class="fx-mark">DTC</span><span><b>Coordinator</b><small>Distributed transactions</small></span></a>' +
-          '<span class="fx-status"><i class="fx-pulse"></i>Exactly-once \u00b7 consistent</span>' +
-          '<nav class="fx-links"><button type="button" class="fx-replay">Replay tour</button><a href="https://github.com/BlackHat-Dot/Distributed-transaction-coordinator" target="_blank" rel="noopener noreferrer">GitHub</a></nav></header>' +
         '<div class="fx-foot">' +
-          '<div class="fx-copy"><p class="fx-eyebrow fx-r" style="--d:.5s">Proven live</p>' +
+          '<div class="fx-copy">' +
             '<h2 class="fx-h fx-r" style="--d:.65s"><span class="l1">Ask a thousand times.</span><span class="l2">Booked exactly once.</span></h2>' +
             '<p class="fx-sub fx-r" style="--d:.8s">Double clicks, retries, races and crashes can\u2019t double-book a seat or double-charge a card. Not promised \u2014 demonstrated.</p></div>' +
-          '<div class="fx-panel"><dl class="fx-stats fx-r" style="--d:.8s">' +
-            '<div class="fx-stat"><dt>Requests</dt><dd class="fx-n-req">1,000</dd></div>' +
-            '<div class="fx-stat ok"><dt>Charged</dt><dd>1</dd></div>' +
-            '<div class="fx-stat"><dt>Blocked</dt><dd class="fx-n-dup">999</dd></div></dl>' +
+          '<div class="fx-panel">' +
             '<a class="fx-btn fx-r" style="--d:.95s" href="booking.html"><span>Book a seat</span><span class="fx-btn-a" aria-hidden="true"><span>\u2192</span><span>\u2192</span></span></a></div>' +
         '</div>' +
         '<div class="fx-ticker fx-r" style="--d:1.1s" aria-hidden="true"><div class="fx-track">' + TICK + TICK + '</div></div>' +
@@ -74,7 +68,6 @@
     var cv = fx.querySelector(".fx-cv");
     var tp = fx.querySelector(".fx-nav");
     var low = fx.querySelector(".fx-foot");
-    var elReq = fx.querySelector(".fx-n-req"), elDup = fx.querySelector(".fx-n-dup"), attempts = 1000, shownAttempts = 1000;
 
     var cs = getComputedStyle(fx);
     var tok = function (n, d) { return (cs.getPropertyValue(n) || "").trim() || d; };
@@ -665,17 +658,10 @@
         // Reject massive teleports/hitches across window boundary
         if (dist > 0 && dist < 0.2 && intensity > 0.001) {
           splat(mouse.x, mouse.y, u, f, 1.0);
-          attempts += Math.max(1, Math.round(dist * 500));
         }
         prevMouse.x = mouse.x;
         prevMouse.y = mouse.y;
         mouseHasMoved = false;
-      }
-
-      if (attempts !== shownAttempts) {
-        shownAttempts = attempts;
-        elReq.textContent = attempts.toLocaleString("en-US");
-        elDup.textContent = (attempts - 1).toLocaleString("en-US");
       }
 
       // 1. Curl & Vorticity (noth.in has curlStrength = 0)

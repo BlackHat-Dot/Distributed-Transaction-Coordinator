@@ -59,7 +59,7 @@
 .fx-links a:hover::after,.fx-links button:hover::after{right:0}
 
 /* ---- stage furniture: corner marks + hint ---- */
-.fx-stage{z-index:2;position:absolute;inset:clamp(64px,9vh,88px) clamp(18px,2.6vw,44px) clamp(190px,24vh,250px);pointer-events:none}
+.fx-stage{z-index:2;position:absolute;inset:clamp(22px,4vh,40px) clamp(18px,2.6vw,44px) clamp(190px,24vh,250px);pointer-events:none}
 .fx-c{position:absolute;width:14px;height:14px;border:0 solid var(--hair2)}
 .fx-c.tl{left:0;top:0;border-width:1px 0 0 1px}.fx-c.tr{right:0;top:0;border-width:1px 1px 0 0}
 .fx-c.bl{left:0;bottom:0;border-width:0 0 1px 1px}.fx-c.br{right:0;bottom:0;border-width:0 1px 1px 0}
@@ -80,7 +80,7 @@
 .fx-h .l2{font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;font-style:italic;font-weight:400;letter-spacing:-.025em;
   background:linear-gradient(180deg,#fff7e6,#e9dcc2 60%,#cdbd9c);-webkit-background-clip:text;background-clip:text;color:transparent}
 .fx-sub{margin:clamp(12px,2vh,20px) 0 0;max-width:62ch;font:450 13.5px/1.5 var(--font-sans,system-ui,sans-serif);color:var(--mute)}
-.fx-panel{display:flex;flex-direction:column;gap:clamp(14px,2.2vh,22px);align-items:stretch}
+.fx-panel{display:flex;flex-direction:column;align-items:flex-end;justify-content:flex-end}
 .fx-stats{display:grid;grid-template-columns:repeat(3,1fr);margin:0;border:1px solid var(--hair);border-radius:16px;overflow:hidden;
   background:linear-gradient(180deg,rgba(241,233,220,.05),rgba(241,233,220,.015));backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
 .fx-stat{padding:clamp(12px,1.8vh,18px) clamp(14px,1.4vw,20px);border-left:1px solid var(--hair)}
