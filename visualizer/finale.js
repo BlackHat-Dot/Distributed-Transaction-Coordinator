@@ -33,15 +33,25 @@
     var fx = document.createElement("div");
     fx.className = "fx";
     fx.id = "fx-finale";
+    var TICK = '<span>POST /hold <em><b>201</b> seat A-12 held \u00b7 ttl 600s</em></span><span>POST /pay <em>idempotency-key <em>7f3a\u2026c1</em> \u2192 <b>replayed 200</b></em></span><span>POST /pay <em>duplicate in flight \u2192 <u>409 rejected</u></em></span><span>SAGA <em>charge \u2192 reserve \u2192 issue \u00b7 <b>committed</b></em></span><span>SAGA <em>payment timeout \u2192 <u>compensating tx</u> \u2192 released</em></span><span>LOCK <em>seat A-12 \u00b7 optimistic version <em>v7</em> \u00b7 <b>no conflict</b></em></span>';
     fx.innerHTML =
       '<canvas class="fx-cv" aria-hidden="true"></canvas>' +
+      '<div class="fx-stage" aria-hidden="true"><i class="fx-c tl"></i><i class="fx-c tr"></i><i class="fx-c bl"></i><i class="fx-c br"></i><span class="fx-fig">Fig. 01 \u2014 The coordinator</span><span class="fx-hint"><i></i>Move through the word</span></div>' +
       '<div class="fx-ui">' +
-        '<div class="fx-bar"><span class="fx-tag"><i class="fx-dot"></i>txn 7f3a \u00b7 committed</span>' +
-          '<div class="fx-meter" aria-live="off"><span>Requests <b class="fx-n-req">1,000</b></span><span>Charged <b>1</b></span><span>Blocked <b class="fx-n-dup">999</b></span></div>' +
-          '<div class="fx-links"><button type="button" class="fx-replay">Replay tour</button><a href="https://github.com/BlackHat-Dot/Distributed-transaction-coordinator" target="_blank" rel="noopener noreferrer">GitHub</a></div></div>' +
-        '<div class="fx-foot"><h2 class="fx-h">Ask a thousand times.<br><em>Booked exactly once.</em></h2>' +
-          '<div class="fx-side"><p class="fx-sub">Double clicks, retries, races and crashes can\u2019t double-book a seat or double-charge a card. Proven live, not just promised.</p>' +
-          '<div class="fx-cta"><a class="fx-pill" href="booking.html"><span>Book a seat</span><span aria-hidden="true">\u2192</span></a></div></div></div>' +
+        '<header class="fx-nav fx-r" style="--d:.15s"><a class="fx-brand" href="#top" aria-label="DTC"><span class="fx-mark">DTC</span><span><b>Coordinator</b><small>Distributed transactions</small></span></a>' +
+          '<span class="fx-status"><i class="fx-pulse"></i>Exactly-once \u00b7 consistent</span>' +
+          '<nav class="fx-links"><button type="button" class="fx-replay">Replay tour</button><a href="https://github.com/BlackHat-Dot/Distributed-transaction-coordinator" target="_blank" rel="noopener noreferrer">GitHub</a></nav></header>' +
+        '<div class="fx-foot">' +
+          '<div class="fx-copy"><p class="fx-eyebrow fx-r" style="--d:.5s">Proven live</p>' +
+            '<h2 class="fx-h fx-r" style="--d:.65s"><span class="l1">Ask a thousand times.</span><span class="l2">Booked exactly once.</span></h2>' +
+            '<p class="fx-sub fx-r" style="--d:.8s">Double clicks, retries, races and crashes can\u2019t double-book a seat or double-charge a card. Not promised \u2014 demonstrated.</p></div>' +
+          '<div class="fx-panel"><dl class="fx-stats fx-r" style="--d:.8s">' +
+            '<div class="fx-stat"><dt>Requests</dt><dd class="fx-n-req">1,000</dd></div>' +
+            '<div class="fx-stat ok"><dt>Charged</dt><dd>1</dd></div>' +
+            '<div class="fx-stat"><dt>Blocked</dt><dd class="fx-n-dup">999</dd></div></dl>' +
+            '<a class="fx-btn fx-r" style="--d:.95s" href="booking.html"><span>Book a seat</span><span class="fx-btn-a" aria-hidden="true"><span>\u2192</span><span>\u2192</span></span></a></div>' +
+        '</div>' +
+        '<div class="fx-ticker fx-r" style="--d:1.1s" aria-hidden="true"><div class="fx-track">' + TICK + TICK + '</div></div>' +
       '</div>';
     footer.insertBefore(fx, footer.firstChild);
 
@@ -52,15 +62,24 @@
       });
     }
 
+    fx.addEventListener("pointermove", function () { fx.classList.add("fx-touched"); }, { passive: true, once: true });
+    var btn = fx.querySelector(".fx-btn");
+    if (btn && !matchMedia("(prefers-reduced-motion: reduce)").matches && matchMedia("(hover:hover)").matches) {
+      btn.addEventListener("pointermove", function (e) {
+        var r = btn.getBoundingClientRect();
+        btn.style.transform = "translate(" + ((e.clientX - r.left - r.width / 2) * 0.12).toFixed(1) + "px," + ((e.clientY - r.top - r.height / 2) * 0.22).toFixed(1) + "px)";
+      });
+      btn.addEventListener("pointerleave", function () { btn.style.transform = ""; });
+    }
     var cv = fx.querySelector(".fx-cv");
-    var tp = fx.querySelector(".fx-bar");
+    var tp = fx.querySelector(".fx-nav");
     var low = fx.querySelector(".fx-foot");
     var elReq = fx.querySelector(".fx-n-req"), elDup = fx.querySelector(".fx-n-dup"), attempts = 1000, shownAttempts = 1000;
 
     var cs = getComputedStyle(fx);
     var tok = function (n, d) { return (cs.getPropertyValue(n) || "").trim() || d; };
     var INK = tok("--fx-ink", "#07080a");
-    var IVORY = tok("--fx-paper", "#ffb020");
+    var IVORY = "#14100c"; /* fallback paper */
 
     var inkRgb = [
       (parseInt(INK.slice(1, 3), 16) || 7) / 255,
@@ -74,7 +93,7 @@
              cv.getContext("experimental-webgl", { alpha: false, depth: false, antialias: false, preserveDrawingBuffer: false });
 
     if (!gl) {
-      fallback2D(cv, WORD, INK, IVORY, tp, low);
+      fallback2D(cv, WORD, "#f1e9dc", IVORY, tp, low);
       return;
     }
 
@@ -254,6 +273,7 @@
       "uniform vec3 uInkColor;",
       "uniform float uScreenAspect;",
       "uniform float uVideoAspect;",
+      "uniform float uTime;",
       "vec2 coverUv(vec2 uv, float vAsp, float sAsp) {",
       "  vec2 ratio = vec2(min(sAsp / vAsp, 1.0), min(vAsp / sAsp, 1.0));",
       "  return clamp(uv * ratio + (1.0 - ratio) * 0.5, 0.001, 0.999);",
@@ -267,7 +287,13 @@
       "  float raw = dye * uRevealSize;",
       "  float mask = smoothstep(uEdgeSoftness, uEdgeSoftness + uEdgeWidth, raw);",
       "  mask = clamp(mask, 0.0, 1.0);",
-      "  gl_FragColor = mix(baseColor, revealColor, mask);",
+      "  vec3 col = mix(baseColor.rgb, revealColor.rgb, mask);",
+      "  float halo = smoothstep(uEdgeSoftness - 1.2, uEdgeSoftness, raw) * (1.0 - mask);",
+      "  float rim = mask * (1.0 - smoothstep(uEdgeSoftness + uEdgeWidth, uEdgeSoftness + uEdgeWidth + 0.8, raw));",
+      "  col += vec3(1.0, 0.69, 0.13) * (halo * 0.09 + rim * 0.34);",
+      "  float g = fract(sin(dot(gl_FragCoord.xy + uTime * 61.0, vec2(12.9898, 78.233))) * 43758.5453);",
+      "  col += (g - 0.5) * 0.026;",
+      "  gl_FragColor = vec4(col, 1.0);",
       "}"
     ].join("\n");
 
@@ -483,6 +509,7 @@
     }
 
     // Rasterize base texture (ivory background + inky letters matching video geometry)
+    var tmpCanvas = document.createElement("canvas"), tctx = tmpCanvas.getContext("2d");
     var W = 0, H = 0, dpr = 1;
     function updateBaseTexture() {
       var r = fx.getBoundingClientRect();
@@ -496,32 +523,41 @@
       baseCanvas.height = cv.height;
 
       baseCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      baseCtx.fillStyle = IVORY;
+      var pg = baseCtx.createRadialGradient(W * 0.5, H * 0.46, 0, W * 0.5, H * 0.46, Math.max(W, H) * 0.78);
+      pg.addColorStop(0, "#261f17"); pg.addColorStop(0.5, "#16120e"); pg.addColorStop(1, "#0a0807");
+      baseCtx.fillStyle = pg;
       baseCtx.fillRect(0, 0, W, H);
       baseCtx.imageSmoothingEnabled = true;
       baseCtx.imageSmoothingQuality = "high";
 
       var sAsp = W / H;
       var vAsp = videoAspect;
-
-      // Cover dimensions matching coverUv in WebGL shader
       var covW = (sAsp > vAsp) ? W : (H * vAsp);
       var covH = (sAsp > vAsp) ? (W / vAsp) : H;
       var offsetX = (W - covW) * 0.5;
       var offsetY = (H - covH) * 0.5;
 
+      /* letters are drawn on their own layer, then tinted ivory (silk gradient) so the dark svg fill never shows */
+      tmpCanvas.width = cv.width; tmpCanvas.height = cv.height;
+      tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      tctx.clearRect(0, 0, W, H);
+      tctx.imageSmoothingEnabled = true; tctx.imageSmoothingQuality = "high";
       if (maskReady && maskImg.naturalWidth) {
-        baseCtx.drawImage(maskImg, offsetX, offsetY, covW, covH);
+        tctx.drawImage(maskImg, offsetX, offsetY, covW, covH);
       } else {
         var FONT = '"Montserrat","Schibsted Grotesk",Arial Black,system-ui,sans-serif';
-        var targetTextH = covH * 0.369;
-        var fs = targetTextH * 1.05;
-        baseCtx.font = "900 " + fs + "px " + FONT;
-        baseCtx.textAlign = "center";
-        baseCtx.textBaseline = "middle";
-        baseCtx.fillStyle = INK;
-        baseCtx.fillText(WORD, W / 2, H / 2);
+        tctx.font = "900 " + (covH * 0.369 * 1.05) + "px " + FONT;
+        tctx.textAlign = "center"; tctx.textBaseline = "middle";
+        tctx.fillStyle = "#000";
+        tctx.fillText(WORD, W / 2, H / 2);
       }
+      tctx.globalCompositeOperation = "source-in";
+      var lg = tctx.createLinearGradient(0, H * 0.25, 0, H * 0.78);
+      lg.addColorStop(0, "#fbf3e3"); lg.addColorStop(1, "#cfc3ab");
+      tctx.fillStyle = lg;
+      tctx.fillRect(0, 0, W, H);
+      tctx.globalCompositeOperation = "source-over";
+      baseCtx.drawImage(tmpCanvas, 0, 0, W, H);
 
       gl.bindTexture(gl.TEXTURE_2D, baseTexture);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -731,6 +767,7 @@
       gl.uniform3f(compositeProg.uniforms.uInkColor, inkRgb[0], inkRgb[1], inkRgb[2]);
       gl.uniform1f(compositeProg.uniforms.uScreenAspect, W / H);
       gl.uniform1f(compositeProg.uniforms.uVideoAspect, videoAspect);
+      gl.uniform1f(compositeProg.uniforms.uTime, (performance.now() * 0.001) % 50.0);
 
       blit(null); // Draw directly to canvas
     }
@@ -811,7 +848,9 @@
       var offsetY = (h - covH) * 0.5;
 
       if (maskLoaded && mask.naturalWidth) {
+        try { ctx.filter = "invert(1) brightness(1.7)"; } catch (e) {}
         ctx.drawImage(mask, offsetX, offsetY, covW, covH);
+        try { ctx.filter = "none"; } catch (e) {}
       } else {
         var topR = (tp ? tp.offsetHeight : 0) + 30;
         var lowR = (low ? low.offsetHeight : 0) + 30;
