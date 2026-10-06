@@ -36,10 +36,12 @@
     fx.innerHTML =
       '<canvas class="fx-cv" aria-hidden="true"></canvas>' +
       '<div class="fx-ui">' +
-        '<div class="fx-top"><h2 class="fx-h">Ask a thousand times.<br>Booked exactly once.</h2>' +
-          '<div class="fx-cta"><a class="fx-pill" href="booking.html">Book a seat <span aria-hidden="true">\u2192</span></a></div></div>' +
-        '<div class="fx-low"><p class="fx-sub">Double clicks, retries, races and crashes can\u2019t double-book a seat or double-charge a card. Proven live, not just promised.</p>' +
+        '<div class="fx-bar"><span class="fx-tag"><i class="fx-dot"></i>txn 7f3a \u00b7 committed</span>' +
+          '<div class="fx-meter" aria-live="off"><span>Requests <b class="fx-n-req">1,000</b></span><span>Charged <b>1</b></span><span>Blocked <b class="fx-n-dup">999</b></span></div>' +
           '<div class="fx-links"><button type="button" class="fx-replay">Replay tour</button><a href="https://github.com/BlackHat-Dot/Distributed-transaction-coordinator" target="_blank" rel="noopener noreferrer">GitHub</a></div></div>' +
+        '<div class="fx-foot"><h2 class="fx-h">Ask a thousand times.<br><em>Booked exactly once.</em></h2>' +
+          '<div class="fx-side"><p class="fx-sub">Double clicks, retries, races and crashes can\u2019t double-book a seat or double-charge a card. Proven live, not just promised.</p>' +
+          '<div class="fx-cta"><a class="fx-pill" href="booking.html"><span>Book a seat</span><span aria-hidden="true">\u2192</span></a></div></div></div>' +
       '</div>';
     footer.insertBefore(fx, footer.firstChild);
 
@@ -51,13 +53,14 @@
     }
 
     var cv = fx.querySelector(".fx-cv");
-    var tp = fx.querySelector(".fx-top");
-    var low = fx.querySelector(".fx-low");
+    var tp = fx.querySelector(".fx-bar");
+    var low = fx.querySelector(".fx-foot");
+    var elReq = fx.querySelector(".fx-n-req"), elDup = fx.querySelector(".fx-n-dup"), attempts = 1000, shownAttempts = 1000;
 
     var cs = getComputedStyle(fx);
     var tok = function (n, d) { return (cs.getPropertyValue(n) || "").trim() || d; };
     var INK = tok("--fx-ink", "#07080a");
-    var IVORY = tok("--fx-ivory", "#f6ecda");
+    var IVORY = tok("--fx-paper", "#ffb020");
 
     var inkRgb = [
       (parseInt(INK.slice(1, 3), 16) || 7) / 255,
@@ -626,10 +629,17 @@
         // Reject massive teleports/hitches across window boundary
         if (dist > 0 && dist < 0.2 && intensity > 0.001) {
           splat(mouse.x, mouse.y, u, f, 1.0);
+          attempts += Math.max(1, Math.round(dist * 500));
         }
         prevMouse.x = mouse.x;
         prevMouse.y = mouse.y;
         mouseHasMoved = false;
+      }
+
+      if (attempts !== shownAttempts) {
+        shownAttempts = attempts;
+        elReq.textContent = attempts.toLocaleString("en-US");
+        elDup.textContent = (attempts - 1).toLocaleString("en-US");
       }
 
       // 1. Curl & Vorticity (noth.in has curlStrength = 0)

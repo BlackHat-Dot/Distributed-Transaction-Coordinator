@@ -9,7 +9,7 @@
   --fx-ink:#120e0b; --fx-ink-2:#1a1511; --fx-ink-3:#251e18; --fx-ink-4:#2e251d;
   --fx-line:rgba(241,233,220,.12); --fx-line-2:rgba(241,233,220,.24);
   --fx-ivory:#f6ecda; --fx-text-2:#b9ad9b; --fx-text-3:#968a79;
-  --fx-accent:#ffb020; --fx-accent-hi:#ffd98a; --fx-accent-rgb:255,176,32;
+  --fx-accent:#ffb020; --fx-paper:#ffb020; --fx-ink-hero:#07080a; --fx-accent-hi:#ffd98a; --fx-accent-rgb:255,176,32;
   --fx-ok:#7fe0a8;
 }
 
@@ -24,28 +24,44 @@
 .site-footer-bottom{border-top:0;position:relative}
 .site-footer-bottom::before{content:"";position:absolute;top:0;left:clamp(20px,5vw,72px);right:clamp(20px,5vw,72px);height:1px;background:var(--fx-line)}
 
-/* ---------- The interactive hero (light page, giant word, liquid reveal) ---------- */
+/* ---------- ONCE hero: saffron paper, ink word, liquid reveal. Layout is deliberately NOT a headline-top / links-bottom page. ---------- */
 .fx{position:relative;min-height:100vh;min-height:100svh;display:flex;flex-direction:column;overflow:hidden;
-  background:var(--fx-ivory);color:var(--fx-ivory);font-family:var(--font-sans,system-ui,sans-serif);touch-action:pan-y;cursor:crosshair}
+  background:var(--fx-paper);color:var(--fx-paper);font-family:var(--font-sans,"Schibsted Grotesk",system-ui,sans-serif);touch-action:pan-y;cursor:crosshair}
 .fx-cv{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:1;opacity:0;transition:opacity .5s}
 .fx.fx-ready .fx-cv{opacity:1}
+/* text = the paper colour under difference: reads as ink on paper, flips to saffron when the black liquid passes beneath */
 .fx-ui{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;justify-content:space-between;
-  padding:clamp(18px,3vh,32px) clamp(18px,1.6vw,28px) clamp(18px,3vh,30px);pointer-events:none;mix-blend-mode:difference;color:var(--fx-ivory)}
-.fx-top{display:flex;flex-direction:column;align-items:flex-start;gap:clamp(14px,2.2vh,22px)}
-.fx-h{margin:0;font-family:"Schibsted Grotesk",system-ui,sans-serif;font-weight:500;font-size:clamp(20px,2.1vw,30px);line-height:1.08;letter-spacing:-.03em;max-width:15em;text-transform:none}
-.fx-cta{display:flex;gap:10px;flex-wrap:wrap;pointer-events:auto;cursor:pointer}
-.fx-pill{display:inline-flex;align-items:center;gap:14px;padding:0 24px;height:clamp(46px,4.4vw,60px);border-radius:999px;border:0;cursor:pointer;
-  background:var(--fx-ivory);color:#000;font:500 14px/1 var(--font-sans,system-ui,sans-serif);letter-spacing:.04em;text-transform:uppercase;text-decoration:none}
-.fx-pill.ghost{background:transparent;color:var(--fx-ivory);box-shadow:inset 0 0 0 1px currentColor}
-.fx-low{display:flex;justify-content:space-between;align-items:flex-end;gap:16px 40px;flex-wrap:wrap;
-  font:600 13px/1.4 var(--font-sans,system-ui,sans-serif);letter-spacing:.01em}
-.fx-sub{margin:0;max-width:34ch;font-weight:500;letter-spacing:-.01em}
-.fx-links{display:flex;gap:18px;text-transform:uppercase;font-size:12.5px;letter-spacing:.02em;pointer-events:auto}
+  padding:clamp(16px,2.4vh,26px) clamp(18px,2.4vw,40px) clamp(20px,3.4vh,40px);pointer-events:none;mix-blend-mode:difference;color:var(--fx-paper)}
+
+/* top: a transaction strip (mono), like a receipt header */
+.fx-bar{display:flex;align-items:center;justify-content:space-between;gap:12px 28px;flex-wrap:wrap;
+  padding-bottom:12px;border-bottom:1.5px dashed currentColor;
+  font:600 11.5px/1.3 ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase}
+.fx-tag{display:inline-flex;align-items:center;gap:9px}
+.fx-dot{width:9px;height:9px;border-radius:50%;background:currentColor;display:inline-block}
+.fx-meter{display:flex;gap:6px 22px;flex-wrap:wrap}
+.fx-meter span{display:inline-flex;gap:7px;align-items:baseline;opacity:.9}
+.fx-meter b{font-weight:700;font-size:13px;font-variant-numeric:tabular-nums;min-width:3.4ch;text-align:right}
+.fx-links{display:flex;gap:18px;pointer-events:auto}
 .fx-links a,.fx-links button{color:inherit;background:none;border:0;padding:0;font:inherit;text-transform:inherit;letter-spacing:inherit;cursor:pointer;text-decoration:none}
 .fx-links a:hover,.fx-links button:hover{text-decoration:underline;text-underline-offset:4px}
-@media (max-width:760px){.fx-links{width:100%}}
-@media (prefers-reduced-motion:reduce){.fx-cv{transition:none}}
 
-.site-footer .fx-pill{color:#000}.site-footer .fx-pill.ghost{color:var(--fx-ivory)}
-.site-footer .fx-links a,.site-footer .fx-links button{color:inherit}
-.site-footer .fx-links a:hover{color:inherit}
+/* bottom: statement left, ticket right */
+.fx-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:20px 48px;flex-wrap:wrap}
+.fx-h{margin:0;font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;font-weight:400;
+  font-size:clamp(30px,4.6vw,76px);line-height:.98;letter-spacing:-.025em;max-width:11em}
+.fx-h em{font-style:italic;font-weight:500}
+.fx-side{display:flex;flex-direction:column;align-items:flex-end;gap:16px;text-align:right}
+.fx-sub{margin:0;max-width:34ch;font:500 13px/1.45 var(--font-sans,system-ui,sans-serif);letter-spacing:-.005em}
+.fx-cta{pointer-events:auto;cursor:pointer}
+/* ticket stub: notched sides + perforated divider */
+.fx-pill{display:inline-flex;align-items:stretch;height:clamp(52px,4.6vw,64px);border:0;border-radius:4px;cursor:pointer;
+  background:var(--fx-paper);color:#000;text-decoration:none;text-transform:uppercase;letter-spacing:.06em;
+  font:700 13px/1 ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  -webkit-mask:radial-gradient(circle 9px at 0 50%,#0000 97%,#000) left/51% 100% no-repeat,radial-gradient(circle 9px at 100% 50%,#0000 97%,#000) right/51% 100% no-repeat;
+          mask:radial-gradient(circle 9px at 0 50%,#0000 97%,#000) left/51% 100% no-repeat,radial-gradient(circle 9px at 100% 50%,#0000 97%,#000) right/51% 100% no-repeat}
+.fx-pill>span{display:flex;align-items:center;padding:0 22px 0 26px}
+.fx-pill>span+span{border-left:2px dashed #000;padding:0 24px 0 20px;font-size:18px}
+.fx-pill:hover>span+span{transform:translateX(3px)}
+@media (max-width:760px){.fx-side{align-items:flex-start;text-align:left}.fx-links{width:100%}}
+@media (prefers-reduced-motion:reduce){.fx-cv{transition:none}}
