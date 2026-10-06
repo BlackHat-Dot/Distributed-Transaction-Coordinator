@@ -59,7 +59,11 @@
     var INK = tok("--fx-ink", "#07080a");
     var IVORY = tok("--fx-ivory", "#f6ecda");
 
-    var inkRgb = [7 / 255, 8 / 255, 10 / 255];
+    var inkRgb = [
+      (parseInt(INK.slice(1, 3), 16) || 7) / 255,
+      (parseInt(INK.slice(3, 5), 16) || 8) / 255,
+      (parseInt(INK.slice(5, 7), 16) || 10) / 255
+    ];
 
     // Try WebGL2 first, then WebGL1
     var gl = cv.getContext("webgl2", { alpha: false, depth: false, antialias: false, preserveDrawingBuffer: false }) ||
@@ -204,10 +208,6 @@
       "  float B = texture2D(uPressure, vUv - vec2(0.0, uTexelSize.y)).x;",
       "  vec2 vel = texture2D(uVelocity, vUv).xy;",
       "  vel -= vec2(R - L, T - B) * 0.5;",
-      "  if (vUv.x <= uTexelSize.x) vel.x = max(0.0, vel.x);",
-      "  if (vUv.x >= 1.0 - uTexelSize.x) vel.x = min(0.0, vel.x);",
-      "  if (vUv.y <= uTexelSize.y) vel.y = max(0.0, vel.y);",
-      "  if (vUv.y >= 1.0 - uTexelSize.y) vel.y = min(0.0, vel.y);",
       "  gl_FragColor = vec4(vel, 0.0, 1.0);",
       "}"
     ].join("\n");
@@ -260,12 +260,11 @@
       "  float dye = texture2D(uDye, vUv).r;",
       "  vec4 baseColor = texture2D(uBaseTexture, texUv);",
       "  vec2 revUv = coverUv(texUv, uVideoAspect, uScreenAspect);",
-      "  vec3 revealColor = texture2D(uRevealTexture, revUv).rgb;",
+      "  vec4 revealColor = texture2D(uRevealTexture, revUv);",
       "  float raw = dye * uRevealSize;",
-      "  float blob = smoothstep(uEdgeSoftness, uEdgeSoftness + uEdgeWidth, raw);",
-      "  float lum = dot(baseColor.rgb, vec3(0.299, 0.587, 0.114));",
-      "  float letter = 1.0 - smoothstep(0.35, 0.65, lum);",
-      "  gl_FragColor = vec4(mix(baseColor.rgb, mix(uInkColor, revealColor, letter), blob), 1.0);",
+      "  float mask = smoothstep(uEdgeSoftness, uEdgeSoftness + uEdgeWidth, raw);",
+      "  mask = clamp(mask, 0.0, 1.0);",
+      "  gl_FragColor = mix(baseColor, revealColor, mask);",
       "}"
     ].join("\n");
 
@@ -307,12 +306,13 @@
     gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
 
-    function createFBO(w, h) {
+    function createFBO(w, h, filt) {
+      filt = filt || gl.LINEAR;
       gl.activeTexture(gl.TEXTURE0);
       var tex = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filt);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filt);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       gl.texImage2D(gl.TEXTURE_2D, 0, internalFormatRGBA, w, h, 0, gl.RGBA, textureType, null);
@@ -338,9 +338,9 @@
       };
     }
 
-    function createDoubleFBO(w, h) {
-      var fbo1 = createFBO(w, h);
-      var fbo2 = createFBO(w, h);
+    function createDoubleFBO(w, h, filt) {
+      var fbo1 = createFBO(w, h, filt);
+      var fbo2 = createFBO(w, h, filt);
       return {
         width: w,
         height: h,
@@ -358,9 +358,9 @@
 
     var velocity = createDoubleFBO(SIM_RES, SIM_RES);
     var dye = createDoubleFBO(DYE_RES, DYE_RES);
-    var pressure = createDoubleFBO(SIM_RES, SIM_RES);
-    var divergence = createFBO(SIM_RES, SIM_RES);
-    var curl = createFBO(SIM_RES, SIM_RES);
+    var pressure = createDoubleFBO(SIM_RES, SIM_RES, gl.NEAREST);
+    var divergence = createFBO(SIM_RES, SIM_RES, gl.NEAREST);
+    var curl = createFBO(SIM_RES, SIM_RES, gl.NEAREST);
 
     function blit(dest) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, dest ? dest.framebuffer : null);
@@ -530,18 +530,10 @@
 
     // Fluid Simulation Splat (matching noth.in GPU Navier-Stokes pipeline)
     function splat(x, y, dx, dy, s) {
+      s = (s === undefined ? 1.0 : s) * intensity;
       var aspect = W / H;
       if (s === undefined) s = 1.0;
 
-      // Coordinate boundary clamping: keep point strictly inside [0.001, 0.999]
-      x = Math.max(0.001, Math.min(0.999, x));
-      y = Math.max(0.001, Math.min(0.999, y));
-
-      // Wall proximity damping: ensure velocity doesn't push outward through boundary walls
-      if (x > 0.98 && dx > 0) dx = 0;
-      if (x < 0.02 && dx < 0) dx = 0;
-      if (y > 0.98 && dy > 0) dy = 0;
-      if (y < 0.02 && dy < 0) dy = 0;
 
       // Velocity splat (matching noth.in: u * SPLAT_FORCE * s, f * SPLAT_FORCE * s, 0)
       gl.useProgram(splatProg.program);
@@ -615,8 +607,15 @@
 
     // Step Simulation
     var visible = true;
+    var intensity = 1, fadeSq = 0;
+    function updateFade() {
+      var r = fx.getBoundingClientRect();
+      var n = Math.max(0, Math.min(1, -r.top / (r.height || 1)));
+      fadeSq = n * n; intensity = 1 - fadeSq;
+    }
     function step() {
       if (!visible) return;
+      updateFade();
 
       // Handle pointer motion strictly once per RAF frame matching noth.in
       if (mouseHasMoved && inside) {
@@ -625,7 +624,7 @@
         var dist = Math.sqrt(u * u + f * f);
 
         // Reject massive teleports/hitches across window boundary
-        if (dist > 0.0001 && dist < 0.15) {
+        if (dist > 0 && dist < 0.2 && intensity > 0.001) {
           splat(mouse.x, mouse.y, u, f, 1.0);
         }
         prevMouse.x = mouse.x;
@@ -664,7 +663,7 @@
       gl.uniform1i(advectionProg.uniforms.uVelocity, velocity.read.attach(0));
       gl.uniform1i(advectionProg.uniforms.uSource, dye.read.attach(1));
       gl.uniform2f(advectionProg.uniforms.uTexelSize, dye.texelSizeX, dye.texelSizeY);
-      gl.uniform1f(advectionProg.uniforms.uDissipation, DYE_DISSIPATION);
+      gl.uniform1f(advectionProg.uniforms.uDissipation, DYE_DISSIPATION + (0.97 - DYE_DISSIPATION) * fadeSq);
       blit(dye.write);
       dye.swap();
 
@@ -674,7 +673,11 @@
       gl.uniform2f(divergenceProg.uniforms.uTexelSize, velocity.texelSizeX, velocity.texelSizeY);
       blit(divergence);
 
-      // 5. Pressure Poisson Relaxation (Jacobi)
+      // 5. Pressure Poisson Relaxation (Jacobi) - cleared each frame like noth.in
+      gl.bindFramebuffer(gl.FRAMEBUFFER, pressure.read.framebuffer);
+      gl.viewport(0, 0, pressure.read.width, pressure.read.height);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
       gl.useProgram(pressureProg.program);
       gl.uniform1i(pressureProg.uniforms.uDivergence, divergence.attach(1));
       gl.uniform2f(pressureProg.uniforms.uTexelSize, velocity.texelSizeX, velocity.texelSizeY);
