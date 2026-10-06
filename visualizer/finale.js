@@ -14,7 +14,7 @@
   var SIM_RES = 256;
   var DYE_RES = 512;
   var VEL_DISSIPATION = 0.962;
-  var DYE_DISSIPATION = 0.988;
+  var DYE_DISSIPATION = 0.970;
   var PRESSURE_ITER = 20;
   var CURL_STRENGTH = 6.0;
   var SPLAT_RADIUS = 0.00018;
@@ -117,12 +117,17 @@
       "uniform vec2 uPoint;",
       "uniform vec3 uColor;",
       "uniform float uRadius;",
+      "uniform float uMaxVal;",
       "void main() {",
       "  vec2 p = vUv - uPoint;",
       "  p.x *= uAspectRatio;",
       "  vec3 splat = exp(-dot(p, p) / uRadius) * uColor;",
       "  vec3 base = texture2D(uTarget, vUv).xyz;",
-      "  gl_FragColor = vec4(base + splat, 1.0);",
+      "  vec3 res = base + splat;",
+      "  if (uMaxVal > 0.0) {",
+      "    res = clamp(res, -uMaxVal, uMaxVal);",
+      "  }",
+      "  gl_FragColor = vec4(res, 1.0);",
       "}"
     ].join("\n");
 
@@ -208,6 +213,10 @@
       "  float B = texture2D(uPressure, vUv - vec2(0.0, uTexelSize.y)).x;",
       "  vec2 vel = texture2D(uVelocity, vUv).xy;",
       "  vel -= vec2(R - L, T - B) * 0.5;",
+      "  if (vUv.x <= uTexelSize.x) vel.x = max(0.0, vel.x);",
+      "  if (vUv.x >= 1.0 - uTexelSize.x) vel.x = min(0.0, vel.x);",
+      "  if (vUv.y <= uTexelSize.y) vel.y = max(0.0, vel.y);",
+      "  if (vUv.y >= 1.0 - uTexelSize.y) vel.y = min(0.0, vel.y);",
       "  gl_FragColor = vec4(vel, 0.0, 1.0);",
       "}"
     ].join("\n");
@@ -231,7 +240,9 @@
       "  return mix(mix(a, b, fuv.x), mix(c, d, fuv.x), fuv.y);",
       "}",
       "void main() {",
-      "  vec2 coord = vUv - uDt * texture2D(uVelocity, vUv).xy * uTexelSize;",
+      "  vec2 vel = texture2D(uVelocity, vUv).xy;",
+      "  vec2 coord = vUv - uDt * vel * uTexelSize;",
+      "  coord = clamp(coord, uTexelSize * 0.5, 1.0 - uTexelSize * 0.5);",
       "  vec4 result = uDissipation * bilerp(uSource, coord, uTexelSize);",
       "  gl_FragColor = result;",
       "}"
@@ -525,13 +536,34 @@
     function splat(x, y, dx, dy) {
       var aspect = W / H;
 
+      // Coordinate boundary clamping: keep point strictly inside [0.001, 0.999]
+      x = Math.max(0.001, Math.min(0.999, x));
+      y = Math.max(0.001, Math.min(0.999, y));
+
+      // Wall proximity damping: do not inject velocity pushing straight into walls
+      if (x > 0.96 && dx > 0) dx = 0;
+      if (x < 0.04 && dx < 0) dx = 0;
+      if (y > 0.96 && dy > 0) dy = 0;
+      if (y < 0.04 && dy < 0) dy = 0;
+
+      // Velocity magnitude clamping: strictly bounds maximum injected kinetic energy
+      var fxForce = dx * SPLAT_FORCE;
+      var fyForce = dy * SPLAT_FORCE;
+      var speed = Math.sqrt(fxForce * fxForce + fyForce * fyForce);
+      var MAX_SPEED = 24.0;
+      if (speed > MAX_SPEED) {
+        fxForce = (fxForce / speed) * MAX_SPEED;
+        fyForce = (fyForce / speed) * MAX_SPEED;
+      }
+
       // Velocity splat
       gl.useProgram(splatProg.program);
       gl.uniform1i(splatProg.uniforms.uTarget, velocity.read.attach(0));
       gl.uniform1f(splatProg.uniforms.uAspectRatio, aspect);
       gl.uniform2f(splatProg.uniforms.uPoint, x, y);
-      gl.uniform3f(splatProg.uniforms.uColor, dx * SPLAT_FORCE, dy * SPLAT_FORCE, 0.0);
+      gl.uniform3f(splatProg.uniforms.uColor, fxForce, fyForce, 0.0);
       gl.uniform1f(splatProg.uniforms.uRadius, SPLAT_RADIUS);
+      if (splatProg.uniforms.uMaxVal) gl.uniform1f(splatProg.uniforms.uMaxVal, 30.0);
       blit(velocity.write);
       velocity.swap();
 
@@ -539,26 +571,56 @@
       gl.uniform1i(splatProg.uniforms.uTarget, dye.read.attach(0));
       gl.uniform3f(splatProg.uniforms.uColor, 1.0, 1.0, 1.0);
       gl.uniform1f(splatProg.uniforms.uRadius, SPLAT_RADIUS);
+      if (splatProg.uniforms.uMaxVal) gl.uniform1f(splatProg.uniforms.uMaxVal, 1.0);
       blit(dye.write);
       dye.swap();
     }
 
     // Pointer Events
     var lastX = 0, lastY = 0, hasMoved = false, inside = false;
+    function resetPointer() {
+      inside = false;
+    }
+
     function onPointerMove(e) {
       var r = fx.getBoundingClientRect();
+      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) {
+        inside = false;
+        return;
+      }
+
       var x = (e.clientX - r.left) / r.width;
       var y = 1.0 - (e.clientY - r.top) / r.height;
+
+      // Outer window boundary buffer: don't splat into the extreme outer edge walls
+      var padX = 14 / r.width;
+      var padY = 14 / r.height;
+      if (x <= padX || x >= 1.0 - padX || y <= padY || y >= 1.0 - padY) {
+        lastX = x;
+        lastY = y;
+        inside = false;
+        return;
+      }
 
       if (!inside) {
         lastX = x;
         lastY = y;
         inside = true;
+        return;
       }
 
       var dx = x - lastX;
       var dy = y - lastY;
-      if (Math.sqrt(dx * dx + dy * dy) > 0.001) {
+      var dist = Math.sqrt(dx * dx + dy * dy);
+
+      // Large jump detection (re-entering from window edge or hitch)
+      if (dist > 0.06) {
+        lastX = x;
+        lastY = y;
+        return;
+      }
+
+      if (dist > 0.001) {
         splat(x, y, dx, dy);
         lastX = x;
         lastY = y;
@@ -568,13 +630,16 @@
 
     fx.addEventListener("pointermove", onPointerMove, { passive: true });
     fx.addEventListener("pointerdown", function (e) {
+      inside = false;
       onPointerMove(e);
       var r = fx.getBoundingClientRect();
       var x = (e.clientX - r.left) / r.width;
       var y = 1.0 - (e.clientY - r.top) / r.height;
-      splat(x, y, 0.05, 0.05);
+      splat(x, y, 0.0, 0.0);
     }, { passive: true });
-    fx.addEventListener("pointerleave", function () { inside = false; });
+    fx.addEventListener("pointerleave", resetPointer);
+    document.addEventListener("mouseleave", resetPointer);
+    window.addEventListener("blur", resetPointer);
 
     // Step Simulation
     var visible = true;
