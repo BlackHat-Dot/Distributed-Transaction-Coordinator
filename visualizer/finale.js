@@ -14,9 +14,9 @@
   var SIM_RES = 256;
   var DYE_RES = 512;
   var VEL_DISSIPATION = 0.962;
-  var DYE_DISSIPATION = 0.970;
+  var DYE_DISSIPATION = 0.988;
   var PRESSURE_ITER = 20;
-  var CURL_STRENGTH = 6.0;
+  var CURL_STRENGTH = 0.0;
   var SPLAT_RADIUS = 0.00018;
   var SPLAT_FORCE = 5900.0;
   var REVEAL_SIZE = 3.9;
@@ -117,17 +117,12 @@
       "uniform vec2 uPoint;",
       "uniform vec3 uColor;",
       "uniform float uRadius;",
-      "uniform float uMaxVal;",
       "void main() {",
       "  vec2 p = vUv - uPoint;",
       "  p.x *= uAspectRatio;",
       "  vec3 splat = exp(-dot(p, p) / uRadius) * uColor;",
       "  vec3 base = texture2D(uTarget, vUv).xyz;",
-      "  vec3 res = base + splat;",
-      "  if (uMaxVal > 0.0) {",
-      "    res = clamp(res, -uMaxVal, uMaxVal);",
-      "  }",
-      "  gl_FragColor = vec4(res, 1.0);",
+      "  gl_FragColor = vec4(base + splat, 1.0);",
       "}"
     ].join("\n");
 
@@ -532,54 +527,48 @@
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, baseCanvas);
     }
 
-    // Fluid Simulation Splat
-    function splat(x, y, dx, dy) {
+    // Fluid Simulation Splat (matching noth.in GPU Navier-Stokes pipeline)
+    function splat(x, y, dx, dy, s) {
       var aspect = W / H;
+      if (s === undefined) s = 1.0;
 
       // Coordinate boundary clamping: keep point strictly inside [0.001, 0.999]
       x = Math.max(0.001, Math.min(0.999, x));
       y = Math.max(0.001, Math.min(0.999, y));
 
-      // Wall proximity damping: do not inject velocity pushing straight into walls
-      if (x > 0.96 && dx > 0) dx = 0;
-      if (x < 0.04 && dx < 0) dx = 0;
-      if (y > 0.96 && dy > 0) dy = 0;
-      if (y < 0.04 && dy < 0) dy = 0;
+      // Wall proximity damping: ensure velocity doesn't push outward through boundary walls
+      if (x > 0.98 && dx > 0) dx = 0;
+      if (x < 0.02 && dx < 0) dx = 0;
+      if (y > 0.98 && dy > 0) dy = 0;
+      if (y < 0.02 && dy < 0) dy = 0;
 
-      // Velocity magnitude clamping: strictly bounds maximum injected kinetic energy
-      var fxForce = dx * SPLAT_FORCE;
-      var fyForce = dy * SPLAT_FORCE;
-      var speed = Math.sqrt(fxForce * fxForce + fyForce * fyForce);
-      var MAX_SPEED = 24.0;
-      if (speed > MAX_SPEED) {
-        fxForce = (fxForce / speed) * MAX_SPEED;
-        fyForce = (fyForce / speed) * MAX_SPEED;
-      }
-
-      // Velocity splat
+      // Velocity splat (matching noth.in: u * SPLAT_FORCE * s, f * SPLAT_FORCE * s, 0)
       gl.useProgram(splatProg.program);
       gl.uniform1i(splatProg.uniforms.uTarget, velocity.read.attach(0));
       gl.uniform1f(splatProg.uniforms.uAspectRatio, aspect);
       gl.uniform2f(splatProg.uniforms.uPoint, x, y);
-      gl.uniform3f(splatProg.uniforms.uColor, fxForce, fyForce, 0.0);
+      gl.uniform3f(splatProg.uniforms.uColor, dx * SPLAT_FORCE * s, dy * SPLAT_FORCE * s, 0.0);
       gl.uniform1f(splatProg.uniforms.uRadius, SPLAT_RADIUS);
-      if (splatProg.uniforms.uMaxVal) gl.uniform1f(splatProg.uniforms.uMaxVal, 30.0);
       blit(velocity.write);
       velocity.swap();
 
-      // Dye splat
+      // Dye splat (matching noth.in: s, s, s)
       gl.uniform1i(splatProg.uniforms.uTarget, dye.read.attach(0));
-      gl.uniform3f(splatProg.uniforms.uColor, 1.0, 1.0, 1.0);
+      gl.uniform3f(splatProg.uniforms.uColor, s, s, s);
       gl.uniform1f(splatProg.uniforms.uRadius, SPLAT_RADIUS);
-      if (splatProg.uniforms.uMaxVal) gl.uniform1f(splatProg.uniforms.uMaxVal, 1.0);
       blit(dye.write);
       dye.swap();
     }
 
-    // Pointer Events
-    var lastX = 0, lastY = 0, hasMoved = false, inside = false;
+    // Pointer Events (matching noth.in: decoupled from raw event, executed once per RAF frame)
+    var mouse = { x: 0.5, y: 0.5 };
+    var prevMouse = { x: 0.5, y: 0.5 };
+    var mouseHasMoved = false;
+    var inside = false;
+
     function resetPointer() {
       inside = false;
+      mouseHasMoved = false;
     }
 
     function onPointerMove(e) {
@@ -591,51 +580,27 @@
 
       var x = (e.clientX - r.left) / r.width;
       var y = 1.0 - (e.clientY - r.top) / r.height;
-
-      // Outer window boundary buffer: don't splat into the extreme outer edge walls
-      var padX = 14 / r.width;
-      var padY = 14 / r.height;
-      if (x <= padX || x >= 1.0 - padX || y <= padY || y >= 1.0 - padY) {
-        lastX = x;
-        lastY = y;
-        inside = false;
-        return;
-      }
+      x = Math.max(0.001, Math.min(0.999, x));
+      y = Math.max(0.001, Math.min(0.999, y));
 
       if (!inside) {
-        lastX = x;
-        lastY = y;
+        prevMouse.x = x;
+        prevMouse.y = y;
         inside = true;
-        return;
       }
 
-      var dx = x - lastX;
-      var dy = y - lastY;
-      var dist = Math.sqrt(dx * dx + dy * dy);
-
-      // Large jump detection (re-entering from window edge or hitch)
-      if (dist > 0.06) {
-        lastX = x;
-        lastY = y;
-        return;
-      }
-
-      if (dist > 0.001) {
-        splat(x, y, dx, dy);
-        lastX = x;
-        lastY = y;
-        hasMoved = true;
-      }
+      mouse.x = x;
+      mouse.y = y;
+      mouseHasMoved = true;
     }
 
     fx.addEventListener("pointermove", onPointerMove, { passive: true });
     fx.addEventListener("pointerdown", function (e) {
       inside = false;
       onPointerMove(e);
-      var r = fx.getBoundingClientRect();
-      var x = (e.clientX - r.left) / r.width;
-      var y = 1.0 - (e.clientY - r.top) / r.height;
-      splat(x, y, 0.0, 0.0);
+      if (inside) {
+        splat(mouse.x, mouse.y, 0.0, 0.0, 1.0);
+      }
     }, { passive: true });
     fx.addEventListener("pointerleave", resetPointer);
     document.addEventListener("mouseleave", resetPointer);
@@ -646,7 +611,22 @@
     function step() {
       if (!visible) return;
 
-      // 1. Curl & Vorticity
+      // Handle pointer motion strictly once per RAF frame matching noth.in
+      if (mouseHasMoved && inside) {
+        var u = mouse.x - prevMouse.x;
+        var f = mouse.y - prevMouse.y;
+        var dist = Math.sqrt(u * u + f * f);
+
+        // Reject massive teleports/hitches across window boundary
+        if (dist > 0.0001 && dist < 0.15) {
+          splat(mouse.x, mouse.y, u, f, 1.0);
+        }
+        prevMouse.x = mouse.x;
+        prevMouse.y = mouse.y;
+        mouseHasMoved = false;
+      }
+
+      // 1. Curl & Vorticity (noth.in has curlStrength = 0)
       if (CURL_STRENGTH > 0) {
         gl.useProgram(curlProg.program);
         gl.uniform1i(curlProg.uniforms.uVelocity, velocity.read.attach(0));
@@ -673,7 +653,7 @@
       blit(velocity.write);
       velocity.swap();
 
-      // 3. Dye Advection
+      // 3. Dye Advection (dissipation matching noth.in)
       gl.uniform1i(advectionProg.uniforms.uVelocity, velocity.read.attach(0));
       gl.uniform1i(advectionProg.uniforms.uSource, dye.read.attach(1));
       gl.uniform2f(advectionProg.uniforms.uTexelSize, dye.texelSizeX, dye.texelSizeY);
