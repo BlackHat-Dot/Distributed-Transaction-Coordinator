@@ -214,19 +214,19 @@
   }
   function frame(now) {
     tNow += Math.min(.05, (now - last) / 1000); last = now;
-    if (tNow >= END) { draw(END); state = 2; lock(false); return; }
+    if (tNow >= END) { draw(END); state = 2; lock(false); fx.classList.add("fx-seq-done"); return; }
     draw(tNow); if (tNow > .6) fx.classList.add("fx-seq-live"); raf = requestAnimationFrame(frame);
   }
   function play(top) {
     state = 1; window.scrollTo({ top: window.scrollY + top, behavior: "instant" }); lockY = window.scrollY; lock(true);
-    reset(); tNow = 0; draw(0); fx.classList.add("fx-seq-on");
+    reset(); tNow = 0; draw(0); fx.classList.remove("fx-seq-done"); fx.classList.add("fx-seq-on");
     last = performance.now(); raf = requestAnimationFrame(frame);
   }
   function check() {
     var r = fx.getBoundingClientRect();
     if (state === 0 && r.top <= 3 && r.bottom > innerHeight * .6 && fx.classList.contains("fx-ready")) {
-      if (reduce) { state = 2; reset(); draw(END); fx.classList.add("fx-seq-on", "fx-seq-live"); } else play(r.top);
-    } else if (state === 2 && r.top >= innerHeight * .98 && !reduce) { state = 0; reset(); draw(0); }   /* scrolled back above: re-arm */
+      if (reduce) { state = 2; reset(); draw(END); fx.classList.add("fx-seq-on", "fx-seq-live", "fx-seq-done"); } else play(r.top);
+    } else if (state === 2 && r.top >= innerHeight * .98 && !reduce) { state = 0; reset(); draw(0); fx.classList.remove("fx-seq-done"); }   /* scrolled back above: re-arm */
   }
 
   simulate(); size();
