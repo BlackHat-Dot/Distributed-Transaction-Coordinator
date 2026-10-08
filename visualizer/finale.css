@@ -75,7 +75,9 @@
 .fx-eyebrow{margin:0 0 clamp(10px,1.6vh,18px);display:flex;align-items:center;gap:10px;font:600 10.5px/1 ui-monospace,"SF Mono",Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--amb)}
 .fx-eyebrow::before{content:"";width:22px;height:1px;background:currentColor}
 .fx-h{margin:0;font-weight:400;font-size:clamp(28px,3.2vw,58px);line-height:1;letter-spacing:-.035em}
-.fx-h span{display:block}
+.fx-h > span{display:block}
+.fx-h .fx-u-once{display:inline-block;position:relative}
+.fx-h .fx-u-once::after{content:"";position:absolute;left:0;right:0;bottom:-0.08em;height:max(2px,0.04em);background:#ffffff;border-radius:1px;box-shadow:0 0 8px rgba(255,255,255,.45)}
 .fx-h .l1{color:var(--faint)}
 .fx-h .l2{font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;font-style:italic;font-weight:400;letter-spacing:-.025em;
   background:linear-gradient(180deg,#fff7e6,#e9dcc2 60%,#cdbd9c);-webkit-background-clip:text;background-clip:text;color:transparent}

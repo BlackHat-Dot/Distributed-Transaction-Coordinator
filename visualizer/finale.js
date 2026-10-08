@@ -117,7 +117,7 @@
       '<div class="fx-ui">' +
         '<div class="fx-foot">' +
           '<div class="fx-copy">' +
-            '<h2 class="fx-h fx-r" style="--d:.65s"><span class="l1">Ask a thousand times.</span><span class="l2">Booked exactly once.</span></h2>' +
+            '<h2 class="fx-h fx-r" style="--d:.65s"><span class="l1">Ask a thousand times.</span><span class="l2">Booked exactly <span class="fx-u-once">once</span>.</span></h2>' +
             '<p class="fx-sub fx-r" style="--d:.35s">Double clicks, retries, races and crashes can\u2019t double-book a seat or double-charge a card. Not promised \u2014 demonstrated.</p></div>' +
         '</div>' +
       '</div>';
