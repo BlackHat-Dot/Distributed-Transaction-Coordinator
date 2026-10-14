@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 from django.test import TestCase
 
 from coordinator.models import Transaction
-from coordinator.views import _run_saga_pipeline
+from coordinator.views import _run_saga
 
 
 class ConcurrencyA3Tests(TestCase):
@@ -13,7 +13,7 @@ class ConcurrencyA3Tests(TestCase):
         self.tx_id = uuid.uuid4()
 
     def test_run_saga_pipeline_skip_reserve_accepts_holding_and_inventory_reserved(self):
-        """F-04: _run_saga_pipeline(skip_reserve=True) must accept both HOLDING and INVENTORY_RESERVED."""
+        """F-04: _run_saga(skip_reserve=True) must accept both HOLDING and INVENTORY_RESERVED."""
         for initial_st in (Transaction.Status.HOLDING, Transaction.Status.INVENTORY_RESERVED):
             tid = uuid.uuid4()
             Transaction.objects.create(
@@ -23,9 +23,9 @@ class ConcurrencyA3Tests(TestCase):
                 quantity=1,
                 amount=100,
             )
-            with patch("coordinator.views._charge_payment") as mock_charge:
+            with patch("coordinator.views._charge") as mock_charge:
                 mock_charge.return_value = MagicMock(status_code=200)
-                resp = _run_saga_pipeline(
+                resp = _run_saga(
                     transaction_id=tid,
                     seat_ids=[1],
                     amount=Decimal("100"),
@@ -54,8 +54,8 @@ class ConcurrencyA3Tests(TestCase):
             return real_set_status(tid, to_status, **kwargs)
 
         with patch("coordinator.views._set_status_with_event", side_effect=mock_set_status), \
-             patch("coordinator.views._charge_payment") as mock_charge:
-            resp = _run_saga_pipeline(
+             patch("coordinator.views._charge") as mock_charge:
+            resp = _run_saga(
                 transaction_id=self.tx_id,
                 seat_ids=[1],
                 amount=Decimal("100"),

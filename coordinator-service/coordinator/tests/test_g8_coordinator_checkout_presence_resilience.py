@@ -6,7 +6,7 @@ import redis
 from django.test import TestCase
 
 from coordinator.models import Transaction
-from coordinator.views import _set_checkout_presence, _clear_checkout_presence, _charge_payment
+from coordinator.views import _set_checkout_presence, _clear_checkout_presence, _charge
 
 
 class TestG8CoordinatorCheckoutPresenceResilience(TestCase):
@@ -40,7 +40,7 @@ class TestG8CoordinatorCheckoutPresenceResilience(TestCase):
 
     def test_charge_payment_clears_checkout_presence_on_unhandled_exception(self):
         """
-        G8: When _charge_payment encounters an unhandled exception, _clear_checkout_presence is called.
+        G8: When _charge encounters an unhandled exception, _clear_checkout_presence is called.
         """
         tx_id = uuid.uuid4()
         Transaction.objects.create(
@@ -55,7 +55,7 @@ class TestG8CoordinatorCheckoutPresenceResilience(TestCase):
         with patch("coordinator.views._get_coordinator_redis_client", return_value=mock_redis):
             with patch("coordinator.views._http_post", side_effect=RuntimeError("Unexpected crash")):
                 with self.assertRaises(RuntimeError):
-                    _charge_payment(
+                    _charge(
                         transaction_id=tx_id,
                         amount=Decimal("100.00"),
                         fail_compensation=False,

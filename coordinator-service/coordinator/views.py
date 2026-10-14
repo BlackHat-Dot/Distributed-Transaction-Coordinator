@@ -67,12 +67,11 @@ DEFAULT_STAFF_USER_ID = os.getenv("STAFF_USER_ID", "system_staff")
 DEFAULT_STAFF_EMAIL = os.getenv("STAFF_EMAIL_ID", "admin@dtc.internal")
 
 
-def _get_active_correlation_id(correlation_id=None):
+def _corr_id(correlation_id=None):
     """Return active correlation ID, middleware ContextVar, or fresh UUIDv4."""
     return correlation_id or get_correlation_id() or str(uuid.uuid4())
 
 
-_corr_id = _get_active_correlation_id
 
 
 def _verify_staff_key(header_val):
@@ -85,7 +84,7 @@ def _verify_staff_key(header_val):
     return hmac.compare_digest(header_val.strip().encode("utf-8"), staff_key.encode("utf-8"))
 
 
-def _fault_injection_allowed():
+def _faults_on():
     """Return True only if DEBUG=True and ENABLE_FAULT_INJECTION is enabled."""
     if not getattr(settings, "DEBUG", False):
         return False
@@ -95,7 +94,6 @@ def _fault_injection_allowed():
     return bool(flag)
 
 
-_faults_on = _fault_injection_allowed
 
 _HTTP_SESSION = None
 
@@ -130,7 +128,7 @@ def _http_get(url, **kwargs):
 def _release_inventory(tx_id, seat_ids=None, correlation_id=None, reason=""):
     """Best-effort release of seat holds to Inventory Service."""
     headers = {
-        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
+        "X-Correlation-ID": _corr_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
         "X-Idempotency-Key": str(tx_id),
     }
@@ -169,14 +167,14 @@ def health_check(request):
 def transactions_endpoint(request):
     """Route GET to list transactions and POST to create or pay transaction."""
     if request.method == "GET":
-        return _handle_list_transactions(request)
-    return _handle_create_transaction(request)
+        return _list_txns(request)
+    return _create_txn(request)
 
 
 @api_view(["GET"])
 def list_transactions(request):
     """Public GET endpoint to list transactions with filtering and pagination."""
-    return _handle_list_transactions(request)
+    return _list_txns(request)
 
 
 def _can_access(txn, user_id, is_staff=False):
@@ -191,7 +189,7 @@ def _can_access(txn, user_id, is_staff=False):
 @api_view(["GET"])
 def get_transaction(request, transaction_id):
     """Retrieve single transaction details with ownership check."""
-    is_authenticated, auth_user_id, is_staff = _get_requester_identity(request)
+    is_authenticated, auth_user_id, is_staff = _get_caller(request)
     if not is_authenticated:
         return Response({"error": "Authentication required."}, status=401)
 
@@ -203,13 +201,13 @@ def get_transaction(request, transaction_id):
     if not _can_access(txn, auth_user_id, is_staff):
         return Response({"error": "You do not have permission to view this transaction."}, status=403)
 
-    return Response(_serialize_transaction(txn))
+    return Response(_txn_json(txn))
 
 
 @api_view(["GET"])
 def list_transaction_events(request, transaction_id):
     """List saga audit events for transaction in chronological order."""
-    is_authenticated, auth_user_id, is_staff = _get_requester_identity(request)
+    is_authenticated, auth_user_id, is_staff = _get_caller(request)
     if not is_authenticated:
         return Response({"error": "Authentication required."}, status=401)
 
@@ -225,7 +223,7 @@ def list_transaction_events(request, transaction_id):
     return Response({
         "transaction_id": str(txn.transaction_id),
         "status": txn.status,
-        "events": [_serialize_event(event) for event in events],
+        "events": [_event_json(event) for event in events],
     })
 
 
@@ -234,7 +232,7 @@ def transaction_stream(request, transaction_id):
     if request.method == "OPTIONS":
         return HttpResponse(status=204)
 
-    is_authenticated, auth_user_id, is_staff = _get_requester_identity(request)
+    is_authenticated, auth_user_id, is_staff = _get_caller(request)
     if not is_authenticated:
         return JsonResponse({"error": "Authentication required."}, status=401)
 
@@ -385,7 +383,7 @@ ALLOWED_RETRY_STATUSES = (
 @api_view(["POST"])
 def retry_compensation(request, transaction_id):
     """Staff-only endpoint to re-trigger failed compensation for stuck transactions."""
-    is_authenticated, user_id, is_staff = _get_requester_identity(request)
+    is_authenticated, user_id, is_staff = _get_caller(request)
     if not is_authenticated:
         return Response({"error": "Authentication required"}, status=401)
     if not is_staff:
@@ -433,7 +431,7 @@ def retry_compensation(request, transaction_id):
             "message": "Transaction was concurrently resolved by another process",
         }, status=409)
 
-    correlation_id = _get_active_correlation_id(getattr(request, "correlation_id", None))
+    correlation_id = _corr_id(getattr(request, "correlation_id", None))
     try:
         outcome = execute_compensation_sweep(
             transaction_id=transaction_id,
@@ -487,7 +485,7 @@ def trigger_recovery_sweep(request):
     import io
     from django.core.management import call_command
 
-    is_authenticated, auth_user_id, is_staff = _get_requester_identity(request)
+    is_authenticated, auth_user_id, is_staff = _get_caller(request)
     if not is_authenticated:
         return Response({"error": "Authentication required to trigger recovery sweep."}, status=401)
     if not is_staff:
@@ -561,7 +559,7 @@ def trigger_recovery_sweep(request):
 @api_view(["GET"])
 def recovery_status(request):
     """Staff endpoint returning recovery sweeper timing and health metrics."""
-    is_authenticated, auth_user_id, is_staff = _get_requester_identity(request)
+    is_authenticated, auth_user_id, is_staff = _get_caller(request)
     if not is_authenticated:
         return Response({"error": "Authentication required to view recovery status."}, status=401)
     if not is_staff:
@@ -603,11 +601,11 @@ def recovery_status(request):
 # CONTROLLER REQUEST HANDLERS
 # =============================================================================
 
-def _resolve_seat_pricing(seat_ids=None, correlation_id=None):
+def _get_prices(seat_ids=None, correlation_id=None):
     """Query Inventory service for seat pricing and readable seat labels."""
     headers = {
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
-        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
+        "X-Correlation-ID": _corr_id(correlation_id),
     }
 
     seats_list = None
@@ -653,7 +651,6 @@ def _resolve_seat_pricing(seat_ids=None, correlation_id=None):
     )
 
 
-_get_prices = _resolve_seat_pricing
 
 
 def _validate_seats(seats):
@@ -670,7 +667,7 @@ def _validate_seats(seats):
     return None
 
 
-def _request_payload_verify(request):
+def _check_body(request):
     """Validate incoming payload structure for hold, pay, or one-shot saga."""
     if not isinstance(request.data, dict):
         return None, None, None, Response(
@@ -694,7 +691,7 @@ def _request_payload_verify(request):
     else:
         allowed_fields = {"seat_ids"}
 
-    if _fault_injection_allowed():
+    if _faults_on():
         allowed_fields = allowed_fields | {"fail_compensation", "coordinator", "fail_at_step"}
 
     invalid_fields = [k for k in request.data.keys() if k not in allowed_fields]
@@ -742,19 +739,18 @@ def _request_payload_verify(request):
     return list(raw_seats), action, None, None
 
 
-_check_body = _request_payload_verify
 
 
-def _handle_create_transaction(request):
+def _create_txn(request):
     """Handle POST request to create hold, pay hold, or run full one-shot saga."""
-    seat_ids, action, pay_tid, invalid = _request_payload_verify(request)
+    seat_ids, action, pay_tid, invalid = _check_body(request)
     if invalid:
         return invalid
 
     is_testing = bool(getattr(settings, "IS_TESTING", False))
     is_dev = getattr(settings, "DEBUG", False)
 
-    ident = _get_requester_identity(request)
+    ident = _get_caller(request)
     if not ident[0]:
         return Response(
             {
@@ -774,12 +770,12 @@ def _handle_create_transaction(request):
         raise RuntimeError("CorrelationIdMiddleware is missing or misconfigured.")
 
     fail_compensation = False
-    if _fault_injection_allowed() and request.data:
+    if _faults_on() and request.data:
         fail_compensation = bool(request.data.get("fail_compensation", False))
 
     enable_test_payment_failure = bool(getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False))
     simulate_decline = False
-    if enable_test_payment_failure and (_fault_injection_allowed() or is_dev or is_testing or has_staff_key):
+    if enable_test_payment_failure and (_faults_on() or is_dev or is_testing or has_staff_key):
         simulate_decline = (
             request.query_params.get("simulate_payment_decline") == "true"
             or request.headers.get("X-Simulate-Payment-Decline") == "true"
@@ -790,7 +786,7 @@ def _handle_create_transaction(request):
     # Phase 1: HOLD
     if action == "hold":
         tx_id = str(uuid.uuid4())
-        amount, seat_ids, seat_numbers, price_error = _resolve_seat_pricing(
+        amount, seat_ids, seat_numbers, price_error = _get_prices(
             seat_ids=seat_ids,
             correlation_id=correlation_id,
         )
@@ -810,7 +806,7 @@ def _handle_create_transaction(request):
         if not created:
             return dup_response
 
-        response, reserve_error = _reserve_inventory(
+        response, reserve_error = _reserve(
             tx_id,
             seat_ids,
             correlation_id=correlation_id,
@@ -913,7 +909,7 @@ def _handle_create_transaction(request):
                 )
 
             if txn.status == Transaction.Status.COMPLETED:
-                return Response(_serialize_transaction(txn), status=200)
+                return Response(_txn_json(txn), status=200)
 
             if txn.status != Transaction.Status.HOLDING:
                 return Response(
@@ -1038,7 +1034,7 @@ def _handle_create_transaction(request):
                     status=503,
                 )
 
-        return _run_saga_pipeline(
+        return _run_saga(
             transaction_id=tx_id,
             seat_ids=seat_ids,
             amount=amount,
@@ -1052,7 +1048,7 @@ def _handle_create_transaction(request):
 
     # One-shot legacy full saga path
     tx_id = str(uuid.uuid4())
-    amount, seat_ids, seat_numbers, price_error = _resolve_seat_pricing(
+    amount, seat_ids, seat_numbers, price_error = _get_prices(
         seat_ids=seat_ids,
         correlation_id=correlation_id,
     )
@@ -1076,7 +1072,7 @@ def _handle_create_transaction(request):
         return dup_response
 
     # Simulated coordinator crash test trigger
-    if _fault_injection_allowed() and request.data and (request.data.get("coordinator") or request.data.get("fail_at_step") == "coordinator"):
+    if _faults_on() and request.data and (request.data.get("coordinator") or request.data.get("fail_at_step") == "coordinator"):
         return Response(
             {
                 "transaction_id": str(tx_id),
@@ -1134,7 +1130,7 @@ def _handle_create_transaction(request):
                 status=503,
             )
 
-    return _run_saga_pipeline(
+    return _run_saga(
         transaction_id=tx_id,
         seat_ids=seat_ids,
         amount=amount,
@@ -1147,12 +1143,11 @@ def _handle_create_transaction(request):
     )
 
 
-_create_txn = _handle_create_transaction
 
 
-def _handle_list_transactions(request):
+def _list_txns(request):
     """List transactions with pagination, filtering, and IDOR scoping."""
-    is_authenticated, auth_user_id, is_staff = _get_requester_identity(request)
+    is_authenticated, auth_user_id, is_staff = _get_caller(request)
     if not is_authenticated:
         return Response({"error": "Authentication required."}, status=401)
 
@@ -1191,7 +1186,7 @@ def _handle_list_transactions(request):
 
     total_count = queryset.count()
     txs = queryset[offset:offset + limit]
-    data = [_serialize_transaction(t) for t in txs]
+    data = [_txn_json(t) for t in txs]
 
     return Response({
         "count": total_count,
@@ -1201,14 +1196,13 @@ def _handle_list_transactions(request):
     })
 
 
-_list_txns = _handle_list_transactions
 
 
 # =============================================================================
 # SAGA ORCHESTRATION PIPELINE
 # =============================================================================
 
-def _run_saga_pipeline(
+def _run_saga(
     transaction_id,
     seat_ids=None,
     amount=None,
@@ -1288,7 +1282,7 @@ def _run_saga_pipeline(
                 },
                 status=409,
             )
-        return _charge_payment(
+        return _charge(
             transaction_id,
             amount,
             fail_compensation,
@@ -1298,7 +1292,7 @@ def _run_saga_pipeline(
             user_email=user_email,
         )
 
-    response, reserve_error = _reserve_inventory(
+    response, reserve_error = _reserve(
         transaction_id,
         seat_ids,
         correlation_id=correlation_id,
@@ -1382,7 +1376,7 @@ def _run_saga_pipeline(
             status=409,
         )
 
-    return _charge_payment(
+    return _charge(
         transaction_id,
         amount,
         fail_compensation,
@@ -1393,17 +1387,16 @@ def _run_saga_pipeline(
     )
 
 
-_run_saga = _run_saga_pipeline
 
 
 # =============================================================================
 # MICROSERVICE REMOTE CALLS
 # =============================================================================
 
-def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=None, user_email=None):
+def _reserve(transaction_id, seat_ids, correlation_id=None, user_id=None, user_email=None):
     """Call downstream Inventory service to reserve seats."""
     headers = {
-        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
+        "X-Correlation-ID": _corr_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
         "X-Idempotency-Key": str(transaction_id),
     }
@@ -1422,7 +1415,7 @@ def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=No
         )
         return response, None
     except RequestException as exc:
-        status = _transport_status(
+        status = _err_status(
             exc, Transaction.Status.INVENTORY_TIMEOUT, Transaction.Status.INVENTORY_CONNECTION_ERROR
         )
         transitioned = _set_status_with_event(
@@ -1444,7 +1437,6 @@ def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=No
         return None, Response({"transaction_id": str(transaction_id), "status": status}, status=504)
 
 
-_reserve = _reserve_inventory
 
 
 def _get_coordinator_redis_client():
@@ -1477,7 +1469,7 @@ def _clear_checkout_presence(transaction_id):
         logger.warning("Failed to clear checkout presence key for tx %s: %s", transaction_id, exc)
 
 
-def _charge_payment(
+def _charge(
     transaction_id,
     amount,
     fail_compensation,
@@ -1489,7 +1481,7 @@ def _charge_payment(
     """Charge payment with presence lock protection."""
     _set_checkout_presence(transaction_id)
     try:
-        return _do_charge_payment(
+        return _do_charge(
             transaction_id,
             amount,
             fail_compensation,
@@ -1503,10 +1495,9 @@ def _charge_payment(
         raise
 
 
-_charge = _charge_payment
 
 
-def _do_charge_payment(
+def _do_charge(
     transaction_id,
     amount,
     fail_compensation,
@@ -1517,7 +1508,7 @@ def _do_charge_payment(
 ):
     """Execute payment charge HTTP call and handle transport or 5xx verification."""
     headers = {
-        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
+        "X-Correlation-ID": _corr_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
         "X-Idempotency-Key": str(transaction_id),
     }
@@ -1535,7 +1526,7 @@ def _do_charge_payment(
             timeout=REQUEST_TIMEOUT,
         )
     except RequestException as exc:
-        uncertain_status = _transport_status(
+        uncertain_status = _err_status(
             exc, Transaction.Status.PAYMENT_TIMEOUT, Transaction.Status.PAYMENT_CONNECTION_ERROR
         )
         transitioned = _set_status_with_event(
@@ -1578,7 +1569,7 @@ def _do_charge_payment(
         except Exception:
             pass
 
-        return _finalize_payment_outcome(
+        return _finish_payment(
             transaction_id,
             fail_compensation,
             check_data or {},
@@ -1625,7 +1616,7 @@ def _do_charge_payment(
 
         check_data = _parse_json_response(payment_check) if payment_check.status_code == 200 else None
         if payment_check.status_code == 200:
-            return _finalize_payment_outcome(
+            return _finish_payment(
                 transaction_id,
                 fail_compensation,
                 check_data or {},
@@ -1643,7 +1634,7 @@ def _do_charge_payment(
         )
 
     resp_data = _parse_json_response(payment_response)
-    return _finalize_payment_outcome(
+    return _finish_payment(
         transaction_id,
         fail_compensation,
         resp_data or {},
@@ -1653,17 +1644,16 @@ def _do_charge_payment(
     )
 
 
-_do_charge = _do_charge_payment
 
 
-def _confirm_inventory(transaction_id, seat_ids=None, correlation_id=None):
+def _confirm(transaction_id, seat_ids=None, correlation_id=None):
     """Call downstream Inventory service to confirm booked seats."""
     if not seat_ids:
         txn = Transaction.objects.filter(transaction_id=transaction_id).first()
         if txn and txn.seat_ids:
             seat_ids = txn.seat_ids
     headers = {
-        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
+        "X-Correlation-ID": _corr_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
         "X-Idempotency-Key": str(transaction_id),
     }
@@ -1679,10 +1669,9 @@ def _confirm_inventory(transaction_id, seat_ids=None, correlation_id=None):
         return None, exc
 
 
-_confirm = _confirm_inventory
 
 
-def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, payment_status_code=200, correlation_id=None, seat_ids=None):
+def _finish_payment(transaction_id, fail_compensation, payment_data, payment_status_code=200, correlation_id=None, seat_ids=None):
     """Finalize transaction following payment response (confirm inventory or rollback)."""
     if payment_status_code == 409:
         code = payment_data.get("code") if isinstance(payment_data, dict) else None
@@ -1699,7 +1688,7 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
             )
 
     if payment_data.get("status") == "CHARGED":
-        confirm_resp, confirm_err = _confirm_inventory(transaction_id, seat_ids=seat_ids, correlation_id=correlation_id)
+        confirm_resp, confirm_err = _confirm(transaction_id, seat_ids=seat_ids, correlation_id=correlation_id)
 
         # Retry confirm once on transport failure or 5xx before giving up
         if (confirm_resp is None and confirm_err) or (confirm_resp and confirm_resp.status_code in (502, 503, 504)):
@@ -1708,7 +1697,7 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
                 transaction_id,
                 confirm_err or getattr(confirm_resp, "status_code", None),
             )
-            confirm_resp, confirm_err = _confirm_inventory(transaction_id, seat_ids=seat_ids, correlation_id=correlation_id)
+            confirm_resp, confirm_err = _confirm(transaction_id, seat_ids=seat_ids, correlation_id=correlation_id)
 
         if confirm_resp and confirm_resp.status_code == 200:
             confirm_json = None
@@ -1742,7 +1731,7 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
                     status=409,
                 )
             txn = Transaction.objects.filter(transaction_id=transaction_id).first()
-            data = _serialize_transaction(txn) if txn else {
+            data = _txn_json(txn) if txn else {
                 "transaction_id": str(transaction_id),
                 "status": Transaction.Status.COMPLETED,
             }
@@ -1799,14 +1788,13 @@ def _finalize_payment_outcome(transaction_id, fail_compensation, payment_data, p
     )
 
 
-_finish_payment = _finalize_payment_outcome
 
 
 def _compensate(transaction_id, fail_compensation, payment_data, payment_status_code=None, correlation_id=None, seat_ids=None):
     """Compensate failed transaction (void/refund payment and release reserved seats)."""
     tx_id_release = "fail-release" if fail_compensation else str(transaction_id)
     headers = {
-        "X-Correlation-ID": _get_active_correlation_id(correlation_id),
+        "X-Correlation-ID": _corr_id(correlation_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
         "X-Idempotency-Key": str(transaction_id),
     }
@@ -1945,7 +1933,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
                 status=409,
             )
         txn = Transaction.objects.filter(transaction_id=transaction_id).first()
-        data = _serialize_transaction(txn) if txn else {
+        data = _txn_json(txn) if txn else {
             "transaction_id": str(transaction_id),
             "status": Transaction.Status.COMPENSATED,
         }
@@ -1979,7 +1967,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             status=409,
         )
     txn = Transaction.objects.filter(transaction_id=transaction_id).first()
-    data = _serialize_transaction(txn) if txn else {
+    data = _txn_json(txn) if txn else {
         "transaction_id": str(transaction_id),
         "status": Transaction.Status.COMPENSATION_FAILED,
     }
@@ -1992,7 +1980,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
 
     if release_transport_error or refund_transport_error:
         active_err = release_transport_error or refund_transport_error
-        cause = _transport_status(active_err, Transaction.Status.TIMEOUT, Transaction.Status.CONNECTION_FAILED)
+        cause = _err_status(active_err, Transaction.Status.TIMEOUT, Transaction.Status.CONNECTION_FAILED)
         data["cause"] = cause
         data["error"] = "Network error during compensation"
         return Response(data, status=503)
@@ -2035,7 +2023,7 @@ class RequesterIdentity(tuple):
         return instance
 
 
-def _get_requester_identity(request):
+def _get_caller(request):
     """Resolve caller authentication and staff privileges."""
     if _verify_staff_key(request.headers.get("X-Staff-Key")):
         user_id = request.headers.get("X-User-ID") or os.getenv("STAFF_USER_ID") or DEFAULT_STAFF_USER_ID
@@ -2068,7 +2056,6 @@ def _get_requester_identity(request):
     return RequesterIdentity(False, None, False, user_email=None)
 
 
-_get_caller = _get_requester_identity
 
 
 def _create_transaction(transaction_id, seat_ids=None, seat_numbers=None, amount=500, quantity=1, user_id=None, user_email=None):
@@ -2108,11 +2095,9 @@ def _create_transaction(transaction_id, seat_ids=None, seat_numbers=None, amount
         )
 
 
-_insert_txn = _create_transaction
-_create_transaction_idempotent = _create_transaction
 
 
-def _serialize_transaction(txn):
+def _txn_json(txn):
     """Serialize Transaction model instance to JSON-serializable dict."""
     return {
         "transaction_id": str(txn.transaction_id),
@@ -2130,10 +2115,9 @@ def _serialize_transaction(txn):
     }
 
 
-_txn_json = _serialize_transaction
 
 
-def _serialize_event(event):
+def _event_json(event):
     """Serialize SagaEvent model instance to JSON-serializable dict."""
     return {
         "seq": event.seq,
@@ -2146,15 +2130,13 @@ def _serialize_event(event):
     }
 
 
-_event_json = _serialize_event
 
 
-def _transport_status(exc, timeout_status, conn_status):
+def _err_status(exc, timeout_status, conn_status):
     """Map request exception type to corresponding transaction status."""
     return timeout_status if isinstance(exc, Timeout) else conn_status
 
 
-_err_status = _transport_status
 
 
 def _parse_json_response(response):

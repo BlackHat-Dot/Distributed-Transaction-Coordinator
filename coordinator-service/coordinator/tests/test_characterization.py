@@ -176,7 +176,7 @@ class CharacterizationTests(TestCase):
             user_id="u1",
         )
         from coordinator.views import RequesterIdentity
-        with patch("coordinator.views._get_requester_identity", return_value=RequesterIdentity(True, "staff1", True, "admin@dtc.internal")):
+        with patch("coordinator.views._get_caller", return_value=RequesterIdentity(True, "staff1", True, "admin@dtc.internal")):
             resp = self.client.post(f"/transactions/{txn_id}/retry-compensation/", format="json")
 
         self.assertEqual(resp.status_code, 400)

@@ -175,7 +175,7 @@ class H9ParallelPayOneChargeTest(TransactionTestCase):
             try:
                 c = APIClient()
                 url = "/transactions/?sync=true" if idx == 0 else "/transactions/"
-                with patch("coordinator.views._get_requester_identity", side_effect=fake_identity), \
+                with patch("coordinator.views._get_caller", side_effect=fake_identity), \
                      patch("coordinator.views.requests.post", side_effect=fake_post), \
                      patch("coordinator.views.requests.get", return_value=_ok_mock({"status": "CHARGED"})), \
                      patch("coordinator.tasks.execute_saga_task.delay") as mock_delay:
@@ -285,7 +285,7 @@ class H1aVoidChargedForwardCompleteTest(TestCase):
 
 class H1bTimeoutNoReleaseTest(TestCase):
     """
-    H1(b): When _charge_payment raises RequestException (transport error),
+    H1(b): When _charge raises RequestException (transport error),
     coordinator sets PAYMENT_TIMEOUT/CONNECTION_ERROR, then calls payment_check.
     If payment_check ALSO raises RequestException, coordinator returns 503 with
     the uncertain status but does NOT release inventory.
@@ -296,7 +296,7 @@ class H1bTimeoutNoReleaseTest(TestCase):
 
         import requests as req_mod
 
-        from coordinator.views import _charge_payment
+        from coordinator.views import _charge
 
         txn_id = uuid.uuid4()
         Transaction.objects.create(
@@ -337,7 +337,7 @@ class H1bTimeoutNoReleaseTest(TestCase):
 
         with patch("coordinator.views.requests.post", side_effect=fake_post), \
              patch("coordinator.views.requests.get", side_effect=fake_get):
-            resp = _charge_payment(txn_id, Decimal("100.00"), False)
+            resp = _charge(txn_id, Decimal("100.00"), False)
 
         self.assertEqual(resp.status_code, 503)
         self.assertFalse(release_called[0], "inventory release must NOT be called on ambiguous timeout")
@@ -403,11 +403,11 @@ class H1cPaymentIntegrityRaceTest(TestCase):
 
         with patch("coordinator.views.requests.post", side_effect=fake_post), \
              patch("coordinator.views.requests.get", side_effect=fake_get):
-            from coordinator.views import _charge_payment
-            resp = _charge_payment(txn_id, Decimal("100.00"), False)
+            from coordinator.views import _charge
+            resp = _charge(txn_id, Decimal("100.00"), False)
 
         # 409 TRANSACTION_VOIDED must be logged critically; coordinator must not error 500
-        # _finalize_payment_outcome handles 409→compensate
+        # _finish_payment handles 409→compensate
         # The response may be 200 (refund+release compensated) or 503 (if check fails)
         # Key: not 500
         self.assertNotEqual(resp.status_code, 500, f"Got 500 on void race: {resp.data}")
@@ -427,7 +427,7 @@ class H2aConfirmTransportExhaustedTest(TestCase):
 
         import requests as req_mod
 
-        from coordinator.views import _finalize_payment_outcome
+        from coordinator.views import _finish_payment
 
         txn_id = uuid.uuid4()
         txn = Transaction.objects.create(
@@ -463,7 +463,7 @@ class H2aConfirmTransportExhaustedTest(TestCase):
             return m
 
         with patch("coordinator.views.requests.post", side_effect=fake_post):
-            resp = _finalize_payment_outcome(
+            resp = _finish_payment(
                 txn_id, False,
                 {"status": "CHARGED"},
                 payment_status_code=201,
@@ -491,7 +491,7 @@ class H2bConfirmDefinitive4xxCompensateTest(TestCase):
     def test_h2b_confirm_4xx_compensates(self):
         import uuid
 
-        from coordinator.views import _finalize_payment_outcome
+        from coordinator.views import _finish_payment
 
         txn_id = uuid.uuid4()
         txn = Transaction.objects.create(
@@ -543,7 +543,7 @@ class H2bConfirmDefinitive4xxCompensateTest(TestCase):
             return m
 
         with patch("coordinator.views.requests.post", side_effect=fake_post):
-            _finalize_payment_outcome(
+            _finish_payment(
                 txn_id, False,
                 {"status": "CHARGED"},
                 payment_status_code=201,
@@ -872,7 +872,7 @@ class Q5CoordinatorChangeMdChecklistTest(TestCase):
     P2: Void integration on charge timeout (NOT_CHARGED path)
         → recovery.py: execute_compensation_sweep calls PAYMENT_VOID_URL before release
     P3: 409 IDEMPOTENCY_PAYLOAD_MISMATCH handled with critical log
-        → views.py:1855-1860 _finalize_payment_outcome logs critical on mismatch
+        → views.py:1855-1860 _finish_payment logs critical on mismatch
     """
 
     def test_q5_p1_simulate_decline_gated_behind_enable_test_payment_failure(self):
@@ -920,7 +920,7 @@ class Q5CoordinatorChangeMdChecklistTest(TestCase):
             return m
 
         with patch("coordinator.views.requests.post", side_effect=fake_post), \
-             patch("coordinator.views._get_requester_identity", return_value=(True, "u-p1", False, "u@test.com")), \
+             patch("coordinator.views._get_caller", return_value=(True, "u-p1", False, "u@test.com")), \
              patch("coordinator.tasks.execute_saga_task.delay"), \
              patch("django.conf.settings.ENABLE_TEST_PAYMENT_FAILURE", False, create=True):
             c = APIClient()
@@ -997,7 +997,7 @@ class Q5CoordinatorChangeMdChecklistTest(TestCase):
         """
         import uuid
 
-        from coordinator.views import _finalize_payment_outcome
+        from coordinator.views import _finish_payment
 
         txn_id = uuid.uuid4()
         Transaction.objects.create(
@@ -1008,7 +1008,7 @@ class Q5CoordinatorChangeMdChecklistTest(TestCase):
 
         with self.assertLogs("coordinator.views", level="CRITICAL") as log_ctx:
             with patch("coordinator.views.requests.post", return_value=_ok_mock({"status": "VOIDED"})):
-                _finalize_payment_outcome(
+                _finish_payment(
                     txn_id, False,
                     {"code": "IDEMPOTENCY_PAYLOAD_MISMATCH", "error": "payload conflict"},
                     payment_status_code=409,
@@ -1023,7 +1023,7 @@ class Q5CoordinatorChangeMdChecklistTest(TestCase):
 
 class FinalClosureGapsTest(TestCase):
     """
-    Q1: Inline _charge_payment timeout -> payment check not-charged/404 -> void fails -> abort release (503)
+    Q1: Inline _charge timeout -> payment check not-charged/404 -> void fails -> abort release (503)
     Q2: recover_timeouts: PAYMENT_TIMEOUT / PAYMENT_CONNECTION_ERROR with CHARGED -> confirm -> COMPLETED.
         recover_timeouts: INVENTORY_TIMEOUT / INVENTORY_CONNECTION_ERROR with RESERVED -> release -> COMPENSATED.
     Q3: E2E: Confirm times out twice -> 503 (stays PAYMENT_PROCESSING) -> sweep with CHARGED -> COMPLETED (no refund).
@@ -1038,7 +1038,7 @@ class FinalClosureGapsTest(TestCase):
         """
         import uuid
         import requests as req_mod
-        from coordinator.views import _charge_payment
+        from coordinator.views import _charge
 
         txn_id = uuid.uuid4()
         Transaction.objects.create(
@@ -1075,7 +1075,7 @@ class FinalClosureGapsTest(TestCase):
 
         with patch("coordinator.views.requests.post", side_effect=fake_post), \
              patch("coordinator.views.requests.get", side_effect=fake_get):
-            resp = _charge_payment(txn_id, Decimal("100.00"), False)
+            resp = _charge(txn_id, Decimal("100.00"), False)
 
         self.assertEqual(resp.status_code, 503)
         self.assertFalse(release_called[0], "Inventory MUST NOT be released when void fence fails!")
@@ -1270,7 +1270,7 @@ class FinalClosureGapsTest(TestCase):
         import requests as req_mod
         from django.core.management import call_command
         from io import StringIO
-        from coordinator.views import _finalize_payment_outcome
+        from coordinator.views import _finish_payment
 
         txn_id = uuid.uuid4()
         txn = Transaction.objects.create(
@@ -1295,7 +1295,7 @@ class FinalClosureGapsTest(TestCase):
             return _ok_mock({})
 
         with patch("coordinator.views.requests.post", side_effect=fake_confirm_post):
-            resp = _finalize_payment_outcome(
+            resp = _finish_payment(
                 txn_id, False,
                 {"status": "CHARGED"},
                 payment_status_code=201,
@@ -1498,7 +1498,7 @@ class FinalClosureGapsTest(TestCase):
         it must issue inventory release, issue payment refund, and transition to COMPENSATED.
         """
         import uuid
-        from coordinator.views import _finalize_payment_outcome
+        from coordinator.views import _finish_payment
 
         txn_id = uuid.uuid4()
         txn = Transaction.objects.create(
@@ -1537,9 +1537,9 @@ class FinalClosureGapsTest(TestCase):
                 return MagicMock(status_code=200, content=b'{"status":"REFUNDED"}', json=lambda: {"status": "REFUNDED"})
             return MagicMock(status_code=200, content=b'{}', json=lambda: {})
 
-        with patch("coordinator.views._confirm_inventory", return_value=(mock_409, None)), \
+        with patch("coordinator.views._confirm", return_value=(mock_409, None)), \
              patch("coordinator.views._http_post", side_effect=fake_post):
-            resp = _finalize_payment_outcome(
+            resp = _finish_payment(
                 txn_id,
                 fail_compensation=False,
                 payment_data={"status": "CHARGED"},

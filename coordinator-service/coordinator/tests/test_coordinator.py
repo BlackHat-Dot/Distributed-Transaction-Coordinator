@@ -7,7 +7,7 @@ from django.test import TestCase, TransactionTestCase
 from rest_framework.test import APIClient
 
 from coordinator.models import Transaction
-from coordinator.views import _create_transaction_idempotent
+from coordinator.views import _create_transaction
 
 URL = "/transactions/?sync=true"
 
@@ -101,7 +101,7 @@ class SequentialDuplicateTests(TestCase):
     def test_sequential_duplicate_returns_existing_state(self):
         tid = str(uuid.uuid4())
 
-        created1, resp1 = _create_transaction_idempotent(
+        created1, resp1 = _create_transaction(
             transaction_id=tid, seat_ids=[1], amount=500
         )
         self.assertTrue(created1)
@@ -111,7 +111,7 @@ class SequentialDuplicateTests(TestCase):
         txn.status = Transaction.Status.COMPLETED
         txn.save()
 
-        created2, resp2 = _create_transaction_idempotent(
+        created2, resp2 = _create_transaction(
             transaction_id=tid, seat_ids=[1], amount=500
         )
         self.assertFalse(created2)
@@ -136,21 +136,21 @@ class TerminalStateTests(TestCase):
 
     def test_completed_transaction_returns_existing(self):
         txn = self._make_transaction(Transaction.Status.COMPLETED)
-        created, resp = _create_transaction_idempotent(txn.transaction_id)
+        created, resp = _create_transaction(txn.transaction_id)
         self.assertFalse(created)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["status"], Transaction.Status.COMPLETED)
 
     def test_compensated_transaction_returns_existing(self):
         txn = self._make_transaction(Transaction.Status.COMPENSATED)
-        created, resp = _create_transaction_idempotent(txn.transaction_id)
+        created, resp = _create_transaction(txn.transaction_id)
         self.assertFalse(created)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["status"], Transaction.Status.COMPENSATED)
 
     def test_compensation_failed_returns_existing(self):
         txn = self._make_transaction(Transaction.Status.COMPENSATION_FAILED)
-        created, resp = _create_transaction_idempotent(txn.transaction_id)
+        created, resp = _create_transaction(txn.transaction_id)
         self.assertFalse(created)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["status"], Transaction.Status.COMPENSATION_FAILED)
@@ -168,7 +168,7 @@ class InProgressDuplicateTests(TestCase):
 
     def _assert_idempotent(self, status):
         txn = self._make_transaction(status)
-        created, resp = _create_transaction_idempotent(txn.transaction_id)
+        created, resp = _create_transaction(txn.transaction_id)
         self.assertFalse(created)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["status"], status)
@@ -191,7 +191,7 @@ class ConcurrentCreateTests(TransactionTestCase):
 
         def do_create(_):
             try:
-                created, dup_resp = _create_transaction_idempotent(
+                created, dup_resp = _create_transaction(
                     transaction_id=tid, seat_ids=[1], amount=500
                 )
                 return created, dup_resp
