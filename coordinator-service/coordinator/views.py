@@ -645,7 +645,7 @@ def recovery_status(request):
 # SECTION 3: CONTROLLER REQUEST HANDLERS
 # Internal handlers that authenticate, parse, and validate incoming requests.
 
-
+# I know
 def _resolve_seat_pricing(seat_ids=None, correlation_id=None):
     """
     Resolves official seat pricing and details from the Inventory Service DB.
@@ -740,7 +740,7 @@ def _resolve_seat_pricing(seat_ids=None, correlation_id=None):
         status=503,
     )
 
-
+# I know
 def _request_payload_verify(request):
     """
     Validates incoming transaction requests. Supports three modes:
@@ -1391,7 +1391,7 @@ def _handle_create_transaction(request):
     )
 
 
-
+# I know
 def _handle_list_transactions(request):
     is_authenticated, auth_user_id, is_staff = _get_requester_identity(request)
     if not is_authenticated:
@@ -1678,7 +1678,7 @@ def _run_saga_pipeline(
 # SECTION 5: SAGA MICROSERVICE REMOTE CALLS
 # Individual remote HTTP interactions with Inventory and Payment microservices.
 
-
+# I know
 def _reserve_inventory(transaction_id, seat_ids, correlation_id=None, user_id=None, user_email=None):
 
     headers = {
@@ -2284,7 +2284,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
 # Utility functions for auth identity extraction, database creation, serialization,
 # and exception-to-status mapping.
 
-
+# I know
 def _is_admin_email(email):
     """
     Validates if an email belongs to the configured ADMIN_DOMAIN (F-18).
@@ -2399,7 +2399,7 @@ class RequesterIdentity(tuple):
          } (4 values)
     """
     
-
+# I know
 def _get_requester_identity(request):
     """
     Resolves caller identity and permissions (is_authenticated, auth_user_id, is_staff).
@@ -2460,7 +2460,7 @@ def _get_requester_identity(request):
     # Default: Unauthenticated
     return RequesterIdentity(False, None, False, user_email=None)
 
-
+# I know
 def _create_transaction(
     transaction_id, seat_ids=None, seat_numbers=None, amount=500, quantity=1, user_id=None, user_email=None
 ):
@@ -2504,7 +2504,7 @@ def _create_transaction(
 
 _create_transaction_idempotent = _create_transaction
 
-
+# I know
 def _serialize_transaction(txn):
     return {
         "transaction_id": str(txn.transaction_id),
