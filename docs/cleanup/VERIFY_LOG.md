@@ -1,194 +1,286 @@
 # Verification Log: DTC Codebase Cleanup
 
-This log records the exact command, exit code, and final lines of output for each verification step performed on branch `feasible`.
+This log records the exact commands, exit codes, and raw output copied directly from the evidence files in `docs/cleanup/evidence/` written during this run.
 
 ---
 
-## Step 1: Fix Env Regressions
+## Step 1: Prove Which Code Each Tree Runs
 
-### Command 1.1: Compare learning env block with feasible
+### Command 1.1: Prove REPO Identity
 **Command**:
 ```powershell
-git show learning:coordinator-service/coordinator/views.py | Select-Object -Skip 58 -First 22
+$repoHead = git -C "C:\Users\MADHAVAN\Downloads\DTC" rev-parse HEAD
+$repoViews = git -C "C:\Users\MADHAVAN\Downloads\DTC" rev-parse HEAD:coordinator-service/coordinator/views.py
+"HEAD: $repoHead`nviews.py: $repoViews"
 ```
 **Exit Code**: 0  
-**Output (last 20 lines)**:
+**Evidence Source**: `docs/cleanup/evidence/identity_repo.log`  
+**Output**:
 ```text
-INVENTORY_BASE_URL = os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000").rstrip("/")
-PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rstrip("/")
-
-INVENTORY_RESERVE_URL = f"{INVENTORY_BASE_URL}/seats/reserve/"
-INVENTORY_CONFIRM_URL = f"{INVENTORY_BASE_URL}/seats/confirm/"
-INVENTORY_RELEASE_URL = f"{INVENTORY_BASE_URL}/seats/release/"
-INVENTORY_PRICING_URL = f"{INVENTORY_BASE_URL}/seats/pricing/"
-PAYMENT_CHARGE_URL = f"{PAYMENT_BASE_URL}/payments/charge/"
-PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
-PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
-PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
-
-REQUEST_CONNECT_TIMEOUT = float(os.getenv("REQUEST_CONNECT_TIMEOUT", "2.0"))
-REQUEST_READ_TIMEOUT = float(os.getenv("REQUEST_READ_TIMEOUT", os.getenv("REQUEST_TIMEOUT", "5.0")))
-REQUEST_TIMEOUT = (REQUEST_CONNECT_TIMEOUT, REQUEST_READ_TIMEOUT)
-INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
-
-# I know
-def _verify_staff_key(header_val):
+HEAD: 4d71742a770a05bc54d0a0215053ca02b897e68b
+views.py: 3ab473fde8afd5d14d9c51e9af2ba071e110b912
 ```
 
-### Command 1.2: Grep COORDINATOR_SERVICE_URL in learning's views.py
+### Command 1.2: Prove BASE Identity
 **Command**:
 ```powershell
-git grep "COORDINATOR_SERVICE_URL" learning:coordinator-service/coordinator/views.py
-```
-**Exit Code**: 1  
-**Output (last 20 lines)**:
-```text
-(no output - pattern not found in learning's views.py)
-```
-
-### Command 1.3: Grep env names across configs, settings, and tests
-**Command**:
-```powershell
-git grep -n "REQUEST_CONNECT_TIMEOUT"; git grep -n "REQUEST_READ_TIMEOUT"; git grep -n "REQUEST_TIMEOUT"; git grep -n "INVENTORY_SERVICE_URL"; git grep -n "PAYMENT_SERVICE_URL"; git grep -n "INTERNAL_SERVICE_KEY"; git grep -n "STAFF_API_KEY"; git grep -n "RECOVERY_MIN_THRESHOLD_SECONDS"; git grep -n "ADMIN_DOMAIN"; git grep -n "CELERY_BROKER_URL"; git grep -n "ENABLE_FAULT_INJECTION"; git grep -n "ALLOW_DEV_STAFF_BYPASS"
+$baseHead = git -C "C:\Users\MADHAVAN\Downloads\dtc_baseline" rev-parse HEAD
+$baseViews = git -C "C:\Users\MADHAVAN\Downloads\dtc_baseline" rev-parse HEAD:coordinator-service/coordinator/views.py
+"HEAD: $baseHead`nviews.py: $baseViews"
 ```
 **Exit Code**: 0  
-**Output (last 20 lines)**:
+**Evidence Source**: `docs/cleanup/evidence/identity_base.log`  
+**Output**:
 ```text
-coordinator-service/coordinator/tests/test_b4_fault_injection_and_secrets.py:27:    @override_settings(DEBUG=False, ENABLE_FAULT_INJECTION=True)
-coordinator-service/coordinator/tests/test_b4_fault_injection_and_secrets.py:30:        with patch.dict(os.environ, {"ENABLE_FAULT_INJECTION": "True"}):
-coordinator-service/coordinator/tests/test_b4_fault_injection_and_secrets.py:33:    @override_settings(DEBUG=True, ENABLE_FAULT_INJECTION=False)
-coordinator-service/coordinator/tests/test_b4_fault_injection_and_secrets.py:36:        with patch.dict(os.environ, {"ENABLE_FAULT_INJECTION": "False"}):
-coordinator-service/coordinator/tests/test_b4_fault_injection_and_secrets.py:39:    @override_settings(DEBUG=True, ENABLE_FAULT_INJECTION=True)
-coordinator-service/coordinator/tests/test_b4_fault_injection_and_secrets.py:42:        with patch.dict(os.environ, {"ENABLE_FAULT_INJECTION": "True"}):
-coordinator-service/coordinator/tests/test_b2_staff_bypass.py:14:    @override_settings(IS_TESTING=False, DEBUG=True, ALLOW_DEV_STAFF_BYPASS=False)
-coordinator-service/coordinator/tests/test_b2_staff_bypass.py:18:        with patch.dict(os.environ, {"ALLOW_DEV_STAFF_BYPASS": "False"}):
-coordinator-service/coordinator/tests/test_b2_staff_bypass.py:23:    @override_settings(IS_TESTING=False, DEBUG=True, ALLOW_DEV_STAFF_BYPASS=True)
-coordinator-service/coordinator/tests/test_b2_staff_bypass.py:27:        with patch.dict(os.environ, {"ALLOW_DEV_STAFF_BYPASS": "True"}):
-coordinator-service/coordinator/tests/test_b2_staff_bypass.py:32:    @override_settings(IS_TESTING=False, DEBUG=False, ALLOW_DEV_STAFF_BYPASS=True)
-coordinator-service/coordinator/tests/test_b2_staff_bypass.py:36:        with patch.dict(os.environ, {"ALLOW_DEV_STAFF_BYPASS": "True"}):
-coordinator-service/coordinator/tests/test_b2_staff_bypass.py:40:    @override_settings(IS_TESTING=False, DEBUG=True, ALLOW_DEV_STAFF_BYPASS=False)
-coordinator-service/coordinator/tests/test_b2_staff_bypass.py:44:        with patch.dict(os.environ, {"ALLOW_DEV_STAFF_BYPASS": "False"}):
-coordinator-service/coordinator_service/settings.py:64:ALLOW_DEV_STAFF_BYPASS = os.getenv("ALLOW_DEV_STAFF_BYPASS", "False").lower() in ("true", "1", "t", "yes")
-coordinator-service/coordinator_service/settings.py:65:if ALLOW_DEV_STAFF_BYPASS and not (DEBUG or IS_TESTING):
-coordinator-service/coordinator_service/settings.py:67:        "CRITICAL SECURITY ERROR: ALLOW_DEV_STAFF_BYPASS cannot be enabled in production (DEBUG=False)!"
+HEAD: f24b471af32bca53feeff0ddb0a478c53548789f
+views.py: 16f16d3d37d3f5f263dbf4a5372f2167b6c9fdb3
 ```
-
-### Command 1.4: Commit env name and default restoration
-**Command**:
-```powershell
-git add coordinator-service/coordinator/views.py; git commit -m "fix: restore original env var names and defaults"
-```
-**Exit Code**: 0  
-**Output (last 20 lines)**:
-```text
-[feasible edd28bb] fix: restore original env var names and defaults
- 1 file changed, 8 insertions(+), 8 deletions(-)
-```
+*Verification*: Blob hashes differ (`3ab473fde8afd5d14d9c51e9af2ba071e110b912` vs `16f16d3d37d3f5f263dbf4a5372f2167b6c9fdb3`).
 
 ---
 
-## Step 2: Characterization Tests
+## Step 2: Raw Test Runs
 
-### Command 2.1: Recreate baseline worktree and copy .env files
+All test commands were executed using `Set-Location` to the tree directory AND the absolute path to `manage.py`, with `--noinput`.
+
+### Command 2.1: BASE Coordinator Test Suite
 **Command**:
 ```powershell
-git worktree add ..\dtc_baseline learning
+Set-Location "C:\Users\MADHAVAN\Downloads\dtc_baseline"
+& "C:\Users\MADHAVAN\Downloads\DTC\venv\Scripts\python.exe" "C:\Users\MADHAVAN\Downloads\dtc_baseline\coordinator-service\manage.py" test coordinator --noinput
 ```
 **Exit Code**: 0  
-**Output (last 20 lines)**:
+**Evidence Source**: `docs/cleanup/evidence/base_coordinator.log`  
+**Output (final lines)**:
 ```text
-Preparing worktree (checking out 'learning')
-HEAD is now at f24b471 learning branch update
+Recovery sweep complete.
+  -> 3c4afdf3-785d-492d-a2e6-bc7f0ca975a7: compensated successfully.
+  STARTED f7c33a46-f059-4f4a-bb92-bf4d3c1dac14: already claimed, skipping.
+Recovering 2112a548-ab64-48b3-aea1-a59e9dde0b8e claimed from COMPENSATING...
+  -> 2112a548-ab64-48b3-aea1-a59e9dde0b8e: compensated successfully.
+Recovery sweep complete.
+Recovering 5e9bf4d3-c11d-4579-9e85-0c194545fc58 claimed from COMPENSATION_FAILED...
+  -> 5e9bf4d3-c11d-4579-9e85-0c194545fc58: compensation partially failed; will retry next sweep.
+Recovery sweep complete.
+Recovering a57ae8d9-b792-435b-b928-5f79388e54fd claimed from COMPENSATION_FAILED...
+  -> a57ae8d9-b792-435b-b928-5f79388e54fd: compensated successfully.
+Recovery sweep complete.
+
+[OLD CODE] thread results=[1, 0], final status='COMPENSATED_ON_RETRY', saga_events=0. No audit trail. Loser detected by 0-rows-updated, not by a lock.
+EXIT_CODE: 0
+```
+**Summary (from Select-String)**:
+```text
+Ran 280 tests in 27.390s
+OK
 ```
 
-### Command 2.2: Run Characterization Tests on Baseline
+### Command 2.2: BASE Characterization Tests
 **Command**:
 ```powershell
-& "c:\Users\MADHAVAN\Downloads\DTC\venv\Scripts\python.exe" coordinator-service\manage.py test coordinator.tests.test_characterization --noinput
+Set-Location "C:\Users\MADHAVAN\Downloads\dtc_baseline"
+& "C:\Users\MADHAVAN\Downloads\DTC\venv\Scripts\python.exe" "C:\Users\MADHAVAN\Downloads\dtc_baseline\coordinator-service\manage.py" test coordinator.tests.test_characterization --noinput
 ```
-*(Run inside `..\dtc_baseline`)*  
 **Exit Code**: 0  
-**Output (last 20 lines)**:
+**Evidence Source**: `docs/cleanup/evidence/base_characterization.log`  
+**Output (final lines)**:
 ```text
-.2026-10-14 18:18:26,506 [WARNING] [correlation_id=1888713c-5456-43c5-b75c-4b9bd381087f] coordinator.saga_log: Failed to publish SSE event for tx 3e2c0dc5-c745-4384-a554-4c76e8336887: Timeout connecting to server
-2026-10-14 18:18:26,538 [WARNING] [correlation_id=1888713c-5456-43c5-b75c-4b9bd381087f] coordinator.saga_log: Failed to publish SSE event for tx 3e2c0dc5-c745-4384-a554-4c76e8336887: Timeout connecting to server
-2026-10-14 18:18:26,568 [WARNING] [correlation_id=1888713c-5456-43c5-b75c-4b9bd381087f] coordinator.views: Failed to set checkout presence key for tx 3e2c0dc5-c745-4384-a554-4c76e8336887: Timeout connecting to server
-2026-10-14 18:18:26,599 [WARNING] [correlation_id=1888713c-5456-43c5-b75c-4b9bd381087f] coordinator.saga_log: Failed to publish SSE event for tx 3e2c0dc5-c745-4384-a554-4c76e8336887: Timeout connecting to server
-2026-10-14 18:18:26,630 [WARNING] [correlation_id=1888713c-5456-43c5-b75c-4b9bd381087f] coordinator.saga_log: Failed to publish SSE event for tx 3e2c0dc5-c745-4384-a554-4c76e8336887: Timeout connecting to server
-2026-10-14 18:18:26,661 [WARNING] [correlation_id=1888713c-5456-43c5-b75c-4b9bd381087f] coordinator.views: Failed to clear checkout presence key for tx 3e2c0dc5-c745-4384-a554-4c76e8336887: Timeout connecting to server
-2026-10-14 18:18:26,665 [WARNING] [correlation_id=-] django.request: Bad Request: /transactions/
-.2026-10-14 18:18:26,708 [WARNING] [correlation_id=57165be3-2fa9-42f1-894d-e7a3283ea05b] coordinator.saga_log: Failed to publish SSE event for tx dd662984-29fa-4c23-b677-a79caf4fa75d: Timeout connecting to server
-2026-10-14 18:18:26,709 [WARNING] [correlation_id=-] django.request: Conflict: /transactions/
-.2026-10-14 18:18:26,713 [WARNING] [correlation_id=-] django.request: Bad Request: /transactions/8debe570-9dad-4b6f-a140-07472c03e19a/retry-compensation/
-.2026-10-14 18:18:26,716 [WARNING] [correlation_id=-] django.request: Forbidden: /transactions/878bcf12-cf2a-4587-b2e0-f6cc5f277664/
-2026-10-14 18:18:26,718 [WARNING] [correlation_id=-] django.request: Forbidden: /transactions/
 .
 ----------------------------------------------------------------------
-Ran 7 tests in 0.478s
+Ran 7 tests in 0.447s
 
 OK
 Destroying test database for alias 'default'...
+
 Found 7 test(s).
 System check identified no issues (0 silenced).
+EXIT_CODE: 0
+```
+**Summary (from Select-String)**:
+```text
+Ran 7 tests in 0.447s
+OK
 ```
 
-### Command 2.3: Run Characterization Tests on Feasible
+### Command 2.3: BASE Inventory Test Suite
 **Command**:
 ```powershell
-.\venv\Scripts\python.exe coordinator-service\manage.py test coordinator.tests.test_characterization --noinput
+Set-Location "C:\Users\MADHAVAN\Downloads\dtc_baseline"
+& "C:\Users\MADHAVAN\Downloads\DTC\venv\Scripts\python.exe" "C:\Users\MADHAVAN\Downloads\dtc_baseline\inventory-service\manage.py" test inventory --noinput
 ```
-*(Run inside `c:\Users\MADHAVAN\Downloads\DTC`)*  
 **Exit Code**: 0  
-**Output (last 20 lines)**:
+**Evidence Source**: `docs/cleanup/evidence/base_inventory.log`  
+**Output (final lines)**:
 ```text
-.2026-10-14 18:18:37,195 [WARNING] [correlation_id=d56832b3-bccd-4ee1-8105-dab300e6dc1a] coordinator.saga_log: Failed to publish SSE event for tx 7a76e866-376a-4274-bbf3-08f284a198b3: Timeout connecting to server
-2026-10-14 18:18:37,226 [WARNING] [correlation_id=d56832b3-bccd-4ee1-8105-dab300e6dc1a] coordinator.saga_log: Failed to publish SSE event for tx 7a76e866-376a-4274-bbf3-08f284a198b3: Timeout connecting to server
-2026-10-14 18:18:37,258 [WARNING] [correlation_id=d56832b3-bccd-4ee1-8105-dab300e6dc1a] coordinator.views: Failed to set checkout presence key for tx 7a76e866-376a-4274-bbf3-08f284a198b3: Timeout connecting to server
-2026-10-14 18:18:37,289 [WARNING] [correlation_id=d56832b3-bccd-4ee1-8105-dab300e6dc1a] coordinator.saga_log: Failed to publish SSE event for tx 7a76e866-376a-4274-bbf3-08f284a198b3: Timeout connecting to server
-2026-10-14 18:18:37,320 [WARNING] [correlation_id=d56832b3-bccd-4ee1-8105-dab300e6dc1a] coordinator.saga_log: Failed to publish SSE event for tx 7a76e866-376a-4274-bbf3-08f284a198b3: Timeout connecting to server
-2026-10-14 18:18:37,352 [WARNING] [correlation_id=d56832b3-bccd-4ee1-8105-dab300e6dc1a] coordinator.views: Failed to clear checkout presence key for tx 7a76e866-376a-4274-bbf3-08f284a198b3: Timeout connecting to server
-2026-10-14 18:18:37,358 [WARNING] [correlation_id=-] django.request: Bad Request: /transactions/
-.2026-10-14 18:18:37,398 [WARNING] [correlation_id=79ad9167-c446-41dd-8b1b-553bd4ba78ed] coordinator.saga_log: Failed to publish SSE event for tx 811d48c7-a0df-4afe-870f-fe2ec7a2079c: Timeout connecting to server
-2026-10-14 18:18:37,399 [WARNING] [correlation_id=-] django.request: Conflict: /transactions/
-.2026-10-14 18:18:37,403 [WARNING] [correlation_id=-] django.request: Bad Request: /transactions/d4eedd7e-d7e1-4d75-a70f-ecfc325df665/retry-compensation/
-.2026-10-14 18:18:37,406 [WARNING] [correlation_id=-] django.request: Forbidden: /transactions/498894b4-4d7a-4678-a071-5581ce5d9f22/
-2026-10-14 18:18:37,408 [WARNING] [correlation_id=-] django.request: Forbidden: /transactions/
+OK
+Destroying test database for alias 'default'...
+
+Found 165 test(s).
+System check identified no issues (0 silenced).
+Created event: Coldplay: Music of the Spheres World Tour
+Created 30 demo seats.
+Swept 1 expired seat hold(s), released 1 reservation(s).
+EXIT_CODE: 0
+```
+**Summary (from Select-String)**:
+```text
+Ran 165 tests in 4.843s
+OK
+```
+
+### Command 2.4: BASE Payment Test Suite
+**Command**:
+```powershell
+Set-Location "C:\Users\MADHAVAN\Downloads\dtc_baseline"
+& "C:\Users\MADHAVAN\Downloads\DTC\venv\Scripts\python.exe" "C:\Users\MADHAVAN\Downloads\dtc_baseline\payment-service\manage.py" test payments --noinput
+```
+**Exit Code**: 0  
+**Evidence Source**: `docs/cleanup/evidence/base_payments.log`  
+**Output (final lines)**:
+```text
 .
 ----------------------------------------------------------------------
-Ran 7 tests in 0.472s
+Ran 70 tests in 1.739s
 
 OK
 Destroying test database for alias 'default'...
-Found 7 test(s).
+
+Found 70 test(s).
 System check identified no issues (0 silenced).
+EXIT_CODE: 0
+```
+**Summary (from Select-String)**:
+```text
+Ran 70 tests in 1.739s
+OK
 ```
 
-### Command 2.4: Commit characterization alignment
+### Command 2.5: REPO Coordinator Test Suite
 **Command**:
 ```powershell
-git add coordinator-service/coordinator/tests/test_characterization.py; git commit -m "test: align characterization tests with original behavior"
+Set-Location "C:\Users\MADHAVAN\Downloads\DTC"
+& "C:\Users\MADHAVAN\Downloads\DTC\venv\Scripts\python.exe" "C:\Users\MADHAVAN\Downloads\DTC\coordinator-service\manage.py" test coordinator --noinput
 ```
 **Exit Code**: 0  
-**Output (last 20 lines)**:
+**Evidence Source**: `docs/cleanup/evidence/repo_coordinator.log`  
+**Output (final lines)**:
 ```text
-[feasible 4e08903] test: align characterization tests with original behavior
- 1 file changed, 1 insertion(+), 1 deletion(-)
+Recovery sweep complete.
+  -> ad3bcf7d-5359-4f06-8027-a5d7ca57ec80: compensated successfully.
+  STARTED 90109263-b88a-4a13-b540-f5ff0be59334: already claimed, skipping.
+Recovering b10daf34-2a90-48d5-947d-bfc18591bf3d claimed from COMPENSATING...
+  -> b10daf34-2a90-48d5-947d-bfc18591bf3d: compensated successfully.
+Recovery sweep complete.
+Recovering d1a76cea-9014-4580-bbca-3bfcc25f10fb claimed from COMPENSATION_FAILED...
+  -> d1a76cea-9014-4580-bbca-3bfcc25f10fb: compensation partially failed; will retry next sweep.
+Recovery sweep complete.
+Recovering 5dc8c873-4e5f-4636-a90d-fc6acdc00316 claimed from COMPENSATION_FAILED...
+  -> 5dc8c873-4e5f-4636-a90d-fc6acdc00316: compensated successfully.
+Recovery sweep complete.
+
+[OLD CODE] thread results=[1, 0], final status='COMPENSATED_ON_RETRY', saga_events=0. No audit trail. Loser detected by 0-rows-updated, not by a lock.
+EXIT_CODE: 0
+```
+**Summary (from Select-String)**:
+```text
+Ran 280 tests in 26.648s
+OK
+```
+
+### Command 2.6: REPO Characterization Tests
+**Command**:
+```powershell
+Set-Location "C:\Users\MADHAVAN\Downloads\DTC"
+& "C:\Users\MADHAVAN\Downloads\DTC\venv\Scripts\python.exe" "C:\Users\MADHAVAN\Downloads\DTC\coordinator-service\manage.py" test coordinator.tests.test_characterization --noinput
+```
+**Exit Code**: 0  
+**Evidence Source**: `docs/cleanup/evidence/repo_characterization.log`  
+**Output (final lines)**:
+```text
+.
+----------------------------------------------------------------------
+Ran 7 tests in 0.477s
+
+OK
+Destroying test database for alias 'default'...
+
+Found 7 test(s).
+System check identified no issues (0 silenced).
+EXIT_CODE: 0
+```
+**Summary (from Select-String)**:
+```text
+Ran 7 tests in 0.477s
+OK
+```
+
+### Command 2.7: REPO Inventory Test Suite
+**Command**:
+```powershell
+Set-Location "C:\Users\MADHAVAN\Downloads\DTC"
+& "C:\Users\MADHAVAN\Downloads\DTC\venv\Scripts\python.exe" "C:\Users\MADHAVAN\Downloads\DTC\inventory-service\manage.py" test inventory --noinput
+```
+**Exit Code**: 0  
+**Evidence Source**: `docs/cleanup/evidence/repo_inventory.log`  
+**Output (final lines)**:
+```text
+OK
+Destroying test database for alias 'default'...
+
+Found 165 test(s).
+System check identified no issues (0 silenced).
+Created event: Coldplay: Music of the Spheres World Tour
+Created 30 demo seats.
+Swept 1 expired seat hold(s), released 1 reservation(s).
+EXIT_CODE: 0
+```
+**Summary (from Select-String)**:
+```text
+Ran 165 tests in 5.046s
+OK
+```
+
+### Command 2.8: REPO Payment Test Suite
+**Command**:
+```powershell
+Set-Location "C:\Users\MADHAVAN\Downloads\DTC"
+& "C:\Users\MADHAVAN\Downloads\DTC\venv\Scripts\python.exe" "C:\Users\MADHAVAN\Downloads\DTC\payment-service\manage.py" test payments --noinput
+```
+**Exit Code**: 0  
+**Evidence Source**: `docs/cleanup/evidence/repo_payments.log`  
+**Output (final lines)**:
+```text
+.
+----------------------------------------------------------------------
+Ran 70 tests in 1.522s
+
+OK
+Destroying test database for alias 'default'...
+
+Found 70 test(s).
+System check identified no issues (0 silenced).
+EXIT_CODE: 0
+```
+**Summary (from Select-String)**:
+```text
+Ran 70 tests in 1.522s
+OK
 ```
 
 ---
 
-## Step 3: Raw Test Runs & Service Connectivity
+## Step 3: Redis Check
 
-### Command 3.1: Redis TCP Connection Check
+### Command 3.1: Redis TCP Connection and Binary Check
 **Command**:
 ```powershell
-Test-NetConnection -ComputerName 127.0.0.1 -Port 6379
+Test-NetConnection 127.0.0.1 -Port 6379
+Get-Command redis-server, memurai -ErrorAction SilentlyContinue
 ```
 **Exit Code**: 0  
-**Output (last 20 lines)**:
+**Evidence Source**: `docs/cleanup/evidence/redis.log`  
+**Output**:
 ```text
-WARNING: TCP connect to (127.0.0.1 : 6379) failed
-
 ComputerName           : 127.0.0.1
 RemoteAddress          : 127.0.0.1
 RemotePort             : 6379
@@ -198,243 +290,144 @@ PingSucceeded          : True
 PingReplyDetails (RTT) : 0 ms
 TcpTestSucceeded       : False
 ```
-*(Status: Redis port 6379 closed; all real-time SSE pub/sub tests marked UNVERIFIED)*
+*Redis status*: Port 6379 closed; neither `redis-server` nor `memurai` is installed on host. Redis success path was not exercised live.
 
-### Command 3.2: Coordinator Service Tests on Baseline (`learning`)
+### Command 3.2: Timeout Warning Counts
 **Command**:
 ```powershell
-& "c:\Users\MADHAVAN\Downloads\DTC\venv\Scripts\python.exe" coordinator-service\manage.py test coordinator --noinput
+(Select-String -Path "docs\cleanup\evidence\base_coordinator.log" -Pattern "Timeout connecting to server").Count
+(Select-String -Path "docs\cleanup\evidence\repo_coordinator.log" -Pattern "Timeout connecting to server").Count
 ```
-*(Run in `..\dtc_baseline`)*  
 **Exit Code**: 0  
-**Output (last 20 lines)**:
+**Evidence Source**: `docs/cleanup/evidence/redis_timeouts.log`  
+**Output**:
 ```text
-Recovering 943b0f94-8d4e-488d-96eb-ff3ed188684d claimed from COMPENSATING...
-  -> 943b0f94-8d4e-488d-96eb-ff3ed188684d: compensated successfully.
-Recovery sweep complete.
-Recovering ce8f8ec6-9f30-45a8-953b-e8dbe88bb54c claimed from COMPENSATION_FAILED...
-  -> ce8f8ec6-9f30-45a8-953b-e8dbe88bb54c: compensation partially failed; will retry next sweep.
-Recovery sweep complete.
-Recovering 97d67ef1-3899-4bf1-8220-4580bb199bcb claimed from COMPENSATION_FAILED...
-  -> 97d67ef1-3899-4bf1-8220-4580bb199bcb: compensated successfully.
-Recovery sweep complete.
-
-[OLD CODE] thread results=[1, 0], final status='COMPENSATED_ON_RETRY', saga_events=0. No audit trail. Loser detected by 0-rows-updated, not by a lock.
-
-----------------------------------------------------------------------
-Ran 280 tests in 27.160s
-
-OK
-Destroying test database for alias 'default'...
-Found 280 test(s).
-```
-
-### Command 3.3: Coordinator Service Tests on Feasible (`feasible`)
-**Command**:
-```powershell
-.\venv\Scripts\python.exe coordinator-service\manage.py test coordinator --noinput
-```
-*(Run in `c:\Users\MADHAVAN\Downloads\DTC`)*  
-**Exit Code**: 0  
-**Output (last 20 lines)**:
-```text
-Recovering fac2204a-67e1-4844-a4df-032523320bd7 claimed from COMPENSATING...
-  -> fac2204a-67e1-4844-a4df-032523320bd7: compensated successfully.
-Recovery sweep complete.
-Recovering 626b19d2-e1ca-41b0-a26a-9942f358e0b5 claimed from COMPENSATION_FAILED...
-  -> 626b19d2-e1ca-41b0-a26a-9942f358e0b5: compensation partially failed; will retry next sweep.
-Recovery sweep complete.
-Recovering 2b811539-f9d1-4a50-b82a-bae3cfceb8d2 claimed from COMPENSATION_FAILED...
-  -> 2b811539-f9d1-4a50-b82a-bae3cfceb8d2: compensated successfully.
-Recovery sweep complete.
-
-[OLD CODE] thread results=[1, 0], final status='COMPENSATED_ON_RETRY', saga_events=0. No audit trail. Loser detected by 0-rows-updated, not by a lock.
-
-----------------------------------------------------------------------
-Ran 280 tests in 26.965s
-
-OK
-Destroying test database for alias 'default'...
-Found 280 test(s).
-```
-
-### Command 3.4: Inventory Service Tests on Baseline (`learning`)
-**Command**:
-```powershell
-& "c:\Users\MADHAVAN\Downloads\DTC\venv\Scripts\python.exe" inventory-service\manage.py test inventory --noinput
-```
-*(Run in `..\dtc_baseline`)*  
-**Exit Code**: 0  
-**Output (last 20 lines)**:
-```text
-2026-10-14 18:20:51,841 [WARNING] [correlation_id=-] django.request: Conflict: /seats/reserve/
-2026-10-14 18:20:51,843 [WARNING] [correlation_id=-] django.request: Conflict: /seats/reserve/
-2026-10-14 18:20:51,849 [WARNING] [correlation_id=-] django.request: Conflict: /seats/reserve/
-2026-10-14 18:20:51,853 [WARNING] [correlation_id=-] django.request: Conflict: /seats/reserve/
-.2026-10-14 18:20:52,065 [WARNING] [correlation_id=-] django.request: Too Many Requests: /seats/reserve/
-..............
-----------------------------------------------------------------------
-Ran 165 tests in 4.802s
-
-OK
-Destroying test database for alias 'default'...
-Found 165 test(s).
-System check identified no issues (0 silenced).
-Created event: Coldplay: Music of the Spheres World Tour
-Created 30 demo seats.
-Swept 1 expired seat hold(s), released 1 reservation(s).
-```
-
-### Command 3.5: Inventory Service Tests on Feasible (`feasible`)
-**Command**:
-```powershell
-.\venv\Scripts\python.exe inventory-service\manage.py test inventory --noinput
-```
-*(Run in `c:\Users\MADHAVAN\Downloads\DTC`)*  
-**Exit Code**: 0  
-**Output (last 20 lines)**:
-```text
-2026-10-14 18:22:32,807 [WARNING] [correlation_id=-] django.request: Conflict: /seats/reserve/
-2026-10-14 18:22:32,812 [WARNING] [correlation_id=-] django.request: Conflict: /seats/reserve/
-2026-10-14 18:22:32,815 [WARNING] [correlation_id=-] django.request: Conflict: /seats/reserve/
-2026-10-14 18:22:32,818 [WARNING] [correlation_id=-] django.request: Conflict: /seats/reserve/
-2026-10-14 18:22:32,822 [WARNING] [correlation_id=-] django.request: Conflict: /seats/reserve/
-.2026-10-14 18:22:33,039 [WARNING] [correlation_id=-] django.request: Too Many Requests: /seats/reserve/
-..............
-----------------------------------------------------------------------
-Ran 165 tests in 5.597s
-
-OK
-Destroying test database for alias 'default'...
-Found 165 test(s).
-System check identified no issues (0 silenced).
-Created event: Coldplay: Music of the Spheres World Tour
-Created 30 demo seats.
-Swept 1 expired seat hold(s), released 1 reservation(s).
-```
-
-### Command 3.6: Payment Service Tests on Baseline (`learning`)
-**Command**:
-```powershell
-& "c:\Users\MADHAVAN\Downloads\DTC\venv\Scripts\python.exe" payment-service\manage.py test payments --noinput
-```
-*(Run in `..\dtc_baseline`)*  
-**Exit Code**: 0  
-**Output (last 20 lines)**:
-```text
-2026-10-14 18:21:04,769 [INFO] [correlation_id=1e087d79-03fb-4c5f-87a7-450dc0a35680] payments: Payment refund succeeded: transaction_id=4f1e7435-0f46-41f1-beba-882333cfa3fe amount=100.00
-2026-10-14 18:21:04,771 [INFO] [correlation_id=7641128f-f9dd-4b7a-bef1-b488ba6ca3e8] payments: Payment refund replay: transaction_id=4f1e7435-0f46-41f1-beba-882333cfa3fe
-.2026-10-14 18:21:04,932 [INFO] [correlation_id=57a8d784-becf-4ae1-be4a-3cfcc51bcf75] payments: Payment void tombstone created: transaction_id=9938690f-bc8e-4d11-951f-2245cc7051e5
-2026-10-14 18:21:04,935 [WARNING] [correlation_id=6ed63652-5a8d-42e0-b1bd-dabf5d8752a2] payments: Payment charge rejected for voided transaction: transaction_id=9938690f-bc8e-4d11-951f-2245cc7051e5
-2026-10-14 18:21:04,935 [WARNING] [correlation_id=-] django.request: Conflict: /payments/charge/
-.
-----------------------------------------------------------------------
-Ran 70 tests in 1.510s
-
-OK
-Destroying test database for alias 'default'...
-Found 70 test(s).
-System check identified no issues (0 silenced).
-```
-
-### Command 3.7: Payment Service Tests on Feasible (`feasible`)
-**Command**:
-```powershell
-.\venv\Scripts\python.exe payment-service\manage.py test payments --noinput
-```
-*(Run in `c:\Users\MADHAVAN\Downloads\DTC`)*  
-**Exit Code**: 0  
-**Output (last 20 lines)**:
-```text
-2026-10-14 18:22:42,717 [INFO] [correlation_id=9399bc77-b699-4fbe-a374-027d5b111a84] payments: Payment refund succeeded: transaction_id=87ee4b0c-b0e6-4730-9d5e-bbbf05c7bd63 amount=100.00
-2026-10-14 18:22:42,720 [INFO] [correlation_id=7b036dc6-11e0-49e1-881c-7a205df48e21] payments: Payment refund replay: transaction_id=87ee4b0c-b0e6-4730-9d5e-bbbf05c7bd63
-.2026-10-14 18:22:42,878 [INFO] [correlation_id=4cd56428-19a8-427d-9438-ef8768bcfe66] payments: Payment charge succeeded: transaction_id=fbc9fd89-6bdc-45ab-8323-030260f97c35 amount=100.00 user_id=None email=None
-2026-10-14 18:22:42,880 [INFO] [correlation_id=da7dc5ca-71b8-4de9-a313-54d69aec0ba3] payments: Payment void race resolved: transaction_id=fbc9fd89-6bdc-45ab-8323-030260f97c35 status=CHARGED
-.
-----------------------------------------------------------------------
-Ran 70 tests in 1.514s
-
-OK
-Destroying test database for alias 'default'...
-Found 70 test(s).
-System check identified no issues (0 silenced).
+base_coordinator Timeout connecting to server count: 305
+repo_coordinator Timeout connecting to server count: 305
 ```
 
 ---
 
-## Step 4: Commit Hygiene
+## Step 4: Environment Variables Audit & Call-Time Refactor
 
-### Command 4.1: Log of Feasible vs Learning
+### Command 4.1: Grep COORDINATOR_SERVICE_URL on learning and feasible
 **Command**:
 ```powershell
-git log --oneline learning..feasible
+git grep -n COORDINATOR_SERVICE_URL learning
+git grep -n COORDINATOR_SERVICE_URL feasible
 ```
 **Exit Code**: 0  
-**Output (last 20 lines)**:
+**Evidence Sources**: `docs/cleanup/evidence/env_COORDINATOR_SERVICE_URL_learning.log`, `docs/cleanup/evidence/env_COORDINATOR_SERVICE_URL_feasible.log`  
+**Output**:
 ```text
-4e08903 test: align characterization tests with original behavior
-edd28bb fix: restore original env var names and defaults
-af16e3e docs: cleanup report
-a1240c7 chore: fix ruff findings
-9dd6865 chore: frontend cleanup (unused imports, dead files)
-78bf77b chore: payment cleanup; no behavior change
-7791b0f chore: inventory cleanup; no behavior change
-4c3e3b2 chore: coordinator modules cleanup (dead code, comments, imports)
-39eef32 refactor: simplify coordinator views (names, env vars, comments); no behavior change
-5ee7af6 chore: move cleanup docs, remove junk files
-79aa49f refactor: simplify coordinator views (names, env vars, comments); no behavior change
+learning:.env.example:24:COORDINATOR_SERVICE_URL=http://coordinator:8002
+feasible:.env.example:24:COORDINATOR_SERVICE_URL=http://coordinator:8002
+```
+*Note*: `COORDINATOR_SERVICE_URL` is absent from both learning's `views.py` and feasible's `views.py`.
+
+### Command 4.2: Audit and Commit Call-Time Env Reads
+**Command**:
+```powershell
+git add coordinator-service/coordinator/views.py
+git commit -m "fix: read env at call time where tests change it"
+```
+**Exit Code**: 0  
+**Output**:
+```text
+[feasible 4d71742] fix: read env at call time where tests change it
+ 1 file changed, 7 insertions(+), 19 deletions(-)
 ```
 
 ---
 
-## Step 6: Final Checks
+## Step 5: Characterization Audit Mapping
 
-### Command 6.1: Compile changed Python files
-**Command**:
-```powershell
-python -m py_compile $(git diff --name-only learning..feasible -- '*.py')
-```
-**Exit Code**: 0  
-**Output (last 20 lines)**:
+**Evidence Source**: `docs/cleanup/evidence/characterization_mapping.log`  
+**Content**:
 ```text
-Compiling 49 files...
-All files compiled successfully!
-```
+Test 1 (test_1_hold_success):
+- Assertions: HTTP 200, status=HOLDING, held_until present
+- Baseline lines: coordinator-service/coordinator/views.py:1048 (_set_status_with_event to HOLDING), views.py:1067 (Response with status: HOLDING, held_until)
 
-### Command 6.2: Compare Ruff Counts
-**Command**:
-```powershell
-ruff check .
-```
-*(Run on baseline vs feasible)*  
-**Exit Code**: 0  
-**Output (last 20 lines)**:
-```text
-Baseline total: 646
-Feasible total: 584
-Net reduction: -62 findings (0 new errors)
-```
+Test 2 (test_2_hold_with_reserve_failure):
+- Assertions: HTTP 409, code=SEAT_NOT_AVAILABLE, status=INVENTORY_RESERVE_FAILED
+- Baseline lines: coordinator-service/coordinator/views.py:1019 (_set_status_with_event to INVENTORY_RESERVE_FAILED), views.py:1025-1031 (Response with resp_json and status 409)
 
-### Command 6.3: Clean Working Tree Check
-**Command**:
-```powershell
-git status --short
-```
-**Exit Code**: 0  
-**Output (last 20 lines)**:
-```text
-(no output - working tree clean)
+Test 3 (test_3_pay_success):
+- Assertions: HTTP 200, status=COMPLETED
+- Baseline lines: coordinator-service/coordinator/views.py:1996 (_set_status_with_event to COMPLETED), views.py:2021 (Response with status: COMPLETED)
+
+Test 4 (test_4_pay_with_payment_decline):
+- Assertions: HTTP 400, status=COMPENSATED
+- Baseline lines: coordinator-service/coordinator/views.py:2207-2209 (_set_status_with_event to COMPENSATED), views.py:2228 (Response with status: COMPENSATED, HTTP 400)
+
+Test 5 (test_5_pay_on_expired_hold):
+- Assertions: HTTP 409, code=HOLD_EXPIRED, status=TIMEOUT
+- Baseline lines: coordinator-service/coordinator/views.py:1136 (_set_status_with_event to TIMEOUT), views.py:1163-1171 (Response with code: HOLD_EXPIRED, status: TIMEOUT, HTTP 409)
+
+Test 6 (test_6_retry_on_non_eligible_status):
+- Assertions: HTTP 400
+- Baseline lines: coordinator-service/coordinator/views.py:429-437 (Status allowlist check: if txn.status not in ALLOWED_RETRY_STATUSES -> HTTP 400)
+
+Test 7 (test_7_idor_non_staff_denied_on_other_users_transaction):
+- Assertions: GET -> HTTP 403; POST pay -> HTTP 403, code=FORBIDDEN
+- Baseline lines: coordinator-service/coordinator/views.py:179 (GET ownership check -> HTTP 403), views.py:1094-1098 (POST pay ownership check -> HTTP 403 with code: FORBIDDEN)
 ```
 
-### Command 6.4: Verify Branch SHAs
+---
+
+## Step 6: Ruff Linter & Compilation Check
+
+### Command 6.1: Ruff Linter Violations
 **Command**:
 ```powershell
-git rev-parse master learning feasible
+Set-Location "C:\Users\MADHAVAN\Downloads\dtc_baseline"; ruff check --output-format json .
+Set-Location "C:\Users\MADHAVAN\Downloads\DTC"; ruff check --output-format json .
+```
+**Exit Code**: 1 (both BASE and REPO)  
+**Evidence Sources**: `docs/cleanup/evidence/base_ruff.json`, `docs/cleanup/evidence/repo_ruff.json`  
+- **Base Violations**: 646 violations
+- **Repo Violations**: 584 violations
+- **Net Reduction**: -62 violations
+
+### Command 6.2: Python Compilation Check
+**Command**:
+```powershell
+$files = (git diff --name-only learning..feasible -- "*.py").Split("`r`n", [System.StringSplitOptions]::RemoveEmptyEntries)
+foreach ($f in $files) { python -m py_compile "$f" }
 ```
 **Exit Code**: 0  
-**Output (last 20 lines)**:
+**Evidence Source**: `docs/cleanup/evidence/compile.log`  
+**Output (final lines)**:
 ```text
-6a3b17a7ce6751b3fa8d7cd1453e8f89c92c1a52
-f24b471af32bca53feeff0ddb0a478c53548789f
-(feasible SHA matches current HEAD)
+inventory-service/inventory/tests/test_hardening_p2.py : EXIT_CODE 0
+inventory-service/inventory/tests/test_phase1.py : EXIT_CODE 0
+inventory-service/inventory/tests/test_phase3.py : EXIT_CODE 0
+inventory-service/inventory/views.py : EXIT_CODE 0
+payment-service/payments/views.py : EXIT_CODE 0
+scripts/run_playwright_test.py : EXIT_CODE 0
+scripts/run_real_flow_e2e.py : EXIT_CODE 0
+tests/test_gate_scanner.py : EXIT_CODE 0
+tests/test_nonblocking_load.py : EXIT_CODE 0
+OVERALL_ALL_ZERO: True
 ```
+
+---
+
+## Step 7: Commits Scope Audit
+
+**Evidence Source**: `docs/cleanup/evidence/commits.log`  
+**Full Commit Log (`learning..feasible`)**:
+1. `79aa49fe28ba00fc492f7750e90c36d7957aaeb7`: `refactor: simplify coordinator views (names, env vars, comments); no behavior change` (Initial rewrite of `coordinator/views.py`, created `ENV_MAP.md`, `RENAME_MAP.md`, and `test_characterization.py`)
+2. `5ee7af6170c952911663b3f94e0f063e7c81f1bb`: `chore: move cleanup docs, remove junk files` (Moved docs into `docs/cleanup/`, modified `.gitignore`)
+3. `39eef325e07464a3360d07403f1c8c0845a617ea`: `refactor: simplify coordinator views (names, env vars, comments); no behavior change` (Removed compatibility shims in `views.py`, updated mock targets across 18 test files)
+4. `4c3e3b23a3198010eea7d5a085d4265e9e6d673e`: `chore: coordinator modules cleanup (dead code, comments, imports)`
+5. `7791b0f083ae62d76007eeef90579f24e0fde26c`: `chore: inventory cleanup; no behavior change`
+6. `78bf77b57a0637b631d6e2210134b9f2929673ac`: `chore: payment cleanup; no behavior change`
+7. `9dd68653081e42c23bea4ec6e2171866154a1df6`: `chore: frontend cleanup (unused imports, dead files)`
+8. `a1240c7b9c93fa5ddb414faf36eb38d4e7427622`: `chore: fix ruff findings` (Fixed unused imports/variables; touched markdown/docs: `COORDINATOR_CHANGE.md`, `README.md`, `audit/*`, `flowchart.mmd`)
+9. `af16e3ec8d6430d3079275f567a1d936569ab52f`: `docs: cleanup report`
+10. `edd28bbda59be7aef350acb9213e16241e73eec3`: `fix: restore original env var names and defaults`
+11. `4e08903bc6f22baf626a1d383da0645250880118`: `test: align characterization tests with original behavior`
+12. `d3deec41770899ca362665a73b1e6833205a00f9`: `docs: correct cleanup report`
+13. `4d71742a770a05bc54d0a0215053ca02b897e68b`: `fix: read env at call time where tests change it`
