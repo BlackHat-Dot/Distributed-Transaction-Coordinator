@@ -335,6 +335,7 @@ def transaction_stream(request, transaction_id):
                             yield f"data: {term_msg}\n\n"
                             break
 
+
         except Exception as exc:
             logger.warning("SSE stream error for tx %s: %s", transaction_id, exc)
             err_msg = json.dumps({
