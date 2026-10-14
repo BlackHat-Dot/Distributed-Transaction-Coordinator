@@ -1,10 +1,13 @@
 venv/
 db.sqlite3
 __pycache__/
+*.pyc
 .env
-celerybeat-schedule-wal
-celerybeat-schedule-shm
-celerybeat-schedule
+*.log
+logs/
+node_modules/
+.DS_Store
+celerybeat-schedule*
 .vercel
 newfile.py
 .coverage
