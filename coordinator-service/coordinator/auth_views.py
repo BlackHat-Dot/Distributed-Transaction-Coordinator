@@ -22,7 +22,6 @@ _redis_client_instance = None
 
 is_testing = bool(getattr(settings, "IS_TESTING", False))
 
-# I know
 def _get_redis_client():
     global _redis_last_check, _redis_client_instance
 
@@ -61,7 +60,6 @@ def _get_redis_client():
 
         return None
 
-# I know
 def _is_dev_auth_mode():
     if is_testing:
         return False
@@ -99,7 +97,6 @@ _KNOWN_GMAIL_TYPOS = frozenset({
 })
 
 
-# I know
 def _suggest_domain(domain_part):
     """
     Returns a suggested correction for `domain_part` if it looks like a
@@ -111,7 +108,6 @@ def _suggest_domain(domain_part):
 
     return None
 
-# I know
 def validate_email(email):
     """
     Validates that the email address is a valid @gmail.com address
@@ -162,13 +158,11 @@ def validate_email(email):
 
 validate_custom_email = validate_email
 
-# I know
 def _generate_user_id(email):
     norm = _normalize_email(email)
     sha = hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
     return f"usr_{sha}"
 
-# I know
 def _get_client_ip(request):
     """
     Safely resolves client IP address (SEC-05).
@@ -210,13 +204,11 @@ def _get_client_ip(request):
     # Fallback: if every IP in the chain was trusted, return the earliest one in the list
     return ips[0]
 
-# I know
 def _email_hash(email):
     """Short hash of email used in Redis keys (avoids storing raw emails in key names)."""
     return hashlib.sha256(email.encode("utf-8")).hexdigest()[:20]
 
 
-# I know
 def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
     """A JSON Web Token (JWT) is created"""
 
@@ -274,7 +266,6 @@ def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
     return f"{h_str}.{p_str}.{sig_str}"
 
 
-# I know
 def verify_jwt(token):
     if not token or "." not in token:
         return None, "Invalid token format"
@@ -316,7 +307,6 @@ def verify_jwt(token):
     except Exception as e:
         return None, str(e)
 
-# I know
 def get_user_from_request(request):
     """
     Extracts authenticated user identity from Authorization header or request payload.
@@ -360,7 +350,6 @@ def get_user_from_request(request):
 
 resend.api_key = os.getenv("RESEND_API_KEY")
 
-# I know
 def _dispatch_otp_email(to_email, otp_code):
     subject = f"Your DTC Verification Code: {otp_code}"
 
@@ -483,7 +472,6 @@ def _dispatch_otp_email(to_email, otp_code):
     except Exception as e:
         print(f"[Email Dispatch Error] {type(e).__name__}: {e}")
 
-# I know
 @api_view(["POST"])
 def send_otp(request):
     """

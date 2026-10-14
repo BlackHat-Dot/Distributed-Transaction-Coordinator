@@ -1,5 +1,4 @@
 import logging
-import os
 import uuid
 import redis
 from celery import shared_task
@@ -123,7 +122,7 @@ def send_ticket_email_task(self, transaction_id):
     short_ref = str(txn.transaction_id)[:8]
     filename = f"DTC-Ticket-{short_ref}.pdf"
 
-    api_key = getattr(settings, "RESEND_API_KEY", os.getenv("RESEND_API_KEY"))
+    api_key = getattr(settings, "RESEND_API_KEY", "")
     if not api_key:
         logger.info("RESEND_API_KEY not configured. Simulated ticket email to %s with PDF attachment %s.", txn.user_email, filename)
         return "simulated"
