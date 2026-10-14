@@ -132,7 +132,7 @@ class CharacterizationTests(TestCase):
 
         self.assertEqual(resp.status_code, 400)
         txn.refresh_from_db()
-        self.assertIn(txn.status, [Transaction.Status.COMPENSATED, Transaction.Status.PAYMENT_FAILED])
+        self.assertEqual(txn.status, Transaction.Status.COMPENSATED)
 
     def test_5_pay_on_expired_hold(self):
         """5. Pay on expired hold: returns 409 HOLD_EXPIRED and sets TIMEOUT."""
