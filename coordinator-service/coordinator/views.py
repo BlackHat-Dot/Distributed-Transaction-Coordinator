@@ -59,8 +59,6 @@ def _corr_id(correlation_id=None):
     return correlation_id or get_correlation_id() or str(uuid.uuid4())
 
 
-
-
 def _verify_staff_key(header_val):
     """Constant-time verification of X-Staff-Key header."""
     if not header_val or not isinstance(header_val, str) or not header_val.strip():
@@ -79,7 +77,6 @@ def _faults_on():
     if not flag:
         flag = os.getenv("ENABLE_FAULT_INJECTION", "").lower() in ("true", "1", "yes", "t")
     return bool(flag)
-
 
 
 _HTTP_SESSION = None
@@ -168,9 +165,7 @@ def _can_access(txn, user_id, is_staff=False):
     """Check if caller has permission to view or modify transaction."""
     if is_staff:
         return True
-    if not txn or not txn.user_id or not user_id:
-        return False
-    return str(txn.user_id) == str(user_id)
+    return bool(txn and txn.user_id and user_id and str(txn.user_id) == str(user_id))
 
 
 @api_view(["GET"])
@@ -638,8 +633,6 @@ def _get_prices(seat_ids=None, correlation_id=None):
     )
 
 
-
-
 def _validate_seats(seats):
     """Validate seat_ids list: integer types, no duplicates, max seat limit."""
     if not isinstance(seats, list) or any(type(s) is not int for s in seats):
@@ -662,7 +655,7 @@ def _check_body(request):
             {"error": "Request body must be a valid JSON object"}, status=400
         )
 
-    action = request.data.get("action") or None
+    action = request.data.get("action")
     if action not in (None, "hold", "pay"):
         return None, None, None, Response(
             {
@@ -672,17 +665,16 @@ def _check_body(request):
             status=400,
         )
 
-    if action == "pay":
-        allowed_fields = {"action", "transaction_id", "seat_ids"}
-    elif action == "hold":
-        allowed_fields = {"action", "seat_ids"}
-    else:
-        allowed_fields = {"seat_ids"}
+    allowed_by_action = {
+        "pay": {"action", "transaction_id", "seat_ids"},
+        "hold": {"action", "seat_ids"},
+    }
+    allowed_fields = allowed_by_action.get(action, {"seat_ids"})
 
     if _faults_on():
         allowed_fields = allowed_fields | {"fail_compensation", "coordinator", "fail_at_step"}
 
-    invalid_fields = [k for k in request.data.keys() if k not in allowed_fields]
+    invalid_fields = [k for k in request.data if k not in allowed_fields]
     if invalid_fields:
         return None, None, None, Response(
             {
@@ -739,7 +731,7 @@ def _create_txn(request):
     is_dev = getattr(settings, "DEBUG", False)
 
     ident = _get_caller(request)
-    if not ident[0]:
+    if not ident.is_authenticated:
         return Response(
             {
                 "error": "Authentication required. Your session has expired or you are not signed in. Please sign in to book seats.",
@@ -748,9 +740,9 @@ def _create_txn(request):
             status=401,
         )
 
-    user_id = ident[1]
-    is_staff = ident[2]
-    user_email = getattr(ident, "user_email", None) or (ident[3] if len(ident) > 3 else None)
+    user_id = ident.user_id
+    is_staff = ident.is_staff
+    user_email = ident.user_email
     has_staff_key = _verify_staff_key(request.headers.get("X-Staff-Key"))
 
     correlation_id = request.correlation_id
@@ -1131,8 +1123,6 @@ def _create_txn(request):
     )
 
 
-
-
 def _list_txns(request):
     """List transactions with pagination, filtering, and IDOR scoping."""
     is_authenticated, auth_user_id, is_staff = _get_caller(request)
@@ -1182,8 +1172,6 @@ def _list_txns(request):
         "offset": offset,
         "results": data,
     })
-
-
 
 
 # =============================================================================
@@ -1375,8 +1363,6 @@ def _run_saga(
     )
 
 
-
-
 # =============================================================================
 # MICROSERVICE REMOTE CALLS
 # =============================================================================
@@ -1423,8 +1409,6 @@ def _reserve(transaction_id, seat_ids, correlation_id=None, user_id=None, user_e
                 status=409,
             )
         return None, Response({"transaction_id": str(transaction_id), "status": status}, status=504)
-
-
 
 
 def _get_coordinator_redis_client():
@@ -1481,8 +1465,6 @@ def _charge(
     except Exception:
         _clear_checkout_presence(transaction_id)
         raise
-
-
 
 
 def _do_charge(
@@ -1551,11 +1533,7 @@ def _do_charge(
                 status=503,
             )
 
-        check_data = None
-        try:
-            check_data = payment_check.json()
-        except Exception:
-            pass
+        check_data = _parse_json_response(payment_check)
 
         return _finish_payment(
             transaction_id,
@@ -1632,8 +1610,6 @@ def _do_charge(
     )
 
 
-
-
 def _confirm(transaction_id, seat_ids=None, correlation_id=None):
     """Call downstream Inventory service to confirm booked seats."""
     if not seat_ids:
@@ -1655,8 +1631,6 @@ def _confirm(transaction_id, seat_ids=None, correlation_id=None):
         return response, None
     except RequestException as exc:
         return None, exc
-
-
 
 
 def _finish_payment(transaction_id, fail_compensation, payment_data, payment_status_code=200, correlation_id=None, seat_ids=None):
@@ -1688,11 +1662,7 @@ def _finish_payment(transaction_id, fail_compensation, payment_data, payment_sta
             confirm_resp, confirm_err = _confirm(transaction_id, seat_ids=seat_ids, correlation_id=correlation_id)
 
         if confirm_resp and confirm_resp.status_code == 200:
-            confirm_json = None
-            try:
-                confirm_json = confirm_resp.json()
-            except Exception:
-                pass
+            confirm_json = _parse_json_response(confirm_resp)
 
             transitioned = _set_status_with_event(
                 transaction_id,
@@ -1745,12 +1715,7 @@ def _finish_payment(transaction_id, fail_compensation, payment_data, payment_sta
                 status=503,
             )
 
-        confirm_json = None
-        if confirm_resp is not None:
-            try:
-                confirm_json = confirm_resp.json()
-            except Exception:
-                pass
+        confirm_json = _parse_json_response(confirm_resp)
 
         decline_payload = {
             "error": "Seat hold expired or confirmation failed",
@@ -1774,8 +1739,6 @@ def _finish_payment(transaction_id, fail_compensation, payment_data, payment_sta
         correlation_id=correlation_id,
         seat_ids=seat_ids,
     )
-
-
 
 
 def _compensate(transaction_id, fail_compensation, payment_data, payment_status_code=None, correlation_id=None, seat_ids=None):
@@ -1811,12 +1774,10 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             status=409,
         )
 
-    was_charged = False
-    if isinstance(payment_data, dict):
-        if payment_data.get("status") == "CHARGED":
-            was_charged = True
-        elif isinstance(payment_data.get("payment"), dict) and payment_data["payment"].get("status") == "CHARGED":
-            was_charged = True
+    was_charged = isinstance(payment_data, dict) and (
+        payment_data.get("status") == "CHARGED"
+        or (isinstance(payment_data.get("payment"), dict) and payment_data["payment"].get("status") == "CHARGED")
+    )
 
     # Fence payment by voiding in-flight charge before releasing inventory
     if not was_charged:
@@ -1852,10 +1813,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
             )
 
     # 1. Release inventory
-    release_ok = False
-    release_data = None
-    release_status_code = None
-    release_transport_error = None
+    release_ok, release_data, release_status_code, release_transport_error = False, None, None, None
     try:
         release_response = _http_post(
             INVENTORY_RELEASE_URL,
@@ -1880,10 +1838,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
         release_transport_error = exc
 
     # 2. Refund payment if charged
-    refund_ok = not was_charged
-    refund_data = None
-    refund_status_code = None
-    refund_transport_error = None
+    refund_ok, refund_data, refund_status_code, refund_transport_error = not was_charged, None, None, None
     if was_charged:
         try:
             refund_response = _http_post(
@@ -1985,11 +1940,7 @@ def _is_admin_email(email):
     """Check if email belongs to the configured ADMIN_DOMAIN."""
     if not email or not isinstance(email, str):
         return False
-    admin_domain = os.getenv("ADMIN_DOMAIN", "").strip().lower()
-    if not admin_domain:
-        return False
-    if admin_domain.startswith("@"):
-        admin_domain = admin_domain[1:]
+    admin_domain = os.getenv("ADMIN_DOMAIN", "").strip().lower().lstrip("@")
     if not admin_domain:
         return False
 
@@ -2044,8 +1995,6 @@ def _get_caller(request):
     return RequesterIdentity(False, None, False, user_email=None)
 
 
-
-
 def _create_transaction(transaction_id, seat_ids=None, seat_numbers=None, amount=500, quantity=1, user_id=None, user_email=None):
     """Atomically create a new Transaction row with status=STARTED."""
     try:
@@ -2083,8 +2032,6 @@ def _create_transaction(transaction_id, seat_ids=None, seat_numbers=None, amount
         )
 
 
-
-
 def _txn_json(txn):
     """Serialize Transaction model instance to JSON-serializable dict."""
     return {
@@ -2103,8 +2050,6 @@ def _txn_json(txn):
     }
 
 
-
-
 def _event_json(event):
     """Serialize SagaEvent model instance to JSON-serializable dict."""
     return {
@@ -2118,13 +2063,9 @@ def _event_json(event):
     }
 
 
-
-
 def _err_status(exc, timeout_status, conn_status):
     """Map request exception type to corresponding transaction status."""
     return timeout_status if isinstance(exc, Timeout) else conn_status
-
-
 
 
 def _parse_json_response(response):
