@@ -12,9 +12,7 @@ from rest_framework.response import Response
 from django.db import IntegrityError, transaction
 
 from .models import Payment
-from .permissions import verify_internal_service_key, InternalServicePermission
-
-_verify_internal_service_key = verify_internal_service_key
+from .permissions import verify_internal_service_key
 
 logger = logging.getLogger("payments")
 
@@ -149,7 +147,7 @@ def _payment_response(payment, status=None):
 
 @api_view(["POST"])
 def charge_payment(request):
-    auth_err = _verify_internal_service_key(request)
+    auth_err = verify_internal_service_key(request)
     if auth_err:
         return auth_err
 
@@ -287,7 +285,7 @@ def _handle_existing_charge(existing, amount, user_id, transaction_uuid):
 
 @api_view(["GET"])
 def payment_check(request):
-    auth_err = _verify_internal_service_key(request)
+    auth_err = verify_internal_service_key(request)
     if auth_err:
         return auth_err
 
@@ -313,7 +311,7 @@ def payment_check(request):
 
 @api_view(["POST"])
 def void_payment(request):
-    auth_err = _verify_internal_service_key(request)
+    auth_err = verify_internal_service_key(request)
     if auth_err:
         return auth_err
 
@@ -386,7 +384,7 @@ def void_payment(request):
 
 @api_view(["POST"])
 def refund_payment(request):
-    auth_err = _verify_internal_service_key(request)
+    auth_err = verify_internal_service_key(request)
     if auth_err:
         return auth_err
 
