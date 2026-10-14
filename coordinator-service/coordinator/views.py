@@ -52,19 +52,6 @@ PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
 
 # Shared secret for service-to-service internal authentication (X-Internal-Service-Key)
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
-# Secret key for human administrative staff access (X-Staff-Key)
-STAFF_API_KEY = os.getenv("STAFF_API_KEY", "").strip()
-
-# Minimum age in seconds before stuck transactions are swept in production
-RECOVERY_MIN_THRESHOLD = int(os.getenv("RECOVERY_MIN_THRESHOLD_SECONDS", "30"))
-# Maximum seats permitted per transaction
-MAX_SEATS = int(os.getenv("MAX_SEATS_PER_TRANSACTION", "10"))
-# Domain treated as staff when authenticated via email
-ADMIN_DOMAIN = os.getenv("ADMIN_DOMAIN", "").strip().lower()
-# Default user ID for staff API key requests
-DEFAULT_STAFF_USER_ID = os.getenv("STAFF_USER_ID", "system_staff")
-# Default user email for staff API key requests
-DEFAULT_STAFF_EMAIL = os.getenv("STAFF_EMAIL_ID", "admin@dtc.internal")
 
 
 def _corr_id(correlation_id=None):
@@ -78,7 +65,7 @@ def _verify_staff_key(header_val):
     """Constant-time verification of X-Staff-Key header."""
     if not header_val or not isinstance(header_val, str) or not header_val.strip():
         return False
-    staff_key = os.getenv("STAFF_API_KEY", "").strip() or STAFF_API_KEY
+    staff_key = os.getenv("STAFF_API_KEY", "").strip()
     if not staff_key:
         return False
     return hmac.compare_digest(header_val.strip().encode("utf-8"), staff_key.encode("utf-8"))
@@ -659,9 +646,10 @@ def _validate_seats(seats):
         return Response({"error": "seat_ids must be a list of integers.", "code": "INVALID_SEAT_IDS"}, status=400)
     if len(seats) != len(set(seats)):
         return Response({"error": "Duplicate seat_ids are not allowed.", "code": "DUPLICATE_SEATS"}, status=400)
-    if len(seats) > MAX_SEATS:
+    max_seats = int(os.getenv("MAX_SEATS_PER_TRANSACTION", "10"))
+    if len(seats) > max_seats:
         return Response(
-            {"error": f"Cannot reserve more than {MAX_SEATS} seats in a single transaction.", "code": "EXCEEDED_MAX_SEATS"},
+            {"error": f"Cannot reserve more than {max_seats} seats in a single transaction.", "code": "EXCEEDED_MAX_SEATS"},
             status=400,
         )
     return None
@@ -1997,7 +1985,7 @@ def _is_admin_email(email):
     """Check if email belongs to the configured ADMIN_DOMAIN."""
     if not email or not isinstance(email, str):
         return False
-    admin_domain = os.getenv("ADMIN_DOMAIN", "").strip().lower() or ADMIN_DOMAIN
+    admin_domain = os.getenv("ADMIN_DOMAIN", "").strip().lower()
     if not admin_domain:
         return False
     if admin_domain.startswith("@"):
@@ -2026,8 +2014,8 @@ class RequesterIdentity(tuple):
 def _get_caller(request):
     """Resolve caller authentication and staff privileges."""
     if _verify_staff_key(request.headers.get("X-Staff-Key")):
-        user_id = request.headers.get("X-User-ID") or os.getenv("STAFF_USER_ID") or DEFAULT_STAFF_USER_ID
-        user_email = request.headers.get("X-User-Email") or os.getenv("STAFF_EMAIL_ID") or DEFAULT_STAFF_EMAIL
+        user_id = request.headers.get("X-User-ID") or os.getenv("STAFF_USER_ID") or "system_staff"
+        user_email = request.headers.get("X-User-Email") or os.getenv("STAFF_EMAIL_ID") or "admin@dtc.internal"
         return RequesterIdentity(True, user_id, True, user_email=user_email)
 
     user_info = get_user_from_request(request)
