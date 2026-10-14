@@ -2,7 +2,6 @@ import io
 import json
 import re
 import sys
-import base64
 import requests
 import cv2
 import numpy as np
@@ -109,7 +108,7 @@ def main():
     assert len(tickets_list) == 1, f"Expected 1 ticket, got {len(tickets_list)}"
     ticket = tickets_list[0]
     ticket_code = ticket["ticket_code"]
-    qr_b64 = ticket["qr_code_base64"]
+    assert "qr_code_base64" in ticket
     log("TICKET", f"Ticket issued! Code: {ticket_code}, Seat: {ticket['seat_label']}, Event: {tix_data['event']['name']}")
     assert len(ticket_code) == 22, f"Expected 22-char token_urlsafe(16), got {len(ticket_code)}"
 
@@ -148,7 +147,7 @@ def main():
     assert cv_img is not None, "Failed to load PDF embedded image into OpenCV"
 
     detector = cv2.QRCodeDetector()
-    decoded_url, points, _ = detector.detectAndDecode(cv_img)
+    decoded_url, _points, _ = detector.detectAndDecode(cv_img)
     log("QR", f"Decoded QR URL from PDF image bytes: {decoded_url}")
     assert f"/verify/{ticket_code}/" in decoded_url, f"Expected /verify/{ticket_code}/ in {decoded_url}"
 
@@ -170,7 +169,7 @@ def main():
         assert pii_field not in v1_data, f"PII leak detected: {pii_field}"
 
     # 10. First Gate Redemption (Success -> 200)
-    log("GATE", f"Staff scanning ticket at gate via POST /gate/redeem/ ...")
+    log("GATE", "Staff scanning ticket at gate via POST /gate/redeem/ ...")
     g1_resp = requests.post(
         f"{COORDINATOR_URL}/gate/redeem/",
         headers={"X-Gate-Api-Key": GATE_KEY},
