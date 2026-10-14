@@ -655,7 +655,7 @@ def _check_body(request):
             {"error": "Request body must be a valid JSON object"}, status=400
         )
 
-    action = request.data.get("action")
+    action = request.data.get("action") or None
     if action not in (None, "hold", "pay"):
         return None, None, None, Response(
             {
@@ -731,7 +731,7 @@ def _create_txn(request):
     is_dev = getattr(settings, "DEBUG", False)
 
     ident = _get_caller(request)
-    if not ident.is_authenticated:
+    if not ident[0]:
         return Response(
             {
                 "error": "Authentication required. Your session has expired or you are not signed in. Please sign in to book seats.",
@@ -740,9 +740,9 @@ def _create_txn(request):
             status=401,
         )
 
-    user_id = ident.user_id
-    is_staff = ident.is_staff
-    user_email = ident.user_email
+    user_id = ident[1]
+    is_staff = ident[2]
+    user_email = getattr(ident, "user_email", None) or (ident[3] if len(ident) > 3 else None)
     has_staff_key = _verify_staff_key(request.headers.get("X-Staff-Key"))
 
     correlation_id = request.correlation_id
@@ -1940,7 +1940,10 @@ def _is_admin_email(email):
     """Check if email belongs to the configured ADMIN_DOMAIN."""
     if not email or not isinstance(email, str):
         return False
-    admin_domain = os.getenv("ADMIN_DOMAIN", "").strip().lower().lstrip("@")
+    admin_domain = os.getenv("ADMIN_DOMAIN", "").strip().lower()
+    if not admin_domain:
+        return False
+    admin_domain = admin_domain.removeprefix("@")
     if not admin_domain:
         return False
 
