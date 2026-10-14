@@ -1,4 +1,7 @@
-import hmac
+import hmac 
+"""Hash-based Message Authentication Code
+   HMAC verifies that a message was created by someone who knows a
+   secret key and that the message has not been modified."""
 import json
 import logging
 import os
@@ -7,16 +10,26 @@ import uuid
 import redis
 import requests
 from requests.adapters import HTTPAdapter
+"""HTTPAdapter is a class from the python `requests` library that
+   lets you configure how HTTP requests are handled, particularly
+   connection pooling, retries, and transport settings."""
 from decimal import Decimal
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from requests.exceptions import Timeout, ConnectionError, RequestException
+# RequestException -> A parent exception covering request-related errors, including
+# the two above.
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.http import StreamingHttpResponse, JsonResponse, HttpResponse
+# HttpResponse -> Returns normal HTTP response containing text, HTML, or bytes
+# JsonResponse -> Returns data formatted as JSON, commonly used in REST APIs
+# StreamingHttpResponse -> Sends a response incrementally instead of requiring the
+# entire response body to be prepared in memory first. (Server Sent Events)
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+# parse_datetime -> converts datetime string into python datetime object.
 
 from .models import Transaction, SagaEvent
 from .saga_log import _set_status_with_event
@@ -25,8 +38,10 @@ from .recovery import execute_compensation_sweep
 from coordinator.auth_views import get_user_from_request
 
 logger = logging.getLogger(__name__)
+# createss a logger for the current python module
+# __name__ used to differentiate logger msg between files.
 
-
+# I know
 def _get_active_correlation_id(correlation_id=None):
     """
     Returns an active correlation ID, prioritizing:
@@ -60,7 +75,7 @@ REQUEST_READ_TIMEOUT = float(os.getenv("REQUEST_READ_TIMEOUT", os.getenv("REQUES
 REQUEST_TIMEOUT = (REQUEST_CONNECT_TIMEOUT, REQUEST_READ_TIMEOUT)
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 
-
+# I know
 def _verify_staff_key(header_val):
     """
     Validates the X-Staff-Key header using constant-time comparison (F-19).
@@ -73,7 +88,7 @@ def _verify_staff_key(header_val):
         return False
     return hmac.compare_digest(header_val.strip().encode("utf-8"), staff_key.encode("utf-8"))
 
-
+# I know
 def _fault_injection_allowed():
     """
     Central helper for fault injection access control (F-24, F-45).
@@ -115,7 +130,7 @@ def _http_get(url, **kwargs):
 # SECTION 2: PUBLIC API ENDPOINTS (URL VIEW TARGETS)
 # These endpoints are mapped directly in urls.py for incoming HTTP requests.
 
-
+# I know
 @api_view(["GET"])
 def health_check(request):
     # Runs every 15 seconds
@@ -2293,22 +2308,97 @@ def _is_admin_email(email):
 
     return parts[1] == admin_domain
 
-
+# I know
 class RequesterIdentity(tuple):
     """
     Caller identity tuple: (is_authenticated, user_id, is_staff).
     Provides full backward compatibility with 3-tuple unpacking while exposing typed attributes
     including .user_email.
     """
+
+    # Executed immediately when the class is called.
     def __new__(cls, is_authenticated, user_id, is_staff, user_email=None):
+        # super() -> refers to the parent class (Here it is `Tuple`)
+        # tuple.__new__(RequesterIdentity,())
+        """
+        Why call __new__ again?
+        Because RequesterIdentity doesn't know how to allocate memory for a tuple.
+
+        Python's built-in tuple is implemented in low-level C. Only tuple.__new__ knows how to allocate and lay out a tuple in computer memory.
+        When you define your own __new__ in RequesterIdentity, you are overriding the default creation process.
+        To actually get an object created, you must call the parent's creator:
+        python
+
+
+        # "Parent (tuple), please actually build the object in memory for me"
+        super().__new__(...)
+        """
+        # why pass `cls`, 
+        """
+        If tuple.__new__ didn't receive cls, it would create a standard, plain tuple.
+        A plain tuple cannot have attributes like .user_email.
+        By passing cls (tuple.__new__(cls, ...)), you are saying:
+        "Create a tuple in memory, but stamp it as an instance of RequesterIdentity, not a generic tuple."
+        """
+
+        # "Hey parent tuple class (super()), run your constructor (__new__) to allocate an object of type RequesterIdentity (cls) containing these 3 values (is_authenticated, user_id, is_staff).
         return super().__new__(cls, (is_authenticated, user_id, is_staff))
 
+    # above return statement triggers this __init__
     def __init__(self, is_authenticated, user_id, is_staff, user_email=None):
         self.is_authenticated = is_authenticated
         self.user_id = user_id
         self.is_staff = is_staff
         self.user_email = user_email
 
+    # How this two memory place have different count values (one with 3 and other with 4)
+
+    """
+    +-------------------------------------------------------------------------+
+    |                       RequesterIdentity Object                          |
+    |                                                                         |
+    |  [ PLACE 1: The Tuple Sequence (C Array) ]                              |
+    |  Controlled by: __new__                                                 |
+    |  Contains: 3 values                                                     |
+    |    Index [0] = is_authenticated                                         |
+    |    Index [1] = user_id                                                  |
+    |    Index [2] = is_staff                                                 |
+    |                                                                         |
+    |  [ PLACE 2: The Attribute Dictionary (__dict__) ]                       |
+    |  Controlled by: __init__                                                |
+    |  Contains: 4 values                                                     |
+    |    .is_authenticated = is_authenticated                                 |
+    |    .user_id          = user_id                                          |
+    |    .is_staff         = is_staff                                         |
+    |    .user_email       = user_email                                       |
+    +-------------------------------------------------------------------------+
+
+    MECHANICS & DESIGN:
+
+    1. Unpacking (Sequence Iteration):
+       When caller executes:
+           a, b, c = identity
+       Python queries the sequence iterator (__iter__). Since this class inherits
+       from tuple, it reads ONLY Place 1 (the underlying 3-element C array).
+       Because Place 1 has exactly 3 elements, legacy 3-variable unpacking succeeds
+       without raising ValueError. Place 2 is completely ignored during unpacking.
+
+    2. Dot-Notation (Attribute Lookup):
+       When caller executes:
+           print(identity.user_email)
+       Python checks the instance dictionary (__dict__) in Place 2.
+       It resolves 'user_email' cleanly. Place 1 is ignored during attribute lookup.
+
+    3. Two Storage Compartments:
+       - list(identity)      ==> [True, 'user_123', True] (3 values)
+       - identity.__dict__   ==> {
+           'is_authenticated': True,
+           'user_id': 'user_123',
+           'is_staff': True,
+           'user_email': 'admin@dtc.internal'
+         } (4 values)
+    """
+    
 
 def _get_requester_identity(request):
     """
@@ -2326,6 +2416,10 @@ def _get_requester_identity(request):
     if _verify_staff_key(request.headers.get("X-Staff-Key")):
         user_id = request.headers.get("X-User-ID") or os.getenv("STAFF_USER_ID") or "system_staff"
         user_email = request.headers.get("X-User-Email") or os.getenv("STAFF_EMAIL_ID") or "admin@dtc.internal"
+
+        # arguments:
+        #   True = `is_authenticated`
+        #   True = `is_staff`
         return RequesterIdentity(True, user_id, True, user_email=user_email)
 
     # JWT Bearer Token (Priority 2)

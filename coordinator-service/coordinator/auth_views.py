@@ -22,6 +22,7 @@ _redis_client_instance = None
 
 is_testing = bool(getattr(settings, "IS_TESTING", False))
 
+# I know
 def _get_redis_client():
     global _redis_last_check, _redis_client_instance
 
@@ -60,7 +61,7 @@ def _get_redis_client():
 
         return None
 
-
+# I know
 def _is_dev_auth_mode():
     if is_testing:
         return False
@@ -98,7 +99,7 @@ _KNOWN_GMAIL_TYPOS = frozenset({
 })
 
 
-
+# I know
 def _suggest_domain(domain_part):
     """
     Returns a suggested correction for `domain_part` if it looks like a
@@ -110,7 +111,7 @@ def _suggest_domain(domain_part):
 
     return None
 
-
+# I know
 def validate_email(email):
     """
     Validates that the email address is a valid @gmail.com address
@@ -161,51 +162,61 @@ def validate_email(email):
 
 validate_custom_email = validate_email
 
-
+# I know
 def _generate_user_id(email):
     norm = _normalize_email(email)
     sha = hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
     return f"usr_{sha}"
 
-
+# I know
 def _get_client_ip(request):
     """
     Safely resolves client IP address (SEC-05).
     X-Forwarded-For is only trusted if the immediate peer (REMOTE_ADDR)
     is in the configured TRUSTED_PROXIES set. Otherwise REMOTE_ADDR is used.
     """
+    # The immediate network peer IP connecting directly to this server (e.g. Nginx, load balancer, or direct client)
     remote_addr = request.META.get("REMOTE_ADDR", "unknown").strip()
 
+    # Read whitelist of trusted proxy IPs from Django settings (if defined)
     trusted_proxies = getattr(settings, "TRUSTED_PROXIES", None)
     if trusted_proxies is None:
+        # Fallback to TRUSTED_PROXIES environment variable (defaults to localhost IPv4 & IPv6)
         raw = os.getenv("TRUSTED_PROXIES", "127.0.0.1,::1")
+        # Parse comma-separated IPs into a set for fast O(1) membership lookup
         trusted_proxies = {ip.strip() for ip in raw.split(",") if ip.strip()}
 
+    # If the direct peer is not a trusted proxy, it might be an untrusted client attempting to spoof headers; ignore XFF
     if remote_addr not in trusted_proxies:
         return remote_addr
 
+    # Fetch X-Forwarded-For header containing proxy chain: "client_ip, proxy1_ip, proxy2_ip"
     xff = request.META.get("HTTP_X_FORWARDED_FOR")
     if not xff:
         return remote_addr
 
-    # Parse X-Forwarded-For IPs in order
+    # Parse comma-separated XFF IPs in order, stripping whitespace
     ips = [ip.strip() for ip in xff.split(",") if ip.strip()]
     if not ips:
         return remote_addr
 
-    # Rightmost untrusted IP is the genuine client
+    # Iterate backwards (right-to-left) from the most recent proxy toward the original caller.
+    # The first IP from the right that is NOT in our trusted proxy list is the authentic client IP
+    # (any IPs to the left of it could have been forged by that client).
     for ip in reversed(ips):
         if ip not in trusted_proxies:
             return ip
 
+    # Fallback: if every IP in the chain was trusted, return the earliest one in the list
     return ips[0]
 
-
+# I know
 def _email_hash(email):
     """Short hash of email used in Redis keys (avoids storing raw emails in key names)."""
     return hashlib.sha256(email.encode("utf-8")).hexdigest()[:20]
 
 
+# I know
 def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
     """A JSON Web Token (JWT) is created"""
 
@@ -263,6 +274,7 @@ def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
     return f"{h_str}.{p_str}.{sig_str}"
 
 
+# I know
 def verify_jwt(token):
     if not token or "." not in token:
         return None, "Invalid token format"
@@ -304,7 +316,7 @@ def verify_jwt(token):
     except Exception as e:
         return None, str(e)
 
-
+# I know
 def get_user_from_request(request):
     """
     Extracts authenticated user identity from Authorization header or request payload.
@@ -348,7 +360,7 @@ def get_user_from_request(request):
 
 resend.api_key = os.getenv("RESEND_API_KEY")
 
-
+# I know
 def _dispatch_otp_email(to_email, otp_code):
     subject = f"Your DTC Verification Code: {otp_code}"
 
@@ -471,7 +483,7 @@ def _dispatch_otp_email(to_email, otp_code):
     except Exception as e:
         print(f"[Email Dispatch Error] {type(e).__name__}: {e}")
 
-
+# I know
 @api_view(["POST"])
 def send_otp(request):
     """
