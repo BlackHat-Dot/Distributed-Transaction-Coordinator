@@ -1,29 +1,17 @@
 from decimal import Decimal
 import logging
-import base64
-import hashlib
-import hmac
-import json
-import os
-import secrets
-import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 import zoneinfo
 from django.conf import settings
-
 from django.db import transaction, connection, IntegrityError, DatabaseError
-from django.db.models import Q
 from django.utils import timezone
 from rest_framework.decorators import api_view, throttle_classes
 from rest_framework.response import Response
 
-import jwt
 from .models import Event, Seat, Reservation
 from .serializers import EventSerializer, PublicSeatSerializer, InternalSeatSerializer
 from .throttling import (
-    UserActionRateThrottle,
-    AnonIpRateThrottle,
     SeatListRateThrottle,
     ReserveRateThrottle,
     ReserveAnonRateThrottle,
@@ -41,11 +29,7 @@ from .services import (
     get_redis_client,
     get_hold_duration,
     reclaim_expired_holds,
-    _validate_uuid,
     _validate_reserve_input,
-    _redis_client_instance,
-    _redis_last_failure,
-    _REDIS_NEGATIVE_CACHE_TTL,
 )
 
 logger = logging.getLogger(__name__)
