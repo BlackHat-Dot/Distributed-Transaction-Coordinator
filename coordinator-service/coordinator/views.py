@@ -34,9 +34,9 @@ REQUEST_READ_TIMEOUT = float(os.getenv("REQUEST_READ_TIMEOUT", os.getenv("REQUES
 REQUEST_TIMEOUT = (REQUEST_CONNECT_TIMEOUT, REQUEST_READ_TIMEOUT)
 
 # Downstream Inventory microservice base URL
-INVENTORY_BASE_URL = getattr(settings, "INVENTORY_SERVICE_URL", os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000")).rstrip("/")
+INVENTORY_BASE_URL = os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000").rstrip("/")
 # Downstream Payment microservice base URL
-PAYMENT_BASE_URL = getattr(settings, "PAYMENT_SERVICE_URL", os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001")).rstrip("/")
+PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rstrip("/")
 
 # Downstream Inventory microservice endpoints
 INVENTORY_RESERVE_URL = f"{INVENTORY_BASE_URL}/seats/reserve/"
