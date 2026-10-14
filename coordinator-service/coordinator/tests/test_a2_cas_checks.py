@@ -38,7 +38,7 @@ class CasChecksA2Tests(TestCase):
         txn.refresh_from_db()
         self.assertEqual(txn.status, Transaction.Status.COMPLETED)
 
-    def test_finalize_payment_outcome_lost_cas_returns_409(self):
+    def test_finish_payment_lost_cas_returns_409(self):
         """F-42: If _finish_payment loses CAS claim to COMPLETED, it must return 409 instead of 200."""
         # Transaction is already moved to COMPENSATION_FAILED
         _txn = Transaction.objects.create(

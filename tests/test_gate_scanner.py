@@ -10,6 +10,9 @@ from pathlib import Path
 import requests
 from playwright.sync_api import sync_playwright
 
+COORDINATOR_URL = "http://127.0.0.1:8002"
+INVENTORY_URL = "http://127.0.0.1:8000"
+
 GATE_SCANNER_DIR = Path(__file__).resolve().parent.parent / "gate-scanner"
 GATE_URL = os.getenv("GATE_URL", "http://127.0.0.1:3001/index.html")
 CORRECT_GATE_KEY = "gate-secret-key-change-in-production"

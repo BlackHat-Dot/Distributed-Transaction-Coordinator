@@ -26,7 +26,7 @@ This document specifies the required adjustments to `coordinator-service` result
          if getattr(settings, "DEBUG", False) or (request.user and request.user.is_staff):
              simulate_decline = request.query_params.get("simulate_payment_decline", "").lower() in ("true", "1")
      ```
-  2. In `_charge_payment` (or `_process_booking` / `_confirm_booking`), always derive `amount = total_amount` unconditionally unless `settings.ENABLE_TEST_PAYMENT_FAILURE` is active.
+  2. In `_charge` (or `_process_booking` / `_confirm_booking`), always derive `amount = total_amount` unconditionally unless `settings.ENABLE_TEST_PAYMENT_FAILURE` is active.
 - **Breaking Risk**: `BREAKING IF NOT COORDINATED` (Any test suites relying on client-injected query params without setting `ENABLE_TEST_PAYMENT_FAILURE=True` will no longer decline).
 
 ---
@@ -62,7 +62,7 @@ This document specifies the required adjustments to `coordinator-service` result
 
 ### Priority 3: Handle 409 IDEMPOTENCY_PAYLOAD_MISMATCH (MEDIUM)
 - **Files & Lines**:
-  - `coordinator/views.py:1260-1285` (`_charge_payment` response handling)
+  - `coordinator/views.py:1260-1285` (`_charge` response handling)
 - **Existing Behavior**:
   Coordinator checks `response.status_code == 201 or (response.status_code == 200 and response.json().get("status") == "CHARGED")` to determine success. Any other status code is treated as charge failure.
 - **Proposed Change**:

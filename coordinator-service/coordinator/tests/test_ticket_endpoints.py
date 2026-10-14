@@ -2,7 +2,7 @@ import concurrent.futures
 import time
 import uuid
 from decimal import Decimal
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from django.conf import settings
 from django.test import TransactionTestCase
 from django.utils import timezone
@@ -10,7 +10,6 @@ import jwt
 from rest_framework.test import APIClient
 
 from coordinator.models import Transaction, Ticket
-from coordinator.ticket_generator import generate_qr_code_image
 
 
 class TicketEndpointTests(TransactionTestCase):

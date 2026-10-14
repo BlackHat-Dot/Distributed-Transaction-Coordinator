@@ -12,7 +12,7 @@ class ConcurrencyA3Tests(TestCase):
     def setUp(self):
         self.tx_id = uuid.uuid4()
 
-    def test_run_saga_pipeline_skip_reserve_accepts_holding_and_inventory_reserved(self):
+    def test_run_saga_skip_reserve_accepts_holding_and_inventory_reserved(self):
         """F-04: _run_saga(skip_reserve=True) must accept both HOLDING and INVENTORY_RESERVED."""
         for initial_st in (Transaction.Status.HOLDING, Transaction.Status.INVENTORY_RESERVED):
             tid = uuid.uuid4()
@@ -34,7 +34,7 @@ class ConcurrencyA3Tests(TestCase):
                 self.assertEqual(resp.status_code, 200)
                 mock_charge.assert_called_once()
 
-    def test_run_saga_pipeline_lost_payment_processing_cas_returns_409(self):
+    def test_run_saga_lost_payment_processing_cas_returns_409(self):
         """F-04: When INVENTORY_RESERVED -> PAYMENT_PROCESSING CAS is lost, return 409 and do not charge."""
         Transaction.objects.create(
             transaction_id=self.tx_id,

@@ -277,7 +277,7 @@ class ViewsCoverageTests(TransactionTestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["count"], 5)
 
-    def test_finalize_payment_outcome_409_codes(self):
+    def test_finish_payment_409_codes(self):
         tx_id = uuid.uuid4()
         Transaction.objects.create(
             transaction_id=tx_id,
@@ -359,7 +359,7 @@ class ViewsCoverageTests(TransactionTestCase):
         self.assertTrue(any("STREAM_ERROR" in str(line) for line in lines))
         connection.ensure_connection()
 
-    def test_resolve_seat_pricing_error_branches(self):
+    def test_get_prices_error_branches(self):
         from coordinator.views import _get_prices
         # RequestException branch
         with patch("coordinator.views._http_post", side_effect=Exception("Timeout")):
@@ -395,7 +395,7 @@ class ViewsCoverageTests(TransactionTestCase):
             resp_get = _http_get("http://test.internal/get")
             self.assertEqual(resp_get.status_code, 200)
 
-    def test_request_payload_verify_invalid_fields(self):
+    def test_check_body_invalid_fields(self):
         resp = self.client.post(
             "/transactions/",
             data=json.dumps({"seat_ids": [1], "unknown_field_attack": "hacked"}),
@@ -405,7 +405,7 @@ class ViewsCoverageTests(TransactionTestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.data.get("code"), "INVALID_FIELDS")
 
-    def test_run_saga_pipeline_simulate_decline(self):
+    def test_run_saga_simulate_decline(self):
         from coordinator.views import _run_saga
         tx_id = uuid.uuid4()
         Transaction.objects.create(
@@ -667,7 +667,7 @@ class ViewsCoverageTests(TransactionTestCase):
             )
             self.assertEqual(resp.status_code, 503)
 
-    def test_charge_payment_timeout_check_recovers(self):
+    def test_charge_timeout_check_recovers(self):
         from requests.exceptions import RequestException
         from coordinator.views import _charge
 

@@ -37,7 +37,7 @@
 - **Challenge**: Does `payment-service` have `INTERNAL_SERVICE_KEY` configured in its environment settings?
 - **Attack**: Inspecting `payment-service/payment_service/settings.py` shows it was not previously reading `INTERNAL_SERVICE_KEY`.
 - **Analysis**: Adding the check without updating settings or docker-compose would cause 100% 403 errors on all payment operations.
-- **Change**: Added `INTERNAL_SERVICE_KEY` declaration to `payment_service/settings.py` and ensured Coordinator's `_charge_payment` and `_refund_payment` explicitly send `X-Internal-Service-Key`.
+- **Change**: Added `INTERNAL_SERVICE_KEY` declaration to `payment_service/settings.py` and ensured Coordinator's `_charge` and `_refund_payment` explicitly send `X-Internal-Service-Key`.
 
 ---
 

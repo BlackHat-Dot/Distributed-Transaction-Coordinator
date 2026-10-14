@@ -4,7 +4,7 @@ from django.core.cache import cache
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from inventory.models import Event, Seat, Reservation
+from inventory.models import Event, Seat
 
 
 class TestG4ThrottlingHardening(TestCase):

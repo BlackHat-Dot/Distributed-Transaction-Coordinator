@@ -235,8 +235,8 @@ Client               Coordinator             Inventory (:8000)        Payment (:
   │<── 200 OK (Completed)─│
 ```
 
-1. **Client Request:** Calls `POST /transactions/` on Coordinator (`_handle_create_transaction` in `coordinator/views.py`) with `{"seat_ids": [1]}`.
-2. **Idempotent Record Creation:** `_create_transaction_idempotent()` atomically inserts a `Transaction` row with `status=STARTED`.
+1. **Client Request:** Calls `POST /transactions/` on Coordinator (`_create_txn` in `coordinator/views.py`) with `{"seat_ids": [1]}`.
+2. **Idempotent Record Creation:** `_create_txn()` atomically inserts a `Transaction` row with `status=STARTED`.
 3. **Inventory Hold:** Coordinator sends `POST /seats/reserve/` (`reserve_seat` in `inventory/views.py`). Inventory locks the seat row via `SELECT FOR UPDATE`, sets `status=HELD` with ephemeral expiration, creates `Reservation(status=RESERVED)`, and returns HTTP 200.
 4. **State Transition:** Coordinator transitions `STARTED` $\to$ `INVENTORY_RESERVED` $\to$ `PAYMENT_PROCESSING`.
 5. **Payment Charge:** Coordinator sends `POST /payments/charge/` (`charge_payment` in `payments/views.py`). Payment service inserts `Payment(status=CHARGED)` and returns HTTP 200.
@@ -264,7 +264,7 @@ Client               Coordinator             Inventory (:8000)        Payment (:
 ```
 
 1. **Payment Fails:** Payment service returns non-200 or decline status (e.g. 422).
-2. **Compensation Trigger:** `_finalize_payment_outcome()` invokes `_compensate()`.
+2. **Compensation Trigger:** `_finish_payment()` invokes `_compensate()`.
 3. **Transition to Compensating:** Coordinator sets `status=COMPENSATING`.
 4. **Seat Release:** Coordinator dispatches `POST /seats/release/` (`release_seat` in `inventory/views.py`).
 5. **Seat Availability Restored:** Inventory locks the `Reservation` row via `SELECT FOR UPDATE`, sets `Reservation.status=RELEASED`, resets `Seat.status=AVAILABLE` with `held_by_transaction_id=None`, and returns HTTP 200.
@@ -371,7 +371,7 @@ Client               Coordinator             Inventory (:8000)        Payment (:
 - **Transactional Outbox / Debezium:** Unnecessary architectural complexity for direct synchronous HTTP coordination with status probing.
 - **Apache Kafka / RabbitMQ:** Adds eventual consistency lag and complex distributed debugging overhead where direct orchestration is preferred.
 - **CQRS Read Replicas:** Read load at current scale does not justify separate read/write database schemas.
-- **Circuit Breakers (e.g. Netflix Hystrix / Resilience4j):** Standard timeout classification (`_transport_status`) combined with periodic background recovery handles transient network partition cleanly.
+- **Circuit Breakers (e.g. Netflix Hystrix / Resilience4j):** Standard timeout classification (`_err_status`) combined with periodic background recovery handles transient network partition cleanly.
 - **Distributed Tracing (OpenTelemetry):** Audit logging via `SagaEvent` provides complete transaction-scoped causality without requiring external collector infrastructure (Jaeger/Zipkin).
 - **Full Event Sourcing:** Materialized column + audit table provides identical auditability with vastly superior query ergonomics and $O(1)$ indexed lookups.
 

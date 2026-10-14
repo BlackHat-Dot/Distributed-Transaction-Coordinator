@@ -82,7 +82,7 @@ class TestH5AdminResetProhibitsRefund(TestCase):
         self.assertEqual(latest_event.http_payload.get("released_reason"), "ADMIN_RESET")
 
     def test_execute_compensation_sweep_prohibits_refund_on_admin_reset_check_payload(self):
-        txn = Transaction.objects.create(
+        Transaction.objects.create(
             transaction_id=self.tx_id,
             status=Transaction.Status.RECOVERY_IN_PROGRESS,
             seat_ids=[1],

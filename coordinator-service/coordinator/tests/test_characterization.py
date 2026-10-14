@@ -175,16 +175,18 @@ class CharacterizationTests(TestCase):
             quantity=1,
             user_id="u1",
         )
-        from coordinator.views import RequesterIdentity
-        with patch("coordinator.views._get_caller", return_value=RequesterIdentity(True, "staff1", True, "admin@dtc.internal")):
-            resp = self.client.post(f"/transactions/{txn_id}/retry-compensation/", format="json")
+        resp = self.client.post(
+            f"/transactions/{txn_id}/retry-compensation/",
+            format="json",
+            HTTP_X_STAFF_KEY="dev-staff-secret-key-change-in-production",
+        )
 
         self.assertEqual(resp.status_code, 400)
 
     def test_7_idor_non_staff_denied_on_other_users_transaction(self):
         """7. IDOR rule: non-staff user gets 403 on someone else's transaction."""
         txn_id = uuid.uuid4()
-        txn = Transaction.objects.create(
+        Transaction.objects.create(
             transaction_id=txn_id,
             status=Transaction.Status.HOLDING,
             seat_ids=[1],

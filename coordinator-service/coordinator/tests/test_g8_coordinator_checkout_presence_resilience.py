@@ -38,7 +38,7 @@ class TestG8CoordinatorCheckoutPresenceResilience(TestCase):
                 _clear_checkout_presence(tx_id)
                 self.assertTrue(any("Failed to clear checkout presence key" in msg for msg in log_cm.output))
 
-    def test_charge_payment_clears_checkout_presence_on_unhandled_exception(self):
+    def test_charge_clears_checkout_presence_on_unhandled_exception(self):
         """
         G8: When _charge encounters an unhandled exception, _clear_checkout_presence is called.
         """

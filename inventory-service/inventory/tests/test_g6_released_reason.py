@@ -1,6 +1,6 @@
 import uuid
 from decimal import Decimal
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from django.utils import timezone
 from datetime import timedelta
 from rest_framework.test import APIClient, APIRequestFactory

@@ -19,10 +19,7 @@ from inventory.views import (
     _verify_internal_service_key,
     reset_seats,
     sweep_expired_holds,
-    reserve_seat,
     release_seat,
-    seat_list,
-    seat_pricing,
 )
 
 
@@ -156,7 +153,7 @@ class Phase3AuthAndSecurityTests(TestCase):
             user_id="usr_original_owner",
             user_email="owner@example.com",
         )
-        res = Reservation.objects.create(
+        Reservation.objects.create(
             seat=seat,
             transaction_id=tid,
             user_id="usr_original_owner",
@@ -191,7 +188,7 @@ class Phase3AuthAndSecurityTests(TestCase):
             user_id="usr_owner_789",
             user_email="owner789@example.com",
         )
-        res = Reservation.objects.create(
+        Reservation.objects.create(
             seat=seat,
             transaction_id=tid,
             user_id="usr_owner_789",

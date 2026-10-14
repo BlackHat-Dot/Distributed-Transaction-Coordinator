@@ -1,8 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 import zoneinfo
 from django.core.management.base import BaseCommand
-from django.utils import timezone
 from inventory.models import Event, Seat
 
 

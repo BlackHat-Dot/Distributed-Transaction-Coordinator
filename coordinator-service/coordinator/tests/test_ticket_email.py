@@ -1,7 +1,7 @@
 import time
 import uuid
 from decimal import Decimal
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from django.conf import settings
 from django.core.cache import cache
 from django.test import TransactionTestCase

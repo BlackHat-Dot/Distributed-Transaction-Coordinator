@@ -53,7 +53,7 @@ class CleanupA8Tests(TestCase):
             refund_calls = [c for c in mock_http_post.call_args_list if "refund" in c.args[0]]
             self.assertEqual(len(refund_calls), 0, "Refund was erroneously called for non-CHARGED payment!")
 
-    def test_finalize_payment_outcome_sanitizes_confirm_err_f43(self):
+    def test_finish_payment_sanitizes_confirm_err_f43(self):
         """F-43: Raw Python exception from _confirm must not leak to the user payload."""
         txn = Transaction.objects.create(
             transaction_id=uuid.uuid4(),

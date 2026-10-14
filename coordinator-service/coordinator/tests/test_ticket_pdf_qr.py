@@ -1,10 +1,9 @@
 import io
 import secrets
 import uuid
-from datetime import timezone as dt_timezone
 
 from decimal import Decimal
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from django.test import TestCase
 from django.utils import timezone
 import cv2
@@ -18,7 +17,6 @@ from coordinator.ticket_generator import (
     generate_tickets_pdf,
     generate_tickets_ics,
 )
-from coordinator.tickets import issue_tickets_for_transaction
 
 
 class TicketPdfQrTests(TestCase):

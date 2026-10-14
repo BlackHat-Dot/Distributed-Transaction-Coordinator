@@ -13,13 +13,13 @@ flowchart TD
     %% 1. CLIENT INGRESS & VALIDATION
     %% ==========================================
     subgraph S1 ["1. Client Request Ingress & Validation"]
-        REQ["Client: POST /transactions/<br/>(Headers, JSON payload, query params)"] --> D1{"Valid payload structure?<br/>_request_payload_verify()<br/>[coordinator/views.py]"}
+        REQ["Client: POST /transactions/<br/>(Headers, JSON payload, query params)"] --> D1{"Valid payload structure?<br/>_check_body()<br/>[coordinator/views.py]"}
         D1 -- "Missing/Not List of Ints" --> ERR_PAYLOAD["HTTP 400: SEATS_REQUIRED / INVALID_SEAT_IDS<br/>(Immediate Rejection)"]:::failure
         D1 -- "Disallowed fields (user_id, amount, etc.)" --> ERR_FIELDS["HTTP 400: INVALID_FIELDS<br/>(Immediate Rejection)"]:::failure
-        D1 -- "Valid seat_ids" --> D2{"Caller Authenticated?<br/>_get_requester_identity()<br/>[coordinator/views.py]"}
+        D1 -- "Valid seat_ids" --> D2{"Caller Authenticated?<br/>_get_caller()<br/>[coordinator/views.py]"}
 
         D2 -- "DEBUG=False & No JWT/Staff Key" --> ERR_AUTH["HTTP 401: AUTHENTICATION_REQUIRED<br/>(Immediate Rejection)"]:::failure
-        D2 -- "Authenticated / Dev / Test" --> PRICE_CALL["_resolve_seat_pricing()<br/>Calls: POST /seats/pricing/<br/>[coordinator/views.py]"]
+        D2 -- "Authenticated / Dev / Test" --> PRICE_CALL["_get_prices()<br/>Calls: POST /seats/pricing/<br/>[coordinator/views.py]"]
     end
 
     %% ==========================================
@@ -29,7 +29,7 @@ flowchart TD
         PRICE_CALL --> D3{"Inventory Reachable & Found?<br/>seat_pricing()<br/>[inventory/views.py]"}
         D3 -- "Connection Timeout / 5xx" --> ERR_PRICE_503["HTTP 503: PRICING_UNAVAILABLE<br/>(Transaction not created)"]:::failure
         D3 -- "Seats count mismatch" --> ERR_PRICE_404["HTTP 404: SEATS_NOT_FOUND<br/>(Transaction not created)"]:::failure
-        D3 -- "HTTP 200: Seat Prices Returned" --> D4{"Create STARTED Record?<br/>_create_transaction_idempotent()<br/>[coordinator/views.py]"}
+        D3 -- "HTTP 200: Seat Prices Returned" --> D4{"Create STARTED Record?<br/>_create_txn()<br/>[coordinator/views.py]"}
 
         D4 -- "IntegrityError (Duplicate ID)" --> D4_DUP["Return existing transaction state<br/>(Idempotent response)"]:::failure
         D4 -- "Inserted in DB" --> D5{"Simulate Crash Header?<br/>request.data.coordinator<br/>[coordinator/views.py]"}
@@ -45,7 +45,7 @@ flowchart TD
         CELERY_PUB -- "Redis Available" --> RESP_202["HTTP 202 Accepted + poll_url<br/>Client polls GET /transactions/tx_id/"]:::background
         CELERY_PUB -- "Redis ConnectionError" --> FALLBACK_SYNC["Log Warning & Fallback to Synchronous"]:::step
         RESP_202 --> CELERY_WORKER["Celery Worker Pops Task<br/>execute_saga_task()<br/>[coordinator/tasks.py]"]
-        CELERY_WORKER --> RUN_SAGA["_run_saga_pipeline()<br/>[coordinator/views.py]"]
+        CELERY_WORKER --> RUN_SAGA["_run_saga()<br/>[coordinator/views.py]"]
 
         D6 -- "sync=true" --> RUN_SAGA
         FALLBACK_SYNC --> RUN_SAGA
@@ -55,7 +55,7 @@ flowchart TD
     %% 4. STEP 1: INVENTORY RESERVATION (LOCKING)
     %% ==========================================
     subgraph S4 ["4. Saga Step 1: Inventory Hold (Pessimistic Locking)"]
-        RUN_SAGA --> INV_CALL["_reserve_inventory()<br/>Calls: POST /seats/reserve/<br/>[coordinator/views.py]"]
+        RUN_SAGA --> INV_CALL["_reserve()<br/>Calls: POST /seats/reserve/<br/>[coordinator/views.py]"]
         INV_CALL --> INV_LOCK{"PostgreSQL Atomic Lock<br/>select_for_update().order_by(id)<br/>reserve_seat() [inventory/views.py]"}
 
         INV_LOCK -- "Missing Seats" --> INV_ERR_404["HTTP 404: One or more seats not found"]
@@ -75,7 +75,7 @@ flowchart TD
     %% 5. STEP 2: PAYMENT PROCESSING
     %% ==========================================
     subgraph S5 ["5. Saga Step 2: Payment Execution"]
-        SET_PAY_PROC --> PAY_CALL["_charge_payment()<br/>Calls: POST /payments/charge/<br/>[coordinator/views.py]"]
+        SET_PAY_PROC --> PAY_CALL["_charge()<br/>Calls: POST /payments/charge/<br/>[coordinator/views.py]"]
         PAY_CALL --> PAY_EXEC{"Idempotency & Gateway Simulation<br/>charge_payment() [payments/views.py]"}
 
         PAY_EXEC -- "Already CHARGED" --> PAY_200["Return Existing CHARGED (Idempotent)"]
@@ -84,8 +84,8 @@ flowchart TD
         PAY_EXEC -- "New Payment Approved" --> PAY_CHARGED["Create Payment status=CHARGED<br/>HTTP 200 OK"]
 
         PAY_CALL -- "Timeout / ConnectionError" --> PAY_TIMEOUT["Set status=PAYMENT_TIMEOUT/CONN_ERROR<br/>HTTP 504 Gateway Timeout"]:::unhandled
-        PAY_422 & PAY_500 --> COMP_PAY_FAIL["_finalize_payment_outcome()<br/>Payment Failed (was_charged=False)"]
-        PAY_200 & PAY_CHARGED --> CONF_CALL["_confirm_inventory()<br/>Calls: POST /seats/confirm/<br/>[coordinator/views.py]"]
+        PAY_422 & PAY_500 --> COMP_PAY_FAIL["_finish_payment()<br/>Payment Failed (was_charged=False)"]
+        PAY_200 & PAY_CHARGED --> CONF_CALL["_confirm()<br/>Calls: POST /seats/confirm/<br/>[coordinator/views.py]"]
     end
 
     %% ==========================================
@@ -101,7 +101,7 @@ flowchart TD
         CONF_OK_IDEMP & CONF_BOOKED --> SAGA_COMPLETED["Set status=COMPLETED<br/>_set_status_with_event()<br/>HTTP 200 OK: Booking Confirmed!"]:::success
 
         CONF_CALL -- "Timeout / ConnectionError" --> CONF_TIMEOUT["Inventory Confirm Timeout"]
-        CONF_ERR_409 & CONF_TIMEOUT --> COMP_CONF_FAIL["_finalize_payment_outcome()<br/>Confirm Failed (was_charged=True)"]
+        CONF_ERR_409 & CONF_TIMEOUT --> COMP_CONF_FAIL["_finish_payment()<br/>Confirm Failed (was_charged=True)"]
     end
 
     %% ==========================================

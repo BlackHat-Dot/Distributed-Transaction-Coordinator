@@ -37,7 +37,7 @@ class FaultInjectionAndSecretsB4Tests(TestCase):
             self.assertFalse(_faults_on(), "Fault injection must be denied without ENABLE_FAULT_INJECTION flag!")
 
     @override_settings(DEBUG=True, ENABLE_FAULT_INJECTION=True)
-    def test_fault_injection_allowed_with_debug_and_flag_f45(self):
+    def test_faults_on_with_debug_and_flag_f45(self):
         """F-45: When DEBUG=True and ENABLE_FAULT_INJECTION is True, fault injection is allowed."""
         with patch.dict(os.environ, {"ENABLE_FAULT_INJECTION": "True"}):
             self.assertTrue(_faults_on(), "Fault injection must be allowed when DEBUG=True and flag is True.")

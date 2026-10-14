@@ -16,11 +16,11 @@ This ledger accounts for every source, configuration, model, view, task, migrati
 | `coordinator/views.py` | `trigger_recovery_sweep` (POST /recovery/sweep/) | REVIEWED | **SEC-02, DOS-01** |
 | `coordinator/views.py` | `recovery_status` (GET /recovery/status/) | REVIEWED | No findings |
 | `coordinator/views.py` | `health_check` (GET /health/) | REVIEWED | No findings |
-| `coordinator/views.py` | `_get_requester_identity()` | REVIEWED | SEC-04, SEC-07 |
-| `coordinator/views.py` | `_run_saga_pipeline()` | REVIEWED | No findings |
-| `coordinator/views.py` | `_reserve_inventory()` | REVIEWED | No findings |
-| `coordinator/views.py` | `_charge_payment()` | REVIEWED | No findings |
-| `coordinator/views.py` | `_confirm_inventory()` | REVIEWED | No findings |
+| `coordinator/views.py` | `_get_caller()` | REVIEWED | SEC-04, SEC-07 |
+| `coordinator/views.py` | `_run_saga()` | REVIEWED | No findings |
+| `coordinator/views.py` | `_reserve()` | REVIEWED | No findings |
+| `coordinator/views.py` | `_charge()` | REVIEWED | No findings |
+| `coordinator/views.py` | `_confirm()` | REVIEWED | No findings |
 | `coordinator/views.py` | `_compensate()` | REVIEWED | **REL-01 (Critical)** |
 | `coordinator/auth_views.py` | `send_otp` (POST /auth/send-otp/) | REVIEWED | **SEC-05, DOS-02** |
 | `coordinator/auth_views.py` | `verify_otp` (POST /auth/verify-otp/) | REVIEWED | No findings |

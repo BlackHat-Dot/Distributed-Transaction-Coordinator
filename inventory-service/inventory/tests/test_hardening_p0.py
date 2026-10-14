@@ -1,7 +1,6 @@
 import time
 import uuid
 import jwt
-from django.conf import settings
 from django.test import TestCase, override_settings
 from rest_framework.test import APIRequestFactory
 
@@ -195,7 +194,6 @@ class TestA3BypassFlagsAndResetSeats(TestCase):
 
     @override_settings(DEBUG=False, STAFF_API_KEY="staff-key-123")
     def test_a3_reset_seats_logs_audit_trail(self):
-        import logging
         from inventory.views import reset_seats
         from inventory.models import Event, Seat, Reservation
         event = Event.objects.create(name="Audit Test Event")

@@ -13,7 +13,7 @@ class RequestExceptionA6Tests(TestCase):
     def setUp(self):
         self.tx_id = uuid.uuid4()
 
-    def test_reserve_inventory_catches_chunked_encoding_error(self):
+    def test_reserve_catches_chunked_encoding_error(self):
         """F-07: _reserve must catch general RequestException (e.g. ChunkedEncodingError)."""
         Transaction.objects.create(
             transaction_id=self.tx_id,
@@ -31,7 +31,7 @@ class RequestExceptionA6Tests(TestCase):
             self.assertIsNotNone(err_resp)
             self.assertEqual(err_resp.status_code, 504)
 
-    def test_charge_payment_catches_content_decoding_error(self):
+    def test_charge_catches_content_decoding_error(self):
         """F-07: _charge must catch general RequestException."""
         Transaction.objects.create(
             transaction_id=self.tx_id,
@@ -51,7 +51,7 @@ class RequestExceptionA6Tests(TestCase):
                 )
                 self.assertEqual(resp.status_code, 503)
 
-    def test_confirm_inventory_catches_ssl_error(self):
+    def test_confirm_catches_ssl_error(self):
         """F-07: _confirm must catch general RequestException."""
         with patch("coordinator.views._http_post", side_effect=requests.exceptions.SSLError("Handshake failed")):
             resp, err = _confirm(
