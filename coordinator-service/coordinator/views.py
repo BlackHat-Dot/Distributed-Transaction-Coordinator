@@ -27,16 +27,16 @@ from .saga_log import _set_status_with_event
 logger = logging.getLogger(__name__)
 
 # Outbound HTTP connection timeout (seconds)
-CONNECT_TIMEOUT = float(os.getenv("REQUEST_CONNECT_TIMEOUT", "2.0"))
-# Outbound HTTP read timeout (seconds)
-READ_TIMEOUT = float(os.getenv("REQUEST_READ_TIMEOUT", "5.0"))
+REQUEST_CONNECT_TIMEOUT = float(os.getenv("REQUEST_CONNECT_TIMEOUT", "2.0"))
+# Outbound HTTP read timeout (seconds, falling back to REQUEST_TIMEOUT env)
+REQUEST_READ_TIMEOUT = float(os.getenv("REQUEST_READ_TIMEOUT", os.getenv("REQUEST_TIMEOUT", "5.0")))
 # Request timeout tuple (connect, read) for outbound HTTP calls
-REQUEST_TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
+REQUEST_TIMEOUT = (REQUEST_CONNECT_TIMEOUT, REQUEST_READ_TIMEOUT)
 
 # Downstream Inventory microservice base URL
-INVENTORY_BASE_URL = os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000").rstrip("/")
+INVENTORY_BASE_URL = getattr(settings, "INVENTORY_SERVICE_URL", os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000")).rstrip("/")
 # Downstream Payment microservice base URL
-PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rstrip("/")
+PAYMENT_BASE_URL = getattr(settings, "PAYMENT_SERVICE_URL", os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001")).rstrip("/")
 
 # Downstream Inventory microservice endpoints
 INVENTORY_RESERVE_URL = f"{INVENTORY_BASE_URL}/seats/reserve/"
@@ -51,7 +51,7 @@ PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
 PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
 
 # Shared secret for service-to-service internal authentication (X-Internal-Service-Key)
-INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None)
+INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 # Secret key for human administrative staff access (X-Staff-Key)
 STAFF_API_KEY = os.getenv("STAFF_API_KEY", "").strip()
 
@@ -1453,7 +1453,7 @@ def _set_checkout_presence(transaction_id):
     try:
         client = _get_coordinator_redis_client()
         if client:
-            ttl = int(READ_TIMEOUT + 60)
+            ttl = int(REQUEST_READ_TIMEOUT + 60)
             client.set(f"dtc:checkout:{transaction_id}", "1", ex=ttl)
     except Exception as exc:
         logger.warning("Failed to set checkout presence key for tx %s: %s", transaction_id, exc)
