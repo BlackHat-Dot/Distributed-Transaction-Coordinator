@@ -1235,7 +1235,8 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
 
   const nextSeatId = await getNextAvailableSeatId();
   const t0 = performance.now();
-  const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
+  const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/${isLocal ? "?sync=true" : ""}`;
+  const res = await fetchWithTimeout(endpointUrl, {
     method: "POST",
     body: JSON.stringify({
       seat_ids: [nextSeatId],
@@ -1317,7 +1318,8 @@ DOM.btnDemoFail.addEventListener("click", async () => {
 
   const nextSeatId = await getNextAvailableSeatId();
   const t0 = performance.now();
-  const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/?simulate_payment_decline=true`, {
+  const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/?simulate_payment_decline=true${isLocal ? "&sync=true" : ""}`;
+  const res = await fetchWithTimeout(endpointUrl, {
     method: "POST",
     body: JSON.stringify({
       seat_ids: [nextSeatId],
@@ -1479,12 +1481,12 @@ DOM.btnDemoRace.addEventListener("click", async () => {
   }
 
   const targetSeatId = await getNextAvailableSeatId();
+  const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/${isLocal ? "?sync=true" : ""}`;
   const promises = Array.from({ length: 5 }, () =>
-    fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
+    fetchWithTimeout(endpointUrl, {
       method: "POST",
       body: JSON.stringify({
         seat_ids: [targetSeatId],
-        transaction_id: sharedTxId,
       }),
     })
   );
@@ -1542,7 +1544,8 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
     txId = crypto.randomUUID();
     createSimulatedTransaction("STARTED", txId);
   } else {
-    const res = await fetchWithTimeout(`${CONFIG.coordinatorUrl}/transactions/`, {
+    const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/${isLocal ? "?sync=true" : ""}`;
+    const res = await fetchWithTimeout(endpointUrl, {
       method: "POST",
       body: JSON.stringify({
         seat_ids: [targetSeatId],

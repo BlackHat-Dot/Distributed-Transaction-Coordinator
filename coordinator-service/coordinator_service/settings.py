@@ -70,6 +70,10 @@ ENABLE_TEST_PAYMENT_FAILURE = os.getenv("ENABLE_TEST_PAYMENT_FAILURE", "False").
 if IS_TESTING:
     ENABLE_TEST_PAYMENT_FAILURE = True
 
+ENABLE_FAULT_INJECTION = os.getenv("ENABLE_FAULT_INJECTION", "False").lower() in ("true", "1", "t")
+if IS_TESTING:
+    ENABLE_FAULT_INJECTION = True
+
 # coordinator_service/settings.py
 
 if DEBUG:

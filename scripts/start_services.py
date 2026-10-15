@@ -18,12 +18,18 @@ BASE_ENV.update({
     "DB_HOST": "127.0.0.1",
     "DB_PORT": "5432",
     "CACHE_BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    "ENABLE_TEST_PAYMENT_FAILURE": "True",
+    "ENABLE_FAULT_INJECTION": "True",
+    "INVENTORY_SERVICE_URL": "http://127.0.0.1:8000",
+    "PAYMENT_SERVICE_URL": "http://127.0.0.1:8001",
 })
 
 COORDINATOR_ENV = BASE_ENV.copy()
 COORDINATOR_ENV.update({
     "INVENTORY_URL": "http://127.0.0.1:8000",
     "PAYMENT_URL": "http://127.0.0.1:8001",
+    "INVENTORY_SERVICE_URL": "http://127.0.0.1:8000",
+    "PAYMENT_SERVICE_URL": "http://127.0.0.1:8001",
     "PUBLIC_BASE_URL": "http://127.0.0.1:8002",
 })
 
