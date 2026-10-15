@@ -34,7 +34,7 @@ class PaymentsConfig(AppConfig):
         if cmd in non_serving_commands:
             return
 
-        key = getattr(settings, "INTERNAL_SERVICE_KEY", None)
+        key = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
         if not key or not str(key).strip():
             raise ImproperlyConfigured(
                 "CRITICAL SECURITY ERROR: INTERNAL_SERVICE_KEY environment variable is not set or empty in non-test environment."

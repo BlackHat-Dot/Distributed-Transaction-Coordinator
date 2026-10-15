@@ -67,8 +67,6 @@ if ALLOW_DEV_STAFF_BYPASS and not (DEBUG or IS_TESTING):
         "CRITICAL SECURITY ERROR: ALLOW_DEV_STAFF_BYPASS cannot be enabled in production (DEBUG=False)!"
     )
 
-ENABLE_FAULT_INJECTION = os.getenv("ENABLE_FAULT_INJECTION", "False").lower() in ("true", "1", "yes", "t")
-
 ENABLE_TEST_PAYMENT_FAILURE = os.getenv("ENABLE_TEST_PAYMENT_FAILURE", "False").lower() in ("true", "1", "t")
 if IS_TESTING:
     ENABLE_TEST_PAYMENT_FAILURE = True

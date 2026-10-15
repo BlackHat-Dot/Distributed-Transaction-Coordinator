@@ -6,7 +6,7 @@ from rest_framework.response import Response
 
 
 def _get_valid_internal_keys():
-    primary_key = getattr(settings, "INTERNAL_SERVICE_KEY", None)
+    primary_key = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
     fallback_key = getattr(settings, "INTERNAL_SERVICE_KEY_FALLBACK", None) or os.getenv("INTERNAL_SERVICE_KEY_FALLBACK")
     return [k.strip() for k in (primary_key, fallback_key) if k and isinstance(k, str) and k.strip()]
 

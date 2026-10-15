@@ -907,6 +907,7 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         # In non-testing mode with valid keys, returns 0 warnings
         with self.settings(IS_TESTING=False, INTERNAL_SERVICE_KEY="prod-secret-123"):
             env = {
+                "INTERNAL_SERVICE_KEY": "prod-secret-123",
                 "STAFF_API_KEY": "staff-secret-456",
                 "ADMIN_DOMAIN": "dtc.internal",
             }

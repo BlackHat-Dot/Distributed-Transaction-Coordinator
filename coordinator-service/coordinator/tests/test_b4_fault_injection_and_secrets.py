@@ -27,22 +27,26 @@ class FaultInjectionAndSecretsB4Tests(TestCase):
     @override_settings(DEBUG=False, ENABLE_FAULT_INJECTION=True)
     def test_fault_injection_strictly_denied_in_production_f24_f45(self):
         """F-24/F-45: Fault injection must return False in production (DEBUG=False) regardless of env flag."""
-        self.assertFalse(_faults_on(), "Fault injection must be denied when DEBUG=False!")
+        with patch.dict(os.environ, {"ENABLE_FAULT_INJECTION": "True"}):
+            self.assertFalse(_faults_on(), "Fault injection must be denied when DEBUG=False!")
 
     @override_settings(DEBUG=True, ENABLE_FAULT_INJECTION=False)
     def test_fault_injection_denied_in_debug_without_flag_f45(self):
         """F-45: When DEBUG=True but ENABLE_FAULT_INJECTION is False, fault injection is disallowed."""
-        self.assertFalse(_faults_on(), "Fault injection must be denied without ENABLE_FAULT_INJECTION flag!")
+        with patch.dict(os.environ, {"ENABLE_FAULT_INJECTION": "False"}):
+            self.assertFalse(_faults_on(), "Fault injection must be denied without ENABLE_FAULT_INJECTION flag!")
 
     @override_settings(DEBUG=True, ENABLE_FAULT_INJECTION=True)
     def test_faults_on_with_debug_and_flag_f45(self):
         """F-45: When DEBUG=True and ENABLE_FAULT_INJECTION is True, fault injection is allowed."""
-        self.assertTrue(_faults_on(), "Fault injection must be allowed when DEBUG=True and flag is True.")
+        with patch.dict(os.environ, {"ENABLE_FAULT_INJECTION": "True"}):
+            self.assertTrue(_faults_on(), "Fault injection must be allowed when DEBUG=True and flag is True.")
 
-    @override_settings(DEBUG=False, ENABLE_FAULT_INJECTION=False)
+    @override_settings(DEBUG=False)
     def test_coordinator_crash_simulation_denied_in_production_f45(self):
         """F-45: In production, client sending 'coordinator: true' must not trigger crash simulation."""
-        with patch("coordinator.views.get_user_from_request", return_value={"is_authenticated": True, "user_id": "usr_1"}):
+        with patch.dict(os.environ, {"ENABLE_FAULT_INJECTION": "False"}), \
+             patch("coordinator.views.get_user_from_request", return_value={"is_authenticated": True, "user_id": "usr_1"}):
             resp = self.client.post(
                 "/transactions/",
                 {"seat_ids": [1], "action": "hold", "coordinator": True},
