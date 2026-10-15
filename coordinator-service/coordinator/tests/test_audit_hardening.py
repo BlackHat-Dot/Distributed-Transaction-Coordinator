@@ -77,7 +77,7 @@ class SecurityAndReliabilityHardeningTests(TestCase):
 
     @patch("coordinator.views.requests.get")
     @patch("coordinator.views.requests.post")
-    @patch("coordinator.views._get_requester_identity")
+    @patch("coordinator.views._get_caller")
     def test_sec01_retry_compensation_idor_rejected(self, mock_identity, mock_post, mock_get):
         """
         SEC-01: Proves that a non-staff caller cannot trigger retry-compensation
@@ -128,7 +128,7 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
     @patch("django.core.management.call_command")
-    @patch("coordinator.views._get_requester_identity")
+    @patch("coordinator.views._get_caller")
     def test_sec02_recovery_sweep_requires_staff_in_production(self, mock_identity, mock_call_cmd):
         """
         SEC-02: Proves that in production (DEBUG=False, IS_TESTING=False),
@@ -174,11 +174,11 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         SEC-04: Proves that staff key authentication validates keys
         and rejects forged or prefix-matched keys.
         """
-        from coordinator.views import _get_requester_identity
+        from coordinator.views import _get_caller
 
         # Valid staff key
         req_valid = self.factory.get("/transactions/", HTTP_X_STAFF_KEY="super-secret-staff-key-xyz")
-        is_auth, uid, is_staff = _get_requester_identity(req_valid)
+        is_auth, uid, is_staff = _get_caller(req_valid)
         self.assertTrue(is_auth)
         self.assertTrue(is_staff)
         self.assertEqual(uid, "system_staff")
@@ -186,17 +186,17 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         # Wrong key
         with self.settings(DEBUG=False, IS_TESTING=False):
             req_invalid = self.factory.get("/transactions/", HTTP_X_STAFF_KEY="super-secret-staff-key-wrong")
-            is_auth, uid, is_staff = _get_requester_identity(req_invalid)
+            is_auth, uid, is_staff = _get_caller(req_invalid)
             self.assertFalse(is_auth)
             self.assertFalse(is_staff)
 
             # Prefix attack
             req_prefix = self.factory.get("/transactions/", HTTP_X_STAFF_KEY="super-secret-staff-key")
-            is_auth, uid, is_staff = _get_requester_identity(req_prefix)
+            is_auth, uid, is_staff = _get_caller(req_prefix)
             self.assertFalse(is_auth)
             self.assertFalse(is_staff)
 
-    @patch("coordinator.views._get_requester_identity")
+    @patch("coordinator.views._get_caller")
     def test_sec07_falsy_user_id_does_not_leak_cross_tenant_transactions(self, mock_identity):
         """
         SEC-07: Proves that non-staff callers with empty or falsy user_ids
@@ -293,7 +293,7 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         self.assertEqual(payload["from_status"], "INVENTORY_RESERVED")
         self.assertFalse(payload["is_terminal"])
 
-    @patch("coordinator.views._get_requester_identity")
+    @patch("coordinator.views._get_caller")
     def test_sse02_transaction_stream_idor_protection(self, mock_identity):
         """
         SSE-02: Proves that non-staff callers cannot open an SSE stream
@@ -314,7 +314,7 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         response = transaction_stream(request, tx_id)
         self.assertEqual(response.status_code, 403)
 
-    @patch("coordinator.views._get_requester_identity")
+    @patch("coordinator.views._get_caller")
     def test_sse03_transaction_stream_yields_terminal_state_immediately(self, mock_identity):
         """
         SSE-03: Proves that if a transaction is already terminal when the SSE stream
@@ -471,10 +471,10 @@ class SecurityAndReliabilityHardeningTests(TestCase):
 
     def test_h2_confirm_timeout_retried_before_compensating(self):
         """
-        H2: When payment is CHARGED and _confirm_inventory times out,
-        coordinator must retry _confirm_inventory before giving up / compensating.
+        H2: When payment is CHARGED and _confirm times out,
+        coordinator must retry _confirm before giving up / compensating.
         """
-        from coordinator.views import _finalize_payment_outcome
+        from coordinator.views import _finish_payment
         import requests
 
         tx_id = uuid.uuid4()
@@ -497,15 +497,15 @@ class SecurityAndReliabilityHardeningTests(TestCase):
                 return None, requests.exceptions.Timeout("Read timeout on confirm")
             return mock_confirm_ok, None
 
-        with patch("coordinator.views._confirm_inventory", side_effect=mock_confirm), \
+        with patch("coordinator.views._confirm", side_effect=mock_confirm), \
              patch("coordinator.views._compensate") as mock_compensate:
-            resp = _finalize_payment_outcome(
+            resp = _finish_payment(
                 tx_id,
                 fail_compensation=False,
                 payment_data={"status": "CHARGED"},
             )
 
-            self.assertEqual(len(confirm_attempts), 2, "Expected _confirm_inventory to be retried on timeout")
+            self.assertEqual(len(confirm_attempts), 2, "Expected _confirm to be retried on timeout")
             self.assertFalse(mock_compensate.called, "_compensate should not be called when retry succeeds")
             self.assertEqual(resp.status_code, 200)
             txn.refresh_from_db()
@@ -570,7 +570,7 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         updated from inventory even when ENABLE_TEST_PAYMENT_FAILURE is True, provided
         simulate_decline is False.
         """
-        from coordinator.views import _run_saga_pipeline
+        from coordinator.views import _run_saga
 
         tx_id = uuid.uuid4()
         txn = Transaction.objects.create(
@@ -609,7 +609,7 @@ class SecurityAndReliabilityHardeningTests(TestCase):
 
         with self.settings(ENABLE_TEST_PAYMENT_FAILURE=True):
             with patch("coordinator.views._http_post", side_effect=mock_post):
-                _run_saga_pipeline(
+                _run_saga(
                     transaction_id=tx_id,
                     seat_ids=[1],
                     amount=Decimal("9999.00"),
@@ -629,9 +629,9 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         """
         H5/H6: Centralize terminal and recoverable statuses on Transaction model.
         Verify both sets, ensure INVENTORY_TIMEOUT / INVENTORY_CONNECTION_ERROR are present in TERMINAL_STATUSES,
-        and ensure needs_recovery is present in _serialize_transaction and SSE events.
+        and ensure needs_recovery is present in _txn_json and SSE events.
         """
-        from coordinator.views import _serialize_transaction
+        from coordinator.views import _txn_json
         from coordinator.saga_log import _publish_transaction_update
 
         # 1. Model constants exist and are non-empty sets
@@ -651,19 +651,19 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         self.assertIn(Transaction.Status.RETRY_COMPENSATION_FAILED, Transaction.RECOVERABLE_STATUSES)
         self.assertNotIn(Transaction.Status.COMPLETED, Transaction.RECOVERABLE_STATUSES)
 
-        # 4. _serialize_transaction includes is_terminal and needs_recovery
+        # 4. _txn_json includes is_terminal and needs_recovery
         tx_id = uuid.uuid4()
         txn = Transaction.objects.create(
             transaction_id=tx_id,
             status=Transaction.Status.PAYMENT_TIMEOUT,
             amount=Decimal("50.00"),
         )
-        serialized = _serialize_transaction(txn)
+        serialized = _txn_json(txn)
         self.assertTrue(serialized["is_terminal"])
         self.assertTrue(serialized["needs_recovery"])
 
         txn.status = Transaction.Status.COMPLETED
-        serialized_completed = _serialize_transaction(txn)
+        serialized_completed = _txn_json(txn)
         self.assertTrue(serialized_completed["is_terminal"])
         self.assertFalse(serialized_completed["needs_recovery"])
 
@@ -697,7 +697,7 @@ class SecurityAndReliabilityHardeningTests(TestCase):
 
         request = self.factory.post(f"/transactions/{tx_id}/retry-compensation/")
 
-        with patch("coordinator.views._get_requester_identity", return_value=(True, "user_eve", True)), \
+        with patch("coordinator.views._get_caller", return_value=(True, "user_eve", True)), \
              patch("coordinator.views.execute_compensation_sweep", side_effect=RuntimeError("Simulated sweep explosion")):
             resp = retry_compensation(request, tx_id)
 
@@ -745,11 +745,11 @@ class SecurityAndReliabilityHardeningTests(TestCase):
     def test_h11_auth_unification(self):
         """
         H11: requester identity unification:
-        - _get_requester_identity returns RequesterIdentity tuple with .user_email attribute.
+        - _get_caller returns RequesterIdentity tuple with .user_email attribute.
         - Unpacks cleanly into 3-tuple (is_auth, uid, is_staff).
-        - _handle_create_transaction uses unified identity extraction and rejects unauthenticated callers in prod.
+        - _create_txn uses unified identity extraction and rejects unauthenticated callers in prod.
         """
-        from coordinator.views import _get_requester_identity, RequesterIdentity
+        from coordinator.views import _get_caller, RequesterIdentity
 
         # 1. Staff key extraction with email
         req_staff = self.factory.post(
@@ -759,7 +759,7 @@ class SecurityAndReliabilityHardeningTests(TestCase):
             HTTP_X_USER_EMAIL="agent@admin.dtc.internal",
         )
         with patch.dict(os.environ, {"STAFF_API_KEY": "secret-staff"}):
-            ident = _get_requester_identity(req_staff)
+            ident = _get_caller(req_staff)
             self.assertIsInstance(ident, RequesterIdentity)
             is_auth, uid, is_staff = ident
             self.assertTrue(is_auth)
@@ -771,7 +771,7 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         req_jwt = self.factory.post("/transactions/")
         with patch.dict(os.environ, {"ADMIN_DOMAIN": "dtc.internal"}), \
              patch("coordinator.views.get_user_from_request", return_value={"is_authenticated": True, "user_id": "usr_99", "user_email": "boss@dtc.internal"}):
-            ident = _get_requester_identity(req_jwt)
+            ident = _get_caller(req_jwt)
             is_auth, uid, is_staff = ident
             self.assertTrue(is_auth)
             self.assertEqual(uid, "usr_99")
@@ -917,7 +917,7 @@ class SecurityAndReliabilityHardeningTests(TestCase):
 
     def test_h15_deduplicate_and_cap_seat_ids(self):
         """
-        H15: _request_payload_verify rejects duplicate seat_ids and enforces max seat cap.
+        H15: _check_body rejects duplicate seat_ids and enforces max seat cap.
         """
         # 1. Duplicate seat_ids in one-shot / hold
         resp = self.client.post(
@@ -980,9 +980,9 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         """
         from coordinator.views import (
             REQUEST_TIMEOUT,
-            _charge_payment,
-            _reserve_inventory,
-            _confirm_inventory,
+            _charge,
+            _reserve,
+            _confirm,
         )
         self.assertIsInstance(REQUEST_TIMEOUT, tuple)
         self.assertEqual(len(REQUEST_TIMEOUT), 2)
@@ -997,20 +997,20 @@ class SecurityAndReliabilityHardeningTests(TestCase):
 
         with patch("coordinator.views.requests.post") as mock_post:
             mock_post.return_value = MagicMock(status_code=200, json=lambda: {"status": "RESERVED"})
-            _reserve_inventory(tx_id, [1], correlation_id="cid-123")
+            _reserve(tx_id, [1], correlation_id="cid-123")
             call_kwargs = mock_post.call_args[1]
             self.assertEqual(call_kwargs["headers"].get("X-Idempotency-Key"), str(tx_id))
             self.assertEqual(call_kwargs.get("timeout"), REQUEST_TIMEOUT)
 
-            # Test _charge_payment
+            # Test _charge
             Transaction.objects.filter(transaction_id=tx_id).update(status=Transaction.Status.INVENTORY_RESERVED)
-            _charge_payment(tx_id, 500, False, correlation_id="cid-123", seat_ids=[1])
+            _charge(tx_id, 500, False, correlation_id="cid-123", seat_ids=[1])
             call_kwargs = mock_post.call_args[1]
             self.assertEqual(call_kwargs["headers"].get("X-Idempotency-Key"), str(tx_id))
             self.assertEqual(call_kwargs.get("timeout"), REQUEST_TIMEOUT)
 
-            # Test _confirm_inventory
-            _confirm_inventory(tx_id, [1], correlation_id="cid-123")
+            # Test _confirm
+            _confirm(tx_id, [1], correlation_id="cid-123")
             call_kwargs = mock_post.call_args[1]
             self.assertEqual(call_kwargs["headers"].get("X-Idempotency-Key"), str(tx_id))
             self.assertEqual(call_kwargs.get("timeout"), REQUEST_TIMEOUT)
@@ -1101,23 +1101,23 @@ class SecurityAndReliabilityHardeningTests(TestCase):
 
     def test_h20_outbound_correlation_id_standardized(self):
         """
-        H20: _reserve_inventory, _charge_payment, _confirm_inventory use _get_active_correlation_id
+        H20: _reserve, _charge, _confirm use _corr_id
         so that outbound calls always carry a valid non-empty X-Correlation-ID even if correlation_id=None.
         """
-        from coordinator.views import _reserve_inventory, _charge_payment, _confirm_inventory
+        from coordinator.views import _reserve, _charge, _confirm
         with patch("coordinator.views._http_post") as mock_post:
             mock_post.return_value = MagicMock(status_code=200, json=lambda: {})
             tx_id = uuid.uuid4()
 
-            _reserve_inventory(tx_id, seat_ids=[1], correlation_id=None)
+            _reserve(tx_id, seat_ids=[1], correlation_id=None)
             headers = mock_post.call_args[1]["headers"]
             self.assertTrue(headers.get("X-Correlation-ID"))
 
-            _charge_payment(tx_id, amount=Decimal("100.00"), fail_compensation=False, correlation_id=None)
+            _charge(tx_id, amount=Decimal("100.00"), fail_compensation=False, correlation_id=None)
             headers = mock_post.call_args[1]["headers"]
             self.assertTrue(headers.get("X-Correlation-ID"))
 
-            _confirm_inventory(tx_id, seat_ids=[1], correlation_id=None)
+            _confirm(tx_id, seat_ids=[1], correlation_id=None)
             headers = mock_post.call_args[1]["headers"]
             self.assertTrue(headers.get("X-Correlation-ID"))
 

@@ -3,7 +3,6 @@ import uuid
 from decimal import Decimal
 from unittest.mock import patch, MagicMock
 from django.test import TransactionTestCase
-from django.utils import timezone
 
 from coordinator.models import Transaction, Ticket
 from coordinator.tickets import issue_tickets_for_transaction, TicketIssuanceError

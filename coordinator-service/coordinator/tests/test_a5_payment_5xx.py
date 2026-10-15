@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 from django.test import TestCase
 
 from coordinator.models import Transaction
-from coordinator.views import _charge_payment
+from coordinator.views import _charge
 
 
 class Payment5xxA5Tests(TestCase):
@@ -60,7 +60,7 @@ class Payment5xxA5Tests(TestCase):
 
         with patch("coordinator.views._http_post", side_effect=mock_post) as p_post, \
              patch("coordinator.views._http_get", return_value=mock_check_resp) as p_get:
-            _charge_payment(
+            _charge(
                 transaction_id=self.tx_id,
                 amount=Decimal("100"),
                 fail_compensation=False,
@@ -106,7 +106,7 @@ class Payment5xxA5Tests(TestCase):
 
         with patch("coordinator.views._http_post", side_effect=mock_post), \
              patch("coordinator.views._http_get") as p_get:
-            _charge_payment(
+            _charge(
                 transaction_id=self.tx_id,
                 amount=Decimal("100"),
                 fail_compensation=False,

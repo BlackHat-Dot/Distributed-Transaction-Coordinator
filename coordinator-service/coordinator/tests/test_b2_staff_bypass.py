@@ -3,7 +3,7 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient, APIRequestFactory
 
-from coordinator.views import _get_requester_identity, trigger_recovery_sweep
+from coordinator.views import _get_caller, trigger_recovery_sweep
 
 
 class StaffBypassB2Tests(TestCase):
@@ -16,7 +16,7 @@ class StaffBypassB2Tests(TestCase):
         """F-17: When DEBUG=True but ALLOW_DEV_STAFF_BYPASS is False, caller is NOT staff."""
         request = self.factory.get("/transactions/")
         with patch.dict(os.environ, {"ALLOW_DEV_STAFF_BYPASS": "False"}):
-            is_auth, uid, is_staff = _get_requester_identity(request)
+            is_auth, uid, is_staff = _get_caller(request)
             self.assertTrue(is_auth)
             self.assertFalse(is_staff, "DEBUG=True should NOT grant is_staff=True when ALLOW_DEV_STAFF_BYPASS=False!")
 
@@ -25,7 +25,7 @@ class StaffBypassB2Tests(TestCase):
         """F-17: When DEBUG=True and ALLOW_DEV_STAFF_BYPASS is True, dev caller is granted staff."""
         request = self.factory.get("/transactions/")
         with patch.dict(os.environ, {"ALLOW_DEV_STAFF_BYPASS": "True"}):
-            is_auth, uid, is_staff = _get_requester_identity(request)
+            is_auth, uid, is_staff = _get_caller(request)
             self.assertTrue(is_auth)
             self.assertTrue(is_staff, "DEBUG=True with ALLOW_DEV_STAFF_BYPASS=True should grant is_staff=True.")
 
@@ -34,7 +34,7 @@ class StaffBypassB2Tests(TestCase):
         """F-17: When DEBUG=False, ALLOW_DEV_STAFF_BYPASS must NEVER grant staff privileges."""
         request = self.factory.get("/transactions/")
         with patch.dict(os.environ, {"ALLOW_DEV_STAFF_BYPASS": "True"}):
-            is_auth, uid, is_staff = _get_requester_identity(request)
+            is_auth, uid, is_staff = _get_caller(request)
             self.assertFalse(is_staff, "ALLOW_DEV_STAFF_BYPASS must NEVER grant staff when DEBUG=False!")
 
     @override_settings(IS_TESTING=False, DEBUG=True, ALLOW_DEV_STAFF_BYPASS=False)

@@ -3,7 +3,7 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIRequestFactory
 
-from coordinator.views import _get_requester_identity
+from coordinator.views import _get_caller
 
 
 class AdminDomainB3Tests(TestCase):
@@ -20,7 +20,7 @@ class AdminDomainB3Tests(TestCase):
                  patch("coordinator.views.get_user_from_request", return_value={"is_authenticated": True, "user_id": "1", "user_email": "admin@dtc.internal"}):
                 if empty_val is None:
                     os.environ.pop("ADMIN_DOMAIN", None)
-                is_auth, uid, is_staff = _get_requester_identity(request)
+                is_auth, uid, is_staff = _get_caller(request)
                 self.assertTrue(is_auth)
                 self.assertFalse(is_staff, f"ADMIN_DOMAIN={empty_val!r} should NOT grant staff!")
 
@@ -30,12 +30,12 @@ class AdminDomainB3Tests(TestCase):
         request = self.factory.get("/transactions/")
         with patch.dict(os.environ, {"ADMIN_DOMAIN": "DTC.INTERNAL"}), \
              patch("coordinator.views.get_user_from_request", return_value={"is_authenticated": True, "user_id": "1", "user_email": "alice@dtc.internal"}):
-            is_auth, uid, is_staff = _get_requester_identity(request)
+            is_auth, uid, is_staff = _get_caller(request)
             self.assertTrue(is_staff, "Mixed-case domain must match case-insensitively.")
 
         with patch.dict(os.environ, {"ADMIN_DOMAIN": "dtc.internal"}), \
              patch("coordinator.views.get_user_from_request", return_value={"is_authenticated": True, "user_id": "1", "user_email": "ALICE@DTC.INTERNAL"}):
-            is_auth, uid, is_staff = _get_requester_identity(request)
+            is_auth, uid, is_staff = _get_caller(request)
             self.assertTrue(is_staff, "Uppercase email must match lowercase ADMIN_DOMAIN.")
 
     @override_settings(IS_TESTING=False, DEBUG=False)
@@ -51,7 +51,7 @@ class AdminDomainB3Tests(TestCase):
         with patch.dict(os.environ, {"ADMIN_DOMAIN": "dtc.internal"}):
             for email in spoofed_emails:
                 with patch("coordinator.views.get_user_from_request", return_value={"is_authenticated": True, "user_id": "1", "user_email": email}):
-                    is_auth, uid, is_staff = _get_requester_identity(request)
+                    is_auth, uid, is_staff = _get_caller(request)
                     self.assertFalse(is_staff, f"Email {email} should NOT be recognized as staff for domain dtc.internal!")
 
     @override_settings(IS_TESTING=False, DEBUG=False)
@@ -60,5 +60,5 @@ class AdminDomainB3Tests(TestCase):
         request = self.factory.get("/transactions/")
         with patch.dict(os.environ, {"ADMIN_DOMAIN": "@dtc.internal"}), \
              patch("coordinator.views.get_user_from_request", return_value={"is_authenticated": True, "user_id": "1", "user_email": "alice@dtc.internal"}):
-            is_auth, uid, is_staff = _get_requester_identity(request)
+            is_auth, uid, is_staff = _get_caller(request)
             self.assertTrue(is_staff, "ADMIN_DOMAIN with leading @ should match email domain.")

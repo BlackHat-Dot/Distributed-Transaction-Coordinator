@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 from django.test import TestCase
 
 from coordinator.models import Transaction
-from coordinator.views import _compensate, _finalize_payment_outcome
+from coordinator.views import _compensate, _finish_payment
 
 
 class CasChecksA2Tests(TestCase):
@@ -38,8 +38,8 @@ class CasChecksA2Tests(TestCase):
         txn.refresh_from_db()
         self.assertEqual(txn.status, Transaction.Status.COMPLETED)
 
-    def test_finalize_payment_outcome_lost_cas_returns_409(self):
-        """F-42: If _finalize_payment_outcome loses CAS claim to COMPLETED, it must return 409 instead of 200."""
+    def test_finish_payment_lost_cas_returns_409(self):
+        """F-42: If _finish_payment loses CAS claim to COMPLETED, it must return 409 instead of 200."""
         # Transaction is already moved to COMPENSATION_FAILED
         _txn = Transaction.objects.create(
             transaction_id=self.tx_id,
@@ -53,8 +53,8 @@ class CasChecksA2Tests(TestCase):
         mock_confirm_resp.status_code = 200
         mock_confirm_resp.json.return_value = {"status": "CONFIRMED"}
 
-        with patch("coordinator.views._confirm_inventory", return_value=(mock_confirm_resp, None)):
-            resp = _finalize_payment_outcome(
+        with patch("coordinator.views._confirm", return_value=(mock_confirm_resp, None)):
+            resp = _finish_payment(
                 transaction_id=self.tx_id,
                 fail_compensation=False,
                 payment_data={"status": "CHARGED"},

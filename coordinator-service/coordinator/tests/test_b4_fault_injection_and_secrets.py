@@ -3,7 +3,7 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient, APIRequestFactory
 
-from coordinator.views import _fault_injection_allowed, _verify_staff_key
+from coordinator.views import _faults_on, _verify_staff_key
 
 
 class FaultInjectionAndSecretsB4Tests(TestCase):
@@ -28,19 +28,19 @@ class FaultInjectionAndSecretsB4Tests(TestCase):
     def test_fault_injection_strictly_denied_in_production_f24_f45(self):
         """F-24/F-45: Fault injection must return False in production (DEBUG=False) regardless of env flag."""
         with patch.dict(os.environ, {"ENABLE_FAULT_INJECTION": "True"}):
-            self.assertFalse(_fault_injection_allowed(), "Fault injection must be denied when DEBUG=False!")
+            self.assertFalse(_faults_on(), "Fault injection must be denied when DEBUG=False!")
 
     @override_settings(DEBUG=True, ENABLE_FAULT_INJECTION=False)
     def test_fault_injection_denied_in_debug_without_flag_f45(self):
         """F-45: When DEBUG=True but ENABLE_FAULT_INJECTION is False, fault injection is disallowed."""
         with patch.dict(os.environ, {"ENABLE_FAULT_INJECTION": "False"}):
-            self.assertFalse(_fault_injection_allowed(), "Fault injection must be denied without ENABLE_FAULT_INJECTION flag!")
+            self.assertFalse(_faults_on(), "Fault injection must be denied without ENABLE_FAULT_INJECTION flag!")
 
     @override_settings(DEBUG=True, ENABLE_FAULT_INJECTION=True)
-    def test_fault_injection_allowed_with_debug_and_flag_f45(self):
+    def test_faults_on_with_debug_and_flag_f45(self):
         """F-45: When DEBUG=True and ENABLE_FAULT_INJECTION is True, fault injection is allowed."""
         with patch.dict(os.environ, {"ENABLE_FAULT_INJECTION": "True"}):
-            self.assertTrue(_fault_injection_allowed(), "Fault injection must be allowed when DEBUG=True and flag is True.")
+            self.assertTrue(_faults_on(), "Fault injection must be allowed when DEBUG=True and flag is True.")
 
     @override_settings(DEBUG=False)
     def test_coordinator_crash_simulation_denied_in_production_f45(self):

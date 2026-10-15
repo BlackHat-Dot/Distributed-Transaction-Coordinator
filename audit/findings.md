@@ -97,7 +97,7 @@
 - **Concrete Remediation**:
   In `coordinator-service/coordinator/views.py`:
   ```python
-  is_authenticated, auth_user_id, is_staff = _get_requester_identity(request)
+  is_authenticated, auth_user_id, is_staff = _get_caller(request)
   if not is_authenticated:
       return Response({"error": "Authentication required."}, status=401)
   if not is_staff:

@@ -6,7 +6,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from coordinator.models import Transaction, SagaEvent
-from coordinator.views import _compensate, _finalize_payment_outcome
+from coordinator.views import _compensate, _finish_payment
 from coordinator.recovery import execute_compensation_sweep
 
 
@@ -53,8 +53,8 @@ class CleanupA8Tests(TestCase):
             refund_calls = [c for c in mock_http_post.call_args_list if "refund" in c.args[0]]
             self.assertEqual(len(refund_calls), 0, "Refund was erroneously called for non-CHARGED payment!")
 
-    def test_finalize_payment_outcome_sanitizes_confirm_err_f43(self):
-        """F-43: Raw Python exception from _confirm_inventory must not leak to the user payload."""
+    def test_finish_payment_sanitizes_confirm_err_f43(self):
+        """F-43: Raw Python exception from _confirm must not leak to the user payload."""
         txn = Transaction.objects.create(
             transaction_id=uuid.uuid4(),
             status=Transaction.Status.PAYMENT_PROCESSING,
@@ -65,9 +65,9 @@ class CleanupA8Tests(TestCase):
         raw_error_text = "Connection refused to http://internal-inventory:8000/seats/confirm/ [SECRET_SOCKET_FD_99]"
 
         # 1. Transport error (ConnectionError): per H2, do NOT compensate; return 503 and do not leak
-        with patch("coordinator.views._confirm_inventory", return_value=(None, requests.exceptions.ConnectionError(raw_error_text))), \
+        with patch("coordinator.views._confirm", return_value=(None, requests.exceptions.ConnectionError(raw_error_text))), \
              patch("coordinator.views._compensate") as mock_compensate:
-            resp = _finalize_payment_outcome(
+            resp = _finish_payment(
                 txn.transaction_id,
                 fail_compensation=False,
                 payment_data={"status": "CHARGED"},
@@ -79,10 +79,10 @@ class CleanupA8Tests(TestCase):
         # 2. Definitive inventory answer (409): route to compensation and do not leak
         mock_409 = MagicMock(status_code=409)
         mock_409.json.return_value = {"error": "hold expired"}
-        with patch("coordinator.views._confirm_inventory", return_value=(mock_409, None)), \
+        with patch("coordinator.views._confirm", return_value=(mock_409, None)), \
              patch("coordinator.views._compensate") as mock_compensate:
             mock_compensate.return_value = MagicMock(status_code=200)
-            _finalize_payment_outcome(
+            _finish_payment(
                 txn.transaction_id,
                 fail_compensation=False,
                 payment_data={"status": "CHARGED"},

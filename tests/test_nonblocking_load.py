@@ -1,7 +1,6 @@
 import time
-import uuid
-import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import requests
 
 COORDINATOR_URL = "http://127.0.0.1:8002"
 

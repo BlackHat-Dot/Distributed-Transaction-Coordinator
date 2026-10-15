@@ -1,5 +1,4 @@
 import logging
-import os
 import uuid
 import redis
 from celery import shared_task
@@ -65,7 +64,7 @@ def recover_stuck_transactions():
 
 @shared_task(name="coordinator.tasks.execute_saga_task")
 def execute_saga_task(transaction_id, seat_ids=None, amount=500, fail_compensation=False, correlation_id=None, user_id=None, user_email=None, skip_reserve=False, **kwargs):
-    from coordinator.views import _run_saga_pipeline
+    from coordinator.views import _run_saga
 
     logger.info("Executing async saga task for transaction_id=%s [correlation_id=%s, user_id=%s, user_email=%s, skip_reserve=%s]", transaction_id, correlation_id, user_id, user_email, skip_reserve)
 
@@ -75,7 +74,7 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, fail_compensati
         logger.error("Invalid transaction_id UUID passed to execute_saga_task: %s", transaction_id)
         return "invalid_uuid"
 
-    response = _run_saga_pipeline(
+    response = _run_saga(
         transaction_id=parsed_tid,
         seat_ids=seat_ids,
         amount=amount,
@@ -123,7 +122,7 @@ def send_ticket_email_task(self, transaction_id):
     short_ref = str(txn.transaction_id)[:8]
     filename = f"DTC-Ticket-{short_ref}.pdf"
 
-    api_key = getattr(settings, "RESEND_API_KEY", os.getenv("RESEND_API_KEY"))
+    api_key = getattr(settings, "RESEND_API_KEY", "")
     if not api_key:
         logger.info("RESEND_API_KEY not configured. Simulated ticket email to %s with PDF attachment %s.", txn.user_email, filename)
         return "simulated"

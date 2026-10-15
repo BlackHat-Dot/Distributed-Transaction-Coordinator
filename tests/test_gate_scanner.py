@@ -1,19 +1,17 @@
+import functools
+import http.server
 import os
 import re
-import sys
-import time
 import tempfile
+import threading
+import time
 import unittest
+from pathlib import Path
 import requests
 from playwright.sync_api import sync_playwright
 
 COORDINATOR_URL = "http://127.0.0.1:8002"
 INVENTORY_URL = "http://127.0.0.1:8000"
-import functools
-import http.server
-import socket
-import threading
-from pathlib import Path
 
 GATE_SCANNER_DIR = Path(__file__).resolve().parent.parent / "gate-scanner"
 GATE_URL = os.getenv("GATE_URL", "http://127.0.0.1:3001/index.html")

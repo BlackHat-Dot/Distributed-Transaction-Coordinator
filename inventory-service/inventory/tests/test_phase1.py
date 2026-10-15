@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient, APIRequestFactory
 
 from inventory.models import Event, Seat, Reservation
-from inventory.views import reclaim_expired_holds, confirm_seat, reserve_seat
+from inventory.views import reclaim_expired_holds, confirm_seat
 
 
 class Phase1ComprehensiveTests(TestCase):

@@ -47,7 +47,7 @@ class OwnershipB1Tests(TestCase):
             user_id=None,
         )
 
-        with patch("coordinator.views._get_requester_identity", return_value=(True, "usr_alice", False)):
+        with patch("coordinator.views._get_caller", return_value=(True, "usr_alice", False)):
             resp = self.client.get(f"/transactions/{txn.transaction_id}/")
             self.assertEqual(resp.status_code, 403)
 

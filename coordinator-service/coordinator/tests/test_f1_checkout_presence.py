@@ -4,7 +4,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from django.test import TestCase
 from coordinator.models import Transaction
-from coordinator.views import _charge_payment
+from coordinator.views import _charge
 
 
 class TestF1CheckoutPresence(TestCase):
@@ -14,7 +14,7 @@ class TestF1CheckoutPresence(TestCase):
         when saga enters payment step, and clear it on success.
         """
         tid = uuid.uuid4()
-        txn = Transaction.objects.create(
+        Transaction.objects.create(
             transaction_id=tid,
             status=Transaction.Status.PAYMENT_PROCESSING,
             amount=Decimal("150.00"),
@@ -48,7 +48,7 @@ class TestF1CheckoutPresence(TestCase):
 
         with patch("coordinator.views._get_coordinator_redis_client", return_value=mock_redis):
             with patch("coordinator.views._http_post", side_effect=mock_charge_post):
-                resp = _charge_payment(
+                resp = _charge(
                     tid,
                     amount=Decimal("150.00"),
                     fail_compensation=False,
@@ -69,7 +69,7 @@ class TestF1CheckoutPresence(TestCase):
         when payment fails and compensation completes.
         """
         tid = uuid.uuid4()
-        txn = Transaction.objects.create(
+        Transaction.objects.create(
             transaction_id=tid,
             status=Transaction.Status.PAYMENT_PROCESSING,
             amount=Decimal("150.00"),
@@ -105,7 +105,7 @@ class TestF1CheckoutPresence(TestCase):
 
         with patch("coordinator.views._get_coordinator_redis_client", return_value=mock_redis):
             with patch("coordinator.views._http_post", side_effect=mock_charge_post):
-                resp = _charge_payment(
+                _charge(
                     tid,
                     amount=Decimal("150.00"),
                     fail_compensation=False,

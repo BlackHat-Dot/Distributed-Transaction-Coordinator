@@ -13,11 +13,11 @@ from coordinator.tasks import execute_saga_task, recover_stuck_transactions
 from coordinator.views import (
     _can_access,
     _compensate,
-    _finalize_payment_outcome,
+    _finish_payment,
     _http_get,
     _http_post,
-    _serialize_event,
-    _serialize_transaction,
+    _event_json,
+    _txn_json,
 )
 
 
@@ -212,11 +212,11 @@ class ViewsCoverageTests(TransactionTestCase):
             actor="test",
             http_payload={"key": "val"},
         )
-        d_txn = _serialize_transaction(txn)
+        d_txn = _txn_json(txn)
         self.assertEqual(d_txn["transaction_id"], str(tx_id))
         self.assertEqual(str(d_txn["amount"]), "250.00")
 
-        d_evt = _serialize_event(event)
+        d_evt = _event_json(event)
         self.assertEqual(d_evt["seq"], 1)
 
     def test_pay_action_seat_ids_validation(self):
@@ -277,7 +277,7 @@ class ViewsCoverageTests(TransactionTestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["count"], 5)
 
-    def test_finalize_payment_outcome_409_codes(self):
+    def test_finish_payment_409_codes(self):
         tx_id = uuid.uuid4()
         Transaction.objects.create(
             transaction_id=tx_id,
@@ -287,7 +287,7 @@ class ViewsCoverageTests(TransactionTestCase):
         )
         with patch("coordinator.views._compensate") as mock_comp:
             # IDEMPOTENCY_PAYLOAD_MISMATCH
-            _finalize_payment_outcome(
+            _finish_payment(
                 transaction_id=tx_id,
                 fail_compensation=False,
                 payment_data={"code": "IDEMPOTENCY_PAYLOAD_MISMATCH", "error": "Mismatch", "status": "FAILED"},
@@ -296,7 +296,7 @@ class ViewsCoverageTests(TransactionTestCase):
             mock_comp.assert_called()
 
             # TRANSACTION_VOIDED
-            _finalize_payment_outcome(
+            _finish_payment(
                 transaction_id=tx_id,
                 fail_compensation=False,
                 payment_data={"code": "TRANSACTION_VOIDED", "error": "Voided", "status": "FAILED"},
@@ -359,25 +359,25 @@ class ViewsCoverageTests(TransactionTestCase):
         self.assertTrue(any("STREAM_ERROR" in str(line) for line in lines))
         connection.ensure_connection()
 
-    def test_resolve_seat_pricing_error_branches(self):
-        from coordinator.views import _resolve_seat_pricing
+    def test_get_prices_error_branches(self):
+        from coordinator.views import _get_prices
         # RequestException branch
         with patch("coordinator.views._http_post", side_effect=Exception("Timeout")):
-            amt, seats, names, err_resp = _resolve_seat_pricing([1, 2])
+            amt, seats, names, err_resp = _get_prices([1, 2])
             self.assertIsNotNone(err_resp)
             self.assertEqual(err_resp.status_code, 503)
 
         # Mismatch length branch (404)
         mock_resp = MagicMock(status_code=200, json=lambda: [{"id": 1, "price": 100}])
         with patch("coordinator.views._http_post", return_value=mock_resp):
-            amt, seats, names, err_resp = _resolve_seat_pricing([1, 2])
+            amt, seats, names, err_resp = _get_prices([1, 2])
             self.assertIsNotNone(err_resp)
             self.assertEqual(err_resp.status_code, 404)
 
         # Empty catalog branch (503)
         mock_resp = MagicMock(status_code=200, json=lambda: [])
         with patch("coordinator.views._http_post", return_value=mock_resp):
-            amt, seats, names, err_resp = _resolve_seat_pricing([1])
+            amt, seats, names, err_resp = _get_prices([1])
             self.assertIsNotNone(err_resp)
             self.assertEqual(err_resp.status_code, 503)
 
@@ -395,7 +395,7 @@ class ViewsCoverageTests(TransactionTestCase):
             resp_get = _http_get("http://test.internal/get")
             self.assertEqual(resp_get.status_code, 200)
 
-    def test_request_payload_verify_invalid_fields(self):
+    def test_check_body_invalid_fields(self):
         resp = self.client.post(
             "/transactions/",
             data=json.dumps({"seat_ids": [1], "unknown_field_attack": "hacked"}),
@@ -405,8 +405,8 @@ class ViewsCoverageTests(TransactionTestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.data.get("code"), "INVALID_FIELDS")
 
-    def test_run_saga_pipeline_simulate_decline(self):
-        from coordinator.views import _run_saga_pipeline
+    def test_run_saga_simulate_decline(self):
+        from coordinator.views import _run_saga
         tx_id = uuid.uuid4()
         Transaction.objects.create(
             transaction_id=tx_id,
@@ -417,7 +417,7 @@ class ViewsCoverageTests(TransactionTestCase):
         )
         with patch("coordinator.views._http_post") as mock_post:
             mock_post.return_value = MagicMock(status_code=200, json=lambda: {"status": "SUCCESS"})
-            resp = _run_saga_pipeline(
+            resp = _run_saga(
                 transaction_id=tx_id,
                 seat_ids=[1],
                 amount=Decimal("100.00"),
@@ -432,7 +432,7 @@ class ViewsCoverageTests(TransactionTestCase):
     def test_get_transaction_and_events_error_paths(self):
         unknown_id = uuid.uuid4()
         # Unauthenticated get
-        with patch("coordinator.views._get_requester_identity", return_value=(False, None, False)):
+        with patch("coordinator.views._get_caller", return_value=(False, None, False)):
             resp = self.client.get(f"/transactions/{unknown_id}/")
             self.assertEqual(resp.status_code, 401)
 
@@ -456,7 +456,7 @@ class ViewsCoverageTests(TransactionTestCase):
         self.assertEqual(resp.status_code, 403)
 
         # Unauthenticated events
-        with patch("coordinator.views._get_requester_identity", return_value=(False, None, False)):
+        with patch("coordinator.views._get_caller", return_value=(False, None, False)):
             resp = self.client.get(f"/transactions/{unknown_id}/events/")
             self.assertEqual(resp.status_code, 401)
 
@@ -479,7 +479,7 @@ class ViewsCoverageTests(TransactionTestCase):
         self.assertEqual(resp.status_code, 204)
 
         # 401
-        with patch("coordinator.views._get_requester_identity", return_value=(False, None, False)):
+        with patch("coordinator.views._get_caller", return_value=(False, None, False)):
             resp = self.client.get(f"/transactions/{tx_id}/stream/")
             self.assertEqual(resp.status_code, 401)
 
@@ -489,7 +489,7 @@ class ViewsCoverageTests(TransactionTestCase):
 
     def test_list_transactions_bad_params_and_unauthenticated(self):
         # 401 unauthenticated
-        with patch("coordinator.views._get_requester_identity", return_value=(False, None, False)):
+        with patch("coordinator.views._get_caller", return_value=(False, None, False)):
             resp = self.client.get("/transactions/")
             self.assertEqual(resp.status_code, 401)
 
@@ -667,9 +667,9 @@ class ViewsCoverageTests(TransactionTestCase):
             )
             self.assertEqual(resp.status_code, 503)
 
-    def test_charge_payment_timeout_check_recovers(self):
+    def test_charge_timeout_check_recovers(self):
         from requests.exceptions import RequestException
-        from coordinator.views import _charge_payment
+        from coordinator.views import _charge
 
         tx_id = uuid.uuid4()
         Transaction.objects.create(
@@ -691,7 +691,7 @@ class ViewsCoverageTests(TransactionTestCase):
 
         with patch("coordinator.views._http_post", side_effect=mock_post_side_effect), \
              patch("coordinator.views._http_get", return_value=mock_get_resp):
-            resp = _charge_payment(
+            resp = _charge(
                 transaction_id=tx_id,
                 amount=Decimal("100.00"),
                 fail_compensation=False,
@@ -774,7 +774,7 @@ class ViewsCoverageTests(TransactionTestCase):
     def test_action_hold_pricing_error(self):
         from rest_framework.response import Response
         err_mock = Response({"error": "Pricing failed"}, status=503)
-        with patch("coordinator.views._resolve_seat_pricing", return_value=(None, None, None, err_mock)):
+        with patch("coordinator.views._get_prices", return_value=(None, None, None, err_mock)):
             resp = self.client.post(
                 "/transactions/",
                 data=json.dumps({"action": "hold", "seat_ids": [1]}),

@@ -198,7 +198,7 @@ class LocalDevAuthNumbModeTests(TestCase):
             mock_pricing = MagicMock()
             mock_pricing.status_code = 200
             mock_pricing.json.return_value = [{"id": 43, "price": 500, "row": "D", "seat_number": "43"}]
-            with patch("coordinator.views.requests.post", return_value=mock_pricing), \
+            with patch("coordinator.views._http_post", return_value=mock_pricing), \
                  patch("coordinator.tasks.execute_saga_task.delay"):
                 resp = self.client.post(
                     "/transactions/",
@@ -219,7 +219,7 @@ class LocalDevAuthNumbModeTests(TestCase):
             mock_pricing = MagicMock()
             mock_pricing.status_code = 200
             mock_pricing.json.return_value = [{"id": 43, "price": 500, "row": "D", "seat_number": "43"}]
-            with patch("coordinator.views.requests.post", return_value=mock_pricing), \
+            with patch("coordinator.views._http_post", return_value=mock_pricing), \
                  patch("coordinator.tasks.execute_saga_task.delay"), \
                  patch("coordinator.views.get_user_from_request") as mock_get_user:
                 resp = self.client.post(
@@ -242,7 +242,7 @@ class LocalDevAuthNumbModeTests(TestCase):
             mock_pricing = MagicMock()
             mock_pricing.status_code = 200
             mock_pricing.json.return_value = [{"id": 43, "price": 500, "row": "D", "seat_number": "43"}]
-            with patch("coordinator.views.requests.post", return_value=mock_pricing), \
+            with patch("coordinator.views._http_post", return_value=mock_pricing), \
                  patch("coordinator.tasks.execute_saga_task.delay"), \
                  patch("coordinator.views.get_user_from_request") as mock_get_user:
                 # Even with completely invalid Bearer token, staff key authorizes immediately

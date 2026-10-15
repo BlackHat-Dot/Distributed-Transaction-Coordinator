@@ -77,7 +77,7 @@ Every vulnerability was patched with an atomic git commit accompanied by unit, i
 
 ### Commit `6bd3b9d`: `fix(auth): enforce internal service key on payment service endpoints (SEC-03)`
 - **Vulnerability**: `payment-service` exposed `/payments/charge/`, `/payments/check/`, and `/payments/refund/` without validating caller identity. Direct network callers could charge arbitrary cards or trigger unauthorized refunds.
-- **Remediation**: Configured `INTERNAL_SERVICE_KEY` in `payment_service/settings.py` and `docker-compose.yml`. Implemented `_verify_internal_service_key` across all three endpoints using `secrets.compare_digest`. Updated Coordinator's `_charge_payment` to include `X-Internal-Service-Key`.
+- **Remediation**: Configured `INTERNAL_SERVICE_KEY` in `payment_service/settings.py` and `docker-compose.yml`. Implemented `_verify_internal_service_key` across all three endpoints using `secrets.compare_digest`. Updated Coordinator's `_charge` to include `X-Internal-Service-Key`.
 - **Verification**: `InternalServiceKeyAuthTests` in `payments/tests/test_payments.py` verifies missing or invalid keys return 403, and valid keys succeed.
 
 ### Commit `7cf7845`: `fix(security): use constant-time comparison for secret authentication keys (SEC-04)`

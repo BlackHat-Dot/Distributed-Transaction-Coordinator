@@ -2,7 +2,6 @@ import time
 import uuid
 from decimal import Decimal
 import jwt
-from django.conf import settings
 from django.core.cache import cache
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient

@@ -3,7 +3,6 @@ import runpy
 from pathlib import Path
 from unittest import TestCase
 
-from django.conf import settings
 
 
 class TestG3SettingsAudit(TestCase):

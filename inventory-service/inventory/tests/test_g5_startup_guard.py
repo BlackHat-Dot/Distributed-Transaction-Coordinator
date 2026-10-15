@@ -4,7 +4,6 @@ from django.apps import apps
 from django.core.exceptions import ImproperlyConfigured
 from django.test import override_settings
 
-from inventory.apps import InventoryConfig
 
 
 class TestG5StartupGuard(TestCase):
