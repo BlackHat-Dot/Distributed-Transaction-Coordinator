@@ -14,7 +14,7 @@ def check_service_keys_and_admin_domain(app_configs, **kwargs):
     if is_testing:
         return warnings
 
-    internal_key = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
+    internal_key = getattr(settings, "INTERNAL_SERVICE_KEY", None)
     if not internal_key or internal_key == "dtc-internal-coordinator-secret-key-2026":
         warnings.append(
             Warning(

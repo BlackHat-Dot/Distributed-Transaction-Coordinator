@@ -53,7 +53,7 @@ def issue_tickets_for_transaction(transaction: Transaction, correlation_id: str 
     check_url = f"{INVENTORY_BASE_URL}/seats/check/?transaction_id={transaction.transaction_id}"
     headers = {
         "X-Correlation-ID": correlation_id or "ticket-issuance",
-        "X-Internal-Service-Key": getattr(settings, "INTERNAL_SERVICE_KEY", os.getenv("INTERNAL_SERVICE_KEY", "test-internal-key")),
+        "X-Internal-Service-Key": getattr(settings, "INTERNAL_SERVICE_KEY", None),
     }
 
     try:

@@ -51,7 +51,7 @@ PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
 PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
 
 # Shared secret for service-to-service internal authentication (X-Internal-Service-Key)
-INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
+INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None)
 
 
 def _corr_id(correlation_id=None):
@@ -73,10 +73,7 @@ def _faults_on():
     """Return True only if DEBUG=True and ENABLE_FAULT_INJECTION is enabled."""
     if not getattr(settings, "DEBUG", False):
         return False
-    flag = getattr(settings, "ENABLE_FAULT_INJECTION", False)
-    if not flag:
-        flag = os.getenv("ENABLE_FAULT_INJECTION", "").lower() in ("true", "1", "yes", "t")
-    return bool(flag)
+    return bool(getattr(settings, "ENABLE_FAULT_INJECTION", False))
 
 
 _HTTP_SESSION = None
@@ -1991,9 +1988,7 @@ def _get_caller(request):
         return RequesterIdentity(True, test_uid, is_staff, user_email=test_email)
 
     is_dev = getattr(settings, "DEBUG", False)
-    allow_dev_staff_bypass = getattr(settings, "ALLOW_DEV_STAFF_BYPASS", False) or (
-        os.getenv("ALLOW_DEV_STAFF_BYPASS", "").lower() in ("true", "1", "yes", "t")
-    )
+    allow_dev_staff_bypass = getattr(settings, "ALLOW_DEV_STAFF_BYPASS", False)
     is_dev_staff = bool(is_dev and allow_dev_staff_bypass)
 
     if is_dev:
