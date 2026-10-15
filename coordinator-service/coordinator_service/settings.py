@@ -12,9 +12,7 @@ DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "t")
 # When you run commands in your terminal. Python puts the words into sys.argv
 # Eg., python manage.py runserver ; sys.argv = ['manage.py', 'runserver']
 # python manage.py test ; sys.argv = ['manage.py', 'test']
-IS_TESTING = os.getenv("IS_TESTING", "False").lower() in ("true", "1", "t")
-IS_TESTING = IS_TESTING or ("test" in sys.argv[1:2] and os.getenv("DJANGO_ENV") != "production")
-
+IS_TESTING = "test" in sys.argv[1:2]
 # Pattern B: Safe fallback in Development/Testing, Fail-Fast in Production
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
