@@ -1312,16 +1312,17 @@ def _run_saga(
 
     body = _parse_json_response(response)
     if body and "total_amount" in body:
+        actual_amount = None
         try:
             actual_amount = Decimal(str(body["total_amount"]))
-            if not simulate_decline:
-                amount = actual_amount
-                txn = Transaction.objects.filter(transaction_id=transaction_id).first()
-                if txn:
-                    txn.amount = amount
-                    txn.save(update_fields=["amount"])
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, InvalidOperation):
             pass
+        if actual_amount is not None and not simulate_decline:
+            amount = actual_amount
+            txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+            if txn:
+                txn.amount = amount
+                txn.save(update_fields=["amount"])
 
     transitioned_res = _set_status_with_event(
         transaction_id,
