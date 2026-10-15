@@ -313,10 +313,9 @@ def get_user_from_request(request):
     """
     auth_header = request.headers.get("Authorization", "") # fallback "" given for grazeful stop
     token = None
+    
     if auth_header.startswith("Bearer "):
         token = auth_header.split(" ")[1].strip() # index 1 holds the JWT Token
-    elif hasattr(request, "GET") and request.GET.get("token"):
-        token = request.GET.get("token").strip()
 
     if token:
         payload, err = verify_jwt(token)

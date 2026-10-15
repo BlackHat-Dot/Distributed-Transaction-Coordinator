@@ -53,12 +53,11 @@ PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
 # Shared secret for service-to-service internal authentication (X-Internal-Service-Key)
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 
-
 def _corr_id(correlation_id=None):
     """Return active correlation ID, middleware ContextVar, or fresh UUIDv4."""
     return correlation_id or get_correlation_id() or str(uuid.uuid4())
 
-
+# i know
 def _verify_staff_key(header_val):
     """Constant-time verification of X-Staff-Key header."""
     if not header_val or not isinstance(header_val, str) or not header_val.strip():
@@ -141,6 +140,7 @@ def _release_inventory(tx_id, seat_ids=None, correlation_id=None, reason=""):
 # PUBLIC API ENDPOINTS
 # =============================================================================
 
+# i know
 @api_view(["GET"])
 def health_check(request):
     """Liveness probe returning healthy service status."""
