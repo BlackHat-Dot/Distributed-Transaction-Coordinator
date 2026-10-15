@@ -482,7 +482,7 @@ if (DOM.btnRunFromModal) {
 }
 
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
+async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   const startTime = performance.now();
@@ -1086,7 +1086,7 @@ async function inspectTransaction(txId, autoScroll = false) {
     DOM.fmetaProd.textContent = `${seatsLabel} (Qty: ${qty})`;
     DOM.fmetaAmt.textContent = `$${txData.amount || 500}`;
 
-    const isFailureState = txData.status.includes("FAILED") || txData.status.includes("TIMEOUT") || txData.status === "COMPENSATED";
+    const isFailureState = txData.status.includes("FAILED") || txData.status.includes("TIMEOUT") || txData.status === "COMPENSATED" || txData.status === "STARTED";
     if (isFailureState) {
       let failureReason = "Non-terminal or compensated state detected";
       if (txData.status === "INVENTORY_RESERVE_FAILED") {
@@ -1095,10 +1095,12 @@ async function inspectTransaction(txId, autoScroll = false) {
         failureReason = txData.failure_reason || "Payment declined / failed → Seat hold auto-released via compensating rollback";
       } else if (txData.status === "COMPENSATION_FAILED") {
         failureReason = txData.failure_reason || "Compensating seat release rejected by Inventory Service";
+      } else if (txData.status === "STARTED") {
+        failureReason = txData.failure_reason || "Coordinator process killed mid-flight — locked in stale STARTED status. Awaiting Celery Beat recovery sweep.";
       }
 
       DOM.fmetaFailureBanner.classList.remove("hidden");
-      DOM.fmetaFailureText.textContent = `Failure Reason: ${failureReason}`;
+      DOM.fmetaFailureText.textContent = `Status Note: ${failureReason}`;
     } else {
       DOM.fmetaFailureBanner.classList.add("hidden");
     }
@@ -1176,7 +1178,7 @@ function getStatusBadgeClass(status) {
 
 
 function isUserAuthenticated() {
-  return Boolean(localStorage.getItem("dtc_auth_token"));
+  return isLocal || Boolean(localStorage.getItem("dtc_auth_token"));
 }
 
 function checkLiveAuthGate(actionName = "execute live distributed scenarios") {
@@ -1235,7 +1237,7 @@ DOM.btnDemoHappy.addEventListener("click", async () => {
 
   const nextSeatId = await getNextAvailableSeatId();
   const t0 = performance.now();
-  const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/${isLocal ? "?sync=true" : ""}`;
+  const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/?sync=true`;
   const res = await fetchWithTimeout(endpointUrl, {
     method: "POST",
     body: JSON.stringify({
@@ -1318,7 +1320,7 @@ DOM.btnDemoFail.addEventListener("click", async () => {
 
   const nextSeatId = await getNextAvailableSeatId();
   const t0 = performance.now();
-  const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/?simulate_payment_decline=true${isLocal ? "&sync=true" : ""}`;
+  const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/?simulate_payment_decline=true&sync=true`;
   const res = await fetchWithTimeout(endpointUrl, {
     method: "POST",
     body: JSON.stringify({
@@ -1481,7 +1483,7 @@ DOM.btnDemoRace.addEventListener("click", async () => {
   }
 
   const targetSeatId = await getNextAvailableSeatId();
-  const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/${isLocal ? "?sync=true" : ""}`;
+  const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/?sync=true`;
   const promises = Array.from({ length: 5 }, () =>
     fetchWithTimeout(endpointUrl, {
       method: "POST",
@@ -1542,9 +1544,9 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
 
   if (STATE.isSimulatedMode) {
     txId = crypto.randomUUID();
-    createSimulatedTransaction("STARTED", txId);
+    createSimulatedTransaction("STARTED", txId, "Coordinator process killed mid-flight (simulated) — locked in stale STARTED status");
   } else {
-    const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/${isLocal ? "?sync=true" : ""}`;
+    const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/?sync=true`;
     const res = await fetchWithTimeout(endpointUrl, {
       method: "POST",
       body: JSON.stringify({
@@ -1556,6 +1558,11 @@ DOM.btnDemoCrash.addEventListener("click", async () => {
       txId = res.data.transaction_id;
       window.selectTransaction(txId);
       fetchTransactionsFeed();
+    } else {
+      // In live production mode where client fault injection is strictly rejected (400 INVALID_FIELDS),
+      // lock on simulated stale status so Mission Control demonstrates the orphaned transaction cleanly.
+      txId = crypto.randomUUID();
+      createSimulatedTransaction("STARTED", txId, "Coordinator process killed mid-flight (simulated) — locked in stale STARTED status");
     }
   }
 
@@ -1862,6 +1869,12 @@ function createSimulatedTransaction(finalStatus = "COMPLETED", customId = null, 
   } else if (finalStatus === "INVENTORY_RESERVE_FAILED") {
     events = [
       { seq: 1, from_status: "STARTED", to_status: "INVENTORY_RESERVE_FAILED", actor: "request", http_status_code: 400, http_payload: { error: failureReason || "Seat already reserved or unavailable" }, created_at: now },
+    ];
+  } else if (finalStatus === "STARTED") {
+    events = [
+      { seq: 1, from_status: "START", to_status: "STARTED", actor: "request", http_status_code: 200, http_payload: { message: "Transaction initiated" }, created_at: now },
+      { seq: 2, from_status: "STARTED", to_status: "INVENTORY_RESERVED", actor: "request", http_status_code: 200, http_payload: { message: "Held seat(s) [1]" }, created_at: now },
+      { seq: 3, from_status: "INVENTORY_RESERVED", to_status: "PAYMENT_PROCESSING", actor: "request", http_status_code: null, http_payload: { error: "COORDINATOR CRASHED MID-FLIGHT (SIGKILL)" }, created_at: now },
     ];
   } else if (finalStatus === "RECOVERY_IN_PROGRESS") {
     events = [

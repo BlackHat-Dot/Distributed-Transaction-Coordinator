@@ -2107,10 +2107,8 @@ async function initiateSagaCheckout() {
   openSagaModal(firstSeat, selectedAmount, isPreReserved);
 
   const queryParams = new URLSearchParams();
-  if (isLocal) {
-    queryParams.set("sync", "true");
-  }
-  if (isLocal && selectedAmount === "9999") {
+  queryParams.set("sync", "true");
+  if (selectedAmount === "9999") {
     queryParams.set("simulate_payment_decline", "true");
   }
   const queryString = queryParams.toString();
@@ -2126,8 +2124,7 @@ async function initiateSagaCheckout() {
     payload.transaction_id = txId;
   }
 
-  // POST to Coordinator — asynchronous non-blocking saga execution (returns HTTP 202 Accepted)
-  // Celery worker drives the distributed saga pipeline in the background via Redis
+  // POST to Coordinator — synchronous saga execution for immediate visual feedback
   // Identity is securely transmitted via Authorization Bearer JWT header in fetchJson
   const res = await fetchJson(endpointUrl, {
     method: "POST",
@@ -2139,12 +2136,12 @@ async function initiateSagaCheckout() {
     STATE.myHold.txId = finalTxId;
   }
 
-  if (res.ok && res.data && res.data.status) {
+  if (res.data && res.data.status) {
     if (res.status === 202) {
       // Async: Celery picked it up — listen via Server-Sent Events (SSE) push (reduces to 2 requests)
       listenToTransactionSSE(finalTxId, selectedAmount);
     } else {
-      // Sync: Coordinator returned final result immediately (200)
+      // Sync: Coordinator returned final result immediately (200 or 400 with COMPENSATED/FAILED)
       handleSagaTerminalState(res.data.status, finalTxId, selectedAmount);
     }
   } else {

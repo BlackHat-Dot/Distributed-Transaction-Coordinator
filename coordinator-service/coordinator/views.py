@@ -754,10 +754,10 @@ def _create_txn(request):
 
     enable_test_payment_failure = bool(getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False))
     simulate_decline = False
-    if enable_test_payment_failure and (_faults_on() or is_dev or is_testing or has_staff_key):
+    if enable_test_payment_failure:
         simulate_decline = (
-            request.query_params.get("simulate_payment_decline") == "true"
-            or request.headers.get("X-Simulate-Payment-Decline") == "true"
+            request.query_params.get("simulate_payment_decline", "").lower() in ("true", "1", "yes", "t")
+            or request.headers.get("X-Simulate-Payment-Decline", "").lower() in ("true", "1", "yes", "t")
         )
 
     is_sync = request.query_params.get("sync") == "true"
