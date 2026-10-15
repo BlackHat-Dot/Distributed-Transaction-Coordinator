@@ -40,26 +40,22 @@
       } catch (e) {}
     }
   </script>
+  <style>
+    /* Instant black cover when navigating from console to arena */
+    html.hl-arrived #hl-curtain { transform: scaleY(1) !important; transform-origin: top !important; transition: none !important; }
+  </style>
+  <script>
+    try {
+      if (sessionStorage.getItem("dtc_hl_from") === "1") {
+        document.documentElement.classList.add("hl-arrived");
+      }
+    } catch (e) {}
+  </script>
 </head>
 <body class="theme-dark">
 
-  <!-- DTC Liquid Entry Preloader Screen (NeoLeaf Architecture) -->
-  <div id="dtc-entry-screen" class="dtc-entry-overlay">
-    <div class="dtc-entry-ambient-1"></div>
-    <div class="dtc-entry-ambient-2"></div>
-
-    <div class="dtc-entry-stage">
-      <div id="dtc-entry-logo-wrap" class="dtc-entry-logo-wrap">
-        <canvas id="dtc-entry-canvas"></canvas>
-      </div>
-      <div id="dtc-entry-meta" class="dtc-entry-meta">
-        <div class="dtc-entry-counter">
-          <span class="dtc-entry-loading-text">loading...</span>
-          <span id="dtc-entry-pct" class="dtc-entry-pct-num">0</span>%
-        </div>
-      </div>
-    </div>
-  </div>
+  <!-- Transition Curtain -->
+  <div id="hl-curtain" aria-hidden="true"></div>
 
   <!-- Toast Notification Container -->
   <div id="toast-container" class="toast-container"></div>

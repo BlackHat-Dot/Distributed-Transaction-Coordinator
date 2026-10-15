@@ -959,8 +959,14 @@ function initEntryScreen() {
   const meta = document.getElementById("dtc-entry-meta");
   const topBrand = document.getElementById("dtc-entry-top-brand");
   const canvas = document.getElementById("dtc-entry-canvas");
-  const pctLabel = document.getElementById("dtc-entry-pct");
-  if (!overlay || !canvas || !pctLabel) return;
+  if (!overlay || !canvas || !pctLabel) {
+    try {
+      localStorage.setItem("dtc_entry_watched", "1");
+      sessionStorage.setItem("dtc_entry_watched", "1");
+    } catch (e) {}
+    finishEntryScreen();
+    return;
+  }
 
   const urlParams = new URLSearchParams(window.location.search);
   const forceReplay = urlParams.has("replay_intro") || urlParams.has("replay") || urlParams.has("intro");

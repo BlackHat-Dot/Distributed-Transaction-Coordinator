@@ -5,7 +5,7 @@
   var root = document.documentElement;
   var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
   var KEY = "dtc_hl_from";
-  function el(id) { var d = document.createElement("div"); d.id = id; d.setAttribute("aria-hidden", "true"); document.body.appendChild(d); return d; }
+  function el(id) { var existing = document.getElementById(id); if (existing) return existing; var d = document.createElement("div"); d.id = id; d.setAttribute("aria-hidden", "true"); document.body.appendChild(d); return d; }
   function go() { root.classList.add("hl-go"); }
 
   /* 1. Hero reveal — fires once the preloader (index) has left, or at once (booking). */
@@ -29,19 +29,50 @@
     try { arrived = sessionStorage.getItem(KEY) === "1"; sessionStorage.removeItem(KEY); } catch (e) {}
     if (arrived) {
       curtain.className = "lift";
-      requestAnimationFrame(function () { requestAnimationFrame(function () { curtain.classList.add("go"); }); });
+      root.classList.remove("hl-arrived");
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          curtain.classList.add("go");
+          setTimeout(function () { curtain.className = ""; }, 750);
+        });
+      });
+    } else {
+      root.classList.remove("hl-arrived");
+      curtain.className = "";
     }
     document.addEventListener("click", function (e) {
       var a = e.target.closest && e.target.closest("a[href]");
       if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || a.target || a.hasAttribute("download")) return;
+      var href = a.getAttribute("href");
+      if (!href || href.startsWith("#") || href.startsWith("javascript:")) return;
       var u; try { u = new URL(a.href, location.href); } catch (x) { return; }
-      if (u.origin !== location.origin || u.pathname === location.pathname || !/\.html$/.test(u.pathname)) return;
+      if (u.origin !== location.origin) return;
+
+      var curPath = location.pathname.replace(/\/index\.html$/, "/").replace(/\/+$/, "") || "/";
+      var targetPath = u.pathname.replace(/\/index\.html$/, "/").replace(/\/+$/, "") || "/";
+      if (curPath === targetPath && location.search === u.search) return;
+
+      var isNavigation =
+        (curPath === "/" && (targetPath === "/booking" || targetPath.endsWith("/booking.html"))) ||
+        (targetPath === "/" && (curPath === "/booking" || curPath.endsWith("/booking.html"))) ||
+        (targetPath.endsWith("/booking.html") && curPath.endsWith("/index.html")) ||
+        (targetPath.endsWith("/index.html") && curPath.endsWith("/booking.html")) ||
+        /booking(\.html)?$/.test(u.pathname) ||
+        /index(\.html)?$/.test(u.pathname);
+
+      if (!isNavigation) return;
+
       e.preventDefault();
       try { sessionStorage.setItem(KEY, "1"); } catch (x) {}
       curtain.className = "drop";
       setTimeout(function () { location.href = a.href; }, 470);
     });
-    window.addEventListener("pageshow", function (ev) { if (ev.persisted) curtain.className = ""; }); /* bfcache back */
+    window.addEventListener("pageshow", function (ev) {
+      if (ev.persisted) {
+        curtain.className = "";
+        root.classList.remove("hl-arrived");
+      }
+    }); /* bfcache back */
   }
 
   /* 3. Scroll-linked: progress rule + hero drift (first viewport only). */

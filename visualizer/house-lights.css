@@ -53,12 +53,13 @@ body{background:var(--bg-deep)!important;color:var(--text-primary);font-size:15p
 body:has(.pm-urgent){--hl-light:255,106,82;}   /* last 60s of a hold: the room turns ember */
 
 /* ---------- Page curtain + scroll rule ---------- */
-#hl-curtain{position:fixed;inset:0;z-index:99999;background:var(--bg-deep);pointer-events:none;
+#hl-curtain{position:fixed;inset:0;z-index:99999999;background:#000000;pointer-events:none;
   transform:scaleY(0);transform-origin:bottom;}
-#hl-curtain.cover{transform:scaleY(1);}
-#hl-curtain.drop{transition:transform .46s var(--ease-curtain);transform:scaleY(1);}
+#hl-curtain.cover{transform:scaleY(1);transform-origin:top;}
+#hl-curtain.drop{transition:transform .46s var(--ease-curtain);transform:scaleY(1);transform-origin:bottom;}
 #hl-curtain.lift{transform:scaleY(1);transform-origin:top;}
-#hl-curtain.lift.go{transition:transform .7s var(--ease-curtain);transform:scaleY(0);}
+#hl-curtain.lift.go{transition:transform .7s var(--ease-curtain);transform:scaleY(0);transform-origin:top;}
+html.hl-arrived #hl-curtain{transform:scaleY(1)!important;transform-origin:top!important;transition:none!important;}
 #hl-rule{position:fixed;left:0;top:0;height:2px;width:100%;z-index:9998;background:var(--accent-amber);
   transform:scaleX(0);transform-origin:left;pointer-events:none;}
 

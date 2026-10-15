@@ -31,8 +31,27 @@
       } catch (e) {}
     }
   </script>
+  <style>
+    /* Immediate skip of preloader if already watched; instant cover if arriving via curtain */
+    html.dtc-entry-skip #dtc-entry-screen { display: none !important; }
+    html.dtc-entry-skip, html.dtc-entry-skip body { overflow: auto !important; }
+    html.hl-arrived #hl-curtain { transform: scaleY(1) !important; transform-origin: top !important; transition: none !important; }
+  </style>
+  <script>
+    try {
+      if (localStorage.getItem("dtc_entry_watched") === "1" || sessionStorage.getItem("dtc_entry_watched") === "1") {
+        document.documentElement.classList.add("dtc-entry-skip");
+      }
+      if (sessionStorage.getItem("dtc_hl_from") === "1") {
+        document.documentElement.classList.add("hl-arrived");
+      }
+    } catch (e) {}
+  </script>
 </head>
 <body>
+
+  <!-- Transition Curtain -->
+  <div id="hl-curtain" aria-hidden="true"></div>
 
   <!-- DTC Liquid Entry Preloader Screen (NeoLeaf Architecture) -->
   <div id="dtc-entry-screen" class="dtc-entry-overlay">
