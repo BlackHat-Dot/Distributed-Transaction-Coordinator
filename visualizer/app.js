@@ -3092,11 +3092,28 @@ function initEntryScreen() {
   const canvas = document.getElementById("dtc-entry-canvas");
   const pctLabel = document.getElementById("dtc-entry-pct");
   const skipBtn = document.getElementById("btn-skip-entry");
-  if (!overlay || !canvas || !pctLabel) return;
-  if (new URLSearchParams(window.location.search).has("skip_entry") || window.location.hash === "#skip") {
+  const urlParams = new URLSearchParams(window.location.search);
+  const forceReplay = urlParams.has("replay_intro") || urlParams.has("replay") || urlParams.has("intro");
+  const forceSkip = urlParams.has("skip_entry") || window.location.hash === "#skip";
+
+  const hasWatched = (() => {
+    try {
+      return localStorage.getItem("dtc_entry_watched") === "1" || sessionStorage.getItem("dtc_entry_watched") === "1";
+    } catch (e) {
+      return false;
+    }
+  })();
+
+  if (forceSkip || (hasWatched && !forceReplay)) {
     overlay.style.display = "none";
+    finishEntryScreen();
     return;
   }
+
+  try {
+    localStorage.setItem("dtc_entry_watched", "1");
+    sessionStorage.setItem("dtc_entry_watched", "1");
+  } catch (e) {}
 
   const ctx = canvas.getContext("2d");
   const offCanvas = document.createElement("canvas");
@@ -3143,6 +3160,10 @@ function initEntryScreen() {
   function dismiss() {
     if (hasDismissed) return;
     hasDismissed = true;
+    try {
+      localStorage.setItem("dtc_entry_watched", "1");
+      sessionStorage.setItem("dtc_entry_watched", "1");
+    } catch (e) {}
 
     // 1. Fade out the counter
     if (meta) meta.classList.add("fade");
