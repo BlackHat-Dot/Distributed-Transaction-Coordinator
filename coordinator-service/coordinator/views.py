@@ -4,7 +4,7 @@ import logging
 import os
 import time
 import uuid
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -828,7 +828,7 @@ def _create_txn(request):
             new_amount = None
             try:
                 new_amount = Decimal(str(body["total_amount"]))
-            except (ValueError, TypeError, InvalidOperation):
+            except (ValueError, TypeError):
                 pass
             if new_amount is not None and new_amount != amount:
                 amount = new_amount
@@ -1315,7 +1315,7 @@ def _run_saga(
         actual_amount = None
         try:
             actual_amount = Decimal(str(body["total_amount"]))
-        except (ValueError, TypeError, InvalidOperation):
+        except (ValueError, TypeError):
             pass
         if actual_amount is not None and not simulate_decline:
             amount = actual_amount
