@@ -911,11 +911,16 @@ def _create_txn(request):
             if holding_event and holding_event.http_payload:
                 held_until_raw = holding_event.http_payload.get("held_until")
                 if held_until_raw:
+                    held_until_dt = None
                     try:
                         held_until_dt = parse_datetime(held_until_raw) if isinstance(held_until_raw, str) else held_until_raw
                         if held_until_dt and timezone.is_naive(held_until_dt):
                             held_until_dt = timezone.make_aware(held_until_dt)
-                        if held_until_dt and held_until_dt < timezone.now():
+                    except Exception:
+                        pass
+
+                    if held_until_dt and held_until_dt < timezone.now():
+                        try:
                             _set_status_with_event(
                                 txn.transaction_id,
                                 Transaction.Status.TIMEOUT,
@@ -924,18 +929,19 @@ def _create_txn(request):
                                 http_status_code=409,
                                 http_payload={"error": "Seat hold expired before payment attempt"},
                             )
-                            _release_inventory(txn.transaction_id, txn.seat_ids, correlation_id, "for expired hold")
-                            return Response(
-                                {
-                                    "error": "Seat hold has expired. Please select seats and try again.",
-                                    "code": "HOLD_EXPIRED",
-                                    "status": Transaction.Status.TIMEOUT,
-                                    "transaction_id": str(txn.transaction_id),
-                                },
-                                status=409,
-                            )
-                    except Exception:
-                        pass
+                        except Exception as exc:
+                            logger.warning("Failed to record TIMEOUT for expired hold %s: %s", txn.transaction_id, exc)
+
+                        _release_inventory(txn.transaction_id, txn.seat_ids, correlation_id, "for expired hold")
+                        return Response(
+                            {
+                                "error": "Seat hold has expired. Please select seats and try again.",
+                                "code": "HOLD_EXPIRED",
+                                "status": Transaction.Status.TIMEOUT,
+                                "transaction_id": str(txn.transaction_id),
+                            },
+                            status=409,
+                        )
 
             tx_id = txn.transaction_id
             seat_ids = txn.seat_ids
