@@ -1659,7 +1659,7 @@ def _finish_payment(transaction_id, fail_compensation, payment_data, payment_sta
         confirm_resp, confirm_err = _confirm(transaction_id, seat_ids=seat_ids, correlation_id=correlation_id)
 
         # Retry confirm once on transport failure or 5xx before giving up
-        if (confirm_resp is None and confirm_err) or (confirm_resp and confirm_resp.status_code in (502, 503, 504)):
+        if (confirm_resp is None and confirm_err) or (confirm_resp is not None and confirm_resp.status_code in (502, 503, 504)):
             logger.warning(
                 "Inventory confirm timed out or returned gateway error for tx %s (%s); retrying confirm...",
                 transaction_id,

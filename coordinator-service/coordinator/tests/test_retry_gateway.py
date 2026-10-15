@@ -22,7 +22,6 @@ class RetryGatewayTests(TestCase):
         r.headers["Content-Type"] = "application/json"
         return r
 
-    @unittest.expectedFailure
     def test_retry_confirm_on_503(self):
         recorded_urls = []
         confirm_call_count = 0
