@@ -4,7 +4,7 @@ import logging
 import os
 import time
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -825,16 +825,17 @@ def _create_txn(request):
             )
 
         if body and "total_amount" in body:
+            new_amount = None
             try:
                 new_amount = Decimal(str(body["total_amount"]))
-                if new_amount != amount:
-                    amount = new_amount
-                    Transaction.objects.filter(transaction_id=tx_id).update(
-                        amount=amount,
-                        updated_at=timezone.now(),
-                    )
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, InvalidOperation):
                 pass
+            if new_amount is not None and new_amount != amount:
+                amount = new_amount
+                Transaction.objects.filter(transaction_id=tx_id).update(
+                    amount=amount,
+                    updated_at=timezone.now(),
+                )
 
         transitioned = _set_status_with_event(
             tx_id,
