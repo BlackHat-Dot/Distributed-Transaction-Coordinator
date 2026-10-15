@@ -719,8 +719,6 @@ def _check_body(request):
     return list(raw_seats), action, None, None
 
 
-
-
 def _create_txn(request):
     """Handle POST request to create hold, pay hold, or run full one-shot saga."""
     seat_ids, action, pay_tid, invalid = _check_body(request)
