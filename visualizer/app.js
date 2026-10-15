@@ -1346,13 +1346,24 @@ DOM.btnDemoFail.addEventListener("click", async () => {
       duration: 6500,
     });
   } else {
-    showToast({
-      icon: "✦︎",
-      title: `Sync Compensation Completed (${res.status} · ${latencyMs}ms)`,
-      message: `[Mode: SYNCHRONOUS] Payment declined on $9,999. Coordinator immediately executed POST /seats/release/ rollback. Marked COMPENSATED.`,
-      type: "normal",
-      duration: 6500,
-    });
+    const isCompensated = (res.status === 400 || (res.data && res.data.status === "COMPENSATED"));
+    if (isCompensated) {
+      showToast({
+        icon: "✦︎",
+        title: `Sync Compensation Completed (${res.status} · ${latencyMs}ms)`,
+        message: `[Mode: SYNCHRONOUS] Payment declined on $9,999. Coordinator immediately executed POST /seats/release/ rollback. Marked COMPENSATED.`,
+        type: "normal",
+        duration: 6500,
+      });
+    } else {
+      showToast({
+        icon: "⚠️",
+        title: `Payment Processed (${res.status} · ${latencyMs}ms)`,
+        message: `[Status: ${res.data && res.data.status || 'COMPLETED'}] Payment was approved by gateway because ENABLE_TEST_PAYMENT_FAILURE is disabled on Payment Service. Set ENABLE_TEST_PAYMENT_FAILURE=True in Render to decline $9,999.`,
+        type: "warning",
+        duration: 8000,
+      });
+    }
   }
 
   if (res.data && res.data.transaction_id) {
