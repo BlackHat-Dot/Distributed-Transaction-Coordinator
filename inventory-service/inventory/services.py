@@ -270,7 +270,7 @@ def _validate_uuid(val):
     except (ValueError, AttributeError):
         return None
 
-
+# i know
 def _validate_reserve_input(data):
     if not isinstance(data, dict):
         return None, None, Response({"error": "Request body must be a JSON object", "code": "INVALID_BODY"}, status=400)

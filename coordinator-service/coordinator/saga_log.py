@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 _pub_client = None
 
-
+# i know
 def _get_pub_client():
     global _pub_client
     if _pub_client is None:
@@ -122,7 +122,7 @@ ALLOWED_TRANSITIONS = {
     },
 }
 
-
+# i know
 def _publish_transaction_update(transaction_id, to_status, from_status=None):
     try:
         client = _get_pub_client()

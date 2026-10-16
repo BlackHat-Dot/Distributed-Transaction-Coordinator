@@ -265,7 +265,7 @@ def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
     # A JSON Web Token (JWT) is just a single string made of 3 parts separated by dots (.)
     return f"{h_str}.{p_str}.{sig_str}"
 
-
+# i know
 def verify_jwt(token):
     if not token or "." not in token:
         return None, "Invalid token format"
@@ -307,6 +307,7 @@ def verify_jwt(token):
     except Exception as e:
         return None, str(e)
 
+# i know
 def get_user_from_request(request):
     """
     Extracts authenticated user identity from Authorization header or request payload.

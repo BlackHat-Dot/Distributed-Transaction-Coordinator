@@ -159,6 +159,7 @@ def seat_pricing(request):
         if type(s) is not int or isinstance(s, bool):
             return Response({"error": "seat_ids must be a list of integers"}, status=400)
 
+    # used to deduplicate' no error raised becuase there is possibility that the frontend itself can send duplicate values.
     target_ids = list(dict.fromkeys(seat_ids))
 
     seats = Seat.objects.filter(id__in=target_ids).order_by("id")
@@ -191,7 +192,7 @@ def reserve_seat(request):
     auth_err, has_internal_key = _verify_internal_service_key(request, allow_client=True) # Service key checker
     if auth_err:
         return auth_err
-
+    
     seat_ids, supplied_tid, error_response = _validate_reserve_input(request.data)
 
     if error_response:
@@ -200,14 +201,8 @@ def reserve_seat(request):
     # Determine the transaction_id:
     #   - Coordinator calls (X-Internal-Service-Key present) send their saga UUID in the body → honour it.
     #   - Browser calls never supply a valid transaction_id from the body (client-sent ID is silently ignored).
-
-    if has_internal_key:
-        if not supplied_tid:
-            return Response({"error": "transaction_id is required"}, status=400)
-        transaction_id = supplied_tid
-    else:
-        transaction_id = uuid.uuid4()  # Always freshly generated for browser callers
-
+    
+    transaction_id = supplied_tid
     # Authenticate user:
     # 1. Cryptographically verify JWT from Authorization header
     # 2. If internal key is present (coordinator saga), trust user_id/user_email from body

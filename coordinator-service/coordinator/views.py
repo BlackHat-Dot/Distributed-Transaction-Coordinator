@@ -58,7 +58,7 @@ def _corr_id(correlation_id=None):
     """Return active correlation ID, middleware ContextVar, or fresh UUIDv4."""
     return correlation_id or get_correlation_id() or str(uuid.uuid4())
 
-
+# i know
 def _verify_staff_key(header_val):
     """Constant-time verification of X-Staff-Key header."""
     if not header_val or not isinstance(header_val, str) or not header_val.strip():
@@ -81,18 +81,39 @@ def _faults_on():
 
 _HTTP_SESSION = None
 
-
+# i know
 def _get_http_session():
-    """Return a pooled requests.Session instance."""
+    """Return a pooled requests.Session instance.
+
+    Why use a pooled Session instead of plain `requests.get()`?
+    
+    1. Reuses TCP connections (Keep-Alive):
+       - `requests.get()` opens and closes a new connection on EVERY call,
+         wasting ~50-150ms on DNS, TCP, and SSL handshakes each time.
+       - A Session keeps connections open, making subsequent calls near-instant.
+    
+    2. Prevents Socket Exhaustion:
+       - Constantly opening/closing connections leaves ports in TIME_WAIT,
+         which can crash high-traffic servers when OS ports run out.
+    
+    3. Handles Concurrency:
+       - `pool_maxsize=25` lets multiple threads make up to 25 parallel
+         calls without blocking or fighting over connections.
+    """
+
     global _HTTP_SESSION
     if _HTTP_SESSION is None:
         _HTTP_SESSION = requests.Session()
+        # HTTPAdapter manages underlying TCP connections.
         adapter = HTTPAdapter(pool_connections=25, pool_maxsize=25)
+
+        # .mount("http://", ...) & .mount("https://", ...): Applies this pooling configuration to all 
+        # outgoing HTTP and HTTPS requests made through this session.
         _HTTP_SESSION.mount("http://", adapter)
         _HTTP_SESSION.mount("https://", adapter)
     return _HTTP_SESSION
 
-
+# i know
 def _http_post(url, **kwargs):
     """Execute outbound HTTP POST request."""
     timeout = kwargs.pop("timeout", REQUEST_TIMEOUT)
@@ -584,6 +605,7 @@ def recovery_status(request):
 # CONTROLLER REQUEST HANDLERS
 # =============================================================================
 
+# i know
 def _get_prices(seat_ids=None, correlation_id=None):
     """Query Inventory service for seat pricing and readable seat labels."""
     headers = {
@@ -633,14 +655,14 @@ def _get_prices(seat_ids=None, correlation_id=None):
         status=503,
     )
 
-
+# i know
 def _validate_seats(seats):
     """Validate seat_ids list: integer types, no duplicates, max seat limit."""
     if not isinstance(seats, list) or any(type(s) is not int for s in seats):
         return Response({"error": "seat_ids must be a list of integers.", "code": "INVALID_SEAT_IDS"}, status=400)
     if len(seats) != len(set(seats)):
         return Response({"error": "Duplicate seat_ids are not allowed.", "code": "DUPLICATE_SEATS"}, status=400)
-    max_seats = int(os.getenv("MAX_SEATS_PER_TRANSACTION", "10"))
+    max_seats = int(os.getenv("MAX_SEATS_PER_TRANSACTION", "5"))
     if len(seats) > max_seats:
         return Response(
             {"error": f"Cannot reserve more than {max_seats} seats in a single transaction.", "code": "EXCEEDED_MAX_SEATS"},
@@ -648,7 +670,7 @@ def _validate_seats(seats):
         )
     return None
 
-
+# i know
 def _check_body(request):
     """Validate incoming payload structure for hold, pay, or one-shot saga."""
     if not isinstance(request.data, dict):
@@ -1128,7 +1150,7 @@ def _create_txn(request):
         simulate_decline=simulate_decline,
     )
 
-
+# i know
 def _list_txns(request):
     """List transactions with pagination, filtering, and IDOR scoping."""
     is_authenticated, auth_user_id, is_staff = _get_caller(request)
@@ -1374,6 +1396,7 @@ def _run_saga(
 # MICROSERVICE REMOTE CALLS
 # =============================================================================
 
+# i know
 def _reserve(transaction_id, seat_ids, correlation_id=None, user_id=None, user_email=None):
     """Call downstream Inventory service to reserve seats."""
     headers = {
@@ -1448,6 +1471,7 @@ def _clear_checkout_presence(transaction_id):
         logger.warning("Failed to clear checkout presence key for tx %s: %s", transaction_id, exc)
 
 
+# i know
 def _charge(
     transaction_id,
     amount,
@@ -1971,7 +1995,7 @@ class RequesterIdentity(tuple):
         instance.user_email = user_email
         return instance
 
-
+# i know
 def _get_caller(request):
     """Resolve caller authentication and staff privileges."""
     if _verify_staff_key(request.headers.get("X-Staff-Key")):
@@ -2004,7 +2028,7 @@ def _get_caller(request):
 
     return RequesterIdentity(False, None, False, user_email=None)
 
-
+# i know
 def _create_transaction(transaction_id, seat_ids=None, seat_numbers=None, amount=500, quantity=1, user_id=None, user_email=None):
     """Atomically create a new Transaction row with status=STARTED."""
     try:
@@ -2041,7 +2065,7 @@ def _create_transaction(transaction_id, seat_ids=None, seat_numbers=None, amount
             status=500,
         )
 
-
+# i know
 def _txn_json(txn):
     """Serialize Transaction model instance to JSON-serializable dict."""
     return {

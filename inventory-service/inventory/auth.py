@@ -19,7 +19,7 @@ def _is_staff_request(request):
         return secrets.compare_digest(str(staff_key), str(configured_key))
     return False
 
-
+# i know
 def _get_authenticated_user(request):
     """
     Extracts and cryptographically verifies the JWT from Authorization header.
@@ -86,7 +86,11 @@ def _verify_internal_service_key(request, allow_client=False):
     configured_key = getattr(settings, "INTERNAL_SERVICE_KEY", None)
 
     if key is not None:
-        if not configured_key or not secrets.compare_digest(str(key), str(configured_key)):
+        if not configured_key:
+            return Response(
+                {"error": "Internal service is not configured"}
+            ), False
+        if not secrets.compare_digest(str(key), str(configured_key)):
             return Response(
                 {"error": "Forbidden: invalid internal service key."},
                 status=403,
