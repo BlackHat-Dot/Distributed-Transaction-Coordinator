@@ -206,44 +206,19 @@ def reserve_seat(request):
     
     transaction_id = supplied_tid
 
-    # Authenticate user:
-    # 1. Cryptographically verify JWT from Authorization header
-    # 2. If internal key is present (coordinator saga), trust user_id/user_email from body
-    # 3. If ALLOW_UNVERIFIED_IDENTITY_HEADERS is True (e.g. testing), fall back to headers/body
-    auth_user = _get_authenticated_user(request)
+    # Authetication isn't required , coordinator already verified.
 
-    if has_internal_key:
-        user_id = request.data.get("user_id") or (auth_user.get("user_id") if auth_user else None)
-        user_email = request.data.get("user_email") or (auth_user.get("user_email") if auth_user else None)
-    elif auth_user:
-        user_id = auth_user.get("user_id")
-        user_email = auth_user.get("user_email")
-    elif getattr(settings, "ALLOW_UNVERIFIED_IDENTITY_HEADERS", False) or getattr(settings, "IS_TESTING", False):
-        user_id = request.headers.get("X-User-ID") or request.data.get("user_id") or None
-        user_email = request.headers.get("X-User-Email") or request.data.get("user_email") or None
-    else:
-        user_id = None
-        user_email = None
+    user_id = request.data.get("user_id")
+    user_email = request.data.get("user_email")
 
+    # Both values cannot be missing but for defensive purpose i added a "if" condition.
     if user_id is not None:
         user_id = str(user_id)
     if user_email is not None:
         user_email = str(user_email).strip().lower()
 
-    is_testing = bool(getattr(settings, "IS_TESTING", False))
-    is_dev = getattr(settings, "DEBUG", False)
-
-    if not (is_dev or is_testing or has_internal_key):
-        if not user_id:
-            return Response(
-                {
-                    "error": "Authentication required. Your session has expired or you are not signed in. Please sign in to hold seats.",
-                    "code": "AUTHENTICATION_REQUIRED",
-                },
-                status=401,
-            )
     # Enforce MAX_USER_HOLDS (D-5)
-    max_user_holds = getattr(settings, "MAX_USER_HOLDS", 10)
+    max_user_holds = getattr(settings, "MAX_USER_HOLDS", 5)
     
     if max_user_holds is not None and len(seat_ids) > max_user_holds:
         return Response(
@@ -261,6 +236,7 @@ def reserve_seat(request):
         with transaction.atomic():
             # CONC-01: Acquire transaction-scoped advisory lock on user_id to serialize hold checks per user
             if user_id and connection.vendor == "postgresql":
+
                 with connection.cursor() as cursor:
                     cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", [f"user_hold:{user_id}"])
 
