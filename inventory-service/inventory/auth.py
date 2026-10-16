@@ -94,9 +94,6 @@ def _verify_internal_service_key(request, allow_client=False):
         return None, True
 
     if getattr(settings, "IS_TESTING", False):
-        auth_header = request.headers.get("Authorization", "")
-        if allow_client and auth_header.startswith("Bearer "):
-            return None, False
         return None, True
 
     if allow_client:

@@ -188,7 +188,7 @@ def seat_pricing(request):
 @api_view(["POST"])
 @throttle_classes([ReserveRateThrottle, ReserveAnonRateThrottle])
 def reserve_seat(request):
-    auth_err, has_internal_key = _verify_internal_service_key(request, allow_client=True) # Service key checker
+    auth_err, has_internal_key = _verify_internal_service_key(request, allow_client=False) # Service key checker
     if auth_err:
         return auth_err
 
@@ -201,12 +201,10 @@ def reserve_seat(request):
     #   - Coordinator calls (X-Internal-Service-Key present) send their saga UUID in the body → honour it.
     #   - Browser calls never supply a valid transaction_id from the body (client-sent ID is silently ignored).
 
-    if has_internal_key:
-        if not supplied_tid:
-            return Response({"error": "transaction_id is required"}, status=400)
-        transaction_id = supplied_tid
-    else:
-        transaction_id = uuid.uuid4()  # Always freshly generated for browser callers
+    if not supplied_tid:
+        return Response({"error": "transaction_id is required"}, status=400)
+    
+    transaction_id = supplied_tid
 
     # Authenticate user:
     # 1. Cryptographically verify JWT from Authorization header
