@@ -73,8 +73,6 @@ def _faults_on():
     if not getattr(settings, "DEBUG", False):
         return False
     flag = getattr(settings, "ENABLE_FAULT_INJECTION", False)
-    if not flag:
-        flag = os.getenv("ENABLE_FAULT_INJECTION", "").lower() in ("true", "1", "yes", "t")
     return bool(flag)
 
 
@@ -742,7 +740,6 @@ def _create_txn(request):
     user_id = ident[1]
     is_staff = ident[2]
     user_email = getattr(ident, "user_email", None) or (ident[3] if len(ident) > 3 else None)
-    has_staff_key = _verify_staff_key(request.headers.get("X-Staff-Key"))
 
     correlation_id = request.correlation_id
     if not correlation_id:
