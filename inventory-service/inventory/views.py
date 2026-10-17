@@ -268,34 +268,20 @@ def reserve_seat(request):
                         status=429,
                     )
             
-            # If ANY requested seats are already BOOKED by this transaction:
-            has_booked = any(s.status == Seat.Status.BOOKED and str(s.held_by_transaction_id) == str(transaction_id) for s in seats)
-            if has_booked:
-                # If ALL requested seats are BOOKED by this transaction, return idempotent success matching normal reserve shape
-                if all(s.status == Seat.Status.BOOKED and str(s.held_by_transaction_id) == str(transaction_id) for s in seats):
-                    total_amount = sum(s.price for s in seats)
-                    return Response(
-                        {
-                            "message": f"{len(seats)} Seats reserved",
-                            "transaction_id": str(transaction_id),
-                            "seat_ids": [s.id for s in seats],
-                            "held_until": None,
-                            "total_amount": str(total_amount),
-                        },
-                        status=200,
-                    )
-                else:
-                    return Response(
-                        {
-                            "error": "Conflict: Partial reservation mismatch. Some requested seats are already booked for this transaction.",
-                            "code": "PARTIAL_SEATS_BOOKED_CONFLICT",
-                            "transaction_id": str(transaction_id),
-                        },
-                        status=409,
-                    )
+            # PASS 1: Single validation & pricing pass
+            booked_by_tx = 0
+            total_amount = 0
+            first_unavailable_seat = None
 
             for seat in seats:
-                # If a seat is BOOKED (and not handled by all-booked check above), it cannot be held
+                total_amount += seat.price
+
+                # Check if booked by THIS transaction
+                if seat.status == Seat.Status.BOOKED and str(seat.held_by_transaction_id) == str(transaction_id):
+                    booked_by_tx += 1
+                    continue
+
+                # Check if already booked by someone else
                 if seat.status == Seat.Status.BOOKED:
                     return Response(
                         {
@@ -309,27 +295,54 @@ def reserve_seat(request):
                 # 1. Is it already held by this transaction? (Idempotent retry of active hold)
                 if seat.status == Seat.Status.HELD and seat.held_by_transaction_id and str(seat.held_by_transaction_id) == str(transaction_id):
                     continue
-                
+
                 # 2. Is it held by the same user? (Transition temporary hold to checkout)
                 if seat.is_held and not seat.is_expired(now) and user_id and str(seat.user_id) == str(user_id):
                     continue
-                
+
                 # 3. Is it available for anyone to take? (Available or expired)
                 if seat.is_available or (seat.is_held and seat.is_expired(now)):
                     continue
-                
-                # Otherwise, someone else owns it or it's already booked!
+
+                # Otherwise, someone else owns it or it's already booked/held
+                if not first_unavailable_seat:
+                    first_unavailable_seat = seat
+
+            if booked_by_tx == len(seats):
+                # If ALL requested seats are BOOKED by this transaction, return idempotent success matching normal reserve shape
                 return Response(
                     {
-                        "error": f"Seat {seat.row}{seat.seat_number} is already booked or held",
+                        "message": f"{len(seats)} Seats reserved",
+                        "transaction_id": str(transaction_id),
+                        "seat_ids": [s.id for s in seats],
+                        "held_until": None,
+                        "total_amount": str(total_amount),
+                    },
+                    status=200,
+                )
+            elif booked_by_tx > 0:
+                return Response(
+                    {
+                        "error": "Conflict: Partial reservation mismatch. Some requested seats are already booked for this transaction.",
+                        "code": "PARTIAL_SEATS_BOOKED_CONFLICT",
+                        "transaction_id": str(transaction_id),
+                    },
+                    status=409,
+                )
+
+            if first_unavailable_seat:
+                return Response(
+                    {
+                        "error": f"Seat {first_unavailable_seat.row}{first_unavailable_seat.seat_number} is already booked or held",
                         "code": "SEAT_UNAVAILABLE",
                         "transaction_id": str(transaction_id),
                     },
                     status=409,
                 )
 
+            # PASS 2: Mutation pass (apply holds in database)
             held_until_dt = now + get_hold_duration()
-            
+
             reservations = []
             for seat in seats:
                 # Clean up any unfinalized hold on this seat so it doesn't get orphaned
@@ -352,8 +365,6 @@ def reserve_seat(request):
                     transaction_id=transaction_id, # used lookup
                     defaults={'user_id': user_id, 'user_email': user_email, 'status': Reservation.Status.RESERVED} # used only if the object doesn't exist
                 )
-                # object created using those lookup + defaults
-                # .get_or_create() gives `object, True` if object is created if not then `object, False`
 
                 if not created:
                     res.status = Reservation.Status.RESERVED
@@ -362,8 +373,6 @@ def reserve_seat(request):
                     res.save(update_fields=["status", "user_id", "user_email"])
 
                 reservations.append(res)
-
-            total_amount = sum(seat.price for seat in seats)
 
             resp_data = {
                 "message": f"{len(seats)} Seats reserved",
