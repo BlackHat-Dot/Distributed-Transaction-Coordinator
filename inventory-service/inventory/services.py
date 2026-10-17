@@ -1,3 +1,4 @@
+import os
 import logging
 import time
 import uuid
@@ -291,8 +292,9 @@ def _validate_reserve_input(data):
 
     # Finding 18: Dedupe seat_ids while preserving order, and cap at 50
     seat_ids = list(dict.fromkeys(seat_ids))
-    if len(seat_ids) > 50:
-        return None, None, Response({"error": "Cannot reserve more than 50 seats at once", "code": "MAX_SEATS_EXCEEDED"}, status=400)
+    max_seats = int(os.getenv("MAX_SEATS_PER_TRANSACTION", "5"))
+    if len(seat_ids) > max_seats:
+        return None, None, Response({"error": f"Cannot reserve more than {max_seats} seats at once", "code": "MAX_SEATS_EXCEEDED"}, status=400)
 
     raw_tid = data.get("transaction_id")
     if raw_tid:

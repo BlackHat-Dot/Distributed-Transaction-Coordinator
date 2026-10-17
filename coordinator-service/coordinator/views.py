@@ -638,7 +638,7 @@ def _validate_seats(seats):
         return Response({"error": "seat_ids must be a list of integers.", "code": "INVALID_SEAT_IDS"}, status=400)
     if len(seats) != len(set(seats)):
         return Response({"error": "Duplicate seat_ids are not allowed.", "code": "DUPLICATE_SEATS"}, status=400)
-    max_seats = int(os.getenv("MAX_SEATS_PER_TRANSACTION", "10"))
+    max_seats = int(os.getenv("MAX_SEATS_PER_TRANSACTION", "5"))
     if len(seats) > max_seats:
         return Response(
             {"error": f"Cannot reserve more than {max_seats} seats in a single transaction.", "code": "EXCEEDED_MAX_SEATS"},
