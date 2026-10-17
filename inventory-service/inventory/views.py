@@ -217,7 +217,7 @@ def reserve_seat(request):
     if user_email is not None:
         user_email = str(user_email).strip().lower()
 
-    # Enforce MAX_USER_HOLDS (D-5)
+    # Enforce MAX_USER_HOLDS (D-5) - fall back to 5
     max_user_holds = getattr(settings, "MAX_USER_HOLDS", 5)
     
     if max_user_holds is not None and len(seat_ids) > max_user_holds:
@@ -293,7 +293,7 @@ def reserve_seat(request):
                     )
 
                 # 1. Is it already held by this transaction? (Idempotent retry of active hold)
-                if seat.status == Seat.Status.HELD and seat.held_by_transaction_id and str(seat.held_by_transaction_id) == str(transaction_id):
+                if seat.is_held and seat.held_by_transaction_id and str(seat.held_by_transaction_id) == str(transaction_id):
                     continue
 
                 # 2. Is it held by the same user? (Transition temporary hold to checkout)
@@ -360,17 +360,16 @@ def reserve_seat(request):
                 seat.user_email = user_email
                 seat.save(update_fields=["status", "held_until", "held_by_transaction_id", "user_id", "user_email"])
 
-                res, created = Reservation.objects.get_or_create(
-                    seat=seat, # used lookup
-                    transaction_id=transaction_id, # used lookup
-                    defaults={'user_id': user_id, 'user_email': user_email, 'status': Reservation.Status.RESERVED} # used only if the object doesn't exist
+                # update_or_create used instead of get_or_create
+                res, _ = Reservation.objects.update_or_create(
+                    seat=seat,
+                    transaction_id=transaction_id,
+                    defaults={
+                        'user_id': user_id, 
+                        'user_email': user_email, 
+                        'status': Reservation.Status.RESERVED
+                    }
                 )
-
-                if not created:
-                    res.status = Reservation.Status.RESERVED
-                    res.user_id = user_id
-                    res.user_email = user_email
-                    res.save(update_fields=["status", "user_id", "user_email"])
 
                 reservations.append(res)
 
