@@ -58,8 +58,16 @@ def generate_qr_code_base64(ticket_code: str) -> str:
     Returns data:image/png;base64,... string for inline frontend display.
     """
     img = generate_qr_code_image(ticket_code)
+
+    # creates an in-memory binary buffer (a virtual file stored entirely in RAM)
     buf = io.BytesIO()
+
+    # buff now holds the exact same byte sequence that a .png file would have on disk.
     img.save(buf, format="PNG")
+
+    # buf.getvalue() -> Retrives the raw PNG binary from RAM
+    # base64.b64encode(...) -> Converts those raw binary bytes into ASCII characters (A-Z, a-z, 0-9, +, -); JSON APIs cannot transport raw binary data, still bytes
+    # .decode("utf-8") -> Converts bytes object into a standard python text string (str).
     b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
     return f"data:image/png;base64,{b64}"
 

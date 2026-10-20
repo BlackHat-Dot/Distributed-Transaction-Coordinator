@@ -414,20 +414,20 @@ class TicketEndpointTests(TransactionTestCase):
         from django.core.cache import cache
         cache.clear()
 
-        # The limit is 60/min. Make 60 requests.
-        for _ in range(60):
+        # The limit is 5/min. Make 5 requests.
+        for _ in range(5):
             r = self.client.get(
                 f"/verify/{self.ticket.ticket_code}/",
                 REMOTE_ADDR="10.0.0.1",
             )
             self.assertEqual(r.status_code, 200)
 
-        # 61st request returns 429
-        r61 = self.client.get(
+        # 6th request returns 429
+        r6 = self.client.get(
             f"/verify/{self.ticket.ticket_code}/",
             REMOTE_ADDR="10.0.0.1",
         )
-        self.assertEqual(r61.status_code, 429)
+        self.assertEqual(r6.status_code, 429)
 
     def test_rotating_x_forwarded_for_from_untrusted_peer_does_not_bypass_gate_rate_limit(self):
         """Rotating spoofed X-Forwarded-For headers from untrusted peer cannot bypass gate rate limiting."""
@@ -463,8 +463,8 @@ class TicketEndpointTests(TransactionTestCase):
         from django.core.cache import cache
         cache.clear()
 
-        # The limit is 60/min. Make 60 requests with rotating XFF from untrusted peer.
-        for i in range(60):
+        # The limit is 5/min. Make 5 requests with rotating XFF from untrusted peer.
+        for i in range(5):
             r = self.client.get(
                 f"/verify/{self.ticket.ticket_code}/",
                 HTTP_X_FORWARDED_FOR=f"10.{i // 256}.{i % 256}.1",
@@ -472,13 +472,13 @@ class TicketEndpointTests(TransactionTestCase):
             )
             self.assertEqual(r.status_code, 200)
 
-        # 61st request must be rate-limited (429)
-        r61 = self.client.get(
+        # 6th request must be rate-limited (429)
+        r6 = self.client.get(
             f"/verify/{self.ticket.ticket_code}/",
             HTTP_X_FORWARDED_FOR="10.255.255.1",
             REMOTE_ADDR="198.51.100.30",
         )
-        self.assertEqual(r61.status_code, 429)
+        self.assertEqual(r6.status_code, 429)
 
     def test_verify_page_valid_before_redeem_and_already_used_after(self):
         """GET /verify/ shows VALID before redeem and ALREADY USED after redeem."""

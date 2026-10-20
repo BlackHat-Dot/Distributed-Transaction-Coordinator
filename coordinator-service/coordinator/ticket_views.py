@@ -139,6 +139,32 @@ def get_transaction_tickets(request, transaction_id):
         "tickets": tickets_data,
     }, status=status.HTTP_200_OK)
 
+    """ 
+    Example response:
+    {
+    "transaction_id": "ebee455a-a536-4933-b5d3-0796f0f241c5",
+    "status": "COMPLETED",
+    "event": {
+        "name": "World Premiere Concert",
+        "venue": "Grand Hall",
+        "starts_at": "2026-09-08T09:30:22.559922+00:00",
+        "starts_at_formatted": "08 Sep 2026, 03:00 PM IST"
+    },
+    "tickets": [
+        {
+            "ticket_code": "Z86pSaVPHGTN-wI0Tzghtw",
+            "seat_id": 43,
+            "seat_label": "B3",
+            "amount": "500.00",
+            "issued_at": "2026-10-20T13:30:57.400541+00:00",
+            "used_at": null,
+            "is_used": false,
+            "qr_code_base64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...."
+        }
+    ]
+}
+    """
+
 
 @api_view(["GET"])
 def get_ticket_pdf(request, transaction_id):
@@ -155,13 +181,21 @@ def get_ticket_pdf(request, transaction_id):
     except TicketIssuanceError as exc:
         return Response({"error": exc.detail, "code": "CONFLICT"}, status=exc.status_code)
 
+    # A raw bytes object containing the binary PDF stream.
     pdf_bytes = generate_tickets_pdf(txn, tickets)
 
-    seat_slug = "-".join(str(t.seat_label).replace(" ", "") for t in tickets[:3])
+    # For group bookings (>3 seats), use total count to avoid filename bloat and misleading partial seat listings.
+    if len(tickets) > 3:
+        seat_slug = f"{len(tickets)}seats"
+    else:
+        seat_slug = "-".join(str(t.seat_label).replace(" ", "") for t in tickets)
     short_ref = str(txn.transaction_id)[:8]
     filename = f"DTC-{seat_slug}-{short_ref}.pdf"
 
+    # Constructs a Django HttpResponse carrying the binary PDF bytes in its body.
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
+
+    # sets the download behaviour
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
 
@@ -199,7 +233,8 @@ def public_verify_ticket(request, ticket_code):
     """
     ip = _get_client_ip(request)
     rate_key = f"dtc:ratelimit:verify:{ip}"
-    if not check_rate_limit(rate_key, limit=60, window=60):
+    verify_limit = int(os.getenv("VERIFY_RATE_LIMIT", 5))
+    if not check_rate_limit(rate_key, limit=verify_limit, window=60):
         return HttpResponse("Too Many Requests", status=429, content_type="text/plain")
 
     ticket = Ticket.objects.select_related("transaction").filter(ticket_code=ticket_code).first()
