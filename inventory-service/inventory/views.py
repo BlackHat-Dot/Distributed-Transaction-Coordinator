@@ -240,7 +240,7 @@ def reserve_seat(request):
                 with connection.cursor() as cursor:
                     cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", [f"user_hold:{user_id}"])
 
-            seats = list(Seat.objects.select_for_update().filter(id__in=seat_ids).order_by('id'))
+            seats = list(Seat.objects.select_for_update().select_related("event").filter(id__in=seat_ids).order_by('id'))
 
             if len(seats) != len(seat_ids):
                 return Response({"error": "One or more seats not found", "transaction_id": str(transaction_id)}, status=404)
@@ -373,12 +373,22 @@ def reserve_seat(request):
 
                 reservations.append(res)
 
+            event_data = None
+            if seats and getattr(seats[0], "event", None):
+                ev = seats[0].event
+                event_data = {
+                    "name": ev.name,
+                    "venue": ev.venue,
+                    "starts_at": ev.starts_at.isoformat() if ev.starts_at else None,
+                }
+
             resp_data = {
                 "message": f"{len(seats)} Seats reserved",
                 "transaction_id": str(transaction_id),
                 "seat_ids": seat_ids,
                 "held_until": held_until_dt,
                 "total_amount": str(total_amount),
+                "event": event_data,
             }
             return Response(resp_data, status=200)
 
@@ -414,7 +424,7 @@ def confirm_seat(request):
 
     try:
         with transaction.atomic():
-            seats = list(Seat.objects.select_for_update().filter(id__in=seat_ids).order_by('id'))
+            seats = list(Seat.objects.select_for_update().select_related("event").filter(id__in=seat_ids).order_by('id'))
 
             if len(seats) != len(seat_ids):
                 return Response({"error": "One or more seats not found", "transaction_id": str(transaction_id)}, status=404)
@@ -653,6 +663,8 @@ def release_seat(request):
 @api_view(["GET"])
 @throttle_classes([CheckReservationRateThrottle])
 def check_reservation(request):
+    """Returns the real-time ground-truth status (BOOKED, RELEASED, RESERVED) for a transaction's seats,
+       verifying actual physical seat ownership to prevent double-booking before ticket issuance."""
     raw_tid = request.query_params.get("transaction_id")
     if not raw_tid:
         return Response({"error": "transaction_id is required"}, status=400)
@@ -667,16 +679,19 @@ def check_reservation(request):
     if not reservations:
         return Response({"status": Reservation.Status.NOT_RESERVED, "transaction_id": str(transaction_id)}, status=200)
 
+    # Double-booking prevention
     if any(r.status == Reservation.Status.BOOKED for r in reservations):
         if any(r.seat and r.seat.held_by_transaction_id and str(r.seat.held_by_transaction_id) != str(transaction_id) for r in reservations):
             return Response({
-                "status": Reservation.Status.RELEASED,
+                "status": "FORFEITED",
                 "transaction_id": str(transaction_id),
                 "released_reason": "SEAT_TAKEN_BY_ANOTHER_TRANSACTION",
             }, status=200)
+        
         booked_reservations = [r for r in reservations if r.status == Reservation.Status.BOOKED]
         first_seat = booked_reservations[0].seat if booked_reservations else None
         event_data = None
+
         if first_seat and first_seat.event:
             event_data = {
                 "name": first_seat.event.name,
@@ -697,8 +712,11 @@ def check_reservation(request):
             "event": event_data,
             "seats": seats_data,
         }, status=200)
-    
+
+    # If any seat hold in this transaction was released, find the first released record
+    # and return RELEASED status along with its specific reason (or UNKNOWN_LEGACY for old rows).
     if any(r.status == Reservation.Status.RELEASED for r in reservations):
+        # retrives first released object
         rel_r = next(r for r in reservations if r.status == Reservation.Status.RELEASED)
         resp_data = {
             "status": Reservation.Status.RELEASED,
@@ -708,6 +726,8 @@ def check_reservation(request):
         return Response(resp_data, status=200)
 
     now = timezone.now()
+
+    # Checks if any reserved seat's hold timer has expired or if the seat was reallocated to another transaction.
     if any(
         r.seat and (
             (r.seat.held_until and r.seat.held_until < now)

@@ -822,6 +822,8 @@ def _create_txn(request):
                 status=response.status_code if response.status_code in (400, 404, 409, 429) else 400,
             )
 
+        ev_info = body.get("event") if body else None
+        update_fields = {}
         if body and "total_amount" in body:
             new_amount = None
             try:
@@ -830,10 +832,23 @@ def _create_txn(request):
                 pass
             if new_amount is not None and new_amount != amount:
                 amount = new_amount
-                Transaction.objects.filter(transaction_id=tx_id).update(
-                    amount=amount,
-                    updated_at=timezone.now(),
-                )
+                update_fields["amount"] = amount
+
+        if ev_info and isinstance(ev_info, dict):
+            ev_name = ev_info.get("name")
+            ev_venue = ev_info.get("venue")
+            raw_starts = ev_info.get("starts_at")
+            ev_starts = parse_datetime(raw_starts) if isinstance(raw_starts, str) else raw_starts
+            if ev_name:
+                update_fields["event_name"] = ev_name
+            if ev_venue:
+                update_fields["venue"] = ev_venue
+            if ev_starts:
+                update_fields["starts_at"] = ev_starts
+
+        if update_fields:
+            update_fields["updated_at"] = timezone.now()
+            Transaction.objects.filter(transaction_id=tx_id).update(**update_fields)
 
         transitioned = _set_status_with_event(
             tx_id,
@@ -1307,18 +1322,38 @@ def _run_saga(
         )
 
     body = _parse_json_response(response)
-    if body and "total_amount" in body:
-        actual_amount = None
-        try:
-            actual_amount = Decimal(str(body["total_amount"]))
-        except (ValueError, TypeError):
-            pass
-        if actual_amount is not None and not simulate_decline:
-            amount = actual_amount
-            txn = Transaction.objects.filter(transaction_id=transaction_id).first()
-            if txn:
+    txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+    if txn:
+        update_cols = []
+        if body and "total_amount" in body:
+            actual_amount = None
+            try:
+                actual_amount = Decimal(str(body["total_amount"]))
+            except (ValueError, TypeError):
+                pass
+            if actual_amount is not None and not simulate_decline:
+                amount = actual_amount
                 txn.amount = amount
-                txn.save(update_fields=["amount"])
+                update_cols.append("amount")
+
+        ev_info = body.get("event") if body else None
+        if ev_info and isinstance(ev_info, dict):
+            ev_name = ev_info.get("name")
+            ev_venue = ev_info.get("venue")
+            raw_starts = ev_info.get("starts_at")
+            ev_starts = parse_datetime(raw_starts) if isinstance(raw_starts, str) else raw_starts
+            if ev_name:
+                txn.event_name = ev_name
+                update_cols.append("event_name")
+            if ev_venue:
+                txn.venue = ev_venue
+                update_cols.append("venue")
+            if ev_starts:
+                txn.starts_at = ev_starts
+                update_cols.append("starts_at")
+
+        if update_cols:
+            txn.save(update_fields=update_cols)
 
     transitioned_res = _set_status_with_event(
         transaction_id,
@@ -2050,6 +2085,9 @@ def _txn_json(txn):
         "seat_numbers": txn.seat_numbers,
         "quantity": txn.quantity,
         "amount": str(txn.amount),
+        "event_name": getattr(txn, "event_name", None),
+        "venue": getattr(txn, "venue", None),
+        "starts_at": getattr(txn, "starts_at", None),
         "created_at": txn.created_at,
         "updated_at": txn.updated_at,
     }

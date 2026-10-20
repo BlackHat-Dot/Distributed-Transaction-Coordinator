@@ -96,26 +96,15 @@ def issue_tickets_for_transaction(transaction: Transaction, correlation_id: str 
 
 
 
-    # Extract event snapshot
-    event_info = data.get("event")
-    if not event_info:
-        # Fallback: inventory-service has no single-event endpoint (e.g. /events/<id>/),
-        # only the list endpoint /events/. We query the catalog and select events_list[0]
-        # because the system is currently configured for a single primary showcase event.
-        try:
-            ev_resp = requests.get(f"{INVENTORY_BASE_URL}/events/", headers=headers, timeout=5)
-            if ev_resp.status_code == 200:
-                events_list = ev_resp.json()
-                if isinstance(events_list, list) and events_list:
-                    event_info = events_list[0]
-        except Exception:
-            pass
+    # 1. Prefer the immutable event snapshot captured on the transaction
+    event_name = getattr(transaction, "event_name", None)
+    venue = getattr(transaction, "venue", None) or ""
+    starts_at = getattr(transaction, "starts_at", None)
 
-    event_name = "Live Event"
-    venue = ""
-    starts_at = None
-    if event_info:
-        event_name = event_info.get("name") or event_name
+    # 2. If not stored on transaction (e.g. legacy transaction or test mock), extract directly from ground-truth check
+    if not event_name:
+        event_info = data.get("event") or {}
+        event_name = event_info.get("name")
         venue = event_info.get("venue") or venue
         raw_starts_at = event_info.get("starts_at")
         if raw_starts_at:
@@ -123,6 +112,10 @@ def issue_tickets_for_transaction(transaction: Transaction, correlation_id: str 
                 starts_at = parse_datetime(raw_starts_at)
             else:
                 starts_at = raw_starts_at
+
+    # 3. Fallback default if event details are completely missing
+    if not event_name:
+        event_name = "Live Event"
 
     # Map seat labels and pricing
     seats_info = data.get("seats") or []

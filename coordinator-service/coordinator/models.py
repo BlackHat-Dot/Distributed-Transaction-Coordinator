@@ -68,6 +68,10 @@ class Transaction(models.Model):
     seat_numbers = models.CharField(max_length=255, null=True, blank=True)
     quantity = models.IntegerField(null=True, default=1)
 
+    event_name = models.CharField(max_length=200, null=True, blank=True)
+    venue = models.CharField(max_length=200, null=True, blank=True)
+    starts_at = models.DateTimeField(null=True, blank=True)
+
     amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
