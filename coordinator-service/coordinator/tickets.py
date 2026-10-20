@@ -20,6 +20,12 @@ INVENTORY_BASE_URL = getattr(
 
 class TicketIssuanceError(Exception):
     def __init__(self, detail, status_code=409):
+        """
+        By passing only detail to super().__init__(detail),
+        self.args=("Seat taken",) Because self.args has exactly 1 item, Python's __str__ returns just that string without parentheses or quotes!
+
+        >2 args tuple is created instead of string
+        """
         super().__init__(detail)
         self.detail = detail
         self.status_code = status_code
@@ -93,7 +99,9 @@ def issue_tickets_for_transaction(transaction: Transaction, correlation_id: str 
     # Extract event snapshot
     event_info = data.get("event")
     if not event_info:
-        # Fallback: attempt to query /events/
+        # Fallback: inventory-service has no single-event endpoint (e.g. /events/<id>/),
+        # only the list endpoint /events/. We query the catalog and select events_list[0]
+        # because the system is currently configured for a single primary showcase event.
         try:
             ev_resp = requests.get(f"{INVENTORY_BASE_URL}/events/", headers=headers, timeout=5)
             if ev_resp.status_code == 200:
