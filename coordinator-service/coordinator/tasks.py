@@ -130,7 +130,7 @@ def send_ticket_email_task(self, transaction_id):
     resend.api_key = api_key
     try:
         seat_labels = ", ".join(t.seat_label for t in tickets)
-        event_name = tickets[0].event_name if tickets else "Live Event"
+        event_name = tickets[0].event_name if tickets else ""
         params = {
             "from": "DTC Tickets <tickets@resend.dev>",
             "to": [txn.user_email],

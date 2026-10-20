@@ -101,7 +101,7 @@ def issue_tickets_for_transaction(transaction: Transaction, correlation_id: str 
     venue = getattr(transaction, "venue", None) or ""
     starts_at = getattr(transaction, "starts_at", None)
 
-    # 2. If not stored on transaction (e.g. legacy transaction or test mock), extract directly from ground-truth check
+    # 2. If not stored on transaction, extract directly from ground-truth check
     if not event_name:
         event_info = data.get("event") or {}
         event_name = event_info.get("name")
@@ -113,14 +113,17 @@ def issue_tickets_for_transaction(transaction: Transaction, correlation_id: str 
             else:
                 starts_at = raw_starts_at
 
-    # 3. Fallback default if event details are completely missing
-    if not event_name:
-        event_name = "Live Event"
+    # 3. STRICT RULE: Fail fast if event metadata is missing. Never fabricate dummy event names.
+    if not event_name or not str(event_name).strip():
+        raise TicketIssuanceError(
+            "Cannot issue ticket: Event metadata is missing from transaction and inventory records.",
+            status_code=409,
+        )
 
     # Map seat labels and pricing
     seats_info = data.get("seats") or []
-    seat_label_map = {}
-    seat_amount_map = {}
+    seat_label_map = {} # seat_label_map: {101: "A1", 102: "A2"}
+    seat_amount_map = {} # seat_amount_map: {101: Decimal("500.00"), 102: Decimal("500.00")}
     for s in seats_info:
         sid = s.get("seat_id") or s.get("id")
         if sid:

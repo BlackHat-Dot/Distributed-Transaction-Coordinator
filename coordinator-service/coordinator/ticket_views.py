@@ -112,7 +112,7 @@ def get_transaction_tickets(request, transaction_id):
 
     first_ticket = tickets[0] if tickets else None
     event_data = {
-        "name": first_ticket.event_name if first_ticket else "Live Event",
+        "name": first_ticket.event_name if first_ticket else "",
         "venue": first_ticket.venue if first_ticket else "",
         "starts_at": first_ticket.starts_at.isoformat() if first_ticket and first_ticket.starts_at else None,
         "starts_at_formatted": format_kolkata_time(first_ticket.starts_at) if first_ticket else "TBA",

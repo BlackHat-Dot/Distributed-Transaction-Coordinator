@@ -107,9 +107,9 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         c.drawRightString(page_w - 25, page_h - 48, f"REF: #{short_ref}")
 
         # Event Title: wrap across multiple lines without truncating
-        title_lines = textwrap.wrap(ticket.event_name or "Live Event", width=36)
+        title_lines = textwrap.wrap(ticket.event_name or "", width=36)
         if not title_lines:
-            title_lines = ["Live Event"]
+            title_lines = [ticket.event_name or ""]
         font_size = 14 if len(title_lines) > 2 else 15
         line_height = font_size + 3
         c.setFillColor(colors.HexColor("#0f172a"))
@@ -221,7 +221,7 @@ def generate_tickets_ics(transaction: Transaction, tickets: list[Ticket]) -> byt
     cal.add("method", "PUBLISH")
 
     first_ticket = tickets[0] if tickets else None
-    event_name = first_ticket.event_name if first_ticket else "Live Event"
+    event_name = first_ticket.event_name if first_ticket else ""
     venue = first_ticket.venue if first_ticket else ""
     starts_at = first_ticket.starts_at if first_ticket else None
 

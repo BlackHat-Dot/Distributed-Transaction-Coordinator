@@ -229,3 +229,30 @@ class TicketIssuanceTests(TransactionTestCase):
         expected_codes = {t.ticket_code for t in db_tickets}
         for res in results:
             self.assertEqual({t.ticket_code for t in res}, expected_codes)
+
+    @patch("coordinator.tickets.requests.get")
+    def test_issue_ticket_missing_event_fails_fast_without_fake_data(self, mock_get):
+        """When event metadata is missing from transaction and ground truth, fail fast with 409 error instead of using fake defaults."""
+        txn = self._create_transaction(
+            status=Transaction.Status.COMPLETED,
+            seat_ids=[201],
+            seat_numbers="C1",
+            amount=Decimal("350.00"),
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "BOOKED",
+            "transaction_id": str(txn.transaction_id),
+            "event": None,  # Missing event metadata!
+            "seats": [{"seat_id": 201, "seat_label": "C1", "amount": "350.00"}],
+        }
+        mock_get.return_value = mock_resp
+
+        with self.assertRaises(TicketIssuanceError) as ctx:
+            issue_tickets_for_transaction(txn)
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("Event metadata is missing", ctx.exception.detail)
+        self.assertEqual(Ticket.objects.filter(transaction=txn).count(), 0)
