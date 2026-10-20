@@ -256,3 +256,128 @@ class TicketIssuanceTests(TransactionTestCase):
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertIn("Event metadata is missing", ctx.exception.detail)
         self.assertEqual(Ticket.objects.filter(transaction=txn).count(), 0)
+
+    @patch("coordinator.tickets.requests.get")
+    def test_issue_ticket_missing_seat_label_fails_fast(self, mock_get):
+        """When seat label is missing from inventory response, fail fast with 409 error instead of using fake 'Seat <id>'."""
+        txn = self._create_transaction(
+            status=Transaction.Status.COMPLETED,
+            seat_ids=[301],
+            seat_numbers=None,
+            amount=Decimal("400.00"),
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "BOOKED",
+            "transaction_id": str(txn.transaction_id),
+            "event": {"name": "Test Concert", "venue": "Arena"},
+            "seats": [{"seat_id": 301, "seat_label": None, "amount": "400.00"}],
+        }
+        mock_get.return_value = mock_resp
+
+        with self.assertRaises(TicketIssuanceError) as ctx:
+            issue_tickets_for_transaction(txn)
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("Seat label", ctx.exception.detail)
+        self.assertEqual(Ticket.objects.filter(transaction=txn).count(), 0)
+
+    @patch("coordinator.tickets.requests.get")
+    def test_issue_ticket_empty_inventory_seats_fails_fast(self, mock_get):
+        """When inventory ground truth returns empty seats list, fail fast with 409 before database work."""
+        txn = self._create_transaction(
+            status=Transaction.Status.COMPLETED,
+            seat_ids=[303],
+            amount=Decimal("200.00"),
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "BOOKED",
+            "transaction_id": str(txn.transaction_id),
+            "event": {"name": "Test Concert", "venue": "Arena"},
+            "seats": [],  # Empty seats list!
+        }
+        mock_get.return_value = mock_resp
+
+        with self.assertRaises(TicketIssuanceError) as ctx:
+            issue_tickets_for_transaction(txn)
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("Inventory returned no confirmed seat records", ctx.exception.detail)
+        self.assertEqual(Ticket.objects.filter(transaction=txn).count(), 0)
+
+    @patch("coordinator.tickets.requests.get")
+    def test_issue_ticket_seat_id_not_found_in_inventory_fails_fast(self, mock_get):
+        """When requested seat_id is missing from inventory seats list, fail fast with 409."""
+        txn = self._create_transaction(
+            status=Transaction.Status.COMPLETED,
+            seat_ids=[304, 305],
+            amount=Decimal("500.00"),
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "BOOKED",
+            "transaction_id": str(txn.transaction_id),
+            "event": {"name": "Test Concert", "venue": "Arena"},
+            "seats": [
+                {"seat_id": 304, "seat_label": "E1", "amount": "250.00"}
+                # Seat 305 is missing from inventory!
+            ],
+        }
+        mock_get.return_value = mock_resp
+
+        with self.assertRaises(TicketIssuanceError) as ctx:
+            issue_tickets_for_transaction(txn)
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("Seat ID 305 was not found in inventory confirmation", ctx.exception.detail)
+        self.assertEqual(Ticket.objects.filter(transaction=txn).count(), 0)
+
+    @patch("coordinator.tickets.requests.get")
+    def test_issue_ticket_missing_pricing_fails_fast(self, mock_get):
+        """When seat price is missing from inventory response, fail fast with 409 error instead of using total/n split."""
+        txn = self._create_transaction(
+            status=Transaction.Status.COMPLETED,
+            seat_ids=[302],
+            seat_numbers="D1",
+            amount=Decimal("400.00"),
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "BOOKED",
+            "transaction_id": str(txn.transaction_id),
+            "event": {"name": "Test Concert", "venue": "Arena"},
+            "seats": [{"seat_id": 302, "seat_label": "D1"}],  # No amount or price!
+        }
+        mock_get.return_value = mock_resp
+
+        with self.assertRaises(TicketIssuanceError) as ctx:
+            issue_tickets_for_transaction(txn)
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("Pricing details could not be resolved", ctx.exception.detail)
+        self.assertEqual(Ticket.objects.filter(transaction=txn).count(), 0)
+
+    def test_issue_ticket_empty_seat_ids_fails_fast(self):
+        """When transaction has no seat_ids, fail fast with 409 instead of defaulting to [1]."""
+        txn = self._create_transaction(
+            status=Transaction.Status.COMPLETED,
+            seat_ids=[],
+            seat_numbers=None,
+            amount=Decimal("0.00"),
+        )
+
+        with self.assertRaises(TicketIssuanceError) as ctx:
+            issue_tickets_for_transaction(txn)
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("no associated seat IDs", ctx.exception.detail)
+        self.assertEqual(Ticket.objects.filter(transaction=txn).count(), 0)

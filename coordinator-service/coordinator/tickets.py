@@ -43,7 +43,12 @@ def issue_tickets_for_transaction(transaction: Transaction, correlation_id: str 
     3. Handles IntegrityError from concurrent requests idempotently by re-fetching.
     """
     # 0. Check if tickets are already fully issued
-    seat_ids = transaction.seat_ids or [1]
+    seat_ids = transaction.seat_ids or []
+    if not seat_ids:
+        raise TicketIssuanceError(
+            "Cannot issue ticket: Transaction has no associated seat IDs.",
+            status_code=409,
+        )
     existing = list(Ticket.objects.filter(transaction=transaction).order_by("seat_id"))
     if existing and len(existing) == len(seat_ids):
         return existing
@@ -120,24 +125,62 @@ def issue_tickets_for_transaction(transaction: Transaction, correlation_id: str 
             status_code=409,
         )
 
-    # Map seat labels and pricing
-    seats_info = data.get("seats") or []
+    # 4. STRICT RULE: Inventory ground truth must contain confirmed seat records
+    seats_info = data.get("seats") # [{"seat_id": 101, "seat_label": "A1", "amount": "500.00"}, {"seat_id": 102, "seat_label": "A2", "amount": "500.00"}]
+    if not seats_info or not isinstance(seats_info, list):
+        raise TicketIssuanceError(
+            "Cannot issue ticket: Inventory returned no confirmed seat records.",
+            status_code=409,
+        )
+
+    # Build lookup maps and track inventory seats
+    inventory_seat_ids = set()
     seat_label_map = {} # seat_label_map: {101: "A1", 102: "A2"}
     seat_amount_map = {} # seat_amount_map: {101: Decimal("500.00"), 102: Decimal("500.00")}
     for s in seats_info:
-        sid = s.get("seat_id") or s.get("id")
-        if sid:
-            seat_label_map[sid] = s.get("seat_label") or s.get("label") or f"Seat {sid}"
-            if "amount" in s or "price" in s:
-                seat_amount_map[sid] = Decimal(str(s.get("amount") or s.get("price")))
+        raw_sid = s.get("seat_id") if "seat_id" in s else s.get("id")
+        if raw_sid is not None:
+            try:
+                sid = int(raw_sid)
+            except (ValueError, TypeError):
+                sid = raw_sid
+            inventory_seat_ids.add(sid)
 
-    # Split human-readable seat numbers if available
-    raw_labels = [lbl.strip() for lbl in (transaction.seat_numbers or "").split(",") if lbl.strip()]
-    
-    # Calculate fallback per-seat amount
-    total_amount = transaction.amount or Decimal("0.00")
-    num_seats = len(seat_ids)
-    fallback_amount = (total_amount / Decimal(num_seats)).quantize(Decimal("0.01")) if num_seats > 0 else Decimal("0.00")
+            label = s.get("seat_label") or s.get("label")
+            if label and str(label).strip():
+                seat_label_map[sid] = str(label).strip()
+
+            raw_amt = s.get("amount") if "amount" in s else s.get("price")
+            if raw_amt is not None:
+                try:
+                    dec_amt = Decimal(str(raw_amt))
+                    if dec_amt >= Decimal("0.00"):
+                        seat_amount_map[sid] = dec_amt
+                except Exception:
+                    pass
+
+    # STRICT RULE: Validate all requested seats upfront before touching database
+    for sid in seat_ids:
+        try:
+            norm_sid = int(sid)
+        except (ValueError, TypeError):
+            norm_sid = sid
+
+        if norm_sid not in inventory_seat_ids:
+            raise TicketIssuanceError(
+                f"Cannot issue ticket: Seat ID {sid} was not found in inventory confirmation.",
+                status_code=409,
+            )
+        if norm_sid not in seat_label_map:
+            raise TicketIssuanceError(
+                f"Cannot issue ticket: Seat label is missing or blank for seat ID {sid}.",
+                status_code=409,
+            )
+        if norm_sid not in seat_amount_map:
+            raise TicketIssuanceError(
+                f"Cannot issue ticket: Pricing details could not be resolved for seat ID {sid}.",
+                status_code=409,
+            )
 
     # Issue tickets inside atomic transaction with IntegrityError handling for concurrency
     try:
@@ -148,26 +191,25 @@ def issue_tickets_for_transaction(transaction: Transaction, correlation_id: str 
                 return existing
 
             created_tickets = []
-            for idx, sid in enumerate(seat_ids):
+            for sid in seat_ids:
+                try:
+                    norm_sid = int(sid)
+                except (ValueError, TypeError):
+                    norm_sid = sid
+
                 # Check if already exists for this seat
-                existing_for_seat = Ticket.objects.filter(transaction=transaction, seat_id=sid).first()
+                existing_for_seat = Ticket.objects.filter(transaction=transaction, seat_id=norm_sid).first()
                 if existing_for_seat:
                     created_tickets.append(existing_for_seat)
                     continue
 
-                label = seat_label_map.get(sid)
-                if not label:
-                    if idx < len(raw_labels):
-                        label = raw_labels[idx]
-                    else:
-                        label = f"Seat {sid}"
-
-                amount = seat_amount_map.get(sid, fallback_amount)
+                label = seat_label_map[norm_sid]
+                amount = seat_amount_map[norm_sid]
                 code = secrets.token_urlsafe(16)
 
                 ticket = Ticket.objects.create(
                     transaction=transaction,
-                    seat_id=sid,
+                    seat_id=norm_sid,
                     seat_label=label,
                     event_name=event_name,
                     venue=venue,
