@@ -910,6 +910,8 @@ def _create_txn(request):
             payload = holding_event.http_payload if (holding_event and holding_event.http_payload) else {}
             raw_hold = payload.get("held_until")
             held_until_dt = parse_datetime(raw_hold) if isinstance(raw_hold, str) else raw_hold
+
+            # In standard live http trafic: held_until_dt is `aware`
             if hasattr(held_until_dt, "tzinfo") and timezone.is_naive(held_until_dt):
                 held_until_dt = timezone.make_aware(held_until_dt)
 
