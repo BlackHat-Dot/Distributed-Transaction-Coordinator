@@ -948,6 +948,7 @@ def _create_txn(request):
             if simulate_decline and enable_test_payment_failure:
                 amount = Decimal("9999")
 
+            # both reserved and holding mean same but in this service holding and reserved represent different timeline of transaction.
             transitioned = _set_status_with_event(
                 tx_id,
                 Transaction.Status.INVENTORY_RESERVED,
@@ -1026,7 +1027,7 @@ def _create_txn(request):
             simulate_decline=simulate_decline,
         )
 
-    # One-shot legacy full saga path
+    # One-shot legacy full saga path, for live executives
     tx_id = str(uuid.uuid4())
     amount, seat_ids, seat_numbers, price_error = _get_prices(
         seat_ids=seat_ids,
