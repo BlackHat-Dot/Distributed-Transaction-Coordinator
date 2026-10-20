@@ -338,7 +338,7 @@ def public_verify_ticket(request, ticket_code):
     </div>
     <div class="info-row">
       <div class="info-label">Venue</div>
-      <div class="info-val">{ticket.venue or "Grand Arena Stadium"}</div>
+      <div class="info-val">{ticket.venue or "TBA"}</div>
     </div>
     <div class="info-row">
       <div class="info-label">Date & Time</div>
