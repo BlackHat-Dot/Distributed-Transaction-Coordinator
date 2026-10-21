@@ -9,7 +9,7 @@ from .auth import _get_authenticated_user_id
 
 
 def inventory_exception_handler(exc, context):
-    response = exception_handler(exc, context)
+    response = exception_handler(exc, context) # ensures we don't accidentally swallow real bugs or silence internal 500 server crashes.
     if isinstance(exc, Throttled) and response is not None:
         wait = getattr(exc, "wait", None)
         msg = f"Request was throttled. Expected available in {int(wait)} seconds." if wait else "Request was throttled."
