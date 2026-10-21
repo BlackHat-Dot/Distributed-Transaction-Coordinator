@@ -321,16 +321,16 @@ REST_FRAMEWORK = {
         # Transaction check: generous IP rate for polling checkout status behind NAT
         "inventory_check": os.getenv("INVENTORY_CHECK_THROTTLE_RATE", "120/min"),
         # Authenticated user actions: strictly scoped per user_id, independent of client IP/NAT
-        "inventory_reserve": os.getenv("INVENTORY_RESERVE_THROTTLE_RATE", "30/min"),
-        "inventory_release": os.getenv("INVENTORY_RELEASE_THROTTLE_RATE", "30/min"),
-        # Unauthenticated / bot protection on mutating routes: scoped per client IP with NAT in mind
+        "inventory_reserve": os.getenv("INVENTORY_RESERVE_THROTTLE_RATE", "5/min"),
+        "inventory_release": os.getenv("INVENTORY_RELEASE_THROTTLE_RATE", "10/min"),
+        # Unauthenticated / bot protection on mutating routes: strictly capped per client IP
         "inventory_reserve_anon": os.getenv(
             "INVENTORY_RESERVE_ANON_THROTTLE_RATE",
-            "1000/min" if IS_TESTING else "300/min",
+            "1000/min" if IS_TESTING else "5/min",
         ),
         "inventory_release_anon": os.getenv(
             "INVENTORY_RELEASE_ANON_THROTTLE_RATE",
-            "1000/min" if IS_TESTING else "300/min",
+            "1000/min" if IS_TESTING else "10/min",
         ),
     },
     "EXCEPTION_HANDLER": "inventory.throttling.inventory_exception_handler",
