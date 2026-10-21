@@ -82,14 +82,22 @@ if DEBUG:
         'DEFAULT_RENDERER_CLASSES': [
             'rest_framework.renderers.JSONRenderer',
             'rest_framework.renderers.BrowsableAPIRenderer',
-        ]
+        ],
+        'DEFAULT_THROTTLE_RATES': {
+            'coordinator_transactions': '4/min',
+        },
+        'EXCEPTION_HANDLER': 'coordinator.throttling.coordinator_exception_handler',
     }
 else:
     # In production: Pure JSON only! No HTML forms or documentation UI
     REST_FRAMEWORK = {
         'DEFAULT_RENDERER_CLASSES': [
             'rest_framework.renderers.JSONRenderer',
-        ]
+        ],
+        'DEFAULT_THROTTLE_RATES': {
+            'coordinator_transactions': '4/min',
+        },
+        'EXCEPTION_HANDLER': 'coordinator.throttling.coordinator_exception_handler',
     }
 
 INSTALLED_APPS = [

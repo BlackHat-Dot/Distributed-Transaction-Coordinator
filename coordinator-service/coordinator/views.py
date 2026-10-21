@@ -15,10 +15,11 @@ import redis
 import requests
 from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException, Timeout
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, throttle_classes
 from rest_framework.response import Response
 
 from coordinator.auth_views import get_user_from_request
+from coordinator.throttling import BookingRateThrottle
 from .middleware import get_correlation_id
 from .models import SagaEvent, Transaction
 from .recovery import execute_compensation_sweep
@@ -146,6 +147,7 @@ def health_check(request):
 
 
 @api_view(["GET", "POST"])
+@throttle_classes([BookingRateThrottle])
 def transactions_endpoint(request):
     """Route GET to list transactions and POST to create or pay transaction."""
     if request.method == "GET":
