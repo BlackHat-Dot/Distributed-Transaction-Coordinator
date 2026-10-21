@@ -11,14 +11,7 @@ from rest_framework.response import Response
 
 from .models import Event, Seat, Reservation
 from .serializers import EventSerializer, PublicSeatSerializer, InternalSeatSerializer
-from .throttling import (
-    SeatListRateThrottle,
-    ReserveRateThrottle,
-    ReserveAnonRateThrottle,
-    ReleaseRateThrottle,
-    ReleaseAnonRateThrottle,
-    CheckReservationRateThrottle,
-)
+
 from .auth import (
     _is_staff_request,
     _get_authenticated_user,
