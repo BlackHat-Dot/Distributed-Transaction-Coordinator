@@ -8,6 +8,18 @@ from rest_framework.views import exception_handler
 from .auth import _get_authenticated_user_id
 
 
+# cache_format = 'throttle_%(scope)s_%(ident)s'
+
+# why self.scope is included?
+
+# without
+# # BAD KEY DESIGN (No scope):
+# "throttle_192.168.1.1"
+
+# with
+# "throttle_inventory_seat_list_192.168.1.1"   # Counter for viewing seats (limit: 300)
+# "throttle_inventory_reserve_192.168.1.1"     # Counter for reserving seats (limit: 5)
+
 def inventory_exception_handler(exc, context):
     response = exception_handler(exc, context) # ensures we don't accidentally swallow real bugs or silence internal 500 server crashes.
     if isinstance(exc, Throttled) and response is not None:
@@ -42,6 +54,7 @@ def _is_exempt_from_throttling(request):
 class BaseInventoryThrottle(SimpleRateThrottle):
     fallback_scope = None
 
+    # reached by __init__
     def get_rate(self):
         rf_settings = getattr(settings, "REST_FRAMEWORK", {}) or {}
         rates = rf_settings.get("DEFAULT_THROTTLE_RATES", {}) or {}
@@ -51,6 +64,7 @@ class BaseInventoryThrottle(SimpleRateThrottle):
             return rates[self.fallback_scope]
         return super().get_rate()
 
+    # reached by HTTP request
     def allow_request(self, request, view):
         if _is_exempt_from_throttling(request):
             return True
@@ -91,12 +105,27 @@ class SeatListRateThrottle(BaseInventoryThrottle):
     scope = "inventory_seat_list"
     fallback_scope = "inventory_anon"
 
+    # generates the unique tracking label stored in Redis
     def get_cache_key(self, request, view):
         # Public catalog endpoint: throttled per client IP with NAT-aware capacity
         return self.cache_format % {
             "scope": self.scope,
-            "ident": self.get_ident(request),
+            "ident": self.get_ident(request), # extracts client's IP address
         }
+    
+    # --- EXECUTION FLOW ---
+    #
+    # 1. An HTTP request arrives at GET /seats/.
+    #
+    # 2. Django executes BaseInventoryThrottle.allow_request(request, view):
+    #    - Checks if the request header contains a valid X-Internal-Service-Key or X-Staff-Key.
+    #    - If valid, returns True immediately (skips rate limiting).
+    #
+    # 3. If not exempt, it calls super().allow_request(request, view) on SimpleRateThrottle:
+    #    - SimpleRateThrottle calls SeatListRateThrottle.get_cache_key() to get the Redis key string.
+    #    - SimpleRateThrottle queries Redis for that key's timestamp history.
+    #    - Compares request count against the rate limit (300/min).
+    #    - Returns True (allow request) or False (block request with HTTP 429).
 
 
 class CheckReservationRateThrottle(BaseInventoryThrottle):
