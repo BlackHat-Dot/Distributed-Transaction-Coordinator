@@ -49,7 +49,6 @@ def execute_compensation_sweep(
     headers = {
         "X-Correlation-ID": str(correlation_id or transaction_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
-        "X-Idempotency-Key": str(transaction_id),
     }
 
     txn = Transaction.objects.filter(transaction_id=transaction_id).first()

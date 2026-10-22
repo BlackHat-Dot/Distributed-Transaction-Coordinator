@@ -268,7 +268,6 @@ class Command(BaseCommand):
         headers = {
             "X-Correlation-ID": str(transaction_id),
             "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
-            "X-Idempotency-Key": str(transaction_id),
         }
         try:
             payment_resp = requests.get(

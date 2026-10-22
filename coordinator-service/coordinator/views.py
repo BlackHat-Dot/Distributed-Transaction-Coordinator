@@ -1395,7 +1395,6 @@ def _reserve(transaction_id, seat_ids, correlation_id=None, user_id=None, user_e
     headers = {
         "X-Correlation-ID": _corr_id(correlation_id, transaction_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
-        "X-Idempotency-Key": str(transaction_id),
     }
 
     try:
@@ -1504,7 +1503,6 @@ def _do_charge(
     headers = {
         "X-Correlation-ID": _corr_id(correlation_id, transaction_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
-        "X-Idempotency-Key": str(transaction_id),
     }
 
     try:
@@ -1646,7 +1644,6 @@ def _confirm(transaction_id, seat_ids=None, correlation_id=None):
     headers = {
         "X-Correlation-ID": _corr_id(correlation_id, transaction_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
-        "X-Idempotency-Key": str(transaction_id),
     }
     try:
         response = _http(
@@ -1774,7 +1771,6 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
     headers = {
         "X-Correlation-ID": _corr_id(correlation_id, transaction_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
-        "X-Idempotency-Key": str(transaction_id),
     }
 
     claimed = _set_status_with_event(
