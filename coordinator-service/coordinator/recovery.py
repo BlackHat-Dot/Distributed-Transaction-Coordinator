@@ -61,6 +61,7 @@ def execute_compensation_sweep(
     payment_voided = False
     try:
         p_resp = get_http(
+            "GET",
             PAYMENT_CHECK_URL,
             params={"transaction_id": str(transaction_id)},
             headers=headers,
@@ -122,6 +123,7 @@ def execute_compensation_sweep(
         void_ok = False
         try:
             v_resp = post_http(
+                "POST",
                 PAYMENT_VOID_URL,
                 json={"transaction_id": str(transaction_id)},
                 headers=headers,
@@ -165,6 +167,7 @@ def execute_compensation_sweep(
         confirm_transport_error = False
         try:
             c_resp = post_http(
+                "POST",
                 INVENTORY_CONFIRM_URL,
                 json={"transaction_id": str(transaction_id), "seat_ids": seat_ids},
                 headers=headers,
@@ -231,6 +234,7 @@ def execute_compensation_sweep(
         if not released_reason:
             try:
                 chk_resp = get_http(
+                    "GET",
                     f"{INVENTORY_BASE_URL}/reserve/check/",
                     params={"transaction_id": str(transaction_id)},
                     headers=headers,
@@ -271,6 +275,7 @@ def execute_compensation_sweep(
     if payment_status == "CHARGED":
         try:
             r_resp = post_http(
+                "POST",
                 PAYMENT_REFUND_URL,
                 json={"transaction_id": str(transaction_id)},
                 headers=headers,
@@ -294,6 +299,7 @@ def execute_compensation_sweep(
     release_payload = None
     try:
         rel_resp = post_http(
+            "POST",
             INVENTORY_RELEASE_URL,
             json={"transaction_id": str(transaction_id), "seat_ids": seat_ids},
             headers=headers,

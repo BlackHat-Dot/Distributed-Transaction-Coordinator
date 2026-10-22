@@ -4,6 +4,7 @@ import logging
 import os
 import time
 import uuid
+import threading
 from decimal import Decimal
 
 from django.conf import settings
@@ -69,41 +70,32 @@ def _corr_id(correlation_id, transaction_id):
     """Return active correlation ID, middleware ContextVar, or fresh UUIDv4."""
     return correlation_id or get_correlation_id() or str(transaction_id)
 
-
+# verified
 def _faults_on():
     """Return True only if DEBUG=True and ENABLE_FAULT_INJECTION is enabled."""
     flag = getattr(settings, "ENABLE_FAULT_INJECTION", False)
     return bool(flag)
 
 
-_HTTP_SESSION = None
+_sess = None
+_lock = threading.Lock()
 
 
-def _get_http_session():
-    """Return a pooled requests.Session instance."""
-    global _HTTP_SESSION
-    if _HTTP_SESSION is None:
-        _HTTP_SESSION = requests.Session()
-        adapter = HTTPAdapter(pool_connections=25, pool_maxsize=25)
-        _HTTP_SESSION.mount("http://", adapter)
-        _HTTP_SESSION.mount("https://", adapter)
-    return _HTTP_SESSION
+def _get_sess():
+    global _sess
+    if _sess is None:
+        with _lock:
+            if _sess is None:
+                _sess = requests.Session()
+                ad = HTTPAdapter(pool_connections=25, pool_maxsize=25)
+                _sess.mount("http://", ad)
+                _sess.mount("https://", ad)
+    return _sess
 
 
-def _http_post(url, **kwargs):
-    """Execute outbound HTTP POST request."""
-    timeout = kwargs.pop("timeout", REQUEST_TIMEOUT)
-    if getattr(settings, "IS_TESTING", False):
-        return requests.post(url, timeout=timeout, **kwargs)
-    return _get_http_session().post(url, timeout=timeout, **kwargs)
-
-
-def _http_get(url, **kwargs):
-    """Execute outbound HTTP GET request."""
-    timeout = kwargs.pop("timeout", REQUEST_TIMEOUT)
-    if getattr(settings, "IS_TESTING", False):
-        return requests.get(url, timeout=timeout, **kwargs)
-    return _get_http_session().get(url, timeout=timeout, **kwargs)
+def _http(method, url, **kwargs):
+    kwargs.setdefault("timeout", REQUEST_TIMEOUT)
+    return _get_sess().request(method, url, **kwargs)
 
 
 def _release_inventory(tx_id, seat_ids=None, correlation_id=None, reason=""):
@@ -117,7 +109,8 @@ def _release_inventory(tx_id, seat_ids=None, correlation_id=None, reason=""):
     if seat_ids is not None:
         payload["seat_ids"] = seat_ids
     try:
-        return _http_post(
+        return _http(
+            "POST",
             INVENTORY_RELEASE_URL,
             json=payload,
             headers=headers,
@@ -421,8 +414,8 @@ def retry_compensation(request, transaction_id):
             actor=SagaEvent.ACTOR_RETRY,
             original_status=txn.status,
             correlation_id=correlation_id,
-            get_func=_http_get,
-            post_func=_http_post,
+            get_func=_http,
+            post_func=_http,
         )
     except Exception as exc:
         logger.error(
@@ -593,7 +586,8 @@ def _get_prices(seat_ids=None, correlation_id=None, transaction_id=None):
 
     seats_list = None
     try:
-        resp = _http_post(
+        resp = _http(
+            "POST",
             INVENTORY_PRICING_URL,
             json={"seat_ids": seat_ids},
             headers=headers,
@@ -1416,7 +1410,8 @@ def _reserve(transaction_id, seat_ids, correlation_id=None, user_id=None, user_e
     }
 
     try:
-        response = _http_post(
+        response = _http(
+            "POST",
             INVENTORY_RESERVE_URL,
             json={
                 "seat_ids": seat_ids,
@@ -1524,7 +1519,8 @@ def _do_charge(
     }
 
     try:
-        payment_response = _http_post(
+        payment_response = _http(
+            "POST",
             PAYMENT_CHARGE_URL,
             json={
                 "transaction_id": str(transaction_id),
@@ -1557,7 +1553,8 @@ def _do_charge(
             )
 
         try:
-            payment_check = _http_get(
+            payment_check = _http(
+                "GET",
                 PAYMENT_CHECK_URL,
                 params={"transaction_id": str(transaction_id)},
                 headers=headers,
@@ -1604,7 +1601,8 @@ def _do_charge(
             )
 
         try:
-            payment_check = _http_get(
+            payment_check = _http(
+                "GET",
                 PAYMENT_CHECK_URL,
                 params={"transaction_id": str(transaction_id)},
                 headers=headers,
@@ -1662,7 +1660,8 @@ def _confirm(transaction_id, seat_ids=None, correlation_id=None):
         "X-Idempotency-Key": str(transaction_id),
     }
     try:
-        response = _http_post(
+        response = _http(
+            "POST",
             INVENTORY_CONFIRM_URL,
             json={"seat_ids": seat_ids, "transaction_id": str(transaction_id)},
             headers=headers,
@@ -1823,7 +1822,8 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
     if not was_charged:
         void_ok = False
         try:
-            void_resp = _http_post(
+            void_resp = _http(
+                "POST",
                 PAYMENT_VOID_URL,
                 json={"transaction_id": str(transaction_id)},
                 headers=headers,
@@ -1855,7 +1855,8 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
     # 1. Release inventory
     release_ok, release_data, release_status_code, release_transport_error = False, None, None, None
     try:
-        release_response = _http_post(
+        release_response = _http(
+            "POST",
             INVENTORY_RELEASE_URL,
             json={"transaction_id": tx_id_release},
             headers=headers,
@@ -1881,7 +1882,8 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
     refund_ok, refund_data, refund_status_code, refund_transport_error = not was_charged, None, None, None
     if was_charged:
         try:
-            refund_response = _http_post(
+            refund_response = _http(
+                "POST",
                 PAYMENT_REFUND_URL,
                 json={"transaction_id": str(transaction_id)},
                 headers=headers,
