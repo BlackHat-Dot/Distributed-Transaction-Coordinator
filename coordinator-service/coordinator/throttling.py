@@ -9,13 +9,9 @@ from coordinator.auth_views import get_user_from_request
 
 
 def _is_exempt(request):
-    internal_key = os.getenv("INTERNAL_SERVICE_KEY")
     staff_key = os.getenv("STAFF_KEY")
-    req_internal = request.headers.get("X-Internal-Service-Key")
     req_staff = request.headers.get("X-Staff-Key")
 
-    if internal_key and req_internal and hmac.compare_digest(req_internal.strip(), internal_key.strip()):
-        return True
     if staff_key and req_staff and hmac.compare_digest(req_staff.strip(), staff_key.strip()):
         return True
     return False
