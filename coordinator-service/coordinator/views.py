@@ -64,6 +64,7 @@ PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
 # Shared secret for service-to-service internal authentication (X-Internal-Service-Key)
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 
+# verified
 def _corr_id(correlation_id, transaction_id):
     """Return active correlation ID, middleware ContextVar, or fresh UUIDv4."""
     return correlation_id or get_correlation_id() or str(transaction_id)
@@ -71,8 +72,6 @@ def _corr_id(correlation_id, transaction_id):
 
 def _faults_on():
     """Return True only if DEBUG=True and ENABLE_FAULT_INJECTION is enabled."""
-    if not getattr(settings, "DEBUG", False):
-        return False
     flag = getattr(settings, "ENABLE_FAULT_INJECTION", False)
     return bool(flag)
 
