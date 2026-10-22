@@ -358,6 +358,18 @@ function isUserAuthenticated(promptIfNeeded = true) {
   return true;
 }
 
+function getOrCreateSessionId() {
+  let sessionId = localStorage.getItem("dtc_anon_session_id");
+  if (!sessionId) {
+    sessionId = "sess_" + (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36));
+    localStorage.setItem("dtc_anon_session_id", sessionId);
+  }
+  return sessionId;
+}
+
+// Automatically ensure any visitor has a session ID on load
+getOrCreateSessionId();
+
 async function fetchJson(url, options = {}, timeoutMs = 8000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -365,6 +377,7 @@ async function fetchJson(url, options = {}, timeoutMs = 8000) {
   const isBodyMethod = ["POST", "PUT", "PATCH"].includes((options.method || "GET").toUpperCase());
   const headers = {
     Accept: "application/json",
+    "X-Session-ID": getOrCreateSessionId(),
     ...(isBodyMethod ? { "Content-Type": "application/json" } : {}),
     ...(options.headers || {}),
   };
@@ -1303,6 +1316,15 @@ async function loadCatalog(isInitial = false) {
   try {
     // Single consolidated fetch: /events/ already includes event metadata AND all nested seats!
     const eventsRes = await fetchJson(`${CONFIG.inventoryUrl}/events/`);
+
+    if (eventsRes.status === 429) {
+      showToast({
+        title: "Rate Limit Exceeded",
+        message: (eventsRes.data && eventsRes.data.error) || "Something went wrong. Please wait for 60 seconds.",
+        type: "warning",
+      });
+      return;
+    }
 
     if (!eventsRes.ok || !Array.isArray(eventsRes.data) || eventsRes.data.length === 0) {
       if (DOM.healthText) DOM.healthText.textContent = "Inventory: Offline";

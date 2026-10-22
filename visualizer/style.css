@@ -2011,7 +2011,7 @@ button, input, select, textarea {
 
 .toast-container {
   position: fixed;
-  bottom: 24px;
+  top: 24px;
   right: 24px;
   display: flex;
   flex-direction: column;
@@ -2646,7 +2646,7 @@ button, input, select, textarea {
   .toast-container {
     left: 14px;
     right: 14px;
-    bottom: 14px;
+    top: 14px;
     width: auto;
     max-width: 100%;
   }

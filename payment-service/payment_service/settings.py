@@ -145,6 +145,7 @@ CORS_ALLOW_HEADERS = [
     "x-correlation-id",
     "x-user-id",
     "x-user-email",
+    "x-session-id",
 ]
 
 _csrf_env = os.getenv("CSRF_TRUSTED_ORIGINS")

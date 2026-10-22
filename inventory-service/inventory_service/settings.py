@@ -128,6 +128,9 @@ CORS_ALLOW_HEADERS = [
     "x-correlation-id",
     "x-user-id",
     "x-user-email",
+    "x-staff-key",
+    "x-internal-service-key",
+    "x-session-id",
 ]
 
 CORS_EXPOSE_HEADERS = [
@@ -312,12 +315,13 @@ REST_FRAMEWORK = {
     # NUM_PROXIES determines how many reverse proxy hops to trust when resolving client IP from X-Forwarded-For.
     # Set to 1 for standard reverse-proxy (e.g. AWS ALB, Nginx, Cloudflare), or higher for nested proxies.
     "NUM_PROXIES": int(os.getenv("NUM_PROXIES", "1")),
+    "EXCEPTION_HANDLER": "inventory.throttling.inventory_exception_handler",
     "DEFAULT_THROTTLE_RATES": {
         # Fallback rates
         "inventory_user": os.getenv("INVENTORY_USER_THROTTLE_RATE", "60/min"),
         "inventory_anon": os.getenv("INVENTORY_ANON_THROTTLE_RATE", "300/min"),
-        # Catalog browsing: generous IP rate for university/office/cellular NAT gateways during on-sale
-        "inventory_seat_list": os.getenv("INVENTORY_SEAT_LIST_THROTTLE_RATE", "300/min"),
+        # Catalog browsing: 10/min per anonymous session ID (fallback to IP)
+        "inventory_seat_list": os.getenv("INVENTORY_SEAT_LIST_THROTTLE_RATE", "10/min"),
         # Transaction check: generous IP rate for polling checkout status behind NAT
         "inventory_check": os.getenv("INVENTORY_CHECK_THROTTLE_RATE", "120/min"),
         # Authenticated user actions: strictly scoped per user_id, independent of client IP/NAT

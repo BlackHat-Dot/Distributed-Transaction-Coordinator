@@ -482,6 +482,18 @@ if (DOM.btnRunFromModal) {
 }
 
 
+function getOrCreateSessionId() {
+  let sessionId = localStorage.getItem("dtc_anon_session_id");
+  if (!sessionId) {
+    sessionId = "sess_" + (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36));
+    localStorage.setItem("dtc_anon_session_id", sessionId);
+  }
+  return sessionId;
+}
+
+// Ensure session ID is initialized immediately on page load
+getOrCreateSessionId();
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -490,6 +502,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
   const isBodyMethod = ["POST", "PUT", "PATCH"].includes((options.method || "GET").toUpperCase());
   const defaultHeaders = {
     Accept: "application/json",
+    "X-Session-ID": getOrCreateSessionId(),
   };
   if (isBodyMethod) {
     defaultHeaders["Content-Type"] = "application/json";
