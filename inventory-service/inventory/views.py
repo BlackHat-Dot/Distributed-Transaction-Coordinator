@@ -6,7 +6,7 @@ import zoneinfo
 from django.conf import settings
 from django.db import transaction, connection, IntegrityError, DatabaseError
 from django.utils import timezone
-from rest_framework.decorators import api_view, throttle_classes
+from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from .models import Event, Seat, Reservation
@@ -14,7 +14,6 @@ from .serializers import EventSerializer, PublicSeatSerializer, InternalSeatSeri
 
 from .auth import (
     _is_staff_request,
-    _get_authenticated_user,
     _get_authenticated_user_id,
     _verify_internal_service_key,
 )
