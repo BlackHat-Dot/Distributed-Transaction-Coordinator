@@ -69,8 +69,6 @@ def _corr_id(correlation_id, transaction_id):
     return correlation_id or get_correlation_id() or str(transaction_id)
 
 
-
-
 def _faults_on():
     """Return True only if DEBUG=True and ENABLE_FAULT_INJECTION is enabled."""
     if not getattr(settings, "DEBUG", False):
@@ -112,7 +110,7 @@ def _http_get(url, **kwargs):
 def _release_inventory(tx_id, seat_ids=None, correlation_id=None, reason=""):
     """Best-effort release of seat holds to Inventory Service."""
     headers = {
-        "X-Correlation-ID": _corr_id(correlation_id),
+        "X-Correlation-ID": _corr_id(correlation_id, tx_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
         "X-Idempotency-Key": str(tx_id),
     }
@@ -587,11 +585,11 @@ def recovery_status(request):
 # CONTROLLER REQUEST HANDLERS
 # =============================================================================
 
-def _get_prices(seat_ids=None, correlation_id=None):
+def _get_prices(seat_ids=None, correlation_id=None, transaction_id=None):
     """Query Inventory service for seat pricing and readable seat labels."""
     headers = {
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
-        "X-Correlation-ID": _corr_id(correlation_id),
+        "X-Correlation-ID": _corr_id(correlation_id, transaction_id),
     }
 
     seats_list = None
@@ -770,6 +768,7 @@ def _create_txn(request):
         amount, seat_ids, seat_numbers, price_error = _get_prices(
             seat_ids=seat_ids,
             correlation_id=correlation_id,
+            tx_id = tx_id
         )
         if price_error:
             return price_error
@@ -1412,7 +1411,7 @@ def _run_saga(
 def _reserve(transaction_id, seat_ids, correlation_id=None, user_id=None, user_email=None):
     """Call downstream Inventory service to reserve seats."""
     headers = {
-        "X-Correlation-ID": _corr_id(correlation_id),
+        "X-Correlation-ID": _corr_id(correlation_id, transaction_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
         "X-Idempotency-Key": str(transaction_id),
     }
@@ -1520,7 +1519,7 @@ def _do_charge(
 ):
     """Execute payment charge HTTP call and handle transport or 5xx verification."""
     headers = {
-        "X-Correlation-ID": _corr_id(correlation_id),
+        "X-Correlation-ID": _corr_id(correlation_id, transaction_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
         "X-Idempotency-Key": str(transaction_id),
     }
@@ -1659,7 +1658,7 @@ def _confirm(transaction_id, seat_ids=None, correlation_id=None):
         if txn and txn.seat_ids:
             seat_ids = txn.seat_ids
     headers = {
-        "X-Correlation-ID": _corr_id(correlation_id),
+        "X-Correlation-ID": _corr_id(correlation_id, transaction_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
         "X-Idempotency-Key": str(transaction_id),
     }
@@ -1787,7 +1786,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
     """Compensate failed transaction (void/refund payment and release reserved seats)."""
     tx_id_release = "fail-release" if fail_compensation else str(transaction_id)
     headers = {
-        "X-Correlation-ID": _corr_id(correlation_id),
+        "X-Correlation-ID": _corr_id(correlation_id, transaction_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
         "X-Idempotency-Key": str(transaction_id),
     }
