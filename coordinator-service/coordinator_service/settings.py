@@ -85,6 +85,7 @@ if DEBUG:
         ],
         'DEFAULT_THROTTLE_RATES': {
             'coordinator_transactions': '4/min',
+            'coordinator_transaction_reads': '10/min',
         },
         'EXCEPTION_HANDLER': 'coordinator.throttling.coordinator_exception_handler',
     }
@@ -96,6 +97,7 @@ else:
         ],
         'DEFAULT_THROTTLE_RATES': {
             'coordinator_transactions': '4/min',
+            'coordinator_transaction_reads': '10/min',
         },
         'EXCEPTION_HANDLER': 'coordinator.throttling.coordinator_exception_handler',
     }
@@ -278,7 +280,7 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 os.makedirs(STATIC_ROOT, exist_ok=True)
 
 
-CELERY_BROKER_URL = os.getenv(
+REDIS_URL = os.getenv(
     "REDIS_URL",
     os.getenv(
         "REDIS_PRIVATE_URL",
@@ -288,6 +290,17 @@ CELERY_BROKER_URL = os.getenv(
         )
     )
 )
+CELERY_BROKER_URL = REDIS_URL
+
+CACHES = {
+    "default": {
+        "BACKEND": os.getenv(
+            "CACHE_BACKEND",
+            "django.core.cache.backends.locmem.LocMemCache" if IS_TESTING else "django.core.cache.backends.redis.RedisCache",
+        ),
+        "LOCATION": REDIS_URL,
+    }
+}
 REDIS_SOCKET_TIMEOUT = float(os.getenv("REDIS_SOCKET_TIMEOUT", "0.02" if IS_TESTING else "1.0"))
 CELERY_RESULT_BACKEND = None
 

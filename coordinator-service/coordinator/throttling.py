@@ -37,6 +37,25 @@ class BookingRateThrottle(SimpleRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": f"user_{caller.user_id}"}
 
 
+class TransactionReadRateThrottle(SimpleRateThrottle):
+    """
+    Rate limits GET (fetch) requests per authenticated user to prevent DB DoS/polling spam.
+    The rate comes from DEFAULT_THROTTLE_RATES["coordinator_transaction_reads"] (10/min).
+    Attach to transaction views together with IsBookingAuthenticated.
+    """
+    scope = "coordinator_transaction_reads"
+
+    def get_cache_key(self, request, view):
+        if request.method != "GET":
+            return None
+
+        caller = _get_caller(request)
+        if caller.is_staff:  # staff skip throttling
+            return None
+
+        return self.cache_format % {"scope": self.scope, "ident": f"user_{caller.user_id}"}
+
+
 def coordinator_exception_handler(exc, context):
     response = exception_handler(exc, context)
     if response is None:
@@ -44,8 +63,13 @@ def coordinator_exception_handler(exc, context):
 
     if isinstance(exc, Throttled):
         wait = max(1, math.ceil(exc.wait)) if exc.wait is not None else 60
+        req = context.get("request")
+        if req and req.method == "GET":
+            error_msg = f"Something went wrong. Please wait for {wait} seconds."
+        else:
+            error_msg = f"Request limit exceeded. Try again in {wait} seconds."
         response.data = {
-            "error": f"Request limit exceeded. Try again in {wait} seconds.",
+            "error": error_msg,
             "code": "THROTTLED",
             "wait": wait,
         }

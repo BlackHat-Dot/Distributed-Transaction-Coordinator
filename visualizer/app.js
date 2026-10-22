@@ -821,7 +821,7 @@ async function fetchTransactionsFeed(targetPage = STATE.pagination.currentPage) 
     return;
   }
 
-  const url = `${CONFIG.coordinatorUrl}/transactions/?limit=${pageSize}&offset=${offset}${statusParam}`;
+  const url = `${CONFIG.coordinatorUrl}/transactions/all/?limit=${pageSize}&offset=${offset}${statusParam}`;
   const res = await fetchWithTimeout(url);
 
   if (res.ok && res.data) {

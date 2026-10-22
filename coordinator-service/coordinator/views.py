@@ -25,7 +25,11 @@ from coordinator.auth_views import (
     _verify_staff_key,
     _is_admin_email,
 )
-from coordinator.throttling import BookingRateThrottle, IsBookingAuthenticated
+from coordinator.throttling import (
+    BookingRateThrottle,
+    IsBookingAuthenticated,
+    TransactionReadRateThrottle,
+)
 from .middleware import get_correlation_id
 from .models import SagaEvent, Transaction
 from .recovery import execute_compensation_sweep
@@ -144,17 +148,17 @@ def health_check(request):
     return Response({"status": "healthy", "service": "coordinator"})
 
 
-@api_view(["GET", "POST"])
+@api_view(["POST"])
 @permission_classes([IsBookingAuthenticated])
 @throttle_classes([BookingRateThrottle])
 def transactions_endpoint(request):
-    """Route GET to list transactions and POST to create or pay transaction."""
-    if request.method == "GET":
-        return _list_txns(request)
+    """Route POST to create or pay transaction."""
     return _create_txn(request)
 
 
 @api_view(["GET"])
+@permission_classes([IsBookingAuthenticated])
+@throttle_classes([TransactionReadRateThrottle])
 def list_transactions(request):
     """Public GET endpoint to list transactions with filtering and pagination."""
     return _list_txns(request)

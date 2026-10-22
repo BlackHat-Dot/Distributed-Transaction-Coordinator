@@ -262,7 +262,7 @@ class ViewsCoverageTests(TransactionTestCase):
 
         # Filter by status as staff
         resp = self.client.get(
-            "/transactions/?status=COMPLETED&limit=2&offset=0",
+            "/transactions/all/?status=COMPLETED&limit=2&offset=0",
             HTTP_X_STAFF_KEY="staff-key-list",
             HTTP_X_USER_ID="admin",
         )
@@ -271,7 +271,7 @@ class ViewsCoverageTests(TransactionTestCase):
 
         # Filter as normal user
         resp = self.client.get(
-            "/transactions/?limit=10&offset=0",
+            "/transactions/all/?limit=10&offset=0",
             HTTP_X_USER_ID="usr_list_test",
         )
         self.assertEqual(resp.status_code, 200)
@@ -490,19 +490,19 @@ class ViewsCoverageTests(TransactionTestCase):
     def test_list_transactions_bad_params_and_unauthenticated(self):
         # 401 unauthenticated
         with patch("coordinator.views._get_caller", return_value=(False, None, False)):
-            resp = self.client.get("/transactions/")
+            resp = self.client.get("/transactions/all/")
             self.assertEqual(resp.status_code, 401)
 
         # Bad params
         resp = self.client.get(
-            "/transactions/?limit=invalid&offset=invalid&page=2",
+            "/transactions/all/?limit=invalid&offset=invalid&page=2",
             HTTP_X_USER_ID="usr_1",
         )
         self.assertEqual(resp.status_code, 200)
 
         # Bad page
         resp = self.client.get(
-            "/transactions/?page=invalid",
+            "/transactions/all/?page=invalid",
             HTTP_X_USER_ID="usr_1",
         )
         self.assertEqual(resp.status_code, 200)
