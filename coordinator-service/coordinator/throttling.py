@@ -1,64 +1,57 @@
-import hmac
-import os
-from django.conf import settings
-from rest_framework.exceptions import Throttled
+import math
+
+from rest_framework.exceptions import NotAuthenticated, PermissionDenied, Throttled
+from rest_framework.permissions import BasePermission
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import exception_handler
 
-from coordinator.auth_views import get_user_from_request
+from coordinator.auth_views import _get_caller
 
 
-def _is_exempt(request):
-    staff_key = os.getenv("STAFF_KEY")
-    req_staff = request.headers.get("X-Staff-Key")
+AUTH_MSG = "Authentication required. Please sign in to book seats."
 
-    if staff_key and req_staff and hmac.compare_digest(req_staff.strip(), staff_key.strip()):
+
+class IsBookingAuthenticated(BasePermission):
+    def has_permission(self, request, view):
+        if not _get_caller(request).is_authenticated:
+            raise NotAuthenticated(detail=AUTH_MSG)
         return True
-    return False
-
-
-def _resolve_ident(request, throttle_instance):
-    user_info = get_user_from_request(request)
-    if user_info and user_info.get("is_authenticated") and user_info.get("user_id"):
-        return str(user_info["user_id"])
-    if (getattr(settings, "IS_TESTING", False) or getattr(settings, "DEBUG", False)) and request.headers.get("X-User-ID"):
-        return str(request.headers.get("X-User-ID"))
-    return throttle_instance.get_ident(request)
 
 
 class BookingRateThrottle(SimpleRateThrottle):
     """
-    Unified booking rate limiter: 4 POST requests per minute.
-    Applies across both holds and payments. Once exhausted on the 4th attempt,
-    the user must wait 60 seconds before they can confirm or make another request.
-    (Held seats are safely preserved since hold duration is 10 minutes).
+    Rate limits POST requests per authenticated user.
+    The rate comes from DEFAULT_THROTTLE_RATES["coordinator_transactions"].
+    Attach to transaction views together with IsBookingAuthenticated.
     """
     scope = "coordinator_transactions"
 
-    def allow_request(self, request, view):
-        if _is_exempt(request):
-            return True
-        return super().allow_request(request, view)
-
     def get_cache_key(self, request, view):
-        if request.method != "POST":
-            return None  # GETs (listing transactions) do not consume booking quota
+        if request.method != "POST":  # only limit writes
+            return None
 
-        ident = _resolve_ident(request, self)
-        return self.cache_format % {
-            "scope": self.scope,
-            "ident": ident,
-        }
+        caller = _get_caller(request)
+        if caller.is_staff:  # staff skip throttling
+            return None
+
+        return self.cache_format % {"scope": self.scope, "ident": f"user_{caller.user_id}"}
 
 
 def coordinator_exception_handler(exc, context):
     response = exception_handler(exc, context)
-    if isinstance(exc, Throttled) and response is not None:
-        wait = getattr(exc, "wait", None)
-        wait_seconds = max(1, int(wait)) if wait is not None else 60
+    if response is None:
+        return None
+
+    if isinstance(exc, Throttled):
+        wait = max(1, math.ceil(exc.wait)) if exc.wait is not None else 60
         response.data = {
-            "error": f"Request limit exceeded. Try again in {wait_seconds} seconds.",
+            "error": f"Request limit exceeded. Try again in {wait} seconds.",
             "code": "THROTTLED",
-            "wait": wait_seconds,
+            "wait": wait,
         }
+    elif isinstance(exc, (NotAuthenticated, PermissionDenied)):
+        caller = _get_caller(context["request"])
+        if not caller.is_authenticated:
+            response.status_code = 401
+            response.data = {"error": AUTH_MSG, "code": "AUTHENTICATION_REQUIRED"}
     return response

@@ -15,11 +15,17 @@ import redis
 import requests
 from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException, Timeout
-from rest_framework.decorators import api_view, throttle_classes
+from rest_framework.decorators import api_view, throttle_classes, permission_classes
 from rest_framework.response import Response
 
-from coordinator.auth_views import get_user_from_request
-from coordinator.throttling import BookingRateThrottle
+from coordinator.auth_views import (
+    get_user_from_request,
+    _get_caller,
+    RequesterIdentity,
+    _verify_staff_key,
+    _is_admin_email,
+)
+from coordinator.throttling import BookingRateThrottle, IsBookingAuthenticated
 from .middleware import get_correlation_id
 from .models import SagaEvent, Transaction
 from .recovery import execute_compensation_sweep
@@ -58,15 +64,7 @@ def _corr_id(correlation_id=None):
     """Return active correlation ID, middleware ContextVar, or fresh UUIDv4."""
     return correlation_id or get_correlation_id() or str(uuid.uuid4())
 
-# i know
-def _verify_staff_key(header_val):
-    """Constant-time verification of X-Staff-Key header."""
-    if not header_val or not isinstance(header_val, str) or not header_val.strip():
-        return False
-    staff_key = os.getenv("STAFF_API_KEY", "").strip()
-    if not staff_key:
-        return False
-    return hmac.compare_digest(header_val.strip().encode("utf-8"), staff_key.encode("utf-8"))
+
 
 
 def _faults_on():
@@ -147,6 +145,7 @@ def health_check(request):
 
 
 @api_view(["GET", "POST"])
+@permission_classes([IsBookingAuthenticated])
 @throttle_classes([BookingRateThrottle])
 def transactions_endpoint(request):
     """Route GET to list transactions and POST to create or pay transaction."""
@@ -1975,66 +1974,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
 # SERIALIZATION, IDENTITY & INFRASTRUCTURE HELPERS
 # =============================================================================
 
-def _is_admin_email(email):
-    """Check if email belongs to the configured ADMIN_DOMAIN."""
-    if not email or not isinstance(email, str):
-        return False
-    admin_domain = os.getenv("ADMIN_DOMAIN", "").strip().lower()
-    if not admin_domain:
-        return False
-    admin_domain = admin_domain.removeprefix("@")
-    if not admin_domain:
-        return False
 
-    parts = email.strip().lower().split("@")
-    if len(parts) != 2 or not parts[0] or not parts[1]:
-        return False
-    return parts[1] == admin_domain
-
-
-class RequesterIdentity(tuple):
-    """Caller identity 3-tuple (is_authenticated, user_id, is_staff) with .user_email."""
-
-    def __new__(cls, is_authenticated, user_id, is_staff, user_email=None):
-        instance = super().__new__(cls, (is_authenticated, user_id, is_staff))
-        instance.is_authenticated = is_authenticated
-        instance.user_id = user_id
-        instance.is_staff = is_staff
-        instance.user_email = user_email
-        return instance
-
-
-def _get_caller(request):
-    """Resolve caller authentication and staff privileges."""
-    if _verify_staff_key(request.headers.get("X-Staff-Key")):
-        user_id = request.headers.get("X-User-ID") or os.getenv("STAFF_USER_ID") or "system_staff"
-        user_email = request.headers.get("X-User-Email") or os.getenv("STAFF_EMAIL_ID") or "admin@dtc.internal"
-        return RequesterIdentity(True, user_id, True, user_email=user_email)
-
-    user_info = get_user_from_request(request)
-    if user_info and user_info.get("is_authenticated"):
-        user_email = user_info.get("user_email")
-        is_staff = _is_admin_email(user_email)
-        return RequesterIdentity(True, user_info.get("user_id"), is_staff, user_email=user_email)
-
-    if getattr(settings, "IS_TESTING", False):
-        test_uid = request.headers.get("X-User-ID") or "system_test"
-        test_email = request.headers.get("X-User-Email") or None
-        is_staff = _is_admin_email(test_email) if test_email else True
-        return RequesterIdentity(True, test_uid, is_staff, user_email=test_email)
-
-    is_dev = getattr(settings, "DEBUG", False)
-    allow_dev_staff_bypass = getattr(settings, "ALLOW_DEV_STAFF_BYPASS", False) or (
-        os.getenv("ALLOW_DEV_STAFF_BYPASS", "").lower() in ("true", "1", "yes", "t")
-    )
-    is_dev_staff = bool(is_dev and allow_dev_staff_bypass)
-
-    if is_dev:
-        dev_uid = request.headers.get("X-User-ID") or (user_info.get("user_id") if user_info else "system_dev")
-        dev_email = request.headers.get("X-User-Email") or (user_info.get("user_email") if user_info else None)
-        return RequesterIdentity(True, dev_uid, is_dev_staff, user_email=dev_email)
-
-    return RequesterIdentity(False, None, False, user_email=None)
 
 
 def _create_transaction(transaction_id, seat_ids=None, seat_numbers=None, amount=500, quantity=1, user_id=None, user_email=None):

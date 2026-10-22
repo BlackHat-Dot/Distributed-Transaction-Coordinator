@@ -333,7 +333,6 @@ REST_FRAMEWORK = {
             "1000/min" if IS_TESTING else "10/min",
         ),
     },
-    "EXCEPTION_HANDLER": "inventory.throttling.inventory_exception_handler",
 }
 
 

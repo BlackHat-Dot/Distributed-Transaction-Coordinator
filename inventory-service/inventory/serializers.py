@@ -32,7 +32,7 @@ class PublicSeatSerializer(serializers.ModelSerializer):
 
         auth_user = getattr(request, "_auth_user", None)
         if auth_user is None:
-            from .views import _get_authenticated_user
+            from .auth import _get_authenticated_user
             auth_user = _get_authenticated_user(request)
             request._auth_user = auth_user
 

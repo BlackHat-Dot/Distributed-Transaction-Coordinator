@@ -310,13 +310,18 @@ def verify_jwt(token):
 def get_user_from_request(request):
     """
     Extracts authenticated user identity from Authorization header or request payload.
+    Memoizes the result on the request object for zero-overhead repeated lookups.
     """
+    if hasattr(request, "_cached_user_info"):
+        return request._cached_user_info
+
     auth_header = request.headers.get("Authorization", "") # fallback "" given for grazeful stop
     token = None
     
     if auth_header.startswith("Bearer "):
         token = auth_header.split(" ")[1].strip() # index 1 holds the JWT Token
 
+    user_info = None
     if token:
         payload, err = verify_jwt(token)
         # error is consumed
@@ -325,7 +330,7 @@ def get_user_from_request(request):
             uemail = payload.get("user_email")
             sid = payload.get("sid")
 
-            return {
+            user_info = {
                 "user_id": uid,
                 "user_email": uemail,
                 "email": uemail,
@@ -333,18 +338,91 @@ def get_user_from_request(request):
                 "is_authenticated": True
             }
 
-    # Fallback to direct X-User-ID / X-User-Email headers (used for service-to-service / test calls)
-    user_id = request.headers.get("X-User-ID")
-    user_email = request.headers.get("X-User-Email")
+    try:
+        request._cached_user_info = user_info
+    except AttributeError:
+        pass
 
-    if user_id:
-        return {
-            "user_id": str(user_id),
-            "user_email": user_email or str(user_id),
-            "is_authenticated": False
-        }
+    return user_info
 
-    return None
+
+def _verify_staff_key(header_val):
+    """Verify staff key from request header with constant-time comparison."""
+    if not header_val or not isinstance(header_val, str) or not header_val.strip():
+        return False
+    staff_key = os.getenv("STAFF_API_KEY") or os.getenv("STAFF_KEY")
+    if not staff_key:
+        return False
+    return hmac.compare_digest(header_val.strip(), staff_key.strip())
+
+
+def _is_admin_email(email):
+    """Check if email belongs to the configured ADMIN_DOMAIN."""
+    if not email or not isinstance(email, str):
+        return False
+    admin_domain = os.getenv("ADMIN_DOMAIN", "").strip().lower()
+    if not admin_domain:
+        return False
+    admin_domain = admin_domain.removeprefix("@")
+    if not admin_domain:
+        return False
+
+    parts = email.strip().lower().split("@")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        return False
+    return parts[1] == admin_domain
+
+
+class RequesterIdentity(tuple):
+    """Caller identity 3-tuple (is_authenticated, user_id, is_staff) with .user_email."""
+
+    def __new__(cls, is_authenticated, user_id, is_staff, user_email=None):
+        instance = super().__new__(cls, (is_authenticated, user_id, is_staff))
+        instance.is_authenticated = is_authenticated
+        instance.user_id = user_id
+        instance.is_staff = is_staff
+        instance.user_email = user_email
+        return instance
+
+
+def _get_caller(request):
+    """
+    Resolve caller identity strictly from verified sources:
+    1. Staff Key (Admin privilege)
+    2. Bearer JWT (Authenticated User)
+    No unverified headers or environment fallbacks allowed.
+    Memoized on the request object for zero-overhead repeated lookups.
+    """
+    if hasattr(request, "_cached_caller_identity"):
+        return request._cached_caller_identity
+
+    identity = None
+
+    # 1. Staff key check (Admin Override)
+    req_staff = request.headers.get("X-Staff-Key")
+    if req_staff and _verify_staff_key(req_staff):
+        user_id = request.headers.get("X-User-ID") or os.getenv("STAFF_USER_ID") or "system_staff"
+        user_email = request.headers.get("X-User-Email") or os.getenv("STAFF_EMAIL_ID") or "admin@dtc.internal"
+        identity = RequesterIdentity(True, user_id, True, user_email=user_email)
+
+    # 2. Cryptographically verified Bearer JWT
+    if not identity:
+        user_info = get_user_from_request(request)
+        if user_info and user_info.get("is_authenticated"):
+            user_email = user_info.get("user_email")
+            is_staff = _is_admin_email(user_email)
+            identity = RequesterIdentity(True, user_info.get("user_id"), is_staff, user_email=user_email)
+
+    # 3. Unauthenticated (Strict: No fallbacks)
+    if not identity:
+        identity = RequesterIdentity(False, None, False, user_email=None)
+
+    try:
+        request._cached_caller_identity = identity
+    except AttributeError:
+        pass
+
+    return identity
 
 
 resend.api_key = os.getenv("RESEND_API_KEY")
