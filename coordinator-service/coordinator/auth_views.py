@@ -600,12 +600,14 @@ def send_otp(request):
             status=409,
         )
 
+
+    daily_block_key = f"dtc:otp_daily_blocked:{email}"
+    daily_key       = f"dtc:otp_daily:{email}"
+    cooldown_key    = f"dtc:otp_cooldown:{email}"
+
     # In production/testing: enforce IP+email block, cooldown, abandonment tracking, and daily limit
     if not is_dev_mode:
         client_ip       = _get_client_ip(request)
-        daily_block_key = f"dtc:otp_daily_blocked:{email}" # counts total otp sent
-        daily_key       = f"dtc:otp_daily:{email}"
-        cooldown_key    = f"dtc:otp_cooldown:{email}"
         block_key       = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
         abandon_key     = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
 

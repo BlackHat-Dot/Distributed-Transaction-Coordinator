@@ -95,6 +95,10 @@ ALLOWED_TRANSITIONS = {
         Transaction.Status.RECOVERY_IN_PROGRESS,
         Transaction.Status.COMPENSATED_ON_RETRY,
         Transaction.Status.RETRY_COMPENSATION_FAILED,
+        Transaction.Status.PAYMENT_TIMEOUT,
+        Transaction.Status.PAYMENT_CONNECTION_ERROR,
+        Transaction.Status.INVENTORY_TIMEOUT,
+        Transaction.Status.INVENTORY_CONNECTION_ERROR,
     },
     Transaction.Status.COMPENSATION_FAILED: {
         Transaction.Status.RECOVERY_IN_PROGRESS,
