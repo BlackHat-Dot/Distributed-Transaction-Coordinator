@@ -80,7 +80,7 @@ def _faults_on():
 _sess = None
 _lock = threading.Lock()
 
-
+# verified
 def _get_sess():
     global _sess
     if _sess is None:
@@ -92,12 +92,12 @@ def _get_sess():
                 _sess.mount("https://", ad)
     return _sess
 
-
+# verified
 def _http(method, url, **kwargs):
     kwargs.setdefault("timeout", REQUEST_TIMEOUT)
     return _get_sess().request(method, url, **kwargs)
 
-
+# verified
 def _release_inventory(tx_id, correlation_id=None, reason=""):
     """Best-effort release of every seat hold for tx_id in Inventory Service."""
     cid = _corr_id(correlation_id, tx_id)
@@ -120,7 +120,7 @@ def _release_inventory(tx_id, correlation_id=None, reason=""):
 # PUBLIC API ENDPOINTS
 # =============================================================================
 
-# i know
+# verified
 @api_view(["GET"])
 def health_check(request):
     """Liveness probe returning healthy service status."""
@@ -396,7 +396,7 @@ def retry_compensation(request, transaction_id):
             "message": "Transaction was concurrently resolved by another process",
         }, status=409)
 
-    correlation_id = _corr_id(getattr(request, "correlation_id", None))
+    correlation_id = _corr_id(getattr(request, "correlation_id", None), transaction_id)
     try:
         outcome = execute_compensation_sweep(
             transaction_id=transaction_id,
@@ -709,11 +709,8 @@ def _create_txn(request):
     if invalid:
         return invalid
 
-    is_testing = bool(getattr(settings, "IS_TESTING", False))
-    is_dev = getattr(settings, "DEBUG", False)
-
     ident = _get_caller(request)
-    if not ident[0]:
+    if not ident.is_authenticated:
         return Response(
             {
                 "error": "Authentication required. Your session has expired or you are not signed in. Please sign in to book seats.",
@@ -722,9 +719,9 @@ def _create_txn(request):
             status=401,
         )
 
-    user_id = ident[1]
-    is_staff = ident[2]
-    user_email = getattr(ident, "user_email", None) or (ident[3] if len(ident) > 3 else None)
+    user_id = ident.user_id
+    is_staff = ident.is_staff
+    user_email = ident.user_email
 
     correlation_id = request.correlation_id
     if not correlation_id:
@@ -750,7 +747,7 @@ def _create_txn(request):
         amount, seat_ids, seat_numbers, price_error = _get_prices(
             seat_ids=seat_ids,
             correlation_id=correlation_id,
-            tx_id = tx_id
+            transaction_id=tx_id,
         )
         if price_error:
             return price_error
@@ -776,7 +773,7 @@ def _create_txn(request):
             user_email=user_email,
         )
         if reserve_error:
-            _release_inventory(tx_id, seat_ids, correlation_id, "on reserve failure")
+            _release_inventory(tx_id, correlation_id=correlation_id, reason="on reserve failure")
             _set_status_with_event(
                 tx_id,
                 Transaction.Status.INVENTORY_RESERVE_FAILED,
@@ -791,7 +788,7 @@ def _create_txn(request):
 
         body = _parse_json_response(response)
         if response.status_code != 200:
-            _release_inventory(tx_id, seat_ids, correlation_id, "on reserve non-200")
+            _release_inventory(tx_id, correlation_id=correlation_id, reason="on reserve non-200")
             _set_status_with_event(
                 tx_id,
                 Transaction.Status.INVENTORY_RESERVE_FAILED,
@@ -872,6 +869,7 @@ def _create_txn(request):
 
     # Phase 2: PAY
     if action == "pay":
+        expired_tid = None
         with transaction.atomic():
             txn = Transaction.objects.select_for_update().filter(transaction_id=pay_tid).first()
             if not txn:
@@ -912,7 +910,6 @@ def _create_txn(request):
             raw_hold = payload.get("held_until")
             held_until_dt = parse_datetime(raw_hold) if isinstance(raw_hold, str) else raw_hold
 
-            # In standard live http trafic: held_until_dt is `aware`
             if hasattr(held_until_dt, "tzinfo") and timezone.is_naive(held_until_dt):
                 held_until_dt = timezone.make_aware(held_until_dt)
 
@@ -928,49 +925,51 @@ def _create_txn(request):
                     )
                 except Exception as exc:
                     logger.warning("Failed to record TIMEOUT for expired hold %s: %s", txn.transaction_id, exc)
+                expired_tid = txn.transaction_id
+            else:
+                tx_id = txn.transaction_id
+                seat_ids = txn.seat_ids
+                amount = txn.amount
+                pay_user_id = txn.user_id
+                pay_user_email = txn.user_email
 
-                _release_inventory(txn.transaction_id, txn.seat_ids, correlation_id, "for expired hold")
-                return Response(
-                    {
-                        "error": "Seat hold has expired. Please select seats and try again.",
-                        "code": "HOLD_EXPIRED",
-                        "status": Transaction.Status.TIMEOUT,
-                        "transaction_id": str(txn.transaction_id),
-                    },
-                    status=409,
-                )
+                if simulate_decline and enable_test_payment_failure:
+                    amount = Decimal("9999")
 
-            tx_id = txn.transaction_id
-            seat_ids = txn.seat_ids
-            amount = txn.amount
-            pay_user_id = txn.user_id
-            pay_user_email = txn.user_email
-
-            if simulate_decline and enable_test_payment_failure:
-                amount = Decimal("9999")
-
-            # both reserved and holding mean same but in this service holding and reserved represent different timeline of transaction.
-            transitioned = _set_status_with_event(
-                tx_id,
-                Transaction.Status.INVENTORY_RESERVED,
-                expected_status=Transaction.Status.HOLDING,
-                actor=SagaEvent.ACTOR_REQUEST,
-                http_status_code=200,
-                http_payload={
-                    "message": f"{len(seat_ids) if seat_ids else 1} Seats reserved via coordinator hold",
-                    "seat_ids": seat_ids,
-                    "transaction_id": str(tx_id),
-                },
-            )
-            if not transitioned:
-                return Response(
-                    {
-                        "error": "Transaction is already being processed or is not in an eligible state for payment.",
-                        "code": "CONCURRENT_PAYMENT_IN_PROGRESS",
+                transitioned = _set_status_with_event(
+                    tx_id,
+                    Transaction.Status.INVENTORY_RESERVED,
+                    expected_status=Transaction.Status.HOLDING,
+                    actor=SagaEvent.ACTOR_REQUEST,
+                    http_status_code=200,
+                    http_payload={
+                        "message": f"{len(seat_ids) if seat_ids else 1} Seats reserved via coordinator hold",
+                        "seat_ids": seat_ids,
                         "transaction_id": str(tx_id),
                     },
-                    status=409,
                 )
+                if not transitioned:
+                    return Response(
+                        {
+                            "error": "Transaction is already being processed or is not in an eligible state for payment.",
+                            "code": "CONCURRENT_PAYMENT_IN_PROGRESS",
+                            "transaction_id": str(tx_id),
+                        },
+                        status=409,
+                    )
+
+        # Outside the lock: the release makes a network call
+        if expired_tid is not None:
+            _release_inventory(expired_tid, correlation_id=correlation_id, reason="for expired hold")
+            return Response(
+                {
+                    "error": "Seat hold has expired. Please select seats and try again.",
+                    "code": "HOLD_EXPIRED",
+                    "status": Transaction.Status.TIMEOUT,
+                    "transaction_id": str(expired_tid),
+                },
+                status=409,
+            )
 
         if not is_sync:
             try:
@@ -1028,11 +1027,12 @@ def _create_txn(request):
             simulate_decline=simulate_decline,
         )
 
-    # One-shot legacy full saga path, for live executives
+    # One-shot legacy full saga path
     tx_id = str(uuid.uuid4())
     amount, seat_ids, seat_numbers, price_error = _get_prices(
         seat_ids=seat_ids,
         correlation_id=correlation_id,
+        transaction_id=tx_id,
     )
     if price_error:
         return price_error
@@ -1771,7 +1771,6 @@ def _finish_payment(transaction_id, fail_compensation, payment_data, payment_sta
 
 def _compensate(transaction_id, fail_compensation, payment_data, payment_status_code=None, correlation_id=None, seat_ids=None):
     """Compensate failed transaction (void/refund payment and release reserved seats)."""
-    tx_id_release = "fail-release" if fail_compensation else str(transaction_id)
     headers = {
         "X-Correlation-ID": _corr_id(correlation_id, transaction_id),
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
@@ -1841,31 +1840,32 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
                 status=503,
             )
 
-    # 1. Release inventory
+    # 1. Release inventory (skipped to simulate a failed release)
     release_ok, release_data, release_status_code, release_transport_error = False, None, None, None
-    try:
-        release_response = _http(
-            "POST",
-            INVENTORY_RELEASE_URL,
-            json={"transaction_id": tx_id_release},
-            headers=headers,
-            timeout=REQUEST_TIMEOUT,
-        )
-        release_status_code = release_response.status_code
-        release_data = _parse_json_response(release_response)
-        release_ok = (release_status_code == 200)
-        if not release_ok and isinstance(release_data, dict):
-            msg = str(release_data.get("message", "")).lower() + " " + str(release_data.get("error", "")).lower()
-            code = str(release_data.get("code", "")).upper()
-            if (
-                "already released" in msg
-                or "nothing to release" in msg
-                or "holds may have already been cancelled or expired" in msg
-                or code in ("ALREADY_RELEASED", "NOTHING_TO_RELEASE", "NOT_FOUND")
-            ):
-                release_ok = True
-    except RequestException as exc:
-        release_transport_error = exc
+    if not fail_compensation:
+        try:
+            release_response = _http(
+                "POST",
+                INVENTORY_RELEASE_URL,
+                json={"transaction_id": str(transaction_id)},
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
+            )
+            release_status_code = release_response.status_code
+            release_data = _parse_json_response(release_response)
+            release_ok = (release_status_code == 200)
+            if not release_ok and isinstance(release_data, dict):
+                msg = str(release_data.get("message", "")).lower() + " " + str(release_data.get("error", "")).lower()
+                code = str(release_data.get("code", "")).upper()
+                if (
+                    "already released" in msg
+                    or "nothing to release" in msg
+                    or "holds may have already been cancelled or expired" in msg
+                    or code in ("ALREADY_RELEASED", "NOTHING_TO_RELEASE", "NOT_FOUND")
+                ):
+                    release_ok = True
+        except RequestException as exc:
+            release_transport_error = exc
 
     # 2. Refund payment if charged
     refund_ok, refund_data, refund_status_code, refund_transport_error = not was_charged, None, None, None
@@ -1917,7 +1917,7 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
         })
         if refund_data:
             data["refund_response"] = refund_data
-        return Response(data, status=400)
+        return Response(data, status=200)
 
     # Partial or complete failure during compensation
     transitioned = _set_status_with_event(
