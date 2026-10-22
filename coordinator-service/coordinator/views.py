@@ -98,33 +98,22 @@ def _http(method, url, **kwargs):
     return _get_sess().request(method, url, **kwargs)
 
 
-def _release_inventory(tx_id, seat_ids=None, correlation_id=None, reason=""):
-    """Best-effort release of seat holds to Inventory Service."""
+def _release_inventory(tx_id, correlation_id=None, reason=""):
+    """Best-effort release of every seat hold for tx_id in Inventory Service."""
+    cid = _corr_id(correlation_id, tx_id)
     headers = {
-        "X-Correlation-ID": _corr_id(correlation_id, tx_id),
+        "X-Correlation-ID": cid,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
-        "X-Idempotency-Key": str(tx_id),
     }
-    payload = {"transaction_id": str(tx_id)}
-    if seat_ids is not None:
-        payload["seat_ids"] = seat_ids
     try:
-        return _http(
-            "POST",
-            INVENTORY_RELEASE_URL,
-            json=payload,
-            headers=headers,
-            timeout=REQUEST_TIMEOUT,
-        )
+        _http("POST", INVENTORY_RELEASE_URL, json={"transaction_id": str(tx_id)}, headers=headers).raise_for_status()
+        return True
     except RequestException as exc:
         logger.warning(
             "Failed to release hold for tx %s %s: %s [correlation_id=%s]",
-            tx_id,
-            reason,
-            exc,
-            headers["X-Correlation-ID"],
+            tx_id, reason, exc, cid,
         )
-        return None
+        return False
 
 
 # =============================================================================
