@@ -704,7 +704,9 @@ def _check_body(request):
 
         try:
             pay_tid = uuid.UUID(str(raw_tid))
-        except (ValueError, TypeError, AttributeError):
+
+        # If the try block fails (other than normal exception), execution stops before the remaining code can handle an invalid pay_tid.
+        except ValueError:
             return None, None, None, Response(
                 {
                     "error": "transaction_id must be a valid UUID.",
