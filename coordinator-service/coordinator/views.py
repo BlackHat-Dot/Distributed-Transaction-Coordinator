@@ -913,7 +913,7 @@ def _create_txn(request):
             if hasattr(held_until_dt, "tzinfo") and timezone.is_naive(held_until_dt):
                 held_until_dt = timezone.make_aware(held_until_dt)
 
-            if hasattr(held_until_dt, "tzinfo") and held_until_dt < timezone.now():
+            if not hasattr(held_until_dt, "tzinfo") or held_until_dt < timezone.now():
                 try:
                     _set_status_with_event(
                         txn.transaction_id,
