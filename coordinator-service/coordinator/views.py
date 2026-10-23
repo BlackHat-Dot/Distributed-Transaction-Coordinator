@@ -805,6 +805,24 @@ def _create_txn(request):
                 status=response.status_code if response.status_code in (400, 404, 409, 429) else 400,
             )
 
+        if not isinstance(body, dict) or not body.get("held_until"):
+            _release_inventory(tx_id, correlation_id=correlation_id, reason="missing held_until")
+            _set_status_with_event(
+                tx_id,
+                Transaction.Status.INVENTORY_RESERVE_FAILED,
+                expected_status=Transaction.Status.STARTED,
+                actor=SagaEvent.ACTOR_REQUEST,
+                http_status_code=response.status_code,
+                http_payload=body,
+            )
+            return Response(
+                {
+                    "error": "Inventory did not return a hold expiry.",
+                    "code": "INVENTORY_RESERVE_FAILED",
+                },
+                status=502,
+            )
+
         ev_info = body.get("event") if body else None
         update_fields = {}
         if body and "total_amount" in body:
@@ -896,6 +914,13 @@ def _create_txn(request):
                         "transaction_id": str(txn.transaction_id),
                     },
                     status=409,
+                )
+
+            req_seats = request.data.get("seat_ids")
+            if req_seats is not None and sorted(req_seats) != sorted(txn.seat_ids or []):
+                return Response(
+                    {"error": "seat_ids do not match this transaction's held seats.", "code": "SEAT_MISMATCH"},
+                    status=400,
                 )
 
             holding_event = (
@@ -998,18 +1023,20 @@ def _create_txn(request):
                 )
             except Exception:
                 logger.exception("Failed to dispatch Saga task for pay action")
-                _set_status_with_event(
+                transitioned = _set_status_with_event(
                     tx_id,
-                    to_status=Transaction.Status.HOLDING,
+                    to_status=Transaction.Status.TIMEOUT,
                     expected_status=Transaction.Status.INVENTORY_RESERVED,
                     actor=SagaEvent.ACTOR_REQUEST,
                     http_status_code=None,
-                    http_payload={"error": "Celery dispatch failed; reverted to HOLDING"},
+                    http_payload={"error": "Celery dispatch failed; marked TIMEOUT"},
                 )
+                if transitioned:
+                    _release_inventory(tx_id, correlation_id=correlation_id, reason="celery dispatch failed")
                 return Response(
                     {
                         "transaction_id": str(tx_id),
-                        "status": Transaction.Status.HOLDING,
+                        "status": Transaction.Status.TIMEOUT,
                         "error": "Saga could not be dispatched",
                     },
                     status=503,
@@ -1095,7 +1122,7 @@ def _create_txn(request):
             )
         except Exception:
             logger.exception("Failed to dispatch Saga task")
-            _set_status_with_event(
+            transitioned = _set_status_with_event(
                 tx_id,
                 to_status=Transaction.Status.TIMEOUT,
                 expected_status=Transaction.Status.STARTED,
@@ -1103,6 +1130,8 @@ def _create_txn(request):
                 http_status_code=None,
                 http_payload={"error": "Celery dispatch failed; marked TIMEOUT"},
             )
+            if transitioned:
+                _release_inventory(tx_id, correlation_id=correlation_id, reason="celery dispatch failed")
             return Response(
                 {
                     "transaction_id": str(tx_id),
