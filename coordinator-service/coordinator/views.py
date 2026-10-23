@@ -614,8 +614,8 @@ def _get_prices(seat_ids=None, correlation_id=None, transaction_id=None):
 # verified
 def _validate_seats(seats):
     """Validate seat_ids list: integer types, no duplicates, max seat limit."""
-    if not isinstance(seats, list) or any(type(s) is not int for s in seats):
-        return Response({"error": "seat_ids must be a list of integers.", "code": "INVALID_SEAT_IDS"}, status=400)
+    if not isinstance(seats, list) or not seats or any(type(s) is not int for s in seats):
+        return Response({"error": "seat_ids is required and must be a non-empty list of integers.", "code": "INVALID_SEAT_IDS"}, status=400)
     if len(seats) != len(set(seats)):
         return Response({"error": "Duplicate seat_ids are not allowed.", "code": "DUPLICATE_SEATS"}, status=400)
     max_seats = int(os.getenv("MAX_SEATS_PER_TRANSACTION", "5"))
@@ -632,7 +632,7 @@ import uuid
 
 from rest_framework.response import Response
 
-
+# verified
 def _check_body(request):
     """Validate the request payload for hold, pay, or one-shot saga."""
     data = request.data
@@ -715,26 +715,16 @@ def _check_body(request):
                 status=400,
             )
 
+        # no seats_ids for action="pay"
         return None, action, pay_tid, None
 
     raw_seats = data.get("seat_ids")
-
-    if not isinstance(raw_seats, list) or not raw_seats:
-        return None, None, None, Response(
-            {
-                "error": (
-                    "seat_ids is required and must be a "
-                    "non-empty list of integers."
-                ),
-                "code": "SEATS_REQUIRED",
-            },
-            status=400,
-        )
 
     seat_err = _validate_seats(raw_seats)
     if seat_err:
         return None, None, None, seat_err
 
+    # no pay_tid for action="hold"
     return list(raw_seats), action, None, None
 
 
