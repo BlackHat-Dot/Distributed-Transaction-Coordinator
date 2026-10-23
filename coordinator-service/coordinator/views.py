@@ -611,7 +611,7 @@ def _get_prices(seat_ids=None, correlation_id=None, transaction_id=None):
         status=503,
     )
 
-
+# verified
 def _validate_seats(seats):
     """Validate seat_ids list: integer types, no duplicates, max seat limit."""
     if not isinstance(seats, list) or any(type(s) is not int for s in seats):
@@ -662,7 +662,7 @@ def _check_body(request):
     allowed_fields = {
         None: {"seat_ids"},
         "hold": {"action", "seat_ids"},
-        "pay": {"action", "transaction_id", "seat_ids"},
+        "pay": {"action", "transaction_id"},
     }[action]
 
     if _faults_on():
@@ -714,13 +714,6 @@ def _check_body(request):
                 },
                 status=400,
             )
-
-        pay_seats = data.get("seat_ids")
-
-        if pay_seats is not None:
-            seat_err = _validate_seats(pay_seats)
-            if seat_err:
-                return None, None, None, seat_err
 
         return None, action, pay_tid, None
 
