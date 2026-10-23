@@ -67,7 +67,7 @@ def _corr_id(correlation_id, transaction_id):
 
 # verified
 def _faults_on():
-    """Return True only if DEBUG=True and ENABLE_FAULT_INJECTION is enabled."""
+    """Return True ENABLE_FAULT_INJECTION is enabled."""
     flag = getattr(settings, "ENABLE_FAULT_INJECTION", False)
     return bool(flag)
 
@@ -646,9 +646,10 @@ def _check_body(request):
             status=400,
         )
 
+    # None enables legacy full saga for live executives (For demo version)
     action = data.get("action") or None
 
-    # None enables legacy full saga for live executives (Removed for actual public use)
+
     if action not in (None, "hold", "pay"):
         return None, None, None, Response(
             {
@@ -666,8 +667,7 @@ def _check_body(request):
 
     if _faults_on():
         allowed_fields |= {
-            "coordinator",
-            "fail_at_step",
+            "coordinator"
         }
 
     invalid_fields = [
@@ -683,8 +683,7 @@ def _check_body(request):
                     f"{', '.join(invalid_fields)}. "
                     "These fields cannot be supplied by the client."
                 ),
-                "code": "INVALID_FIELDS",
-                "invalid_fields": invalid_fields,
+                "code": "INVALID_FIELDS"
             },
             status=400,
         )
@@ -692,7 +691,9 @@ def _check_body(request):
     if action == "pay":
         raw_tid = data.get("transaction_id")
 
-        if raw_tid is None or raw_tid == "":
+        # If provided {"transaction_id": True}
+        # try ... except handles it.
+        if not raw_tid:
             return None, None, None, Response(
                 {
                     "error": "transaction_id is required for action='pay'.",
