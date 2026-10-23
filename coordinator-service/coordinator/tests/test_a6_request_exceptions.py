@@ -46,7 +46,6 @@ class RequestExceptionA6Tests(TestCase):
                 resp = _charge(
                     transaction_id=self.tx_id,
                     amount=Decimal("100"),
-                    fail_compensation=False,
                     seat_ids=[1],
                 )
                 self.assertEqual(resp.status_code, 503)

@@ -63,7 +63,7 @@ def recover_stuck_transactions():
 
 
 @shared_task(name="coordinator.tasks.execute_saga_task")
-def execute_saga_task(transaction_id, seat_ids=None, amount=500, fail_compensation=False, correlation_id=None, user_id=None, user_email=None, skip_reserve=False, **kwargs):
+def execute_saga_task(transaction_id, seat_ids=None, amount=500, correlation_id=None, user_id=None, user_email=None, skip_reserve=False, **kwargs):
     from coordinator.views import _run_saga
 
     logger.info("Executing async saga task for transaction_id=%s [correlation_id=%s, user_id=%s, user_email=%s, skip_reserve=%s]", transaction_id, correlation_id, user_id, user_email, skip_reserve)
@@ -78,7 +78,6 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, fail_compensati
         transaction_id=parsed_tid,
         seat_ids=seat_ids,
         amount=amount,
-        fail_compensation=fail_compensation,
         correlation_id=correlation_id,
         actor="request",
         user_id=user_id,

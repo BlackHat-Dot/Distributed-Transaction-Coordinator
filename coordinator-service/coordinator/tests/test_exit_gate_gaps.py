@@ -1541,7 +1541,6 @@ class FinalClosureGapsTest(TestCase):
              patch("coordinator.views._http_post", side_effect=fake_post):
             resp = _finish_payment(
                 txn_id,
-                fail_compensation=False,
                 payment_data={"status": "CHARGED"},
             )
 

@@ -57,7 +57,6 @@ class SecurityAndReliabilityHardeningTests(TestCase):
         payment_data = {"status": "CHARGED", "transaction_id": str(tx_id)}
         response = _compensate(
             transaction_id=tx_id,
-            fail_compensation=False,
             payment_data=payment_data,
             payment_status_code=200,
             correlation_id="corr-test-rel01",
@@ -368,7 +367,6 @@ class SecurityAndReliabilityHardeningTests(TestCase):
 
         _compensate(
             transaction_id=tx_id,
-            fail_compensation=False,
             payment_data={"status": "NOT_CHARGED"},
             payment_status_code=422,
         )
@@ -412,7 +410,6 @@ class SecurityAndReliabilityHardeningTests(TestCase):
 
         _compensate(
             transaction_id=tx_id,
-            fail_compensation=False,
             payment_data={"status": "NOT_CHARGED"},
             payment_status_code=504,
         )
@@ -501,7 +498,6 @@ class SecurityAndReliabilityHardeningTests(TestCase):
              patch("coordinator.views._compensate") as mock_compensate:
             resp = _finish_payment(
                 tx_id,
-                fail_compensation=False,
                 payment_data={"status": "CHARGED"},
             )
 
@@ -1113,7 +1109,7 @@ class SecurityAndReliabilityHardeningTests(TestCase):
             headers = mock_post.call_args[1]["headers"]
             self.assertTrue(headers.get("X-Correlation-ID"))
 
-            _charge(tx_id, amount=Decimal("100.00"), fail_compensation=False, correlation_id=None)
+            _charge(tx_id, amount=Decimal("100.00"), correlation_id=None)
             headers = mock_post.call_args[1]["headers"]
             self.assertTrue(headers.get("X-Correlation-ID"))
 

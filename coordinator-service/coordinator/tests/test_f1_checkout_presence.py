@@ -51,7 +51,6 @@ class TestF1CheckoutPresence(TestCase):
                 resp = _charge(
                     tid,
                     amount=Decimal("150.00"),
-                    fail_compensation=False,
                     seat_ids=[1, 2],
                 )
 
@@ -108,7 +107,6 @@ class TestF1CheckoutPresence(TestCase):
                 _charge(
                     tid,
                     amount=Decimal("150.00"),
-                    fail_compensation=False,
                     seat_ids=[1, 2],
                 )
 

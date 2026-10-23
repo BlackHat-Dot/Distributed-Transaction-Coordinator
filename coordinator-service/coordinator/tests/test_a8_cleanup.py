@@ -44,7 +44,6 @@ class CleanupA8Tests(TestCase):
             # payment_data is a decline or non-dict, but payment_status_code is 200
             _compensate(
                 txn.transaction_id,
-                fail_compensation=False,
                 payment_data={"status": "DECLINED"},
                 payment_status_code=200,
             )
@@ -69,7 +68,6 @@ class CleanupA8Tests(TestCase):
              patch("coordinator.views._compensate") as mock_compensate:
             resp = _finish_payment(
                 txn.transaction_id,
-                fail_compensation=False,
                 payment_data={"status": "CHARGED"},
             )
             self.assertFalse(mock_compensate.called, "Must not compensate on transport error (H2)")
@@ -84,7 +82,6 @@ class CleanupA8Tests(TestCase):
             mock_compensate.return_value = MagicMock(status_code=200)
             _finish_payment(
                 txn.transaction_id,
-                fail_compensation=False,
                 payment_data={"status": "CHARGED"},
             )
             self.assertTrue(mock_compensate.called)

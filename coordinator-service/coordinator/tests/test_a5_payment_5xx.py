@@ -63,7 +63,6 @@ class Payment5xxA5Tests(TestCase):
             _charge(
                 transaction_id=self.tx_id,
                 amount=Decimal("100"),
-                fail_compensation=False,
                 seat_ids=[1],
             )
             # Must query PAYMENT_CHECK
@@ -109,7 +108,6 @@ class Payment5xxA5Tests(TestCase):
             _charge(
                 transaction_id=self.tx_id,
                 amount=Decimal("100"),
-                fail_compensation=False,
                 seat_ids=[1],
             )
             p_get.assert_not_called()

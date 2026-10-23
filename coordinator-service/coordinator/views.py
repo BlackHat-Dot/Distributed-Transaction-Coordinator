@@ -19,11 +19,7 @@ from rest_framework.decorators import api_view, throttle_classes, permission_cla
 from rest_framework.response import Response
 
 from coordinator.auth_views import (
-    get_user_from_request,
     _get_caller,
-    RequesterIdentity,
-    _verify_staff_key,
-    _is_admin_email,
 )
 from coordinator.throttling import (
     BookingRateThrottle,
@@ -631,14 +627,28 @@ def _validate_seats(seats):
     return None
 
 
+
+import uuid
+
+from rest_framework.response import Response
+
+
 def _check_body(request):
-    """Validate incoming payload structure for hold, pay, or one-shot saga."""
-    if not isinstance(request.data, dict):
+    """Validate the request payload for hold, pay, or one-shot saga."""
+    data = request.data
+
+    if not isinstance(data, dict):
         return None, None, None, Response(
-            {"error": "Request body must be a valid JSON object"}, status=400
+            {
+                "error": "Request body must be a valid JSON object.",
+                "code": "INVALID_BODY",
+            },
+            status=400,
         )
 
-    action = request.data.get("action") or None
+    action = data.get("action") or None
+
+    # None enables legacy full saga for live executives (Removed for actual public use)
     if action not in (None, "hold", "pay"):
         return None, None, None, Response(
             {
@@ -648,20 +658,31 @@ def _check_body(request):
             status=400,
         )
 
-    allowed_by_action = {
-        "pay": {"action", "transaction_id", "seat_ids"},
+    allowed_fields = {
+        None: {"seat_ids"},
         "hold": {"action", "seat_ids"},
-    }
-    allowed_fields = allowed_by_action.get(action, {"seat_ids"})
+        "pay": {"action", "transaction_id", "seat_ids"},
+    }[action]
 
     if _faults_on():
-        allowed_fields = allowed_fields | {"fail_compensation", "coordinator", "fail_at_step"}
+        allowed_fields |= {
+            "coordinator",
+            "fail_at_step",
+        }
 
-    invalid_fields = [k for k in request.data if k not in allowed_fields]
+    invalid_fields = [
+        field for field in data
+        if field not in allowed_fields
+    ]
+
     if invalid_fields:
         return None, None, None, Response(
             {
-                "error": f"Invalid field(s) sent in payload: {', '.join(invalid_fields)}. These fields cannot be supplied by the client.",
+                "error": (
+                    "Invalid field(s) sent in payload: "
+                    f"{', '.join(invalid_fields)}. "
+                    "These fields cannot be supplied by the client."
+                ),
                 "code": "INVALID_FIELDS",
                 "invalid_fields": invalid_fields,
             },
@@ -669,37 +690,57 @@ def _check_body(request):
         )
 
     if action == "pay":
-        raw_tid = request.data.get("transaction_id")
-        if not raw_tid:
+        raw_tid = data.get("transaction_id")
+
+        if raw_tid is None or raw_tid == "":
             return None, None, None, Response(
-                {"error": "transaction_id is required for action='pay'.", "code": "TRANSACTION_ID_REQUIRED"},
+                {
+                    "error": "transaction_id is required for action='pay'.",
+                    "code": "TRANSACTION_ID_REQUIRED",
+                },
                 status=400,
             )
+
         try:
             pay_tid = uuid.UUID(str(raw_tid))
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, AttributeError):
             return None, None, None, Response(
-                {"error": "transaction_id must be a valid UUID.", "code": "INVALID_TRANSACTION_ID"},
+                {
+                    "error": "transaction_id must be a valid UUID.",
+                    "code": "INVALID_TRANSACTION_ID",
+                },
                 status=400,
             )
-        pay_seats = request.data.get("seat_ids")
+
+        pay_seats = data.get("seat_ids")
+
         if pay_seats is not None:
             seat_err = _validate_seats(pay_seats)
             if seat_err:
                 return None, None, None, seat_err
+
         return None, action, pay_tid, None
 
-    raw_seats = request.data.get("seat_ids")
-    if not raw_seats or not isinstance(raw_seats, list):
+    raw_seats = data.get("seat_ids")
+
+    if not isinstance(raw_seats, list) or not raw_seats:
         return None, None, None, Response(
-            {"error": "seat_ids is required and must be a non-empty list of integers.", "code": "SEATS_REQUIRED"},
+            {
+                "error": (
+                    "seat_ids is required and must be a "
+                    "non-empty list of integers."
+                ),
+                "code": "SEATS_REQUIRED",
+            },
             status=400,
         )
+
     seat_err = _validate_seats(raw_seats)
     if seat_err:
         return None, None, None, seat_err
 
     return list(raw_seats), action, None, None
+
 
 
 def _create_txn(request):
@@ -726,9 +767,7 @@ def _create_txn(request):
     if not correlation_id:
         raise RuntimeError("CorrelationIdMiddleware is missing or misconfigured.")
 
-    fail_compensation = False
-    if _faults_on() and request.data:
-        fail_compensation = bool(request.data.get("fail_compensation", False))
+
 
     enable_test_payment_failure = bool(getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False))
     simulate_decline = False
@@ -1002,7 +1041,6 @@ def _create_txn(request):
                     str(tx_id),
                     seat_ids=seat_ids,
                     amount=str(amount),
-                    fail_compensation=fail_compensation,
                     correlation_id=correlation_id,
                     user_id=pay_user_id,
                     user_email=pay_user_email,
@@ -1045,7 +1083,6 @@ def _create_txn(request):
             transaction_id=tx_id,
             seat_ids=seat_ids,
             amount=amount,
-            fail_compensation=fail_compensation,
             correlation_id=correlation_id,
             user_id=pay_user_id,
             user_email=pay_user_email,
@@ -1100,7 +1137,6 @@ def _create_txn(request):
                 str(tx_id),
                 seat_ids=seat_ids,
                 amount=str(amount),
-                fail_compensation=fail_compensation,
                 correlation_id=correlation_id,
                 user_id=user_id,
                 user_email=user_email,
@@ -1144,7 +1180,6 @@ def _create_txn(request):
         transaction_id=tx_id,
         seat_ids=seat_ids,
         amount=amount,
-        fail_compensation=fail_compensation,
         correlation_id=correlation_id,
         actor=SagaEvent.ACTOR_REQUEST,
         user_id=user_id,
@@ -1212,7 +1247,6 @@ def _run_saga(
     transaction_id,
     seat_ids=None,
     amount=None,
-    fail_compensation=False,
     correlation_id=None,
     actor=SagaEvent.ACTOR_REQUEST,
     user_id=None,
@@ -1291,7 +1325,6 @@ def _run_saga(
         return _charge(
             transaction_id,
             amount,
-            fail_compensation,
             correlation_id=correlation_id,
             seat_ids=seat_ids,
             user_id=user_id,
@@ -1406,7 +1439,6 @@ def _run_saga(
     return _charge(
         transaction_id,
         amount,
-        fail_compensation,
         correlation_id=correlation_id,
         seat_ids=seat_ids,
         user_id=user_id,
@@ -1495,7 +1527,6 @@ def _clear_checkout_presence(transaction_id):
 def _charge(
     transaction_id,
     amount,
-    fail_compensation,
     correlation_id=None,
     seat_ids=None,
     user_id=None,
@@ -1507,7 +1538,6 @@ def _charge(
         return _do_charge(
             transaction_id,
             amount,
-            fail_compensation,
             correlation_id=correlation_id,
             seat_ids=seat_ids,
             user_id=user_id,
@@ -1521,7 +1551,6 @@ def _charge(
 def _do_charge(
     transaction_id,
     amount,
-    fail_compensation,
     correlation_id=None,
     seat_ids=None,
     user_id=None,
@@ -1589,7 +1618,6 @@ def _do_charge(
 
         return _finish_payment(
             transaction_id,
-            fail_compensation,
             check_data or {},
             payment_status_code=payment_check.status_code,
             correlation_id=correlation_id,
@@ -1637,7 +1665,6 @@ def _do_charge(
         if payment_check.status_code == 200:
             return _finish_payment(
                 transaction_id,
-                fail_compensation,
                 check_data or {},
                 payment_status_code=payment_check.status_code,
                 correlation_id=correlation_id,
@@ -1655,7 +1682,6 @@ def _do_charge(
     resp_data = _parse_json_response(payment_response)
     return _finish_payment(
         transaction_id,
-        fail_compensation,
         resp_data or {},
         payment_status_code=payment_response.status_code,
         correlation_id=correlation_id,
@@ -1686,7 +1712,7 @@ def _confirm(transaction_id, seat_ids=None, correlation_id=None):
         return None, exc
 
 
-def _finish_payment(transaction_id, fail_compensation, payment_data, payment_status_code=200, correlation_id=None, seat_ids=None):
+def _finish_payment(transaction_id, payment_data, payment_status_code=200, correlation_id=None, seat_ids=None):
     """Finalize transaction following payment response (confirm inventory or rollback)."""
     if payment_status_code == 409:
         code = payment_data.get("code") if isinstance(payment_data, dict) else None
@@ -1777,7 +1803,6 @@ def _finish_payment(transaction_id, fail_compensation, payment_data, payment_sta
         }
         return _compensate(
             transaction_id,
-            fail_compensation,
             decline_payload,
             payment_status_code=confirm_resp.status_code,
             correlation_id=correlation_id,
@@ -1786,7 +1811,6 @@ def _finish_payment(transaction_id, fail_compensation, payment_data, payment_sta
 
     return _compensate(
         transaction_id,
-        fail_compensation,
         payment_data,
         payment_status_code=payment_status_code,
         correlation_id=correlation_id,
@@ -1794,7 +1818,7 @@ def _finish_payment(transaction_id, fail_compensation, payment_data, payment_sta
     )
 
 
-def _compensate(transaction_id, fail_compensation, payment_data, payment_status_code=None, correlation_id=None, seat_ids=None):
+def _compensate(transaction_id, payment_data, payment_status_code=None, correlation_id=None, seat_ids=None):
     """Compensate failed transaction (void/refund payment and release reserved seats)."""
     headers = {
         "X-Correlation-ID": _corr_id(correlation_id, transaction_id),
@@ -1864,32 +1888,31 @@ def _compensate(transaction_id, fail_compensation, payment_data, payment_status_
                 status=503,
             )
 
-    # 1. Release inventory (skipped to simulate a failed release)
+    # 1. Release inventory
     release_ok, release_data, release_status_code, release_transport_error = False, None, None, None
-    if not fail_compensation:
-        try:
-            release_response = _http(
-                "POST",
-                INVENTORY_RELEASE_URL,
-                json={"transaction_id": str(transaction_id)},
-                headers=headers,
-                timeout=REQUEST_TIMEOUT,
-            )
-            release_status_code = release_response.status_code
-            release_data = _parse_json_response(release_response)
-            release_ok = (release_status_code == 200)
-            if not release_ok and isinstance(release_data, dict):
-                msg = str(release_data.get("message", "")).lower() + " " + str(release_data.get("error", "")).lower()
-                code = str(release_data.get("code", "")).upper()
-                if (
-                    "already released" in msg
-                    or "nothing to release" in msg
-                    or "holds may have already been cancelled or expired" in msg
-                    or code in ("ALREADY_RELEASED", "NOTHING_TO_RELEASE", "NOT_FOUND")
-                ):
-                    release_ok = True
-        except RequestException as exc:
-            release_transport_error = exc
+    try:
+        release_response = _http(
+            "POST",
+            INVENTORY_RELEASE_URL,
+            json={"transaction_id": str(transaction_id)},
+            headers=headers,
+            timeout=REQUEST_TIMEOUT,
+        )
+        release_status_code = release_response.status_code
+        release_data = _parse_json_response(release_response)
+        release_ok = (release_status_code == 200)
+        if not release_ok and isinstance(release_data, dict):
+            msg = str(release_data.get("message", "")).lower() + " " + str(release_data.get("error", "")).lower()
+            code = str(release_data.get("code", "")).upper()
+            if (
+                "already released" in msg
+                or "nothing to release" in msg
+                or "holds may have already been cancelled or expired" in msg
+                or code in ("ALREADY_RELEASED", "NOTHING_TO_RELEASE", "NOT_FOUND")
+            ):
+                release_ok = True
+    except RequestException as exc:
+        release_transport_error = exc
 
     # 2. Refund payment if charged
     refund_ok, refund_data, refund_status_code, refund_transport_error = not was_charged, None, None, None

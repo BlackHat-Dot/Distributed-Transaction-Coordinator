@@ -289,7 +289,6 @@ class ViewsCoverageTests(TransactionTestCase):
             # IDEMPOTENCY_PAYLOAD_MISMATCH
             _finish_payment(
                 transaction_id=tx_id,
-                fail_compensation=False,
                 payment_data={"code": "IDEMPOTENCY_PAYLOAD_MISMATCH", "error": "Mismatch", "status": "FAILED"},
                 payment_status_code=409,
             )
@@ -298,7 +297,6 @@ class ViewsCoverageTests(TransactionTestCase):
             # TRANSACTION_VOIDED
             _finish_payment(
                 transaction_id=tx_id,
-                fail_compensation=False,
                 payment_data={"code": "TRANSACTION_VOIDED", "error": "Voided", "status": "FAILED"},
                 payment_status_code=409,
             )
@@ -421,7 +419,6 @@ class ViewsCoverageTests(TransactionTestCase):
                 transaction_id=tx_id,
                 seat_ids=[1],
                 amount=Decimal("100.00"),
-                fail_compensation=False,
                 simulate_decline=True,
                 is_sync=True,
             )
@@ -661,7 +658,6 @@ class ViewsCoverageTests(TransactionTestCase):
         with patch("coordinator.views._http_post", side_effect=mock_post_side_effect):
             resp = _compensate(
                 transaction_id=tx_id,
-                fail_compensation=False,
                 payment_data={"status": "CHARGED"},
                 payment_status_code=200,
             )
@@ -694,7 +690,6 @@ class ViewsCoverageTests(TransactionTestCase):
             resp = _charge(
                 transaction_id=tx_id,
                 amount=Decimal("100.00"),
-                fail_compensation=False,
                 seat_ids=[1],
             )
             self.assertEqual(resp.status_code, 200)
@@ -801,7 +796,6 @@ class ViewsCoverageTests(TransactionTestCase):
         with patch("coordinator.views._http_post", side_effect=fake_post):
             resp = _compensate(
                 transaction_id=tx_id,
-                fail_compensation=False,
                 payment_data={"status": "NOT_CHARGED"},
                 payment_status_code=400,
             )

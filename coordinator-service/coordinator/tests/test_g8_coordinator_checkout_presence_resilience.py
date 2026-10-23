@@ -58,7 +58,6 @@ class TestG8CoordinatorCheckoutPresenceResilience(TestCase):
                     _charge(
                         transaction_id=tx_id,
                         amount=Decimal("100.00"),
-                        fail_compensation=False,
                     )
 
             # Assert clear was called during exception unwinding

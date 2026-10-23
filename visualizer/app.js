@@ -102,8 +102,7 @@ const SCENARIO_DESCRIPTIONS = {
     desc: "Demonstrates a severe edge case where a payment fails, triggering a rollback (compensation) to release the seat. However, the release process is intentionally sabotaged to return a 500 Error. The Saga gets stuck in COMPENSATION_FAILED, triggering the Celery auto-recovery sweeper.",
     payload: `POST http://127.0.0.1:8002/transactions/
 {
-  "seat_ids": [34],
-  "fail_compensation": true
+  "seat_ids": [34]
 }`,
     steps: [
       "Coordinator inserts Transaction(status=STARTED) and dispatches POST /seats/reserve/ to Inventory.",

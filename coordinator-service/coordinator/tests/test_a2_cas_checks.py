@@ -26,7 +26,6 @@ class CasChecksA2Tests(TestCase):
              patch("coordinator.views._http_post") as mock_http_post:
             resp = _compensate(
                 transaction_id=self.tx_id,
-                fail_compensation=False,
                 payment_data={"status": "CHARGED"},
                 payment_status_code=422,
                 seat_ids=[1],
@@ -56,7 +55,6 @@ class CasChecksA2Tests(TestCase):
         with patch("coordinator.views._confirm", return_value=(mock_confirm_resp, None)):
             resp = _finish_payment(
                 transaction_id=self.tx_id,
-                fail_compensation=False,
                 payment_data={"status": "CHARGED"},
                 payment_status_code=200,
                 seat_ids=[1],
