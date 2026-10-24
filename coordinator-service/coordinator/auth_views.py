@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import hmac
+import logging
 import json
 import os
 import re
@@ -13,15 +14,22 @@ import redis
 import resend
 from django.conf import settings
 from django.core.cache import cache
+from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.exceptions import APIException, AuthenticationFailed
 
+logger = logging.getLogger(__name__)
 
 _redis_last_check = 0
 _redis_client_instance = None
 
 is_testing = bool(getattr(settings, "IS_TESTING", False))
+
+
+class ServiceUnavailable(APIException):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_code = "STAFF_SERVICE_UNAVAILABLE"
 
 def _get_redis_client():
     global _redis_last_check, _redis_client_instance
@@ -266,7 +274,7 @@ def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
     # A JSON Web Token (JWT) is just a single string made of 3 parts separated by dots (.)
     return f"{h_str}.{p_str}.{sig_str}"
 
-
+# verified
 def verify_jwt(token):
     if not token or "." not in token:
         return None, "Invalid token format"
@@ -277,6 +285,15 @@ def verify_jwt(token):
 
     h_str, p_str, sig_str = parts
     signing_input = f"{h_str}.{p_str}".encode("utf-8")
+
+    if not settings.SECRET_KEY:
+        logging.error("Secret key failure: SECRET_KEY is not configured on the server")
+
+        raise AuthenticationFailed({
+            "error": "Server error, try again later ...",
+            "code": "SERVER_KEY_RROR"
+        })
+
     secret = settings.SECRET_KEY.encode("utf-8")
 
     expected_sig = hmac.new(secret, signing_input, hashlib.sha256).digest()
@@ -308,6 +325,7 @@ def verify_jwt(token):
     except Exception as e:
         return None, str(e)
 
+# verified
 def get_user_from_request(request):
     """
     Extracts authenticated user identity from Authorization header or request payload.
@@ -346,14 +364,23 @@ def get_user_from_request(request):
 
     return user_info
 
-
+# verified
 def _verify_staff_key(header_val):
     """Verify staff key from request header with constant-time comparison."""
-    if not header_val or not isinstance(header_val, str) or not header_val.strip():
-        return False
+    if not isinstance(header_val, str) or not header_val.strip():
+        raise AuthenticationFailed({
+            "error": "Invalid staff key provided.",
+            "code": "INVALID_STAFF_KEY"
+        })
+
     staff_key = os.getenv("STAFF_API_KEY")
     if not staff_key:
-        return False
+        logger.error("Staff verification failed: STAFF_API_KEY environment variable is not configured on the server.")
+        raise ServiceUnavailable({
+            "error": "Staff key service is not available currently.",
+            "code": "STAFF_SERVICE_UNAVAILABLE"
+        })
+
     return hmac.compare_digest(header_val.strip(), staff_key.strip())
 
 
@@ -414,7 +441,7 @@ def _get_caller(request):
         user_email = os.getenv("STAFF_EMAIL_ID") or "admin@dtc.internal"
         identity = RequesterIdentity(True, user_id, True, user_email=user_email)
 
-    # 2. Cryptographically verified Bearer JWT
+    # Normal JWT authentication if not staff
     if not identity:
         user_info = get_user_from_request(request)
         if user_info and user_info.get("is_authenticated"):
