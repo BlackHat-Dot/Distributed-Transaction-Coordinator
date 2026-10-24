@@ -162,8 +162,6 @@ CORS_ALLOW_HEADERS = [
     "x-csrftoken",
     "x-requested-with",
     "x-correlation-id",
-    "x-user-id",
-    "x-user-email",
     "x-gate-api-key",
     "x-staff-key",
     "x-session-id",
@@ -176,8 +174,6 @@ CORS_EXPOSE_HEADERS = [
     "x-page-limit",
     "x-page-offset",
     "x-correlation-id",
-    "x-user-id",
-    "x-user-email",
     "content-type",
 ]
 # allows frontend to read these listed from response headers

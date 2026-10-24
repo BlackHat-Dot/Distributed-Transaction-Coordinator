@@ -15,6 +15,7 @@ from django.conf import settings
 from django.core.cache import cache
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+from rest_framework.exceptions import AuthenticationFailed
 
 
 _redis_last_check = 0
@@ -350,7 +351,7 @@ def _verify_staff_key(header_val):
     """Verify staff key from request header with constant-time comparison."""
     if not header_val or not isinstance(header_val, str) or not header_val.strip():
         return False
-    staff_key = os.getenv("STAFF_API_KEY") or os.getenv("STAFF_KEY")
+    staff_key = os.getenv("STAFF_API_KEY")
     if not staff_key:
         return False
     return hmac.compare_digest(header_val.strip(), staff_key.strip())
@@ -398,11 +399,19 @@ def _get_caller(request):
 
     identity = None
 
-    # 1. Staff key check (Admin Override)
+    # Staff verification
     req_staff = request.headers.get("X-Staff-Key")
-    if req_staff and _verify_staff_key(req_staff):
-        user_id = request.headers.get("X-User-ID") or os.getenv("STAFF_USER_ID") or "system_staff"
-        user_email = request.headers.get("X-User-Email") or os.getenv("STAFF_EMAIL_ID") or "admin@dtc.internal"
+    if req_staff :
+        if not _verify_staff_key(req_staff):
+            raise AuthenticationFailed({
+                "error": "Invalid staff key provided",
+                "code": "INVALID_STAFF_KEY "
+            }
+            )
+        
+        # both user_id and user_email are shared values.
+        user_id = os.getenv("STAFF_USER_ID") or "system_staff"
+        user_email = os.getenv("STAFF_EMAIL_ID") or "admin@dtc.internal"
         identity = RequesterIdentity(True, user_id, True, user_email=user_email)
 
     # 2. Cryptographically verified Bearer JWT
