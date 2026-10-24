@@ -412,7 +412,7 @@ class RequesterIdentity(tuple):
         instance.user_email = user_email
         return instance
 
-
+# verified
 def _get_caller(request):
     """
     Resolve caller identity strictly from verified sources:
@@ -433,23 +433,24 @@ def _get_caller(request):
             raise AuthenticationFailed({
                 "error": "Invalid staff key provided",
                 "code": "INVALID_STAFF_KEY "
-            }
-            )
+            })
         
         # both user_id and user_email are shared values.
         user_id = os.getenv("STAFF_USER_ID") or "system_staff"
         user_email = os.getenv("STAFF_EMAIL_ID") or "admin@dtc.internal"
         identity = RequesterIdentity(True, user_id, True, user_email=user_email)
 
-    # Normal JWT authentication if not staff
+    # Normal JWT authentication, if not staff
     if not identity:
         user_info = get_user_from_request(request)
         if user_info and user_info.get("is_authenticated"):
+            user_id = user_info.get("user_id")
             user_email = user_info.get("user_email")
             is_staff = _is_admin_email(user_email)
-            identity = RequesterIdentity(True, user_info.get("user_id"), is_staff, user_email=user_email)
 
-    # 3. Unauthenticated (Strict: No fallbacks)
+            identity = RequesterIdentity(True, user_id, is_staff, user_email=user_email)
+
+    # Unauthenticated
     if not identity:
         identity = RequesterIdentity(False, None, False, user_email=None)
 
