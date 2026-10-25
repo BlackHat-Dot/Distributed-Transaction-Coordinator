@@ -996,7 +996,7 @@ def verify_otp(request):
     except Exception:
         pass
 
-    jwt_expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "1800"))
+    jwt_expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "18000"))
     jwt_token = _create_jwt(user_id=user_id, user_email=email, session_id=session_id, expires_in=jwt_expires_in)
 
     return Response({
