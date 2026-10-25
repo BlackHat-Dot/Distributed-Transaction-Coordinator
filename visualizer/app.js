@@ -509,16 +509,8 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
 
   if (!options.skipAuth) {
     const token = localStorage.getItem("dtc_auth_token");
-    const userId = localStorage.getItem("dtc_user_id");
-    const userEmail = localStorage.getItem("dtc_user_email");
     if (token) {
       defaultHeaders["Authorization"] = `Bearer ${token}`;
-    }
-    if (userId) {
-      defaultHeaders["X-User-ID"] = userId;
-    }
-    if (userEmail) {
-      defaultHeaders["X-User-Email"] = userEmail;
     }
   }
 

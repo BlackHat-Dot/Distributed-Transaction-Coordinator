@@ -49,8 +49,6 @@ def get_fresh_booked_ticket(user_email=None):
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
-        "X-User-Id": str(user_id),
-        "X-User-Email": user_email,
     }
     tx_resp = requests.post(
         f"{COORDINATOR_URL}/transactions/?sync=true",

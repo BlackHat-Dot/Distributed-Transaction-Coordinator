@@ -51,15 +51,7 @@ def _get_authenticated_user(request):
         except Exception as e:
             logger.debug("Unexpected error during JWT verification: %s", type(e).__name__)
 
-    if getattr(settings, "ALLOW_UNVERIFIED_IDENTITY_HEADERS", False):
-        uid = request.headers.get("X-User-ID")
-        uemail = request.headers.get("X-User-Email")
-        if uid or uemail:
-            return {
-                "user_id": str(uid) if uid else None,
-                "user_email": str(uemail) if uemail else None,
-                "sid": None,
-            }
+
 
     return None
 
