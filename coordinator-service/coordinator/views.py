@@ -752,14 +752,13 @@ def _create_txn(request):
     is_staff = ident.is_staff
     user_email = ident.user_email
 
-    correlation_id = getattr(request, "transaction_id", None) or getattr(request, "correlation_id", None) or get_transaction_id()
+    correlation_id = getattr(request, "transaction_id", None) or get_transaction_id()
 
     enable_test_payment_failure = bool(getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False))
     simulate_decline = False
     if enable_test_payment_failure:
         simulate_decline = (
             request.query_params.get("simulate_payment_decline", "").lower() in ("true", "1", "yes", "t")
-            or request.headers.get("X-Simulate-Payment-Decline", "").lower() in ("true", "1", "yes", "t")
         )
 
     is_sync = request.query_params.get("sync") == "true"
