@@ -568,7 +568,6 @@ def _get_prices(seat_ids=None, correlation_id=None, transaction_id=None):
     headers = {
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
         "X-Correlation-ID": cid,
-        "X-Transaction-ID": cid,
     }
 
     seats_list = None
@@ -767,8 +766,7 @@ def _create_txn(request):
     if action == "hold":
         tx_id = str(uuid.uuid4())
         set_transaction_id(tx_id)
-        request.transaction_id = tx_id
-        request.correlation_id = tx_id
+
         correlation_id = tx_id
         amount, seat_ids, seat_numbers, price_error = _get_prices(
             seat_ids=seat_ids,
