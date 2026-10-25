@@ -19,6 +19,10 @@ class TransactionIdFilter(logging.Filter):
 
     def filter(self, record):
         tid = get_correlation_id()
+
+        if tid == "AnonUser" and hasattr(record, "request"):
+            tid = getattr(record.request, "correlation_id", "AnonUser")
+
         record.log_tag = "worker=bgworker" if tid == "bgworker" else f"transaction={tid}"
         return True
 
@@ -33,7 +37,14 @@ class CorrelationIdMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        token = set_correlation_id("AnonUser")
+        if request.method in ("GET") :
+            initial_id = "DataFetch"
+        else:
+            initial_id = "AnonUser"
+
+        request.correlation_id = initial_id
+
+        token = set_correlation_id(initial_id)
         try:
             return self.get_response(request)
         finally:
