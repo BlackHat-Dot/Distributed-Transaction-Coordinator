@@ -78,13 +78,26 @@ def _verify_internal_service_key(request, allow_client=False):
     configured_key = getattr(settings, "INTERNAL_SERVICE_KEY", None)
 
     if key is not None:
-        if not configured_key or not secrets.compare_digest(str(key), str(configured_key)):
+        if not configured_key:
+            logging.error("INTERNAL_SERVICE_KEY is not configured on this server.")
+            return Response({
+                    "error": "The service is temporarily unavailable. Our team has been notified.",
+                    "code": "SERVICE_CONFIGURATION_ERROR",
+                },
+                status=503,
+            ), False
+
+        if not secrets.compare_digest(str(key), str(configured_key)):
             return Response(
-                {"error": "Forbidden: invalid internal service key."},
+                {
+                    "error": "Invalid service authentication credentials.",
+                    "code": "INVALID_CREDENTIALS",
+                },
                 status=403,
             ), False
+        
         return None, True
-
+    
     if getattr(settings, "IS_TESTING", False):
         return None, True
 
@@ -92,6 +105,9 @@ def _verify_internal_service_key(request, allow_client=False):
         return None, False
 
     return Response(
-        {"error": "Forbidden: missing internal service key."},
+        {
+            "error": "You do not have permission to perform this action.",
+            "code": "PERMISSION_DENIED",
+        },
         status=403,
     ), False
