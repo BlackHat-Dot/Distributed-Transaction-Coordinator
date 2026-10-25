@@ -43,11 +43,17 @@ def execute_compensation_sweep(
        - If refund_ok and release_ok -> COMPENSATED (or COMPENSATED_ON_RETRY)
        - Else -> COMPENSATION_FAILED (or RETRY_COMPENSATION_FAILED)
     """
+    from coordinator.middleware import get_transaction_id, set_transaction_id
+    if get_transaction_id() != "bgworker":
+        set_transaction_id(str(transaction_id))
+
     get_http = get_func or requests.get
     post_http = post_func or requests.post
 
+    cid = str(correlation_id or transaction_id)
     headers = {
-        "X-Correlation-ID": str(correlation_id or transaction_id),
+        "X-Correlation-ID": cid,
+        "X-Transaction-ID": cid,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
 

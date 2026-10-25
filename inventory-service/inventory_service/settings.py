@@ -126,8 +126,7 @@ CORS_ALLOW_HEADERS = [
     "x-csrftoken",
     "x-requested-with",
     "x-correlation-id",
-    "x-user-id",
-    "x-user-email",
+    "x-transaction-id",
     "x-staff-key",
     "x-internal-service-key",
     "x-session-id",
@@ -139,8 +138,7 @@ CORS_EXPOSE_HEADERS = [
     "x-page-limit",
     "x-page-offset",
     "x-correlation-id",
-    "x-user-id",
-    "x-user-email",
+    "x-transaction-id",
     "content-type",
 ]
 
@@ -270,19 +268,22 @@ LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "filters": {
+        "transaction_id": {
+            "()": "inventory.middleware.TransactionIdFilter",
+        },
         "correlation_id": {
-            "()": "inventory.middleware.CorrelationIdFilter",
+            "()": "inventory.middleware.TransactionIdFilter",
         },
     },
     "formatters": {
         "standard": {
-            "format": "%(asctime)s [%(levelname)s] [correlation_id=%(correlation_id)s] %(name)s: %(message)s",
+            "format": "%(asctime)s [%(levelname)s] [%(log_tag)s] %(name)s: %(message)s",
         },
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "filters": ["correlation_id"],
+            "filters": ["transaction_id"],
             "formatter": "standard",
         },
     },
@@ -294,6 +295,16 @@ LOGGING = {
         "inventory": {
             "handlers": ["console"],
             "level": "INFO",
+            "propagate": False,
+        },
+        "celery.worker.strategy": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+        "celery.app.trace": {
+            "handlers": ["console"],
+            "level": "WARNING",
             "propagate": False,
         },
     },

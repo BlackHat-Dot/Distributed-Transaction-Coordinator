@@ -124,8 +124,6 @@ CORS_EXPOSE_HEADERS = [
     "x-page-limit",
     "x-page-offset",
     "x-correlation-id",
-    "x-user-id",
-    "x-user-email",
     "content-type",
 ]
 
@@ -143,8 +141,7 @@ CORS_ALLOW_HEADERS = [
     "x-csrftoken",
     "x-requested-with",
     "x-correlation-id",
-    "x-user-id",
-    "x-user-email",
+    "x-transaction-id",
     "x-session-id",
 ]
 
@@ -249,19 +246,22 @@ LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "filters": {
+        "transaction_id": {
+            "()": "payments.middleware.TransactionIdFilter",
+        },
         "correlation_id": {
-            "()": "payments.middleware.CorrelationIdFilter",
+            "()": "payments.middleware.TransactionIdFilter",
         },
     },
     "formatters": {
         "standard": {
-            "format": "%(asctime)s [%(levelname)s] [correlation_id=%(correlation_id)s] %(name)s: %(message)s",
+            "format": "%(asctime)s [%(levelname)s] [%(log_tag)s] %(name)s: %(message)s",
         },
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "filters": ["correlation_id"],
+            "filters": ["transaction_id"],
             "formatter": "standard",
         },
     },

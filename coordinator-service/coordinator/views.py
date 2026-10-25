@@ -26,7 +26,7 @@ from coordinator.throttling import (
     IsBookingAuthenticated,
     TransactionReadRateThrottle,
 )
-from .middleware import get_correlation_id
+from .middleware import get_correlation_id, get_transaction_id, set_transaction_id
 from .models import SagaEvent, Transaction
 from .recovery import execute_compensation_sweep
 from .saga_log import _set_status_with_event
@@ -98,6 +98,7 @@ def _release_inventory(tx_id, correlation_id=None, reason=""):
     cid = _corr_id(correlation_id, tx_id)
     headers = {
         "X-Correlation-ID": cid,
+        "X-Transaction-ID": cid,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
     try:
@@ -563,9 +564,11 @@ def recovery_status(request):
 
 def _get_prices(seat_ids=None, correlation_id=None, transaction_id=None):
     """Query Inventory service for seat pricing and readable seat labels."""
+    cid = _corr_id(correlation_id, transaction_id)
     headers = {
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
-        "X-Correlation-ID": _corr_id(correlation_id, transaction_id),
+        "X-Correlation-ID": cid,
+        "X-Transaction-ID": cid,
     }
 
     seats_list = None
@@ -749,11 +752,7 @@ def _create_txn(request):
     is_staff = ident.is_staff
     user_email = ident.user_email
 
-    correlation_id = request.correlation_id
-    if not correlation_id:
-        raise RuntimeError("CorrelationIdMiddleware is missing or misconfigured.")
-
-
+    correlation_id = getattr(request, "transaction_id", None) or getattr(request, "correlation_id", None) or get_transaction_id()
 
     enable_test_payment_failure = bool(getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False))
     simulate_decline = False
@@ -768,6 +767,10 @@ def _create_txn(request):
     # Phase 1: HOLD
     if action == "hold":
         tx_id = str(uuid.uuid4())
+        set_transaction_id(tx_id)
+        request.transaction_id = tx_id
+        request.correlation_id = tx_id
+        correlation_id = tx_id
         amount, seat_ids, seat_numbers, price_error = _get_prices(
             seat_ids=seat_ids,
             correlation_id=correlation_id,
@@ -911,6 +914,11 @@ def _create_txn(request):
 
     # Phase 2: PAY
     if action == "pay":
+        tx_id = str(pay_tid)
+        set_transaction_id(tx_id)
+        request.transaction_id = tx_id
+        request.correlation_id = tx_id
+        correlation_id = tx_id
         expired_tid = None
         with transaction.atomic():
             txn = Transaction.objects.select_for_update().filter(transaction_id=pay_tid).first()
@@ -1078,6 +1086,10 @@ def _create_txn(request):
 
     # One-shot legacy full saga path
     tx_id = str(uuid.uuid4())
+    set_transaction_id(tx_id)
+    request.transaction_id = tx_id
+    request.correlation_id = tx_id
+    correlation_id = tx_id
     amount, seat_ids, seat_numbers, price_error = _get_prices(
         seat_ids=seat_ids,
         correlation_id=correlation_id,
@@ -1438,8 +1450,10 @@ def _run_saga(
 
 def _reserve(transaction_id, seat_ids, correlation_id=None, user_id=None, user_email=None):
     """Call downstream Inventory service to reserve seats."""
+    cid = _corr_id(correlation_id, transaction_id)
     headers = {
-        "X-Correlation-ID": _corr_id(correlation_id, transaction_id),
+        "X-Correlation-ID": cid,
+        "X-Transaction-ID": cid,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
 
@@ -1543,8 +1557,10 @@ def _do_charge(
     user_email=None,
 ):
     """Execute payment charge HTTP call and handle transport or 5xx verification."""
+    cid = _corr_id(correlation_id, transaction_id)
     headers = {
-        "X-Correlation-ID": _corr_id(correlation_id, transaction_id),
+        "X-Correlation-ID": cid,
+        "X-Transaction-ID": cid,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
 
@@ -1681,8 +1697,10 @@ def _confirm(transaction_id, seat_ids=None, correlation_id=None):
         txn = Transaction.objects.filter(transaction_id=transaction_id).first()
         if txn and txn.seat_ids:
             seat_ids = txn.seat_ids
+    cid = _corr_id(correlation_id, transaction_id)
     headers = {
-        "X-Correlation-ID": _corr_id(correlation_id, transaction_id),
+        "X-Correlation-ID": cid,
+        "X-Transaction-ID": cid,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
     try:
@@ -1806,8 +1824,10 @@ def _finish_payment(transaction_id, payment_data, payment_status_code=200, corre
 
 def _compensate(transaction_id, payment_data, payment_status_code=None, correlation_id=None, seat_ids=None):
     """Compensate failed transaction (void/refund payment and release reserved seats)."""
+    cid = _corr_id(correlation_id, transaction_id)
     headers = {
-        "X-Correlation-ID": _corr_id(correlation_id, transaction_id),
+        "X-Correlation-ID": cid,
+        "X-Transaction-ID": cid,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
 
