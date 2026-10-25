@@ -24,6 +24,7 @@ from coordinator.auth_views import (
 from coordinator.throttling import (
     BookingRateThrottle,
     IsBookingAuthenticated,
+    RecoveryStatusRateThrottle,
     TransactionReadRateThrottle,
 )
 from .middleware import get_transaction_id, set_transaction_id
@@ -518,14 +519,9 @@ def trigger_recovery_sweep(request):
 
 
 @api_view(["GET"])
+@throttle_classes([RecoveryStatusRateThrottle])
 def recovery_status(request):
     """Staff endpoint returning recovery sweeper timing and health metrics."""
-    is_authenticated, auth_user_id, is_staff = _get_caller(request)
-    if not is_authenticated:
-        return Response({"error": "Authentication required to view recovery status."}, status=401)
-    if not is_staff:
-        return Response({"error": "Staff privileges required to view recovery status."}, status=403)
-
     from coordinator.tasks import get_redis_client
 
     last_run_ts = None
