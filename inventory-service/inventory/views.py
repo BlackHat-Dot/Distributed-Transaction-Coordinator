@@ -14,7 +14,6 @@ from .serializers import EventSerializer, PublicSeatSerializer, InternalSeatSeri
 
 from .auth import (
     _is_staff_request,
-    _get_authenticated_user,
     _get_authenticated_user_id,
     _verify_internal_service_key,
 )
