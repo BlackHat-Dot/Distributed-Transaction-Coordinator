@@ -1,21 +1,15 @@
 import contextvars
 import logging
-import uuid
 
-_transaction_id_ctx = contextvars.ContextVar("transaction_id", default="AnonFetch")
+_transaction_id_ctx = contextvars.ContextVar("transaction_id", default="AnonUser")
 
 
 def get_transaction_id():
-    return _transaction_id_ctx.get() or "AnonFetch"
+    return _transaction_id_ctx.get()
 
 
 def set_transaction_id(transaction_id):
-    return _transaction_id_ctx.set(str(transaction_id) if transaction_id else "AnonFetch")
-
-
-# Aliases for backward compatibility
-get_correlation_id = get_transaction_id
-set_correlation_id = set_transaction_id
+    return _transaction_id_ctx.set(str(transaction_id) if transaction_id else "AnonUser")
 
 
 class TransactionIdFilter(logging.Filter):
@@ -23,44 +17,26 @@ class TransactionIdFilter(logging.Filter):
 
     def filter(self, record):
         tid = get_transaction_id()
-        record.transaction_id = tid if tid else "AnonFetch"
-        record.correlation_id = record.transaction_id
-        if tid == "bgworker":
-            record.log_tag = "worker=bgworker"
-        else:
-            record.log_tag = f"transaction={record.transaction_id}"
+        record.log_tag = "worker=bgworker" if tid == "bgworker" else f"transaction={tid}"
         return True
-
-
-# Alias for backward compatibility with existing tests
-CorrelationIdFilter = TransactionIdFilter
 
 
 class CorrelationIdMiddleware:
     """
-    Assigns transaction tracking to request and attaches headers to response.
-    Unauthenticated users and non-transaction fetches default to 'AnonFetch'.
+    Assigns transaction tracking to execution context.
+    Unauthenticated users and non-transaction fetches default to 'AnonUser'.
     """
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        tid = request.META.get("HTTP_X_TRANSACTION_ID") or request.META.get("HTTP_X_CORRELATION_ID") or "AnonFetch"
-
+        tid = request.META.get("HTTP_X_TRANSACTION_ID") or request.META.get("HTTP_X_CORRELATION_ID") or "AnonUser"
         token = set_transaction_id(tid)
-        request.transaction_id = tid
-        request.correlation_id = tid
-
         try:
-            response = self.get_response(request)
+            return self.get_response(request)
         finally:
             _transaction_id_ctx.reset(token)
-
-        current_tid = get_transaction_id()
-        response["X-Transaction-ID"] = current_tid
-        response["X-Correlation-ID"] = current_tid
-        return response
 
 
 TransactionIdMiddleware = CorrelationIdMiddleware

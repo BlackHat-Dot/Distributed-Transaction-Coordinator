@@ -26,7 +26,7 @@ from coordinator.throttling import (
     IsBookingAuthenticated,
     TransactionReadRateThrottle,
 )
-from .middleware import get_correlation_id, get_transaction_id, set_transaction_id
+from .middleware import get_transaction_id, set_transaction_id
 from .models import SagaEvent, Transaction
 from .recovery import execute_compensation_sweep
 from .saga_log import _set_status_with_event
@@ -63,7 +63,7 @@ INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.get
 # verified
 def _corr_id(correlation_id, transaction_id):
     """Return active correlation ID, middleware ContextVar, or fresh UUIDv4."""
-    return correlation_id or get_correlation_id() or str(transaction_id)
+    return correlation_id or get_transaction_id() or str(transaction_id)
 
 # verified
 def _faults_on():

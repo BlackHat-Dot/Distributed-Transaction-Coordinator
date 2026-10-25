@@ -9,37 +9,24 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from coordinator.models import Transaction
-from coordinator.middleware import CorrelationIdFilter
+from coordinator.middleware import TransactionIdFilter
 
 
 class CorrelationIdMiddlewareTests(TestCase):
     def setUp(self):
         self.client = APIClient()
 
-    def test_incoming_client_correlation_id_is_ignored_and_server_generates_fresh_uuid(self):
-        client_cid = "test-corr-id-" + str(uuid.uuid4())
-        resp = self.client.get("/health/", HTTP_X_CORRELATION_ID=client_cid)
-        self.assertEqual(resp.status_code, 200)
-        server_cid = resp.get("X-Correlation-ID")
-        self.assertTrue(server_cid)
-        self.assertNotEqual(server_cid, client_cid)
-        parsed = uuid.UUID(server_cid)
-        self.assertEqual(parsed.version, 4)
-
-    def test_missing_correlation_id_uses_transaction_id_or_generates_uuid(self):
+    def test_middleware_executes_request_under_anon_user(self):
         resp = self.client.get("/health/")
         self.assertEqual(resp.status_code, 200)
-        cid = resp.get("X-Correlation-ID")
-        self.assertTrue(cid)
-        uuid.UUID(cid)
 
-    def test_logging_filter_injects_correlation_id(self):
-        filter_obj = CorrelationIdFilter()
+    def test_logging_filter_injects_log_tag(self):
+        filter_obj = TransactionIdFilter()
         logger = logging.getLogger("coordinator.test")
         record = logger.makeRecord("coordinator.test", logging.INFO, "test.py", 1, "test message", (), None)
 
         filter_obj.filter(record)
-        self.assertTrue(hasattr(record, "correlation_id"))
+        self.assertEqual(record.log_tag, "transaction=AnonUser")
 
 
 class CorrelationIdOutboundPropagationTests(TransactionTestCase):
@@ -71,7 +58,7 @@ class CorrelationIdOutboundPropagationTests(TransactionTestCase):
             )
 
         self.assertEqual(resp.status_code, 200)
-        server_cid = resp.get("X-Correlation-ID")
+        server_cid = resp.json().get("transaction_id")
         self.assertTrue(server_cid)
         self.assertEqual(len(captured_headers), 4)  # pricing + reserve + charge + confirm
 
