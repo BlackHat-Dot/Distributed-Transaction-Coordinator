@@ -50,6 +50,9 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        from coordinator.middleware import set_transaction_id
+        set_transaction_id("bgworker")
+
         threshold_seconds = options.get("threshold_seconds")
         if threshold_seconds is None:
             threshold_seconds = int(os.getenv("RECOVERY_THRESHOLD_SECONDS", "60"))

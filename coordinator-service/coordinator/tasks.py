@@ -30,8 +30,25 @@ def get_redis_client():
     )
 
 
+def _mask_email(email):
+    """Mask email for privacy compliance (e.g. user@example.com -> u***r@example.com)."""
+    if not email or "@" not in str(email):
+        return ""
+    try:
+        name, domain = str(email).strip().split("@", 1)
+        if len(name) <= 2:
+            masked_name = name[0] + "*"
+        else:
+            masked_name = name[0] + "***" + name[-1]
+        return f"{masked_name}@{domain}"
+    except Exception:
+        return "***"
+
+
 @shared_task(name="coordinator.tasks.recover_stuck_transactions")
 def recover_stuck_transactions():
+    from coordinator.middleware import set_transaction_id
+    set_transaction_id("bgworker")
 
     client = get_redis_client()
     lock_token = str(uuid.uuid4())
@@ -65,8 +82,10 @@ def recover_stuck_transactions():
 @shared_task(name="coordinator.tasks.execute_saga_task")
 def execute_saga_task(transaction_id, seat_ids=None, amount=500, correlation_id=None, user_id=None, user_email=None, skip_reserve=False, **kwargs):
     from coordinator.views import _run_saga
+    from coordinator.middleware import set_transaction_id
 
-    logger.info("Executing async saga task for transaction_id=%s [correlation_id=%s, user_id=%s, user_email=%s, skip_reserve=%s]", transaction_id, correlation_id, user_id, user_email, skip_reserve)
+    set_transaction_id(str(transaction_id))
+    logger.info("Executing async saga task for transaction_id=%s [user_id=%s, email=%s, skip_reserve=%s]", transaction_id, user_id, _mask_email(user_email), skip_reserve)
 
     try:
         parsed_tid = uuid.UUID(str(transaction_id))
@@ -93,6 +112,8 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, correlation_id=
 
 @shared_task(name="coordinator.tasks.send_ticket_email_task", bind=True, max_retries=3, default_retry_delay=10)
 def send_ticket_email_task(self, transaction_id):
+    from coordinator.middleware import set_transaction_id
+    set_transaction_id(str(transaction_id))
     from coordinator.models import Transaction
     from coordinator.ticket_generator import generate_tickets_pdf
     from coordinator.tickets import issue_tickets_for_transaction
@@ -123,7 +144,7 @@ def send_ticket_email_task(self, transaction_id):
 
     api_key = getattr(settings, "RESEND_API_KEY", "")
     if not api_key:
-        logger.info("RESEND_API_KEY not configured. Simulated ticket email to %s with PDF attachment %s.", txn.user_email, filename)
+        logger.info("RESEND_API_KEY not configured. Simulated ticket email to %s with PDF attachment %s.", _mask_email(txn.user_email), filename)
         return "simulated"
 
     resend.api_key = api_key
@@ -148,8 +169,9 @@ def send_ticket_email_task(self, transaction_id):
             ],
         }
         res = resend.Emails.send(params)
-        logger.info("Ticket email sent successfully to %s: %s", txn.user_email, res)
+        res_id = res.get("id") if isinstance(res, dict) else str(res)
+        logger.info("Ticket email sent successfully: email=%s resend_id=%s", _mask_email(txn.user_email), res_id)
         return "sent"
     except Exception as exc:
-        logger.error("Error dispatching ticket email to %s: %s", txn.user_email, exc)
+        logger.error("Error dispatching ticket email to %s: %s", _mask_email(txn.user_email), exc)
         raise self.retry(exc=exc)

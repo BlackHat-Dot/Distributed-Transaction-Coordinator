@@ -6,6 +6,9 @@ class Command(BaseCommand):
     help = "Sweeps expired and abandoned seat holds and marks them as AVAILABLE in PostgreSQL."
 
     def handle(self, *args, **options):
+        from inventory.middleware import set_transaction_id
+        set_transaction_id("bgworker")
+
         reclaimed, released = reclaim_expired_holds()
 
         if not reclaimed:
