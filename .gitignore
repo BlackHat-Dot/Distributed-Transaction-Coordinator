@@ -14,3 +14,5 @@ newfile.py
 .coverage.*
 prototypes
 scratch/
+scripts/
+pr.cmd
