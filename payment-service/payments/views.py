@@ -157,8 +157,8 @@ def charge_payment(request):
     transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response
-    from payments.middleware import set_transaction_id
-    set_transaction_id(str(transaction_uuid))
+    from .middleware import set_correlation_id
+    set_correlation_id(str(transaction_uuid))
 
     amount, error_response = _validate_amount(request.data.get("amount"))
     if error_response:
@@ -294,8 +294,8 @@ def payment_check(request):
     transaction_uuid, error_response = _require_transaction_id(request.query_params.get("transaction_id"))
     if error_response:
         return error_response
-    from payments.middleware import set_transaction_id
-    set_transaction_id(str(transaction_uuid))
+    from .middleware import set_correlation_id
+    set_correlation_id(str(transaction_uuid))
 
     payment = Payment.objects.filter(transaction_id=transaction_uuid).first()
     if payment:
@@ -325,8 +325,8 @@ def void_payment(request):
     transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response
-    from payments.middleware import set_transaction_id
-    set_transaction_id(str(transaction_uuid))
+    from .middleware import set_correlation_id
+    set_correlation_id(str(transaction_uuid))
 
     with transaction.atomic():
         p = Payment.objects.select_for_update().filter(transaction_id=transaction_uuid).first()
@@ -400,8 +400,8 @@ def refund_payment(request):
     transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response
-    from payments.middleware import set_transaction_id
-    set_transaction_id(str(transaction_uuid))
+    from .middleware import set_correlation_id
+    set_correlation_id(str(transaction_uuid))
 
     # F20: Single lookup under select_for_update inside one atomic block
     with transaction.atomic():

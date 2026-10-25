@@ -56,6 +56,20 @@ class TransactionReadRateThrottle(SimpleRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": f"user_{caller.user_id}"}
 
 
+class RecoveryStatusRateThrottle(SimpleRateThrottle):
+    """
+    Rate limits recovery status requests to 1/min per client IP to prevent polling spam.
+    """
+    scope = "coordinator_recovery_status"
+    rate = "1/min"
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {
+            "scope": self.scope,
+            "ident": self.get_ident(request),
+        }
+
+
 def coordinator_exception_handler(exc, context):
     response = exception_handler(exc, context)
     if response is None:

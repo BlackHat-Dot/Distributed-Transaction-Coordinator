@@ -50,8 +50,8 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        from coordinator.middleware import set_transaction_id
-        set_transaction_id("bgworker")
+        from coordinator.middleware import set_correlation_id
+        set_correlation_id("bgworker")
 
         threshold_seconds = options.get("threshold_seconds")
         if threshold_seconds is None:
