@@ -391,12 +391,7 @@ async function fetchJson(url, options = {}, timeoutMs = 8000) {
         headers["Authorization"] = `Bearer ${STATE.user.token}`;
       }
     }
-    if (STATE.user && STATE.user.userId) {
-      headers["X-User-ID"] = STATE.user.userId;
-    }
-    if (STATE.user && STATE.user.email) {
-      headers["X-User-Email"] = STATE.user.email;
-    }
+
   }
 
   try {
@@ -2157,15 +2152,16 @@ async function initiateSagaCheckout() {
   const queryString = queryParams.toString();
   const endpointUrl = `${CONFIG.coordinatorUrl}/transactions/${queryString ? `?${queryString}` : ""}`;
 
-  const payload = {
-    seat_ids: seatIds,
-  };
-  // If an active hold exists from Phase 1, invoke action: "pay" with the hold's transaction_id.
-  // The Coordinator will skip redundant seat reservation, directly process payment, and confirm.
-  if (txId) {
-    payload.action = "pay";
-    payload.transaction_id = txId;
-  }
+  // If an active hold exists from Phase 1, invoke action: "pay" with only the hold's transaction_id (omit seat_ids).
+  // The Coordinator will read held seats directly from the transaction in the database.
+  const payload = txId
+    ? {
+        action: "pay",
+        transaction_id: txId,
+      }
+    : {
+        seat_ids: seatIds,
+      };
 
   // POST to Coordinator — synchronous saga execution for immediate visual feedback
   // Identity is securely transmitted via Authorization Bearer JWT header in fetchJson
