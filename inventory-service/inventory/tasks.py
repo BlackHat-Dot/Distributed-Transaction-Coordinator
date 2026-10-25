@@ -7,8 +7,8 @@ logger = logging.getLogger(__name__)
 
 @shared_task(name="inventory.tasks.sweep_expired_holds_task")
 def sweep_expired_holds_task():
-    from inventory.middleware import set_transaction_id
-    set_transaction_id("bgworker")
+    from inventory.middleware import set_correlation_id
+    set_correlation_id("bgworker")
     logger.info("Starting inventory sweep_expired_holds_task run.")
     try:
         call_command("sweep_expired_holds")

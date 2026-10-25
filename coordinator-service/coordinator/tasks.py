@@ -47,8 +47,8 @@ def _mask_email(email):
 
 @shared_task(name="coordinator.tasks.recover_stuck_transactions")
 def recover_stuck_transactions():
-    from coordinator.middleware import set_transaction_id
-    set_transaction_id("bgworker")
+    from coordinator.middleware import set_correlation_id
+    set_correlation_id("bgworker")
 
     client = get_redis_client()
     lock_token = str(uuid.uuid4())
@@ -80,11 +80,11 @@ def recover_stuck_transactions():
 
 
 @shared_task(name="coordinator.tasks.execute_saga_task")
-def execute_saga_task(transaction_id, seat_ids=None, amount=500, correlation_id=None, user_id=None, user_email=None, skip_reserve=False, **kwargs):
+def execute_saga_task(transaction_id, seat_ids=None, amount=500, user_id=None, user_email=None, skip_reserve=False, **kwargs):
     from coordinator.views import _run_saga
-    from coordinator.middleware import set_transaction_id
+    from coordinator.middleware import set_correlation_id
 
-    set_transaction_id(str(transaction_id))
+    set_correlation_id(str(transaction_id))
     logger.info("Executing async saga task for transaction_id=%s [user_id=%s, email=%s, skip_reserve=%s]", transaction_id, user_id, _mask_email(user_email), skip_reserve)
 
     try:
@@ -97,7 +97,6 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, correlation_id=
         transaction_id=parsed_tid,
         seat_ids=seat_ids,
         amount=amount,
-        correlation_id=correlation_id,
         actor="request",
         user_id=user_id,
         user_email=user_email,
@@ -112,8 +111,8 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, correlation_id=
 
 @shared_task(name="coordinator.tasks.send_ticket_email_task", bind=True, max_retries=3, default_retry_delay=10)
 def send_ticket_email_task(self, transaction_id):
-    from coordinator.middleware import set_transaction_id
-    set_transaction_id(str(transaction_id))
+    from coordinator.middleware import set_correlation_id
+    set_correlation_id(str(transaction_id))
     from coordinator.models import Transaction
     from coordinator.ticket_generator import generate_tickets_pdf
     from coordinator.tickets import issue_tickets_for_transaction

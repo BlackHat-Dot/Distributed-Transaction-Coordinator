@@ -207,8 +207,8 @@ def reserve_seat(request):
         return Response({"error": "transaction_id is required"}, status=400)
     
     transaction_id = supplied_tid
-    from inventory.middleware import set_transaction_id
-    set_transaction_id(str(transaction_id))
+    from inventory.middleware import set_correlation_id
+    set_correlation_id(str(transaction_id))
 
     # Authetication isn't required , coordinator already verified.
 
@@ -424,8 +424,8 @@ def confirm_seat(request):
         return error_response
     if not transaction_id:
         return Response({"error": "transaction_id is required"}, status=400)
-    from inventory.middleware import set_transaction_id
-    set_transaction_id(str(transaction_id))
+    from inventory.middleware import set_correlation_id
+    set_correlation_id(str(transaction_id))
 
 
     try:
@@ -557,8 +557,8 @@ def release_seat(request):
 
     try:
         transaction_id = uuid.UUID(str(raw_tid))
-        from inventory.middleware import set_transaction_id
-        set_transaction_id(str(transaction_id))
+        from inventory.middleware import set_correlation_id
+        set_correlation_id(str(transaction_id))
     except (ValueError, TypeError):
         return Response({"error": "transaction_id must be a valid UUID", "code": "INVALID_UUID"}, status=400)
 
