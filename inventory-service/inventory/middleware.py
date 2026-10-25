@@ -1,22 +1,22 @@
 import contextvars
 import logging
 
-_transaction_id_ctx = contextvars.ContextVar("transaction_id", default="AnonUser")
+_correlation_id_ctx = contextvars.ContextVar("correlation_id", default="AnonUser")
 
 
-def get_transaction_id():
-    return _transaction_id_ctx.get()
+def get_correlation_id():
+    return _correlation_id_ctx.get()
 
 
-def set_transaction_id(transaction_id):
-    return _transaction_id_ctx.set(str(transaction_id) if transaction_id else "AnonUser")
+def set_correlation_id(transaction_id):
+    return _correlation_id_ctx.set(str(transaction_id) if transaction_id else "AnonUser")
 
 
 class TransactionIdFilter(logging.Filter):
     """Injects current transaction/worker context into log records."""
 
     def filter(self, record):
-        tid = get_transaction_id()
+        tid = get_correlation_id()
         record.log_tag = "worker=bgworker" if tid == "bgworker" else f"transaction={tid}"
         return True
 
@@ -31,12 +31,12 @@ class CorrelationIdMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        tid = request.META.get("HTTP_X_TRANSACTION_ID") or request.META.get("HTTP_X_CORRELATION_ID") or "AnonUser"
-        token = set_transaction_id(tid)
+        tid = request.META.get("HTTP_X_CORRELATION_ID") or "AnonUser"
+        token = set_correlation_id(tid)
         try:
             return self.get_response(request)
         finally:
-            _transaction_id_ctx.reset(token)
+            _correlation_id_ctx.reset(token)
 
 
 TransactionIdMiddleware = CorrelationIdMiddleware

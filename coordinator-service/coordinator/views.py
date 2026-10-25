@@ -27,7 +27,7 @@ from coordinator.throttling import (
     RecoveryStatusRateThrottle,
     TransactionReadRateThrottle,
 )
-from .middleware import get_transaction_id, set_transaction_id
+from .middleware import get_correlation_id, set_correlation_id
 from .models import SagaEvent, Transaction
 from .recovery import execute_compensation_sweep
 from .saga_log import _set_status_with_event
@@ -62,9 +62,9 @@ PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 
 # verified
-def _corr_id(correlation_id, transaction_id):
-    """Return active correlation ID, middleware ContextVar, or fresh UUIDv4."""
-    return correlation_id or get_transaction_id() or str(transaction_id)
+def _corr_id(correlation_id):
+    """Return fresh UUIDv4 or middleware ContextVar,."""
+    return str(correlation_id) or get_correlation_id()
 
 # verified
 def _faults_on():
@@ -94,12 +94,11 @@ def _http(method, url, **kwargs):
     return _get_sess().request(method, url, **kwargs)
 
 # verified
-def _release_inventory(tx_id, correlation_id=None, reason=""):
+def _release_inventory(tx_id, reason=""):
     """Best-effort release of every seat hold for tx_id in Inventory Service."""
-    cid = _corr_id(correlation_id, tx_id)
+    cid = _corr_id(tx_id)
     headers = {
         "X-Correlation-ID": cid,
-        "X-Transaction-ID": cid,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
     try:
@@ -393,13 +392,11 @@ def retry_compensation(request, transaction_id):
             "message": "Transaction was concurrently resolved by another process",
         }, status=409)
 
-    correlation_id = _corr_id(getattr(request, "correlation_id", None), transaction_id)
     try:
         outcome = execute_compensation_sweep(
             transaction_id=transaction_id,
             actor=SagaEvent.ACTOR_RETRY,
             original_status=txn.status,
-            correlation_id=correlation_id,
             get_func=_http,
             post_func=_http,
         )
@@ -558,13 +555,12 @@ def recovery_status(request):
 # CONTROLLER REQUEST HANDLERS
 # =============================================================================
 
-def _get_prices(seat_ids=None, correlation_id=None, transaction_id=None):
+def _get_prices(seat_ids=None, transaction_id=None):
     """Query Inventory service for seat pricing and readable seat labels."""
-    cid = _corr_id(correlation_id, transaction_id)
+    cid = _corr_id(transaction_id)
     headers = {
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
         "X-Correlation-ID": cid,
-        "X-Transaction-ID": cid,
     }
 
     seats_list = None
@@ -748,8 +744,6 @@ def _create_txn(request):
     is_staff = ident.is_staff
     user_email = ident.user_email
 
-    correlation_id = getattr(request, "transaction_id", None) or get_transaction_id()
-
     enable_test_payment_failure = bool(getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False))
     simulate_decline = False
     if enable_test_payment_failure:
@@ -762,13 +756,10 @@ def _create_txn(request):
     # Phase 1: HOLD
     if action == "hold":
         tx_id = str(uuid.uuid4())
-        set_transaction_id(tx_id)
-        request.transaction_id = tx_id
-        request.correlation_id = tx_id
-        correlation_id = tx_id
+        set_correlation_id(tx_id)
+
         amount, seat_ids, seat_numbers, price_error = _get_prices(
             seat_ids=seat_ids,
-            correlation_id=correlation_id,
             transaction_id=tx_id,
         )
         if price_error:
@@ -790,12 +781,11 @@ def _create_txn(request):
         response, reserve_error = _reserve(
             tx_id,
             seat_ids,
-            correlation_id=correlation_id,
             user_id=user_id,
             user_email=user_email,
         )
         if reserve_error:
-            _release_inventory(tx_id, correlation_id=correlation_id, reason="on reserve failure")
+            _release_inventory(tx_id, reason="on reserve failure")
             _set_status_with_event(
                 tx_id,
                 Transaction.Status.INVENTORY_RESERVE_FAILED,
@@ -810,7 +800,7 @@ def _create_txn(request):
 
         body = _parse_json_response(response)
         if response.status_code != 200:
-            _release_inventory(tx_id, correlation_id=correlation_id, reason="on reserve non-200")
+            _release_inventory(tx_id, reason="on reserve non-200")
             _set_status_with_event(
                 tx_id,
                 Transaction.Status.INVENTORY_RESERVE_FAILED,
@@ -828,7 +818,7 @@ def _create_txn(request):
             )
 
         if not isinstance(body, dict) or not body.get("held_until"):
-            _release_inventory(tx_id, correlation_id=correlation_id, reason="missing held_until")
+            _release_inventory(tx_id, reason="missing held_until")
             _set_status_with_event(
                 tx_id,
                 Transaction.Status.INVENTORY_RESERVE_FAILED,
@@ -910,10 +900,8 @@ def _create_txn(request):
     # Phase 2: PAY
     if action == "pay":
         tx_id = str(pay_tid)
-        set_transaction_id(tx_id)
-        request.transaction_id = tx_id
-        request.correlation_id = tx_id
-        correlation_id = tx_id
+        set_correlation_id(tx_id)
+
         expired_tid = None
         with transaction.atomic():
             txn = Transaction.objects.select_for_update().filter(transaction_id=pay_tid).first()
@@ -1012,7 +1000,7 @@ def _create_txn(request):
 
         # Outside the lock: the release makes a network call
         if expired_tid is not None:
-            _release_inventory(expired_tid, correlation_id=correlation_id, reason="for expired hold")
+            _release_inventory(expired_tid, reason="for expired hold")
             return Response(
                 {
                     "error": "Seat hold has expired. Please select seats and try again.",
@@ -1030,7 +1018,6 @@ def _create_txn(request):
                     str(tx_id),
                     seat_ids=seat_ids,
                     amount=str(amount),
-                    correlation_id=correlation_id,
                     user_id=pay_user_id,
                     user_email=pay_user_email,
                     skip_reserve=True,
@@ -1058,7 +1045,7 @@ def _create_txn(request):
                     http_payload={"error": "Celery dispatch failed; marked TIMEOUT"},
                 )
                 if transitioned:
-                    _release_inventory(tx_id, correlation_id=correlation_id, reason="celery dispatch failed")
+                    _release_inventory(tx_id, reason="celery dispatch failed")
                 return Response(
                     {
                         "transaction_id": str(tx_id),
@@ -1072,7 +1059,6 @@ def _create_txn(request):
             transaction_id=tx_id,
             seat_ids=seat_ids,
             amount=amount,
-            correlation_id=correlation_id,
             user_id=pay_user_id,
             user_email=pay_user_email,
             skip_reserve=True,
@@ -1081,13 +1067,10 @@ def _create_txn(request):
 
     # One-shot legacy full saga path
     tx_id = str(uuid.uuid4())
-    set_transaction_id(tx_id)
-    request.transaction_id = tx_id
-    request.correlation_id = tx_id
-    correlation_id = tx_id
+    set_correlation_id(tx_id)
+
     amount, seat_ids, seat_numbers, price_error = _get_prices(
         seat_ids=seat_ids,
-        correlation_id=correlation_id,
         transaction_id=tx_id,
     )
     if price_error:
@@ -1130,7 +1113,6 @@ def _create_txn(request):
                 str(tx_id),
                 seat_ids=seat_ids,
                 amount=str(amount),
-                correlation_id=correlation_id,
                 user_id=user_id,
                 user_email=user_email,
                 simulate_decline=simulate_decline,
@@ -1159,7 +1141,7 @@ def _create_txn(request):
                 http_payload={"error": "Celery dispatch failed; marked TIMEOUT"},
             )
             if transitioned:
-                _release_inventory(tx_id, correlation_id=correlation_id, reason="celery dispatch failed")
+                _release_inventory(tx_id, reason="celery dispatch failed")
             return Response(
                 {
                     "transaction_id": str(tx_id),
@@ -1173,7 +1155,6 @@ def _create_txn(request):
         transaction_id=tx_id,
         seat_ids=seat_ids,
         amount=amount,
-        correlation_id=correlation_id,
         actor=SagaEvent.ACTOR_REQUEST,
         user_id=user_id,
         user_email=user_email,
@@ -1240,7 +1221,6 @@ def _run_saga(
     transaction_id,
     seat_ids=None,
     amount=None,
-    correlation_id=None,
     actor=SagaEvent.ACTOR_REQUEST,
     user_id=None,
     user_email=None,
@@ -1318,7 +1298,6 @@ def _run_saga(
         return _charge(
             transaction_id,
             amount,
-            correlation_id=correlation_id,
             seat_ids=seat_ids,
             user_id=user_id,
             user_email=user_email,
@@ -1327,7 +1306,6 @@ def _run_saga(
     response, reserve_error = _reserve(
         transaction_id,
         seat_ids,
-        correlation_id=correlation_id,
         user_id=user_id,
         user_email=user_email,
     )
@@ -1432,7 +1410,6 @@ def _run_saga(
     return _charge(
         transaction_id,
         amount,
-        correlation_id=correlation_id,
         seat_ids=seat_ids,
         user_id=user_id,
         user_email=user_email,
@@ -1443,12 +1420,11 @@ def _run_saga(
 # MICROSERVICE REMOTE CALLS
 # =============================================================================
 
-def _reserve(transaction_id, seat_ids, correlation_id=None, user_id=None, user_email=None):
+def _reserve(transaction_id, seat_ids, user_id=None, user_email=None):
     """Call downstream Inventory service to reserve seats."""
-    cid = _corr_id(correlation_id, transaction_id)
+    cid = _corr_id(transaction_id)
     headers = {
         "X-Correlation-ID": cid,
-        "X-Transaction-ID": cid,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
 
@@ -1522,7 +1498,6 @@ def _clear_checkout_presence(transaction_id):
 def _charge(
     transaction_id,
     amount,
-    correlation_id=None,
     seat_ids=None,
     user_id=None,
     user_email=None,
@@ -1533,7 +1508,6 @@ def _charge(
         return _do_charge(
             transaction_id,
             amount,
-            correlation_id=correlation_id,
             seat_ids=seat_ids,
             user_id=user_id,
             user_email=user_email,
@@ -1546,16 +1520,14 @@ def _charge(
 def _do_charge(
     transaction_id,
     amount,
-    correlation_id=None,
     seat_ids=None,
     user_id=None,
     user_email=None,
 ):
     """Execute payment charge HTTP call and handle transport or 5xx verification."""
-    cid = _corr_id(correlation_id, transaction_id)
+    cid = _corr_id(transaction_id)
     headers = {
         "X-Correlation-ID": cid,
-        "X-Transaction-ID": cid,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
 
@@ -1617,7 +1589,6 @@ def _do_charge(
             transaction_id,
             check_data or {},
             payment_status_code=payment_check.status_code,
-            correlation_id=correlation_id,
             seat_ids=seat_ids,
         )
 
@@ -1664,7 +1635,6 @@ def _do_charge(
                 transaction_id,
                 check_data or {},
                 payment_status_code=payment_check.status_code,
-                correlation_id=correlation_id,
                 seat_ids=seat_ids,
             )
         return Response(
@@ -1681,21 +1651,19 @@ def _do_charge(
         transaction_id,
         resp_data or {},
         payment_status_code=payment_response.status_code,
-        correlation_id=correlation_id,
         seat_ids=seat_ids,
     )
 
 
-def _confirm(transaction_id, seat_ids=None, correlation_id=None):
+def _confirm(transaction_id, seat_ids=None):
     """Call downstream Inventory service to confirm booked seats."""
     if not seat_ids:
         txn = Transaction.objects.filter(transaction_id=transaction_id).first()
         if txn and txn.seat_ids:
             seat_ids = txn.seat_ids
-    cid = _corr_id(correlation_id, transaction_id)
+    cid = _corr_id(transaction_id)
     headers = {
         "X-Correlation-ID": cid,
-        "X-Transaction-ID": cid,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
     try:
@@ -1711,7 +1679,7 @@ def _confirm(transaction_id, seat_ids=None, correlation_id=None):
         return None, exc
 
 
-def _finish_payment(transaction_id, payment_data, payment_status_code=200, correlation_id=None, seat_ids=None):
+def _finish_payment(transaction_id, payment_data, payment_status_code=200, seat_ids=None):
     """Finalize transaction following payment response (confirm inventory or rollback)."""
     if payment_status_code == 409:
         code = payment_data.get("code") if isinstance(payment_data, dict) else None
@@ -1728,7 +1696,7 @@ def _finish_payment(transaction_id, payment_data, payment_status_code=200, corre
             )
 
     if payment_data.get("status") == "CHARGED":
-        confirm_resp, confirm_err = _confirm(transaction_id, seat_ids=seat_ids, correlation_id=correlation_id)
+        confirm_resp, confirm_err = _confirm(transaction_id, seat_ids=seat_ids)
 
         # Retry confirm once on transport failure or 5xx before giving up
         if (confirm_resp is None and confirm_err) or (confirm_resp is not None and confirm_resp.status_code in (502, 503, 504)):
@@ -1737,7 +1705,7 @@ def _finish_payment(transaction_id, payment_data, payment_status_code=200, corre
                 transaction_id,
                 confirm_err or getattr(confirm_resp, "status_code", None),
             )
-            confirm_resp, confirm_err = _confirm(transaction_id, seat_ids=seat_ids, correlation_id=correlation_id)
+            confirm_resp, confirm_err = _confirm(transaction_id, seat_ids=seat_ids)
 
         if confirm_resp and confirm_resp.status_code == 200:
             confirm_json = _parse_json_response(confirm_resp)
@@ -1804,25 +1772,20 @@ def _finish_payment(transaction_id, payment_data, payment_status_code=200, corre
             transaction_id,
             decline_payload,
             payment_status_code=confirm_resp.status_code,
-            correlation_id=correlation_id,
-            seat_ids=seat_ids,
         )
 
     return _compensate(
         transaction_id,
         payment_data,
         payment_status_code=payment_status_code,
-        correlation_id=correlation_id,
-        seat_ids=seat_ids,
     )
 
 
-def _compensate(transaction_id, payment_data, payment_status_code=None, correlation_id=None, seat_ids=None):
+def _compensate(transaction_id, payment_data, payment_status_code=None,):
     """Compensate failed transaction (void/refund payment and release reserved seats)."""
-    cid = _corr_id(correlation_id, transaction_id)
+    cid = _corr_id(transaction_id)
     headers = {
         "X-Correlation-ID": cid,
-        "X-Transaction-ID": cid,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
 

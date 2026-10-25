@@ -31,7 +31,7 @@ class TicketIssuanceError(Exception):
         self.status_code = status_code
 
 
-def issue_tickets_for_transaction(transaction: Transaction, correlation_id: str = None) -> list[Ticket]:
+def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
     """
     Lazily and idempotently issues tickets for a COMPLETED transaction after
     verifying ground truth against inventory.
@@ -61,11 +61,11 @@ def issue_tickets_for_transaction(transaction: Transaction, correlation_id: str 
         )
 
     # Guard 2: Inventory ground truth check BEFORE entering db_transaction.atomic()
-    from coordinator.middleware import set_transaction_id
-    set_transaction_id(str(transaction.transaction_id))
+    from coordinator.middleware import set_correlation_id
+    set_correlation_id(str(transaction.transaction_id))
 
     check_url = f"{INVENTORY_BASE_URL}/seats/check/?transaction_id={transaction.transaction_id}"
-    cid = correlation_id or str(transaction.transaction_id)
+    cid = str(transaction.transaction_id)
     headers = {
         "X-Correlation-ID": cid,
         "X-Transaction-ID": cid,
