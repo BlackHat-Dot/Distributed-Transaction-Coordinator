@@ -178,6 +178,7 @@ def _mask_pii(data):
         return [_mask_pii(item) for item in data]
     return data
 
+# verified
 def _set_status_with_event(
     transaction_id,
     to_status,
