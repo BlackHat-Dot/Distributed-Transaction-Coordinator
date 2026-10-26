@@ -302,6 +302,6 @@ def _validate_reserve_input(data):
         if not tid:
             return None, None, Response({"error": "transaction_id must be a valid UUID"}, status=400)
     else:
-        tid = None  # Caller will decide: generate server-side or reject
+        return None, None, Response({"error": "transaction_id is required"}, status=400)
 
     return seat_ids, tid, None
