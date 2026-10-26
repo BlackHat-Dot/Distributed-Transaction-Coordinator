@@ -199,13 +199,6 @@ def reserve_seat(request):
 
     if error_response:
         return error_response
-
-    # Determine the transaction_id:
-    #   - Coordinator calls (X-Internal-Service-Key present) send their saga UUID in the body → honour it.
-    #   - Browser calls never supply a valid transaction_id from the body (client-sent ID is silently ignored).
-
-    if not supplied_tid:
-        return Response({"error": "transaction_id is required"}, status=400)
     
     transaction_id = supplied_tid
     from inventory.middleware import set_correlation_id
