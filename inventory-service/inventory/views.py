@@ -210,11 +210,13 @@ def reserve_seat(request):
     user_id = request.data.get("user_id")
     user_email = request.data.get("user_email")
 
-    # Both values cannot be missing , added for defensive purpose 
-    if user_id is not None:
-        user_id = str(user_id)
-    if user_email is not None:
-        user_email = str(user_email).strip().lower()
+    if not user_id:
+        return None, None, Response({"error": "user_id is required", "code": "MISSING_USER_ID"}, status=400)
+    if not user_email:
+        return None, None, Response({"error": "Valid user_email is required", "code": "INVALID_EMAIL"}, status=400)
+    
+    user_id = str(user_id)
+    user_email = str(user_email).strip().lower()
 
     max_user_holds = getattr(settings, "MAX_USER_HOLDS", 5)
 
