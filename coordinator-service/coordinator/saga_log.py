@@ -222,6 +222,9 @@ def _set_status_with_event(
         txn_pk = rows[0]["id"] # 42
         from_status = rows[0]["status"] # "PAYMENT_PROCESSING"
 
+        if to_status == from_status:
+            return True
+
         # Validate CAS transition against ALLOWED_TRANSITIONS
         if expected_status is not None and to_status != from_status:
             allowed = ALLOWED_TRANSITIONS.get(from_status, set())
