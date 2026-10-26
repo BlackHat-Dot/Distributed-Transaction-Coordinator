@@ -223,7 +223,7 @@ def reserve_seat(request):
     try:
         with transaction.atomic():
             # CONC-01: Acquire transaction-scoped advisory lock on user_id to serialize hold checks per user
-            if user_id and connection.vendor == "postgresql":
+            if connection.vendor == "postgresql":
 
                 with connection.cursor() as cursor:
                     cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", [f"user_hold:{user_id}"])
@@ -236,7 +236,7 @@ def reserve_seat(request):
             now = timezone.now()
 
 
-            if user_id and max_user_holds is not None:
+            if max_user_holds:
                 # Exclude objects which is held by current transaction id.
                 active_holds = Seat.objects.filter(
                     user_id=user_id,
