@@ -280,14 +280,14 @@ def reserve_seat(request):
                         status=409,
                     )
 
-                # 1. Is it already held by this transaction (retry) or this user (re-hold)?
+                # Is it held by this transaction (retry) or this user (re-hold own active seat)?
                 if seat.is_held and not seat.is_expired(now) and (
                     str(seat.held_by_transaction_id) == str(transaction_id)
                     or (user_id and str(seat.user_id) == str(user_id))
                 ):
                     continue
 
-                # 3. Is it available for anyone to take? (Available or expired)
+                # Is it available for anyone to take? (Available or expired)
                 if seat.is_available or (seat.is_held and seat.is_expired(now)):
                     continue
 
@@ -327,7 +327,6 @@ def reserve_seat(request):
             # PASS 2: Mutation pass (apply holds in database)
             held_until_dt = now + get_hold_duration()
 
-            reservations = []
             for seat in seats:
                 # Clean up any unfinalized hold on this seat so it doesn't get orphaned
                 if seat.held_by_transaction_id and str(seat.held_by_transaction_id) != str(transaction_id):
@@ -345,7 +344,7 @@ def reserve_seat(request):
                 seat.save(update_fields=["status", "held_until", "held_by_transaction_id", "user_id", "user_email"])
 
                 # update_or_create used instead of get_or_create
-                res, _ = Reservation.objects.update_or_create(
+                Reservation.objects.update_or_create(
                     seat=seat,
                     transaction_id=transaction_id,
                     defaults={
@@ -355,7 +354,6 @@ def reserve_seat(request):
                     }
                 )
 
-                reservations.append(res)
 
             event_data = None
             if seats and getattr(seats[0], "event", None):
