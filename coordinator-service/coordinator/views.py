@@ -555,6 +555,7 @@ def recovery_status(request):
 # CONTROLLER REQUEST HANDLERS
 # =============================================================================
 
+# verified
 def _get_prices(seat_ids=None, transaction_id=None):
     """Query Inventory service for seat pricing and readable seat labels."""
     cid = _corr_id(transaction_id)
@@ -589,7 +590,9 @@ def _get_prices(seat_ids=None, transaction_id=None):
             total_amount = sum(Decimal(str(seat.get("price"))) for seat in seats_list)
             resolved_seat_ids = [seat["id"] for seat in seats_list]
             resolved_seat_numbers = ", ".join(f"{seat.get('row', '')}{seat.get('seat_number', '')}" for seat in seats_list)
+
             return total_amount, resolved_seat_ids, resolved_seat_numbers, None
+        
         return None, None, None, Response(
             {
                 "error": "One or more requested seats could not be found in inventory.",
@@ -1980,7 +1983,7 @@ def _compensate(transaction_id, payment_data, payment_status_code=None,):
 
 
 
-
+# verified
 def _create_transaction(transaction_id, seat_ids=None, seat_numbers=None, amount=500, quantity=1, user_id=None, user_email=None):
     """Atomically create a new Transaction row with status=STARTED."""
     try:
