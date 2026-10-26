@@ -238,7 +238,7 @@ def reserve_seat(request):
 
             if max_user_holds:
                 # Idempotency guard: exclude seats already held by this transaction so retries do not double-count against the user's quota.
-                # NOTE: initial hold doesn't have retries, yet .exclude is added future safety.
+                # NOTE: initial hold doesn't have retries, yet .exclude is added for future safety.
                 active_holds = Seat.objects.filter(
                     user_id=user_id,
                     status=Seat.Status.HELD,
@@ -266,12 +266,12 @@ def reserve_seat(request):
                 total_amount += seat.price
 
                 # Check if booked by THIS transaction
-                if seat.status == Seat.Status.BOOKED and str(seat.held_by_transaction_id) == str(transaction_id):
+                if seat.is_booked and str(seat.held_by_transaction_id) == str(transaction_id):
                     booked_by_tx += 1
                     continue
 
                 # Check if already booked by someone else
-                if seat.status == Seat.Status.BOOKED:
+                if seat.is_booked:
                     return Response(
                         {
                             "error": f"Seat {seat.row}{seat.seat_number} is already booked",
@@ -293,7 +293,7 @@ def reserve_seat(request):
                 if seat.is_available or (seat.is_held and seat.is_expired(now)):
                     continue
 
-                # Otherwise, someone else owns it or it's already booked/held
+                # Otherwise, it is currently held by someone else
                 if not first_unavailable_seat:
                     first_unavailable_seat = seat
 
@@ -322,7 +322,7 @@ def reserve_seat(request):
             if first_unavailable_seat:
                 return Response(
                     {
-                        "error": f"Seat {first_unavailable_seat.row}{first_unavailable_seat.seat_number} is already booked or held",
+                        "error": f"Seat {first_unavailable_seat.row}{first_unavailable_seat.seat_number} is already held by another user",
                         "code": "SEAT_UNAVAILABLE",
                         "transaction_id": str(transaction_id),
                     },
