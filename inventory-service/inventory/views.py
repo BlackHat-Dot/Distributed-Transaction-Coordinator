@@ -10,6 +10,8 @@ from rest_framework.decorators import api_view, throttle_classes
 from rest_framework.response import Response
 from inventory.middleware import set_correlation_id
 
+from django.db.models.functions import Now
+
 from .models import Event, Seat, Reservation
 from .serializers import EventSerializer, PublicSeatSerializer, InternalSeatSerializer
 
@@ -617,6 +619,7 @@ def release_seat(request):
             Reservation.objects.filter(id__in=[r.id for r in active_res]).update(
                 status=Reservation.Status.RELEASED,
                 released_reason=rel_reason,
+                updated_at=Now(),
             )
 
             reclaimed_seat_count = 0
