@@ -252,7 +252,9 @@ def _set_status_with_event(
             http_payload=_mask_pii(http_payload),
         )
 
-    # Database transaction committed. Publish real-time event to Redis for SSE streaming.
-    _publish_transaction_update(transaction_id, to_status, from_status)
+        # Defer Redis SSE publish until the outermost DB transaction successfully commits
+        db_transaction.on_commit(
+            lambda tid=transaction_id, ts=to_status, fs=from_status: _publish_transaction_update(tid, ts, fs)
+        )
 
     return True

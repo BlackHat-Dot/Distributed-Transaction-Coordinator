@@ -187,7 +187,7 @@ def seat_pricing(request):
     """
     return Response(serializer.data) # .data ; the actual `trigger`.
 
-
+# verified
 @api_view(["POST"])
 @throttle_classes([ReserveRateThrottle, ReserveAnonRateThrottle])
 def reserve_seat(request):
