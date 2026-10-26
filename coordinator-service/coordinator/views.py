@@ -2054,7 +2054,7 @@ def _event_json(event):
         "created_at": event.created_at,
     }
 
-
+# verified
 def _err_status(exc, timeout_status, conn_status):
     """Map request exception type to corresponding transaction status."""
     return timeout_status if isinstance(exc, Timeout) else conn_status
