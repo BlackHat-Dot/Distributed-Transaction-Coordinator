@@ -292,7 +292,7 @@ def _validate_reserve_input(data):
 
     # Finding 18: Dedupe seat_ids while preserving order, and cap at 50
     seat_ids = list(dict.fromkeys(seat_ids))
-    max_seats = int(os.getenv("MAX_SEATS_PER_TRANSACTION", "5"))
+    max_seats = int(os.getenv("MAX_USER_HOLDS", "5"))
     if len(seat_ids) > max_seats:
         return None, None, Response({"error": f"Cannot reserve more than {max_seats} seats at once", "code": "MAX_SEATS_EXCEEDED"}, status=400)
 
