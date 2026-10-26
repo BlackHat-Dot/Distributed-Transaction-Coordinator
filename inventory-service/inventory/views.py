@@ -281,12 +281,11 @@ def reserve_seat(request):
                         status=409,
                     )
 
-                # 1. Is it already held by this transaction? (Idempotent retry of active hold)
-                if seat.is_held and seat.held_by_transaction_id and str(seat.held_by_transaction_id) == str(transaction_id):
-                    continue
-
-                # 2. Is it held by the same user? (Transition temporary hold to checkout)
-                if seat.is_held and not seat.is_expired(now) and user_id and str(seat.user_id) == str(user_id):
+                # 1. Is it already held by this transaction (retry) or this user (re-hold)?
+                if seat.is_held and not seat.is_expired(now) and (
+                    str(seat.held_by_transaction_id) == str(transaction_id)
+                    or (user_id and str(seat.user_id) == str(user_id))
+                ):
                     continue
 
                 # 3. Is it available for anyone to take? (Available or expired)
