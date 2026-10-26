@@ -186,6 +186,17 @@ def _set_status_with_event(
     http_status_code=None,
     http_payload=None,
 ):
+
+
+    if to_status not in Transaction.Status.values:
+        logger.warning(
+            "Transition aborted for tx %s: %r is invalid; caller must use a valid Transaction.Status enum constant",
+            transaction_id,
+            to_status,
+        )
+
+        return False
+    
     with db_transaction.atomic():
         qs = Transaction.objects.select_for_update().filter(
             transaction_id=transaction_id
