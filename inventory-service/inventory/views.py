@@ -237,7 +237,8 @@ def reserve_seat(request):
 
 
             if max_user_holds:
-                # Exclude objects which is held by current transaction id.
+                # Idempotency guard: exclude seats already held by this transaction so retries do not double-count against the user's quota.
+                # NOTE: initial hold doesn't have retries, yet .exclude is added future safety.
                 active_holds = Seat.objects.filter(
                     user_id=user_id,
                     status=Seat.Status.HELD,
