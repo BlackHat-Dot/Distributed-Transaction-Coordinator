@@ -135,7 +135,7 @@ def seat_list(request):
     serializer = PublicSeatSerializer(seats, many=True, context={"request": request})
     return Response(serializer.data)
 
-
+# verified
 @api_view(["POST"])
 def seat_pricing(request):
     """
