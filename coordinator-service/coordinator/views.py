@@ -2060,7 +2060,7 @@ def _err_status(exc, timeout_status, conn_status):
     """Map request exception type to corresponding transaction status."""
     return timeout_status if isinstance(exc, Timeout) else conn_status
 
-
+# verified
 def _parse_json_response(response):
     """Safely decode JSON payload from HTTP response."""
     try:
