@@ -153,12 +153,14 @@ def seat_pricing(request):
 
     seat_ids = request.data.get("seat_ids")
 
+    # Redundant: Coordinator already validates this, but retained here as a zero-trust guard to prevent ORM crashes if called directly.
     if not seat_ids or not isinstance(seat_ids, list):
         return Response({"error": "seat_ids is required and must be a list"}, status=400)
 
     for s in seat_ids:
         if type(s) is not int or isinstance(s, bool):
             return Response({"error": "seat_ids must be a list of integers"}, status=400)
+
 
     target_ids = list(dict.fromkeys(seat_ids))
 
