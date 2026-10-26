@@ -201,6 +201,7 @@ def reserve_seat(request):
         return error_response
     
     transaction_id = supplied_tid
+
     from inventory.middleware import set_correlation_id
     set_correlation_id(str(transaction_id))
 
@@ -209,26 +210,13 @@ def reserve_seat(request):
     user_id = request.data.get("user_id")
     user_email = request.data.get("user_email")
 
-    # Both values cannot be missing but for defensive purpose i added a "if" condition.
+    # Both values cannot be missing , added for defensive purpose 
     if user_id is not None:
         user_id = str(user_id)
     if user_email is not None:
         user_email = str(user_email).strip().lower()
 
-    # Enforce MAX_USER_HOLDS (D-5) - fall back to 5
     max_user_holds = getattr(settings, "MAX_USER_HOLDS", 5)
-    
-    if max_user_holds is not None and len(seat_ids) > max_user_holds:
-        return Response(
-            {
-                "error": f"Requested seats count ({len(seat_ids)}) exceeds maximum allowed active holds ({max_user_holds}).",
-                "code": "MAX_HOLDS_EXCEEDED",
-                "active_holds": 0,
-                "max_holds": max_user_holds,
-                "transaction_id": str(transaction_id),
-            },
-            status=429,
-        )
 
     try:
         with transaction.atomic():
