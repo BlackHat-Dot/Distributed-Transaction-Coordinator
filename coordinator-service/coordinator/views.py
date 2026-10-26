@@ -782,8 +782,8 @@ def _create_txn(request):
             return dup_response
 
         response, reserve_error = _reserve(
-            tx_id,
-            seat_ids,
+            transaction_id=tx_id,
+            seat_ids=seat_ids,
             user_id=user_id,
             user_email=user_email,
         )
