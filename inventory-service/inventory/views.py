@@ -260,7 +260,6 @@ def reserve_seat(request):
             # PASS 1: Single validation & pricing pass
             booked_by_tx = 0
             total_amount = 0
-            first_unavailable_seat = None
 
             for seat in seats:
                 total_amount += seat.price
@@ -293,8 +292,14 @@ def reserve_seat(request):
                     continue
 
                 # Otherwise, it is currently held by someone else
-                if not first_unavailable_seat:
-                    first_unavailable_seat = seat
+                return Response(
+                    {
+                        "error": f"Seat {seat.row}{seat.seat_number} is already held by another user",
+                        "code": "SEAT_UNAVAILABLE",
+                        "transaction_id": str(transaction_id),
+                    },
+                    status=409,
+                )
 
             if booked_by_tx == len(seats):
                 # If ALL requested seats are BOOKED by this transaction, return idempotent success matching normal reserve shape
@@ -318,15 +323,6 @@ def reserve_seat(request):
                     status=409,
                 )
 
-            if first_unavailable_seat:
-                return Response(
-                    {
-                        "error": f"Seat {first_unavailable_seat.row}{first_unavailable_seat.seat_number} is already held by another user",
-                        "code": "SEAT_UNAVAILABLE",
-                        "transaction_id": str(transaction_id),
-                    },
-                    status=409,
-                )
 
             # PASS 2: Mutation pass (apply holds in database)
             held_until_dt = now + get_hold_duration()
