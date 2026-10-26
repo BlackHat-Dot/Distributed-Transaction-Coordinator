@@ -64,7 +64,7 @@ def _get_authenticated_user_id(request):
     auth_user = _get_authenticated_user(request)
     return auth_user.get("user_id") if auth_user else None
 
-
+# verified
 def _verify_internal_service_key(request, allow_client=False):
     """
     Ensures internal state-mutating endpoints (confirm, release-booked)
