@@ -8,6 +8,7 @@ from django.db import transaction, connection, IntegrityError, DatabaseError
 from django.utils import timezone
 from rest_framework.decorators import api_view, throttle_classes
 from rest_framework.response import Response
+from inventory.middleware import set_correlation_id
 
 from .models import Event, Seat, Reservation
 from .serializers import EventSerializer, PublicSeatSerializer, InternalSeatSerializer
@@ -535,13 +536,18 @@ def release_seat(request):
 
     try:
         transaction_id = uuid.UUID(str(raw_tid))
-        from inventory.middleware import set_correlation_id
         set_correlation_id(str(transaction_id))
     except (ValueError, TypeError):
         return Response({"error": "transaction_id must be a valid UUID", "code": "INVALID_UUID"}, status=400)
 
     try:
-        candidate_res = list(Reservation.objects.filter(transaction_id=transaction_id))
+        eligible_statuses = (
+            (Reservation.Status.RESERVED, Reservation.Status.BOOKED)
+            if (is_staff or is_internal)
+            else (Reservation.Status.RESERVED,)
+        )
+
+        candidate_res = list(Reservation.objects.filter(transaction_id=transaction_id, status__in=eligible_statuses))
         if not candidate_res:
             return Response(
                 {"message": "No active reservation found to release.", "released_count": 0, "transaction_id": str(transaction_id)},
