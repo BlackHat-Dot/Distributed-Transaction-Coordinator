@@ -1,8 +1,7 @@
-import base64
+import jwt
 import hashlib
 import hmac
 import logging
-import json
 import os
 import re
 import secrets
@@ -218,13 +217,12 @@ def _email_hash(email):
     return hashlib.sha256(email.encode("utf-8")).hexdigest()[:20]
 
 
+
+
+
 def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
-    """A JSON Web Token (JWT) is created"""
-
-    header = {"alg": "HS256", "typ": "JWT"}
-
+    """Create a signed HS256 JWT."""
     now = int(time.time())
-
     if expires_in is None:
         expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "1800"))
 
@@ -232,96 +230,40 @@ def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
         "user_id": user_id,
         "user_email": user_email,
         "iat": now,
-        "exp": now + expires_in
+        "exp": now + expires_in,
     }
-
     if session_id:
         payload["sid"] = session_id
 
-
-    def b64url(data_bytes):
-        # eg: data_bytes = b'{"alg":"HS256","typ":"JWT"}'
-        # 1. base64: Translates any messy sequence of bytes into a clean, universally safe alphabet of 64 printable ASCII characters.
-        # 2. urlsafe_b64encode: Replaces '+' and '/' with '-' and '_' for URL safety
-        # 3. rstrip(b"="): Strips trailing '=' padding required by JWT standard
-        # 4. base64.urlsafe_b64encode(data_bytes) => gives still bytes (b'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9') -> decode("utf-8"): Converts resulting bytes to a standard Python string ('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9')
-        return base64.urlsafe_b64encode(data_bytes).rstrip(b"=").decode("utf-8")
-
-    # json.dumps(): Converts the Python dictionary into a JSON string.
-    # By default, json.dumps() inserts spaces after commas and colons: '{"alg": "HS256", "typ": "JWT"}' (31 characters)
-    # By specifying separators=(",", ":"), all unnecessary whitespace is stripped: '{"alg":"HS256","typ":"JWT"}' (27 characters)
-    # .encode("utd-8") : converts JSON string to bytes.
-
-    # json_str = '{"user_id": "usr_9a8b", "email": "vijay@gmail.com"}'
-    # json_bytes = json_str.encode("utf-8")
-    # print(json_bytes)
-    # Output: b'{"user_id": "usr_9a8b", "email": "vijay@gmail.com"}'
-    h_str = b64url(json.dumps(header, separators=(",", ":")).encode("utf-8"))
-    p_str = b64url(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
-
-    # Join the Base64-encoded header and payload strings with a dot, then convert to bytes for signing
-    signing_input = f"{h_str}.{p_str}".encode("utf-8")
-
-    # Convert the server's private secret key to bytes
-    secret = settings.SECRET_KEY.encode("utf-8")
-
-    # hmac.new(secret, signing_input, hashlib.sha256) -> Creates a HMAC object
-    # .digest() -> Actually extracts 32 raw bytes from the object
-    sig = hmac.new(secret, signing_input, hashlib.sha256).digest()
-    sig_str = b64url(sig) # Convert signature bytes to a URL-safe Base64 string
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
 
-    # A JSON Web Token (JWT) is just a single string made of 3 parts separated by dots (.)
-    return f"{h_str}.{p_str}.{sig_str}"
-
-# verified
 def verify_jwt(token):
-    if not token or "." not in token:
+    """Verify and decode a JWT. Returns (payload, None) on success, or (None, err_str)."""
+    if not token or not isinstance(token, str) or token.count(".") != 2:
         return None, "Invalid token format"
 
-    parts = token.split(".")
-    if len(parts) != 3:
-        return None, "Malformed JWT structure"
-
-    h_str, p_str, sig_str = parts
-    signing_input = f"{h_str}.{p_str}".encode("utf-8")
-
     if not settings.SECRET_KEY:
-        logging.error("Secret key failure: SECRET_KEY is not configured on the server")
-
+        logger.error("SECRET_KEY is not configured on the server")
         raise AuthenticationFailed({
             "error": "Server error, try again later ...",
-            "code": "SERVER_KEY_RROR"
+            "code": "SERVER_KEY_ERROR",
         })
 
-    secret = settings.SECRET_KEY.encode("utf-8")
-
-    expected_sig = hmac.new(secret, signing_input, hashlib.sha256).digest()
-
-    def b64url_decode(s):
-        # Base64 strings must have a length divisible by 4; restore any stripped '=' padding
-        rem = len(s) % 4
-        if rem > 0:
-            s += "=" * (4 - rem)
-
-        # .encode("utf-8") turns the Base64 scrambled text into bytes.
-        return base64.urlsafe_b64decode(s.encode("utf-8")) # Base64 String (b'eyJ1c2Vy...') -> Raw bytes (b'{"user_id":"123"}')
-
     try:
-        actual_sig = b64url_decode(sig_str)
-
-        # avoided using '!=' because it exits on the first mismatched byte,
-        # leaking timing information. hmac.compare_digest compares in constant time.
-        if not hmac.compare_digest(actual_sig, expected_sig):
-            return None, "Invalid token signature"
-
-        payload_json = b64url_decode(p_str).decode("utf-8") # .decode("utf-8") -> JSON string '{"user_id":"123"}'
-        payload = json.loads(payload_json) # json.loads(): '{"user_id":"123"}' -> {"user_id": "123"}
-
-        if "exp" in payload and payload["exp"] < int(time.time()):
-            return None, "Token has expired"
-
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=["HS256"],
+            options={"require": ["exp"]},
+        )
         return payload, None
+    except jwt.ExpiredSignatureError:
+        return None, "Token has expired"
+    except jwt.InvalidSignatureError:
+        return None, "Invalid token signature"
+    except jwt.PyJWTError as e:
+        return None, str(e)
     except Exception as e:
         return None, str(e)
 

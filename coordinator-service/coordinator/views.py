@@ -1423,6 +1423,7 @@ def _run_saga(
 # MICROSERVICE REMOTE CALLS
 # =============================================================================
 
+# verified
 def _reserve(transaction_id, seat_ids, user_id=None, user_email=None):
     """Call downstream Inventory service to reserve seats."""
     cid = _corr_id(transaction_id)
