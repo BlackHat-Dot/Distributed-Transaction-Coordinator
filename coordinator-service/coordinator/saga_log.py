@@ -190,7 +190,7 @@ def _set_status_with_event(
         qs = Transaction.objects.select_for_update().filter(
             transaction_id=transaction_id
         )
-        if expected_status:
+        if expected_status is not None:
             if isinstance(expected_status, (list, tuple, set)):
                 qs = qs.filter(status__in=expected_status)
             else:
