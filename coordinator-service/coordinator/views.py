@@ -1454,8 +1454,8 @@ def _reserve(transaction_id, seat_ids, user_id=None, user_email=None):
             status,
             expected_status=Transaction.Status.STARTED,
             actor=SagaEvent.ACTOR_REQUEST,
-            http_status_code=None,
-            http_payload=None,
+            http_status_code=None, # explains no http response arrived
+            http_payload={"error": str(exc)},
         )
         if not transitioned:
             return None, Response(
