@@ -190,11 +190,14 @@ def list_transaction_events(request, transaction_id):
         "events": [_event_json(event) for event in events],
     })
 
-
+# verified
 def transaction_stream(request, transaction_id):
     """Server-Sent Events endpoint streaming transaction transitions via Redis pubsub."""
     if request.method == "OPTIONS":
         return HttpResponse(status=204)
+
+    if request.method != "GET":
+        return HttpResponse(status=405)
 
     is_authenticated, auth_user_id, is_staff = _get_caller(request)
     if not is_authenticated:
