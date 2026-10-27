@@ -226,7 +226,12 @@ def transaction_stream(request, transaction_id):
                     close_old_connections()
                 except Exception:
                     pass
-        return StreamingHttpResponse(terminal_generator(), content_type="text/event-stream")
+
+        response = StreamingHttpResponse(terminal_generator(), content_type="text/event-stream")
+        response["Cache-Control"] = "no-cache, no-transform"
+        response["X-Accel-Buffering"] = "no"
+        response["Connection"] = "keep-alive"
+        return response
 
     def event_generator():
         channel_name = f"dtc:tx_stream:{transaction_id}"
@@ -344,7 +349,7 @@ ALLOWED_RETRY_STATUSES = (
     Transaction.Status.INVENTORY_CONNECTION_ERROR,
 )
 
-
+# verified
 @api_view(["POST"])
 def retry_compensation(request, transaction_id):
     """Staff-only endpoint to re-trigger failed compensation for stuck transactions."""
