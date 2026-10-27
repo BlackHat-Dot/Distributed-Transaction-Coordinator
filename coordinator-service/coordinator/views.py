@@ -168,27 +168,39 @@ def get_transaction(request, transaction_id):
     return Response(_txn_json(txn))
 
 
+# verified
 @api_view(["GET"])
+@throttle_classes([TransactionReadRateThrottle])
 def list_transaction_events(request, transaction_id):
     """List saga audit events for transaction in chronological order."""
+    set_correlation_id(str(transaction_id))
+
     is_authenticated, auth_user_id, is_staff = _get_caller(request)
     if not is_authenticated:
-        return Response({"error": "Authentication required."}, status=401)
+        return Response(
+            {"error": "Authentication required.", "code": "AUTHENTICATION_REQUIRED"},
+            status=401,
+        )
 
-    try:
-        txn = Transaction.objects.get(transaction_id=transaction_id)
-    except Transaction.DoesNotExist:
-        return Response({"detail": "Transaction not found", "events": []}, status=404)
+    txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+    if not txn:
+        return Response(
+            {"error": "Transaction not found", "code": "TRANSACTION_NOT_FOUND", "events": []},
+            status=404,
+        )
 
     if not _can_access(txn, auth_user_id, is_staff):
-        return Response({"error": "You do not have permission to view this transaction's events."}, status=403)
+        return Response(
+            {"error": "You do not have permission to view this transaction's events.", "code": "FORBIDDEN"},
+            status=403,
+        )
 
     events = txn.events.order_by("seq")
     return Response({
         "transaction_id": str(txn.transaction_id),
         "status": txn.status,
         "events": [_event_json(event) for event in events],
-    })
+    }, status=200)
 
 # verified
 def transaction_stream(request, transaction_id):
