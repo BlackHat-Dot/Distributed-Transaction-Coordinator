@@ -425,10 +425,11 @@ def retry_compensation(request, transaction_id):
             http_status_code=None,
             http_payload={"error": f"Internal error during compensation retry: {str(exc)}"},
         )
+        current = Transaction.objects.filter(transaction_id=transaction_id).values_list("status", flat=True).first()
         return Response(
             {
                 "transaction_id": str(transaction_id),
-                "status": txn.status,
+                "status": current or txn.status,
                 "error": "Compensation retry encountered an unexpected error; claim released for retry",
             },
             status=500,
