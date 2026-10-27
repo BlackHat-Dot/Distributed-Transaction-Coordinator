@@ -4,7 +4,9 @@ import os
 import time
 import uuid
 import threading
-from decimal import Decimal
+import redis
+import requests
+
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -12,15 +14,16 @@ from django.db.models.functions import Now
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
-import redis
-import requests
+from decimal import Decimal
+
 from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException, Timeout
 from rest_framework.decorators import api_view, throttle_classes, permission_classes
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.response import Response
 
 from coordinator.auth_views import (
-    _get_caller,
+    _get_caller, _verify_staff_key
 )
 from coordinator.throttling import (
     BookingRateThrottle,
@@ -445,37 +448,49 @@ def trigger_recovery_sweep(request):
     import io
     from django.core.management import call_command
 
-    is_authenticated, auth_user_id, is_staff = _get_caller(request)
-    if not is_authenticated:
-        return Response({"error": "Authentication required to trigger recovery sweep."}, status=401)
-    if not is_staff:
-        return Response({"error": "Staff privileges required to trigger recovery sweep."}, status=403)
+    staff_key = request.headers.get("X-Staff-Key")
+    if not staff_key:
+        return Response(
+            {"error": "Authentication required: X-Staff-Key header missing.", "code": "STAFF_KEY_REQUIRED"},
+            status=401,
+        )
 
+    if not _verify_staff_key(staff_key):
+        raise AuthenticationFailed({
+            "error": "Invalid staff key provided",
+            "code": "INVALID_STAFF_KEY "
+        })
+
+    
     out = io.StringIO()
     raw_threshold = 60
-    if request.data and "threshold_seconds" in request.data:
-        val = request.data["threshold_seconds"]
-        if isinstance(val, bool) or not isinstance(val, (int, str)):
+    if request.data:
+        if not isinstance(request.data, dict):
             return Response(
-                {"error": "threshold_seconds must be a valid integer.", "code": "INVALID_THRESHOLD_SECONDS"},
+                {"error": "Request body must be a valid JSON object.", "code": "INVALID_BODY"},
                 status=400,
             )
-        try:
-            raw_threshold = int(val)
-            if raw_threshold < 0:
+        if "threshold_seconds" in request.data:
+            val = request.data["threshold_seconds"]
+            if isinstance(val, bool) or not isinstance(val, (int, str)):
                 return Response(
-                    {"error": "threshold_seconds must be a non-negative integer.", "code": "INVALID_THRESHOLD_SECONDS"},
+                    {"error": "threshold_seconds must be a valid integer.", "code": "INVALID_THRESHOLD_SECONDS"},
                     status=400,
                 )
-        except (ValueError, TypeError):
-            return Response(
-                {"error": "threshold_seconds must be a valid integer.", "code": "INVALID_THRESHOLD_SECONDS"},
-                status=400,
-            )
-
+            try:
+                raw_threshold = int(val)
+                if raw_threshold < 0:
+                    return Response(
+                        {"error": "threshold_seconds must be a non-negative integer.", "code": "INVALID_THRESHOLD_SECONDS"},
+                        status=400,
+                    )
+            except (ValueError, TypeError):
+                return Response(
+                    {"error": "threshold_seconds must be a valid integer.", "code": "INVALID_THRESHOLD_SECONDS"},
+                    status=400,
+                )
     min_floor = 5 if getattr(settings, "DEBUG", False) else int(os.getenv("RECOVERY_MIN_THRESHOLD_SECONDS", "30"))
     threshold_seconds = max(raw_threshold, min_floor)
-
     from coordinator.tasks import get_redis_client, LOCK_KEY, RELEASE_LOCK_SCRIPT
     redis_client = None
     lock_token = None
@@ -494,7 +509,6 @@ def trigger_recovery_sweep(request):
         redis_client = None
     except Exception as exc:
         logger.warning("Redis lock check failed in trigger_recovery_sweep: %s", exc)
-
     try:
         call_command("recovery_stuck_transactions", threshold_seconds=threshold_seconds, stdout=out)
         if redis_client:
@@ -508,14 +522,13 @@ def trigger_recovery_sweep(request):
                 redis_client.eval(RELEASE_LOCK_SCRIPT, 1, LOCK_KEY, lock_token)
             except Exception as exc:
                 logger.error("Failed to release lock '%s': %s", LOCK_KEY, exc)
-
     return Response({
         "message": "Recovery sweep complete",
         "threshold_seconds_applied": threshold_seconds,
         "output": out.getvalue().strip(),
     })
 
-
+# verified
 @api_view(["GET"])
 @throttle_classes([RecoveryStatusRateThrottle])
 def recovery_status(request):
