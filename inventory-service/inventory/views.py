@@ -510,6 +510,7 @@ def confirm_seat(request):
         logger.exception("[transaction_id=%s] Unexpected error in confirm_seat: %s", transaction_id if "transaction_id" in locals() else None, e)
         return Response({"error": "Internal server error occurred.", "code": "INTERNAL_ERROR"}, status=500)
 
+# verified
 @api_view(["POST"])
 @throttle_classes([ReleaseRateThrottle, ReleaseAnonRateThrottle])
 def release_seat(request):
