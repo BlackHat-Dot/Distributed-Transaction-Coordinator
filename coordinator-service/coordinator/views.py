@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.db.models.functions import Now
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -852,10 +853,6 @@ def _create_txn(request):
             if ev_starts:
                 update_fields["starts_at"] = ev_starts
 
-        if update_fields:
-            update_fields["updated_at"] = timezone.now()
-            Transaction.objects.filter(transaction_id=tx_id).update(**update_fields)
-
         transitioned = _set_status_with_event(
             tx_id,
             Transaction.Status.HOLDING,
@@ -864,6 +861,7 @@ def _create_txn(request):
             http_status_code=response.status_code,
             http_payload=body,
         )
+
         if not transitioned:
             return Response(
                 {
@@ -872,6 +870,10 @@ def _create_txn(request):
                 },
                 status=409,
             )
+
+        if update_fields:
+            update_fields["updated_at"] = Now()
+            Transaction.objects.filter(transaction_id=tx_id).update(**update_fields)
 
         held_until = body.get("held_until") if body else None
         return Response(
