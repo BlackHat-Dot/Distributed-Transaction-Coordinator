@@ -789,16 +789,6 @@ def _create_txn(request):
         )
         if reserve_error:
             _release_inventory(tx_id, reason="on reserve failure")
-            _set_status_with_event(
-                tx_id,
-                Transaction.Status.INVENTORY_RESERVE_FAILED,
-                expected_status=[
-                    Transaction.Status.STARTED,
-                    Transaction.Status.INVENTORY_TIMEOUT,
-                    Transaction.Status.INVENTORY_CONNECTION_ERROR,
-                ],
-                actor=SagaEvent.ACTOR_REQUEST,
-            )
             return reserve_error
 
         body = _parse_json_response(response)
