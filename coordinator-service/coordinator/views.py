@@ -150,22 +150,34 @@ def _can_access(txn, user_id, is_staff=False):
     return bool(txn and txn.user_id and user_id and str(txn.user_id) == str(user_id))
 
 
+# verified
 @api_view(["GET"])
+@throttle_classes([TransactionReadRateThrottle])
 def get_transaction(request, transaction_id):
     """Retrieve single transaction details with ownership check."""
+    set_correlation_id(str(transaction_id))
+
     is_authenticated, auth_user_id, is_staff = _get_caller(request)
     if not is_authenticated:
-        return Response({"error": "Authentication required."}, status=401)
+        return Response(
+            {"error": "Authentication required.", "code": "AUTHENTICATION_REQUIRED"},
+            status=401,
+        )
 
-    try:
-        txn = Transaction.objects.get(transaction_id=transaction_id)
-    except Transaction.DoesNotExist:
-        return Response({"detail": "Transaction not found"}, status=404)
+    txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+    if not txn:
+        return Response(
+            {"error": "Transaction not found", "code": "TRANSACTION_NOT_FOUND"},
+            status=404,
+        )
 
     if not _can_access(txn, auth_user_id, is_staff):
-        return Response({"error": "You do not have permission to view this transaction."}, status=403)
+        return Response(
+            {"error": "You do not have permission to view this transaction.", "code": "FORBIDDEN"},
+            status=403,
+        )
 
-    return Response(_txn_json(txn))
+    return Response(_txn_json(txn), status=200)
 
 
 # verified
