@@ -1089,7 +1089,7 @@ def _create_txn(request):
         return dup_response
 
     # Simulated coordinator crash test trigger
-    if _faults_on() and request.data and (request.data.get("coordinator") or request.data.get("fail_at_step") == "coordinator"):
+    if _faults_on() and request.data and request.data.get("coordinator"):
         return Response(
             {
                 "transaction_id": str(tx_id),
