@@ -135,6 +135,7 @@ def transactions_endpoint(request):
     return _create_txn(request)
 
 
+# verified
 @api_view(["GET"])
 @permission_classes([IsBookingAuthenticated])
 @throttle_classes([TransactionReadRateThrottle])
@@ -143,11 +144,13 @@ def list_transactions(request):
     return _list_txns(request)
 
 
+# verified
 def _can_access(txn, user_id, is_staff=False):
     """Check if caller has permission to view or modify transaction."""
     if is_staff:
         return True
-    return bool(txn and txn.user_id and user_id and str(txn.user_id) == str(user_id))
+    txn_uid = getattr(txn, "user_id", None)
+    return bool(txn_uid and user_id and str(txn_uid).strip() == str(user_id).strip())
 
 
 # verified
@@ -1221,7 +1224,10 @@ def _list_txns(request):
     """List transactions with pagination, filtering, and IDOR scoping."""
     is_authenticated, auth_user_id, is_staff = _get_caller(request)
     if not is_authenticated:
-        return Response({"error": "Authentication required."}, status=401)
+        return Response(
+            {"error": "Authentication required.", "code": "AUTHENTICATION_REQUIRED"},
+            status=401,
+        )
 
     limit_param = request.GET.get("limit", 10)
     offset_param = request.GET.get("offset", 0)
@@ -1254,7 +1260,17 @@ def _list_txns(request):
             return Response({"count": 0, "limit": limit, "offset": offset, "results": []})
 
     if status_filter:
-        queryset = queryset.filter(status=status_filter)
+        clean_status = status_filter.strip().upper()
+        if clean_status in Transaction.Status.values:
+            queryset = queryset.filter(status=clean_status)
+        else:
+            return Response(
+                {
+                    "error": f"Invalid status filter '{status_filter}'. Supported values are: {', '.join(sorted(Transaction.Status.values))}",
+                    "code": "INVALID_STATUS_FILTER",
+                },
+                status=400,
+            )
 
     total_count = queryset.count()
     txs = queryset[offset:offset + limit]
@@ -1265,7 +1281,7 @@ def _list_txns(request):
         "limit": limit,
         "offset": offset,
         "results": data,
-    })
+    }, status=200)
 
 
 # =============================================================================
