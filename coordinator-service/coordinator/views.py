@@ -2126,8 +2126,11 @@ def _create_transaction(transaction_id, seat_ids=None, seat_numbers=None, amount
         )
 
 
+# verified
 def _txn_json(txn):
     """Serialize Transaction model instance to JSON-serializable dict."""
+    if not txn:
+        return {}
     return {
         "transaction_id": str(txn.transaction_id),
         "user_id": txn.user_id,
@@ -2138,7 +2141,7 @@ def _txn_json(txn):
         "seat_ids": txn.seat_ids,
         "seat_numbers": txn.seat_numbers,
         "quantity": txn.quantity,
-        "amount": str(txn.amount),
+        "amount": str(txn.amount) if txn.amount is not None else "0",
         "event_name": getattr(txn, "event_name", None),
         "venue": getattr(txn, "venue", None),
         "starts_at": getattr(txn, "starts_at", None),
@@ -2147,8 +2150,11 @@ def _txn_json(txn):
     }
 
 
+# verified
 def _event_json(event):
     """Serialize SagaEvent model instance to JSON-serializable dict."""
+    if not event:
+        return {}
     return {
         "seq": event.seq,
         "from_status": event.from_status,
