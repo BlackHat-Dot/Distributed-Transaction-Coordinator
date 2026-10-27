@@ -1741,16 +1741,20 @@ def _do_charge(
     )
 
 
-def _confirm(transaction_id, seat_ids=None):
+# verified
+def _confirm(transaction_id, seat_ids=None, correlation_id=None, **kwargs):
     """Call downstream Inventory service to confirm booked seats."""
     if not seat_ids:
-        txn = Transaction.objects.filter(transaction_id=transaction_id).first()
-        if txn and txn.seat_ids:
-            seat_ids = txn.seat_ids
-    cid = _corr_id(transaction_id)
+        seat_ids = (
+            Transaction.objects.filter(transaction_id=transaction_id)
+            .values_list("seat_ids", flat=True)
+            .first()
+        )
+    cid = correlation_id or _corr_id(transaction_id)
     headers = {
         "X-Correlation-ID": cid,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+        "X-Idempotency-Key": str(transaction_id),
     }
     try:
         response = _http(
