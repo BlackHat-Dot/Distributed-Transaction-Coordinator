@@ -1564,7 +1564,7 @@ def _clear_checkout_presence(transaction_id):
     except Exception as exc:
         logger.warning("Failed to clear checkout presence key for tx %s: %s", transaction_id, exc)
 
-
+# verified
 def _charge(
     transaction_id,
     amount,
@@ -1586,7 +1586,7 @@ def _charge(
         _clear_checkout_presence(transaction_id)
         raise
 
-
+# verified
 def _do_charge(
     transaction_id,
     amount,
@@ -1653,13 +1653,22 @@ def _do_charge(
                 status=503,
             )
 
-        check_data = _parse_json_response(payment_check)
+        if payment_check.status_code == 200:
+            check_data = _parse_json_response(payment_check)
+            return _finish_payment(
+                transaction_id,
+                check_data or {},
+                payment_status_code=payment_check.status_code,
+                seat_ids=seat_ids,
+            )
 
-        return _finish_payment(
-            transaction_id,
-            check_data or {},
-            payment_status_code=payment_check.status_code,
-            seat_ids=seat_ids,
+        return Response(
+            {
+                "transaction_id": str(transaction_id),
+                "status": uncertain_status,
+                "error": "Payment outcome could not be determined",
+            },
+            status=503,
         )
 
     if payment_response.status_code >= 500:
