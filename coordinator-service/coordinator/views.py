@@ -126,7 +126,7 @@ def health_check(request):
     """Liveness probe returning healthy service status."""
     return Response({"status": "healthy", "service": "coordinator"})
 
-
+# verified
 @api_view(["POST"])
 @permission_classes([IsBookingAuthenticated])
 @throttle_classes([BookingRateThrottle])
@@ -1219,7 +1219,7 @@ def _create_txn(request):
         simulate_decline=simulate_decline,
     )
 
-
+# verified
 def _list_txns(request):
     """List transactions with pagination, filtering, and IDOR scoping."""
     is_authenticated, auth_user_id, is_staff = _get_caller(request)
@@ -1288,6 +1288,7 @@ def _list_txns(request):
 # SAGA ORCHESTRATION PIPELINE
 # =============================================================================
 
+# verified
 def _run_saga(
     transaction_id,
     seat_ids=None,
@@ -1411,38 +1412,6 @@ def _run_saga(
         )
 
     body = _parse_json_response(response)
-    txn = Transaction.objects.filter(transaction_id=transaction_id).first()
-    if txn:
-        update_cols = []
-        if body and "total_amount" in body:
-            actual_amount = None
-            try:
-                actual_amount = Decimal(str(body["total_amount"]))
-            except (ValueError, TypeError):
-                pass
-            if actual_amount is not None and not simulate_decline:
-                amount = actual_amount
-                txn.amount = amount
-                update_cols.append("amount")
-
-        ev_info = body.get("event") if body else None
-        if ev_info and isinstance(ev_info, dict):
-            ev_name = ev_info.get("name")
-            ev_venue = ev_info.get("venue")
-            raw_starts = ev_info.get("starts_at")
-            ev_starts = parse_datetime(raw_starts) if isinstance(raw_starts, str) else raw_starts
-            if ev_name:
-                txn.event_name = ev_name
-                update_cols.append("event_name")
-            if ev_venue:
-                txn.venue = ev_venue
-                update_cols.append("venue")
-            if ev_starts:
-                txn.starts_at = ev_starts
-                update_cols.append("starts_at")
-
-        if update_cols:
-            txn.save(update_fields=update_cols)
 
     transitioned_res = _set_status_with_event(
         transaction_id,
@@ -1460,6 +1429,35 @@ def _run_saga(
             },
             status=409,
         )
+
+    update_fields = {}
+    if isinstance(body, dict):
+        if "total_amount" in body:
+            actual_amount = None
+            try:
+                actual_amount = Decimal(str(body["total_amount"]))
+            except (ValueError, TypeError):
+                pass
+            if actual_amount is not None and not simulate_decline:
+                amount = actual_amount
+                update_fields["amount"] = amount
+
+        ev_info = body.get("event")
+        if isinstance(ev_info, dict):
+            ev_name = ev_info.get("name")
+            ev_venue = ev_info.get("venue")
+            raw_starts = ev_info.get("starts_at")
+            ev_starts = parse_datetime(raw_starts) if isinstance(raw_starts, str) else raw_starts
+            if ev_name:
+                update_fields["event_name"] = ev_name
+            if ev_venue:
+                update_fields["venue"] = ev_venue
+            if ev_starts:
+                update_fields["starts_at"] = ev_starts
+
+    if update_fields:
+        update_fields["updated_at"] = Now()
+        Transaction.objects.filter(transaction_id=transaction_id).update(**update_fields)
 
     transitioned_pay = _set_status_with_event(
         transaction_id,
