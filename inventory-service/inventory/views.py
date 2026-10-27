@@ -543,11 +543,7 @@ def release_seat(request):
         return Response({"error": "transaction_id must be a valid UUID", "code": "INVALID_UUID"}, status=400)
 
     try:
-        eligible_statuses = (
-            (Reservation.Status.RESERVED, Reservation.Status.BOOKED)
-            if (is_staff or is_internal)
-            else (Reservation.Status.RESERVED,)
-        )
+        eligible_statuses = (Reservation.Status.RESERVED, Reservation.Status.BOOKED)
 
         candidate_res = list(Reservation.objects.filter(transaction_id=transaction_id, status__in=eligible_statuses))
         if not candidate_res:
