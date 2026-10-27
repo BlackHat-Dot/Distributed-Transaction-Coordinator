@@ -535,14 +535,24 @@ def recovery_status(request):
 
     now = time.time()
     cycle = 90.0
+    status = "active"
+
     if last_run_ts:
-        elapsed = now - last_run_ts
-        next_in = max(1, int(cycle - (elapsed % cycle)))
+        elapsed = max(0.0, now - last_run_ts)
+        if elapsed >= cycle:
+            next_in = 0
+            status = "overdue"
+        else:
+            next_in = max(1, int(cycle - elapsed))
     else:
-        next_in = max(1, int(cycle - (now % cycle)))
+        next_in = None
+        status = "idle"
+
+    if not redis_available:
+        status = "degraded"
 
     return Response({
-        "status": "active",
+        "status": status,
         "service": "celery_beat",
         "schedule_seconds": int(cycle),
         "last_run_timestamp": last_run_ts,
@@ -727,7 +737,7 @@ def _check_body(request):
     return list(raw_seats), action, None, None
 
 
-
+# verified
 def _create_txn(request):
     """Handle POST request to create hold, pay hold, or run full one-shot saga."""
     seat_ids, action, pay_tid, invalid = _check_body(request)
