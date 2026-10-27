@@ -348,14 +348,20 @@ ALLOWED_RETRY_STATUSES = (
 @api_view(["POST"])
 def retry_compensation(request, transaction_id):
     """Staff-only endpoint to re-trigger failed compensation for stuck transactions."""
-    is_authenticated, user_id, is_staff = _get_caller(request)
-    if not is_authenticated:
-        return Response({"error": "Authentication required"}, status=401)
-    if not is_staff:
+
+    set_correlation_id(str(transaction_id))
+    
+    staff_key = request.headers.get("X-Staff-Key")
+    if not staff_key:
         return Response(
-            {"error": "You do not have permission to retry compensation for this transaction."},
-            status=403,
+            {"error": "Authentication required: X-Staff-Key header missing.", "code": "STAFF_KEY_REQUIRED"},
+            status=401,
         )
+    if not _verify_staff_key(staff_key):
+        raise AuthenticationFailed({
+            "error": "Invalid staff key provided",
+            "code": "INVALID_STAFF_KEY"
+        })
 
     txn = Transaction.objects.filter(transaction_id=transaction_id).first()
     if not txn:
@@ -441,7 +447,7 @@ def retry_compensation(request, transaction_id):
 
     return Response(response_data, status=outcome["status_code"])
 
-
+# verified
 @api_view(["POST"])
 def trigger_recovery_sweep(request):
     """Staff endpoint to execute an immediate on-demand crash-recovery sweep."""
