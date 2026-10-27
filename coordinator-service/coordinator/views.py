@@ -1126,7 +1126,7 @@ def _create_txn(request):
             )
         except Exception:
             logger.exception("Failed to dispatch Saga task")
-            transitioned = _set_status_with_event(
+            _set_status_with_event(
                 tx_id,
                 to_status=Transaction.Status.TIMEOUT,
                 expected_status=Transaction.Status.STARTED,
@@ -1134,8 +1134,7 @@ def _create_txn(request):
                 http_status_code=None,
                 http_payload={"error": "Celery dispatch failed; marked TIMEOUT"},
             )
-            if transitioned:
-                _release_inventory(tx_id, reason="celery dispatch failed")
+
             return Response(
                 {
                     "transaction_id": str(tx_id),
