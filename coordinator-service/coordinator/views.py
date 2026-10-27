@@ -942,17 +942,23 @@ def _create_txn(request):
                 held_until_dt = timezone.make_aware(held_until_dt)
 
             if not hasattr(held_until_dt, "tzinfo") or held_until_dt < timezone.now():
-                try:
-                    _set_status_with_event(
-                        txn.transaction_id,
-                        Transaction.Status.TIMEOUT,
-                        expected_status=Transaction.Status.HOLDING,
-                        actor=SagaEvent.ACTOR_REQUEST,
-                        http_status_code=409,
-                        http_payload={"error": "Seat hold expired before payment attempt"},
+                transitioned = _set_status_with_event(
+                    txn.transaction_id,
+                    Transaction.Status.TIMEOUT,
+                    expected_status=Transaction.Status.HOLDING,
+                    actor=SagaEvent.ACTOR_REQUEST,
+                    http_status_code=409,
+                    http_payload={"error": "Seat hold expired before payment attempt"},
+                )
+                if not transitioned:
+                    return Response(
+                        {
+                            "error": "Transaction is already being processed or is not in an eligible state.",
+                            "code": "CONCURRENT_PAYMENT_IN_PROGRESS",
+                            "transaction_id": str(txn.transaction_id),
+                        },
+                        status=409,
                     )
-                except Exception as exc:
-                    logger.warning("Failed to record TIMEOUT for expired hold %s: %s", txn.transaction_id, exc)
                 expired_tid = txn.transaction_id
             else:
                 tx_id = txn.transaction_id
