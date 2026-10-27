@@ -1835,17 +1835,17 @@ def _finish_payment(transaction_id, payment_data, payment_status_code=200, seat_
             })
             return Response(data)
 
-        # Transport failure after retries: leave in PAYMENT_PROCESSING for recovery sweep
-        if confirm_resp is None:
+        # Transport failure or gateway errors after retries: leave in PAYMENT_PROCESSING for recovery sweep
+        if confirm_resp is None or confirm_resp.status_code in (502, 503, 504):
             logger.warning(
-                "Inventory confirm timed out twice for tx %s; leaving in PAYMENT_PROCESSING for sweep retry.",
+                "Inventory confirm timed out or returned gateway error twice for tx %s; leaving in PAYMENT_PROCESSING for sweep retry.",
                 transaction_id,
             )
             return Response(
                 {
                     "transaction_id": str(transaction_id),
                     "status": Transaction.Status.PAYMENT_PROCESSING,
-                    "error": "Inventory confirm timed out; will be retried by recovery sweep.",
+                    "error": "Inventory confirm timed out or returned gateway error; will be retried by recovery sweep.",
                     "needs_recovery": True,
                 },
                 status=503,
