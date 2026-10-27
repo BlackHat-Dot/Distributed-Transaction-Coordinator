@@ -934,13 +934,6 @@ def _create_txn(request):
                     status=409,
                 )
 
-            req_seats = request.data.get("seat_ids")
-            if req_seats is not None and sorted(req_seats) != sorted(txn.seat_ids or []):
-                return Response(
-                    {"error": "seat_ids do not match this transaction's held seats.", "code": "SEAT_MISMATCH"},
-                    status=400,
-                )
-
             holding_event = (
                 SagaEvent.objects.filter(
                     transaction=txn,
