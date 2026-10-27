@@ -1768,7 +1768,7 @@ def _confirm(transaction_id, seat_ids=None, correlation_id=None, **kwargs):
     except RequestException as exc:
         return None, exc
 
-
+# verified
 def _finish_payment(transaction_id, payment_data, payment_status_code=200, seat_ids=None):
     """Finalize transaction following payment response (confirm inventory or rollback)."""
     if payment_status_code == 409:
@@ -1871,12 +1871,21 @@ def _finish_payment(transaction_id, payment_data, payment_status_code=200, seat_
     )
 
 
-def _compensate(transaction_id, payment_data, payment_status_code=None,):
+# verified
+def _compensate(
+    transaction_id,
+    payment_data,
+    payment_status_code=None,
+    correlation_id=None,
+    seat_ids=None,
+    **kwargs,
+):
     """Compensate failed transaction (void/refund payment and release reserved seats)."""
-    cid = _corr_id(transaction_id)
+    cid = correlation_id or _corr_id(transaction_id)
     headers = {
         "X-Correlation-ID": cid,
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+        "X-Idempotency-Key": str(transaction_id),
     }
 
     claimed = _set_status_with_event(
@@ -1982,6 +1991,11 @@ def _compensate(transaction_id, payment_data, payment_status_code=None,):
             refund_status_code = refund_response.status_code
             refund_ok = (refund_status_code == 200)
             refund_data = _parse_json_response(refund_response)
+            if not refund_ok and isinstance(refund_data, dict):
+                msg = str(refund_data.get("message", "")).lower() + " " + str(refund_data.get("error", "")).lower()
+                code = str(refund_data.get("code", "")).upper()
+                if "already refunded" in msg or code in ("ALREADY_REFUNDED", "NOT_FOUND"):
+                    refund_ok = True
         except RequestException as exc:
             refund_transport_error = exc
 
@@ -2021,13 +2035,17 @@ def _compensate(transaction_id, payment_data, payment_status_code=None,):
         return Response(data, status=200)
 
     # Partial or complete failure during compensation
+    err_payload = refund_data if not refund_ok else release_data
+    if not err_payload and (refund_transport_error or release_transport_error):
+        err_payload = {"error": str(refund_transport_error or release_transport_error)}
+
     transitioned = _set_status_with_event(
         transaction_id,
         Transaction.Status.COMPENSATION_FAILED,
         expected_status=Transaction.Status.COMPENSATING,
         actor=SagaEvent.ACTOR_REQUEST,
         http_status_code=refund_status_code if not refund_ok else release_status_code,
-        http_payload=refund_data if not refund_ok else release_data,
+        http_payload=err_payload,
     )
     _clear_checkout_presence(transaction_id)
     if not transitioned:
