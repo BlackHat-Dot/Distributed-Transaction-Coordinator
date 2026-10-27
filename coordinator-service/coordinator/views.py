@@ -1535,6 +1535,7 @@ def _reserve(transaction_id, seat_ids, user_id=None, user_email=None):
         return None, Response({"transaction_id": str(transaction_id), "status": status}, status=504)
 
 
+# verified
 def _get_coordinator_redis_client():
     """Return a Redis client instance from Celery task configuration."""
     try:
@@ -1544,8 +1545,11 @@ def _get_coordinator_redis_client():
         return None
 
 
+# verified
 def _set_checkout_presence(transaction_id):
     """Set Redis checkout presence key with TTL to protect seat holds during payment."""
+    if not transaction_id:
+        return
     try:
         client = _get_coordinator_redis_client()
         if client:
@@ -1555,8 +1559,11 @@ def _set_checkout_presence(transaction_id):
         logger.warning("Failed to set checkout presence key for tx %s: %s", transaction_id, exc)
 
 
+# verified
 def _clear_checkout_presence(transaction_id):
     """Clear Redis checkout presence key once transaction reaches terminal state."""
+    if not transaction_id:
+        return
     try:
         client = _get_coordinator_redis_client()
         if client:
