@@ -1,3 +1,5 @@
+# verified
+
 import jwt
 import hashlib
 import hmac
