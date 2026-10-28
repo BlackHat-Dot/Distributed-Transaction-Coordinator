@@ -5,6 +5,7 @@ from datetime import timezone as dt_timezone, timedelta
 from decimal import Decimal
 from django.conf import settings
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 import qrcode
 from PIL import Image
 from reportlab.lib.pagesizes import A5
@@ -19,6 +20,10 @@ from coordinator.models import Transaction, Ticket
 
 
 def get_public_base_url() -> str:
+    """
+    Resolves the base URL for public QR verification links.
+    In production (DEBUG=False, IS_TESTING=False), requires explicit PUBLIC_BASE_URL.
+    """
     url = getattr(settings, "PUBLIC_BASE_URL", None) or os.getenv("PUBLIC_BASE_URL", "")
     if not url:
         if getattr(settings, "DEBUG", False) or getattr(settings, "IS_TESTING", False):
@@ -29,8 +34,7 @@ def get_public_base_url() -> str:
                 "CRITICAL CONFIGURATION ERROR: PUBLIC_BASE_URL environment variable must be set in production when DEBUG=False! "
                 "It must be configured with a public URL reachable from client devices (e.g. mobile phones for QR scanning)."
             )
-    return url.rstrip("/")
-
+    return str(url).strip().rstrip("/")
 
 
 def generate_qr_code_image(ticket_code: str) -> Image.Image:
@@ -39,7 +43,8 @@ def generate_qr_code_image(ticket_code: str) -> Image.Image:
     Uses Error Correction Level M, box size >= 6, and quiet zone border >= 4.
     """
     base_url = get_public_base_url()
-    verify_url = f"{base_url}/verify/{ticket_code}/"
+    safe_code = str(ticket_code or "").strip()
+    verify_url = f"{base_url}/verify/{safe_code}/"
 
     qr = qrcode.QRCode(
         version=None,
@@ -59,23 +64,26 @@ def generate_qr_code_base64(ticket_code: str) -> str:
     """
     img = generate_qr_code_image(ticket_code)
 
-    # creates an in-memory binary buffer (a virtual file stored entirely in RAM)
     buf = io.BytesIO()
-
-    # buff now holds the exact same byte sequence that a .png file would have on disk.
     img.save(buf, format="PNG")
-
-    # buf.getvalue() -> Retrives the raw PNG binary from RAM
-    # base64.b64encode(...) -> Converts those raw binary bytes into ASCII characters (A-Z, a-z, 0-9, +, -); JSON APIs cannot transport raw binary data, still bytes
-    # .decode("utf-8") -> Converts bytes object into a standard python text string (str).
     b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
     return f"data:image/png;base64,{b64}"
 
 
 def format_kolkata_time(dt) -> str:
+    """
+    Formats a datetime (or ISO string) into Asia/Kolkata timezone representation.
+    Safely handles string timestamps, naive datetimes, and None.
+    """
     if not dt:
         return "Date & Time TBA"
     try:
+        if isinstance(dt, str):
+            parsed = parse_datetime(dt)
+            if parsed is not None:
+                dt = parsed
+            else:
+                return str(dt)
         kolkata_tz = zoneinfo.ZoneInfo("Asia/Kolkata")
         if timezone.is_aware(dt):
             local_dt = dt.astimezone(kolkata_tz)
@@ -83,7 +91,9 @@ def format_kolkata_time(dt) -> str:
             local_dt = dt.replace(tzinfo=kolkata_tz)
         return local_dt.strftime("%d %b %Y, %I:%M %p IST")
     except Exception:
-        return dt.strftime("%d %b %Y, %H:%M UTC")
+        if hasattr(dt, "strftime"):
+            return dt.strftime("%d %b %Y, %H:%M UTC")
+        return str(dt)
 
 
 def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> bytes:
@@ -91,10 +101,16 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
     Generates a clean, professional portrait A5 PDF with one page per seat ticket.
     Pure Python via ReportLab and QRCode.
     """
+    if not tickets:
+        raise ValueError("Cannot generate tickets PDF: tickets list is empty.")
+
     buf = io.BytesIO()
     # A5: 419.5 x 595.2 points
     c = canvas.Canvas(buf, pagesize=A5)
     page_w, page_h = A5
+
+    tid = getattr(transaction, "transaction_id", "UNKNOWN")
+    short_ref = str(tid)[:8].upper()
 
     for ticket in tickets:
         # Header banner
@@ -111,14 +127,14 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
 
         c.setFillColor(colors.HexColor("#94a3b8"))
         c.setFont("Helvetica", 9)
-        short_ref = str(transaction.transaction_id)[:8].upper()
         c.drawRightString(page_w - 25, page_h - 48, f"REF: #{short_ref}")
 
         # Event Title: wrap across multiple lines without truncating
-        title_lines = textwrap.wrap(ticket.event_name or "", width=36)
+        raw_event_name = getattr(ticket, "event_name", None) or ""
+        title_lines = textwrap.wrap(raw_event_name, width=36)
         if not title_lines:
-            title_lines = [ticket.event_name or ""]
-        font_size = 14 if len(title_lines) > 2 else 15
+            title_lines = [raw_event_name]
+        font_size = 12 if len(title_lines) > 3 else (14 if len(title_lines) > 2 else 15)
         line_height = font_size + 3
         c.setFillColor(colors.HexColor("#0f172a"))
         c.setFont("Helvetica-Bold", font_size)
@@ -131,12 +147,13 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         # Venue
         c.setFillColor(colors.HexColor("#475569"))
         c.setFont("Helvetica", 10.5)
-        venue_text = f"Venue: {ticket.venue}" if ticket.venue else "Venue: Main Arena"
-        c.drawString(25, cur_y - 2, venue_text[:60])
+        venue_name = getattr(ticket, "venue", "") or "Main Arena"
+        venue_text = f"Venue: {venue_name}"
+        c.drawString(25, cur_y - 2, venue_text[:65])
         cur_y -= 18
 
         # Date & Time in Asia/Kolkata
-        time_text = f"Date & Time: {format_kolkata_time(ticket.starts_at)}"
+        time_text = f"Date & Time: {format_kolkata_time(getattr(ticket, 'starts_at', None))}"
         c.drawString(25, cur_y - 2, time_text)
         cur_y -= 20
 
@@ -155,19 +172,36 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         c.drawString(220, box_top - 18, "PRICE / ADMISSION")
 
         c.setFillColor(colors.HexColor("#0f172a"))
-        c.setFont("Helvetica-Bold", 18)
-        c.drawString(40, box_top - 44, str(ticket.seat_label))
+        seat_text = str(getattr(ticket, "seat_label", "") or "")
+        seat_font_size = 18
+        if len(seat_text) > 16:
+            seat_font_size = 11
+        elif len(seat_text) > 12:
+            seat_font_size = 13
+        elif len(seat_text) > 8:
+            seat_font_size = 15
+        c.setFont("Helvetica-Bold", seat_font_size)
+        c.drawString(40, box_top - 44, seat_text[:28])
 
         c.setFont("Helvetica-Bold", 16)
-        amount_val = ticket.amount if ticket.amount else Decimal("0.00")
+        raw_amount = getattr(ticket, "amount", None)
+        amount_val = raw_amount if raw_amount is not None else Decimal("0.00")
+        try:
+            amount_val = Decimal(str(amount_val))
+        except Exception:
+            amount_val = Decimal("0.00")
         c.drawString(220, box_top - 44, f"${amount_val:.2f}")
 
         # Attendee & Order details
         c.setFillColor(colors.HexColor("#334155"))
         c.setFont("Helvetica", 8.5)
-        holder_email = transaction.user_email or "Ticket Holder"
-        c.drawString(25, box_bottom - 16, f"Holder: {holder_email}")
-        c.drawRightString(page_w - 25, box_bottom - 16, f"Ticket Code: {ticket.ticket_code[:16]}")
+        holder_email = getattr(transaction, "user_email", "") or "Ticket Holder"
+        holder_display = holder_email if len(holder_email) <= 40 else holder_email[:37] + "..."
+        c.drawString(25, box_bottom - 16, f"Holder: {holder_display}")
+
+        ticket_code = str(getattr(ticket, "ticket_code", "") or "")
+        code_display = ticket_code[:16] if ticket_code else "N/A"
+        c.drawRightString(page_w - 25, box_bottom - 16, f"Ticket Code: {code_display}")
 
         # Divider line
         c.setStrokeColor(colors.HexColor("#e2e8f0"))
@@ -178,13 +212,15 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         c.setDash()  # reset dash
 
         # QR Code Section
-        qr_img = generate_qr_code_image(ticket.ticket_code)
+        qr_img = generate_qr_code_image(ticket_code)
         qr_io = io.BytesIO()
         qr_img.save(qr_io, format="PNG")
         qr_io.seek(0)
         qr_reader = ImageReader(qr_io)
 
         qr_size = 165
+        if (divider_y - qr_size - 12) < 55:
+            qr_size = max(130, int(divider_y - 70))
         qr_x = (page_w - qr_size) / 2
         qr_y = divider_y - qr_size - 12
         c.drawImage(qr_reader, qr_x, qr_y, width=qr_size, height=qr_size)
@@ -213,7 +249,6 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
 
         c.showPage()
 
-
     c.save()
     return buf.getvalue()
 
@@ -229,31 +264,41 @@ def generate_tickets_ics(transaction: Transaction, tickets: list[Ticket]) -> byt
     cal.add("method", "PUBLISH")
 
     first_ticket = tickets[0] if tickets else None
-    event_name = first_ticket.event_name if first_ticket else ""
-    venue = first_ticket.venue if first_ticket else ""
-    starts_at = first_ticket.starts_at if first_ticket else None
+    event_name = getattr(first_ticket, "event_name", "") if first_ticket else ""
+    venue = getattr(first_ticket, "venue", "") if first_ticket else ""
+    starts_at = getattr(first_ticket, "starts_at", None) if first_ticket else None
 
     if starts_at:
-        dtstart_utc = starts_at.astimezone(dt_timezone.utc)
+        if isinstance(starts_at, str):
+            parsed = parse_datetime(starts_at)
+            starts_at = parsed or starts_at
+        if hasattr(starts_at, "tzinfo"):
+            if timezone.is_naive(starts_at):
+                starts_at = timezone.make_aware(starts_at, timezone.get_current_timezone())
+            dtstart_utc = starts_at.astimezone(dt_timezone.utc)
+        else:
+            dtstart_utc = timezone.now().astimezone(dt_timezone.utc)
     else:
         dtstart_utc = timezone.now().astimezone(dt_timezone.utc)
 
     dtend_utc = dtstart_utc + timedelta(hours=3)
 
-    seat_labels = ", ".join(t.seat_label for t in tickets)
-    short_ref = str(transaction.transaction_id)[:8].upper()
+    seat_labels = ", ".join(t.seat_label for t in tickets) if tickets else "General"
+    tid = getattr(transaction, "transaction_id", "UNKNOWN")
+    short_ref = str(tid)[:8].upper()
+    user_email = getattr(transaction, "user_email", "") or "Customer"
 
     event = icalendar.Event()
-    event.add("summary", event_name)
-    event.add("location", venue)
+    event.add("summary", event_name or "Event Ticket")
+    event.add("location", venue or "Venue TBA")
     event.add(
         "description",
-        f"DTC Ticket Booking Confirmation.\nSeats: {seat_labels}\nReference: #{short_ref}\nEmail: {transaction.user_email}"
+        f"DTC Ticket Booking Confirmation.\nSeats: {seat_labels}\nReference: #{short_ref}\nEmail: {user_email}"
     )
     event.add("dtstart", dtstart_utc)
     event.add("dtend", dtend_utc)
     event.add("dtstamp", timezone.now().astimezone(dt_timezone.utc))
-    event.add("uid", f"dtc-txn-{transaction.transaction_id}@dtc.internal")
+    event.add("uid", f"dtc-txn-{tid}@dtc.internal")
     event.add("status", "CONFIRMED")
 
     cal.add_component(event)

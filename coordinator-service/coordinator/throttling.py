@@ -1,3 +1,5 @@
+# verified
+
 import math
 
 from rest_framework.exceptions import NotAuthenticated, PermissionDenied, Throttled
