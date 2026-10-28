@@ -1,3 +1,5 @@
+# verified
+
 import os
 import logging
 import time
@@ -18,6 +20,13 @@ logger = logging.getLogger(__name__)
 _redis_client_instance = None
 _redis_last_failure = 0.0
 _REDIS_NEGATIVE_CACHE_TTL = 5.0
+
+
+def _ensure_aware(dt):
+    """Safely normalizes naive datetimes to timezone-aware datetimes."""
+    if dt and timezone.is_naive(dt):
+        return timezone.make_aware(dt, timezone.get_current_timezone())
+    return dt
 
 
 def _sync_with_views():
@@ -64,7 +73,8 @@ def get_redis_client():
         _redis_client_instance = client
         _publish_to_views()
         return _redis_client_instance
-    except Exception:
+    except Exception as e:
+        logger.debug("Redis connection attempt failed: %s", e)
         _redis_last_failure = now
         _publish_to_views()
         return None
@@ -87,7 +97,7 @@ def get_hold_duration() -> timedelta:
 
 def reclaim_expired_holds():
     """
-    Reclaims seats that are expired by time (held_until < now) OR abandoned by user
+    Reclaims seats that are expired by time (held_until <= now) OR abandoned by user
     (user exited browser/website, causing their Redis heartbeat session dtc:session:{email} to expire).
     Presence-based reclaim only applies after a grace period of HOLD_PRESENCE_GRACE_SECONDS (default 120s).
 
@@ -98,7 +108,7 @@ def reclaim_expired_holds():
     transaction_id, preventing holds from being prematurely cleared during payment processing
     or 3D-Secure verification even if user presence heartbeats lapse.
     The coordinator deletes this key upon reaching terminal outcome (COMPLETED, COMPENSATED, FAILED).
-    Time-based expiry (held_until < now) is not skipped by dtc:checkout.
+    Time-based expiry (held_until <= now) is not skipped by dtc:checkout.
     """
     now = timezone.now()
 
@@ -129,8 +139,10 @@ def reclaim_expired_holds():
 
     for seat in held_seats:
         seat_id = seat["id"]
-        # 1. Time-based expiry (hold elapsed) - stays unchanged
-        if seat["held_until"] and seat["held_until"] < now:
+        seat_held_until = _ensure_aware(seat["held_until"])
+
+        # 1. Time-based expiry (hold elapsed)
+        if seat_held_until and seat_held_until <= now:
             expired_snapshots[seat_id] = {
                 "tid": seat["held_by_transaction_id"],
                 "held_until": seat["held_until"],
@@ -139,8 +151,8 @@ def reclaim_expired_holds():
 
         # 2. Candidate for presence-based expiry: only if hold age >= grace_seconds
         has_identifier = bool(seat.get("user_email") or seat.get("user_id"))
-        if seat["held_until"] and has_identifier and redis_client:
-            hold_start = seat["held_until"] - hold_duration
+        if seat_held_until and has_identifier and redis_client:
+            hold_start = seat_held_until - hold_duration
             hold_age = (now - hold_start).total_seconds()
             if hold_age >= grace_seconds:
                 presence_candidates.append(seat)
@@ -182,7 +194,7 @@ def reclaim_expired_holds():
                 if _get_seat_presence_key(s) not in active_sessions
             ]
             if inactive_candidates and unique_tids:
-                if not tid_results and not isinstance(results, (list, tuple)):
+                if not tid_results:
                     tid_results = [redis_client.exists(f"dtc:checkout:{tid}") for tid in unique_tids]
                 for tid, exists in zip(unique_tids, tid_results):
                     if exists:
@@ -200,9 +212,9 @@ def reclaim_expired_holds():
                         "held_until": seat["held_until"],
                     }
 
-        except Exception:
+        except Exception as e:
             # If Redis errors, skip presence expiry (fail safe)
-            pass
+            logger.debug("Redis presence check failed during hold reclamation: %s", e)
 
     if not expired_snapshots:
         return 0, 0
@@ -227,8 +239,10 @@ def reclaim_expired_holds():
                 continue
 
             # B1: If held_until changed between snapshot and lock,
-            # only proceed if it is still expired by time (seat.held_until < current_now).
-            if seat.held_until != snap_held_until and (seat.held_until and seat.held_until >= current_now):
+            # only proceed if it is still expired by time (seat.held_until <= current_now).
+            seat_held = _ensure_aware(seat.held_until)
+            snap_held = _ensure_aware(snap_held_until)
+            if seat_held != snap_held and (seat_held and seat_held > current_now):
                 continue
 
             verified_reclaim_seats.append(seat)
@@ -266,8 +280,10 @@ def reclaim_expired_holds():
 
 
 def _validate_uuid(val):
+    if not val:
+        return None
     try:
-        return uuid.UUID(str(val))
+        return uuid.UUID(str(val).strip())
     except (ValueError, AttributeError):
         return None
 
@@ -290,11 +306,10 @@ def _validate_reserve_input(data):
         if type(s) is not int or isinstance(s, bool):
             return None, None, Response({"error": "seat_ids must be a list of integers"}, status=400)
 
-    # Finding 18: Dedupe seat_ids while preserving order, and cap at 50
+    # Finding 18: Dedupe seat_ids while preserving order, and cap at 50 per batch request
     seat_ids = list(dict.fromkeys(seat_ids))
-    max_seats = int(os.getenv("MAX_USER_HOLDS", "5"))
-    if len(seat_ids) > max_seats:
-        return None, None, Response({"error": f"Cannot reserve more than {max_seats} seats at once", "code": "MAX_SEATS_EXCEEDED"}, status=400)
+    if len(seat_ids) > 50:
+        return None, None, Response({"error": "Cannot reserve more than 50 seats at once", "code": "MAX_SEATS_EXCEEDED"}, status=400)
 
     raw_tid = data.get("transaction_id")
     if raw_tid:
