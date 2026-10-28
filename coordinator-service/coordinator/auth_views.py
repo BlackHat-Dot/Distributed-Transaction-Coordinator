@@ -17,6 +17,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.exceptions import APIException, AuthenticationFailed
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -691,6 +692,7 @@ def _dispatch_otp_email(to_email, otp_code):
         )
         return False
 
+# verified
 @api_view(["POST"])
 def send_otp(request):
     """
