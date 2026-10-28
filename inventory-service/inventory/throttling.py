@@ -1,4 +1,7 @@
+# verified
+
 import math
+import re
 import secrets
 
 from django.conf import settings
@@ -12,7 +15,11 @@ from .auth import _get_authenticated_user_id
 def inventory_exception_handler(exc, context):
     response = exception_handler(exc, context)
     if isinstance(exc, Throttled) and response is not None:
-        wait = max(1, math.ceil(exc.wait)) if getattr(exc, "wait", None) is not None else 60
+        try:
+            wait = max(1, math.ceil(float(exc.wait))) if getattr(exc, "wait", None) is not None else 60
+        except (TypeError, ValueError, OverflowError):
+            wait = 60
+
         response.data = {
             "error": f"Something went wrong. Please wait for {wait} seconds.",
             "code": "THROTTLED",
@@ -27,26 +34,55 @@ def _is_exempt_from_throttling(request):
     Exempts internal services and staff with constant-time secret comparison against configured values.
     Never exempts based on header presence alone.
     """
-    staff_key = request.headers.get("X-Staff-Key")
-    configured_staff_key = getattr(settings, "STAFF_API_KEY", None)
-    if staff_key and configured_staff_key and secrets.compare_digest(str(staff_key), str(configured_staff_key)):
-        return True
+    if not request:
+        return False
 
-    internal_key = request.headers.get("X-Internal-Service-Key")
+    staff_key = None
+    if hasattr(request, "headers") and request.headers:
+        staff_key = request.headers.get("X-Staff-Key")
+    elif hasattr(request, "META") and request.META:
+        staff_key = request.META.get("HTTP_X_STAFF_KEY")
+
+    configured_staff_key = getattr(settings, "STAFF_API_KEY", None)
+    if staff_key and configured_staff_key and isinstance(configured_staff_key, str) and configured_staff_key.strip():
+        if secrets.compare_digest(str(staff_key).strip(), str(configured_staff_key).strip()):
+            return True
+
+    internal_key = None
+    if hasattr(request, "headers") and request.headers:
+        internal_key = request.headers.get("X-Internal-Service-Key")
+    elif hasattr(request, "META") and request.META:
+        internal_key = request.META.get("HTTP_X_INTERNAL_SERVICE_KEY")
+
     configured_internal_key = getattr(settings, "INTERNAL_SERVICE_KEY", None)
-    if internal_key and configured_internal_key and secrets.compare_digest(str(internal_key), str(configured_internal_key)):
-        return True
+    if internal_key and configured_internal_key and isinstance(configured_internal_key, str) and configured_internal_key.strip():
+        if secrets.compare_digest(str(internal_key).strip(), str(configured_internal_key).strip()):
+            return True
 
     return False
 
 
 def _get_session_id(request):
     """Extract persistent anonymous session ID from X-Session-ID header or session cookie."""
-    session_id = request.headers.get("X-Session-ID")
+    if not request:
+        return None
+
+    session_id = None
+    if hasattr(request, "headers") and request.headers:
+        session_id = request.headers.get("X-Session-ID")
+    elif hasattr(request, "META") and request.META:
+        session_id = request.META.get("HTTP_X_SESSION_ID")
+
     if session_id and isinstance(session_id, str) and session_id.strip():
-        return session_id.strip()
-    if hasattr(request, "session") and request.session.session_key:
-        return request.session.session_key
+        cleaned = re.sub(r"[^a-zA-Z0-9_:-]", "", session_id.strip())[:128]
+        if cleaned:
+            return cleaned
+
+    if hasattr(request, "session"):
+        session_key = getattr(request.session, "session_key", None)
+        if session_key and isinstance(session_key, str) and session_key.strip():
+            return session_key.strip()
+
     return None
 
 
@@ -75,11 +111,14 @@ class UserActionRateThrottle(BaseInventoryThrottle):
         uid = _get_authenticated_user_id(request)
         if not uid and hasattr(request, "data") and isinstance(request.data, dict):
             uid = request.data.get("user_id")
-        if not uid:
+
+        uid_str = str(uid).strip() if uid is not None else ""
+        if not uid_str:
             return None
+
         return self.cache_format % {
             "scope": self.scope,
-            "ident": str(uid),
+            "ident": uid_str,
         }
 
 
@@ -90,8 +129,11 @@ class AnonIpRateThrottle(BaseInventoryThrottle):
         uid = _get_authenticated_user_id(request)
         if not uid and hasattr(request, "data") and isinstance(request.data, dict):
             uid = request.data.get("user_id")
-        if uid:
+
+        uid_str = str(uid).strip() if uid is not None else ""
+        if uid_str:
             return None  # Authenticated requests are throttled per user, not IP anon limit
+
         return self.cache_format % {
             "scope": self.scope,
             "ident": self.get_ident(request),
