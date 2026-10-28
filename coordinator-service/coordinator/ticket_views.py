@@ -1,11 +1,14 @@
 import hmac
 import logging
 import os
+import re
+import uuid
 from django.conf import settings
 from django.core.cache import cache
 from django.db import transaction as db_transaction
 from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.html import escape
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -23,24 +26,38 @@ from coordinator.tickets import issue_tickets_for_transaction, TicketIssuanceErr
 logger = logging.getLogger("coordinator")
 
 
+def _to_iso(dt):
+    """Safely converts a datetime (or string) to ISO format string."""
+    if not dt:
+        return None
+    if hasattr(dt, "isoformat"):
+        return dt.isoformat()
+    return str(dt)
+
+
 def check_rate_limit(key: str, limit: int, window: int = 60) -> bool:
     """
     Returns True if request is allowed within the limit, False if rate limited.
+    Fails open gracefully on cache communication failures.
     """
     try:
         current = cache.get(key)
         if current is None:
             cache.set(key, 1, timeout=window)
             return True
-        if int(current) >= limit:
+        try:
+            count = int(current)
+        except (ValueError, TypeError):
+            count = 0
+        if count >= limit:
             return False
         try:
             cache.incr(key)
         except Exception:
-            cache.set(key, int(current) + 1, timeout=window)
+            cache.set(key, count + 1, timeout=window)
         return True
     except Exception as exc:
-        logger.warning(f"Rate limiting cache error for {key}: {exc}")
+        logger.warning("Rate limiting cache error for %s: %s", key, exc)
         return True  # Fail open on cache communication error
 
 
@@ -50,7 +67,8 @@ def authenticate_ticket_requester(request, transaction_id):
     Enforces:
     1. Rejects query param '?token=' with 401.
     2. Requires 'Authorization: Bearer <jwt>' header.
-    3. Requires transaction ownership: non-owners receive 404 (not 403).
+    3. Validates transaction_id format (UUID).
+    4. Requires transaction ownership: non-owners receive 404 (not 403).
     Returns (txn, None) on success or (None, Response) on error.
     """
     # 1. Prohibit ?token= query parameter
@@ -78,19 +96,31 @@ def authenticate_ticket_requester(request, transaction_id):
 
     requester_user_id = str(payload.get("user_id"))
 
-    # 3. Ownership check: Return 404 for non-existent OR non-owner transaction
-    txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+    # 3. Validate UUID syntax to prevent 500 error from Postgres query
+    try:
+        tid = uuid.UUID(str(transaction_id))
+    except (ValueError, TypeError, AttributeError):
+        return None, Response(
+            {"error": "Transaction not found.", "code": "NOT_FOUND"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # 4. Ownership check: Return 404 for non-existent OR non-owner transaction
+    txn = Transaction.objects.filter(transaction_id=tid).first()
     if not txn:
         return None, Response(
             {"error": "Transaction not found.", "code": "NOT_FOUND"},
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    if str(txn.user_id) != requester_user_id:
+    if not txn.user_id or str(txn.user_id) != requester_user_id:
         return None, Response(
             {"error": "Transaction not found.", "code": "NOT_FOUND"},
             status=status.HTTP_404_NOT_FOUND,
         )
+
+    from coordinator.middleware import set_correlation_id
+    set_correlation_id(str(txn.transaction_id))
 
     return txn, None
 
@@ -114,7 +144,7 @@ def get_transaction_tickets(request, transaction_id):
     event_data = {
         "name": first_ticket.event_name if first_ticket else "",
         "venue": first_ticket.venue if first_ticket else "",
-        "starts_at": first_ticket.starts_at.isoformat() if first_ticket and first_ticket.starts_at else None,
+        "starts_at": _to_iso(first_ticket.starts_at) if first_ticket else None,
         "starts_at_formatted": format_kolkata_time(first_ticket.starts_at) if first_ticket else "TBA",
     }
 
@@ -124,8 +154,8 @@ def get_transaction_tickets(request, transaction_id):
             "seat_id": t.seat_id,
             "seat_label": t.seat_label,
             "amount": str(t.amount),
-            "issued_at": t.issued_at.isoformat() if t.issued_at else None,
-            "used_at": t.used_at.isoformat() if t.used_at else None,
+            "issued_at": _to_iso(t.issued_at),
+            "used_at": _to_iso(t.used_at),
             "is_used": t.used_at is not None,
             "qr_code_base64": generate_qr_code_base64(t.ticket_code),
         }
@@ -138,32 +168,6 @@ def get_transaction_tickets(request, transaction_id):
         "event": event_data,
         "tickets": tickets_data,
     }, status=status.HTTP_200_OK)
-
-    """ 
-    Example response:
-    {
-    "transaction_id": "ebee455a-a536-4933-b5d3-0796f0f241c5",
-    "status": "COMPLETED",
-    "event": {
-        "name": "World Premiere Concert",
-        "venue": "Grand Hall",
-        "starts_at": "2026-09-08T09:30:22.559922+00:00",
-        "starts_at_formatted": "08 Sep 2026, 03:00 PM IST"
-    },
-    "tickets": [
-        {
-            "ticket_code": "Z86pSaVPHGTN-wI0Tzghtw",
-            "seat_id": 43,
-            "seat_label": "B3",
-            "amount": "500.00",
-            "issued_at": "2026-10-20T13:30:57.400541+00:00",
-            "used_at": null,
-            "is_used": false,
-            "qr_code_base64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...."
-        }
-    ]
-}
-    """
 
 
 @api_view(["GET"])
@@ -181,21 +185,19 @@ def get_ticket_pdf(request, transaction_id):
     except TicketIssuanceError as exc:
         return Response({"error": exc.detail, "code": "CONFLICT"}, status=exc.status_code)
 
-    # A raw bytes object containing the binary PDF stream.
     pdf_bytes = generate_tickets_pdf(txn, tickets)
 
-    # For group bookings (>3 seats), use total count to avoid filename bloat and misleading partial seat listings.
+    # For group bookings (>3 seats), use total count to avoid filename bloat
     if len(tickets) > 3:
         seat_slug = f"{len(tickets)}seats"
     else:
-        seat_slug = "-".join(str(t.seat_label).replace(" ", "") for t in tickets)
+        raw_slug = "-".join(str(t.seat_label).replace(" ", "") for t in tickets)
+        seat_slug = re.sub(r"[^a-zA-Z0-9_-]", "", raw_slug) or "seats"
+
     short_ref = str(txn.transaction_id)[:8]
     filename = f"DTC-{seat_slug}-{short_ref}.pdf"
 
-    # Constructs a Django HttpResponse carrying the binary PDF bytes in its body.
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
-
-    # sets the download behaviour
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
 
@@ -239,9 +241,10 @@ def public_verify_ticket(request, ticket_code):
 
     ticket = Ticket.objects.select_related("transaction").filter(ticket_code=ticket_code).first()
     accept_header = request.headers.get("Accept", "")
+    wants_json = "application/json" in accept_header or request.query_params.get("format") == "json"
 
     if not ticket:
-        if "application/json" in accept_header:
+        if wants_json:
             return Response({"status": "INVALID", "message": "Ticket not found."}, status=status.HTTP_404_NOT_FOUND)
         
         html = """<!doctype html>
@@ -269,7 +272,7 @@ def public_verify_ticket(request, ticket_code):
         return HttpResponse(html, status=404, content_type="text/html; charset=utf-8")
 
     if ticket.transaction.status != Transaction.Status.COMPLETED:
-        if "application/json" in accept_header:
+        if wants_json:
             return Response({"status": "REVOKED", "message": "This ticket has been revoked or cancelled."}, status=status.HTTP_200_OK)
 
         html = """<!doctype html>
@@ -301,21 +304,27 @@ def public_verify_ticket(request, ticket_code):
     badge_bg = "#f59e0b" if is_used else "#10b981"
     formatted_time = format_kolkata_time(ticket.starts_at)
 
-    if "application/json" in accept_header:
+    if wants_json:
         return Response({
             "status": status_label,
             "event_name": ticket.event_name,
             "venue": ticket.venue,
-            "starts_at": ticket.starts_at.isoformat() if ticket.starts_at else None,
+            "starts_at": _to_iso(ticket.starts_at),
             "seat_label": ticket.seat_label,
-            "used_at": ticket.used_at.isoformat() if ticket.used_at else None,
+            "used_at": _to_iso(ticket.used_at),
         }, status=status.HTTP_200_OK)
+
+    escaped_event = escape(ticket.event_name or "")
+    escaped_venue = escape(ticket.venue or "TBA")
+    escaped_seat = escape(ticket.seat_label or "")
+    escaped_status = escape(status_label)
+    escaped_time = escape(formatted_time)
 
     html = f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Ticket Verification: {status_label}</title>
+  <title>Ticket Verification: {escaped_status}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body {{ font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }}
@@ -330,23 +339,23 @@ def public_verify_ticket(request, ticket_code):
 </head>
 <body>
   <div class="card">
-    <div class="badge">{status_label}</div>
-    <h1>{status_label}</h1>
+    <div class="badge">{escaped_status}</div>
+    <h1>{escaped_status}</h1>
     <div class="info-row">
       <div class="info-label">Event</div>
-      <div class="info-val">{ticket.event_name}</div>
+      <div class="info-val">{escaped_event}</div>
     </div>
     <div class="info-row">
       <div class="info-label">Venue</div>
-      <div class="info-val">{ticket.venue or "TBA"}</div>
+      <div class="info-val">{escaped_venue}</div>
     </div>
     <div class="info-row">
       <div class="info-label">Date & Time</div>
-      <div class="info-val">{formatted_time}</div>
+      <div class="info-val">{escaped_time}</div>
     </div>
     <div class="info-row">
       <div class="info-label">Seat</div>
-      <div class="info-val">{ticket.seat_label}</div>
+      <div class="info-val">{escaped_seat}</div>
     </div>
     <div class="footer">Scan verified by DTC Gate Check-In</div>
   </div>
@@ -371,6 +380,11 @@ def gate_redeem_ticket(request):
     if not check_rate_limit(rate_key, limit=gate_limit, window=60):
         return Response({"error": "Rate limit exceeded on gate redemption.", "code": "RATE_LIMITED"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
+    if not isinstance(request.data, dict):
+        return Response(
+            {"error": "Invalid request payload, expected JSON object.", "code": "INVALID_PAYLOAD"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     # Verify GATE_API_KEY (supports X-Staff-Key, X-Gate-Api-Key, gate_key in body, or Bearer auth)
     expected_key = getattr(settings, "GATE_API_KEY", os.getenv("GATE_API_KEY", "gate-secret-key-change-in-production"))
@@ -395,7 +409,8 @@ def gate_redeem_ticket(request):
             "message": "Gate API key verified successfully.",
         }, status=status.HTTP_200_OK)
 
-    ticket_code = request.data.get("ticket_code")
+    raw_ticket_code = request.data.get("ticket_code")
+    ticket_code = str(raw_ticket_code or "").strip()
     if not ticket_code:
         return Response({"error": "ticket_code is required.", "code": "BAD_REQUEST"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -414,14 +429,14 @@ def gate_redeem_ticket(request):
             return Response({
                 "error": "Ticket has already been used.",
                 "code": "ALREADY_USED",
-                "used_at": ticket.used_at.isoformat(),
+                "used_at": _to_iso(ticket.used_at),
                 "used_by": ticket.used_by,
                 "seat_label": ticket.seat_label,
                 "event_name": ticket.event_name,
             }, status=status.HTTP_409_CONFLICT)
 
         ticket.used_at = timezone.now()
-        ticket.used_by = "gate_staff"
+        ticket.used_by = str(request.data.get("operator") or request.data.get("device_id") or "gate_staff").strip()[:64]
         ticket.save(update_fields=["used_at", "used_by"])
 
         return Response({
@@ -430,7 +445,7 @@ def gate_redeem_ticket(request):
             "ticket_code": ticket.ticket_code,
             "seat_label": ticket.seat_label,
             "event_name": ticket.event_name,
-            "used_at": ticket.used_at.isoformat(),
+            "used_at": _to_iso(ticket.used_at),
         }, status=status.HTTP_200_OK)
 
 
@@ -463,7 +478,7 @@ def send_ticket_email(request, transaction_id):
     try:
         send_ticket_email_task.delay(str(txn.transaction_id))
     except Exception as exc:
-        logger.warning(f"Celery dispatch failed, running inline or logging: {exc}")
+        logger.warning("Celery dispatch failed, running inline or logging: %s", exc)
         # In testing or when Celery isn't running daemon:
         try:
             send_ticket_email_task(str(txn.transaction_id))
@@ -475,5 +490,3 @@ def send_ticket_email(request, transaction_id):
         "message": f"Ticket email has been queued for dispatch to {txn.user_email}.",
         "recipient": txn.user_email,
     }, status=status.HTTP_200_OK)
-
-
