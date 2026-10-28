@@ -1,4 +1,6 @@
 import logging
+import os
+import time
 import uuid
 import redis
 from celery import shared_task
@@ -10,7 +12,7 @@ logger = logging.getLogger(__name__)
 LOCK_KEY = "locks:recovery_stuck_transactions"
 LOCK_TIMEOUT = 7200
 
-# lua script
+# Lua script for atomic compare-and-delete lock release (Redlock standard)
 RELEASE_LOCK_SCRIPT = """
 if redis.call("get", KEYS[1]) == ARGV[1] then
     return redis.call("del", KEYS[1])
@@ -21,8 +23,10 @@ end
 
 
 def get_redis_client():
+    """Return a Redis client instance configured from Django Celery settings."""
     broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
-    timeout = getattr(settings, "REDIS_SOCKET_TIMEOUT", 1.0)
+    testing_mode = bool(getattr(settings, "IS_TESTING", False))
+    timeout = getattr(settings, "REDIS_SOCKET_TIMEOUT", 0.05 if testing_mode else 1.0)
     return redis.Redis.from_url(
         broker_url,
         socket_connect_timeout=timeout,
@@ -47,13 +51,23 @@ def _mask_email(email):
 
 @shared_task(name="coordinator.tasks.recover_stuck_transactions")
 def recover_stuck_transactions():
+    """
+    Periodic Celery Beat task: Acquires a distributed Redis mutex lock and triggers
+    the recovery_stuck_transactions management command to sweep and heal stuck sagas.
+    """
     from coordinator.middleware import set_correlation_id
     set_correlation_id("bgworker")
 
     client = get_redis_client()
     lock_token = str(uuid.uuid4())
 
-    acquired = client.set(LOCK_KEY, lock_token, nx=True, ex=LOCK_TIMEOUT)
+    acquired = False
+    try:
+        acquired = client.set(LOCK_KEY, lock_token, nx=True, ex=LOCK_TIMEOUT)
+    except Exception as exc:
+        logger.warning("Could not acquire recovery lock due to Redis connection error: %s", exc)
+        return "skipped"
+
     if not acquired:
         logger.info(
             "Skipping recovery_stuck_transactions: previous run is still in progress "
@@ -66,7 +80,6 @@ def recover_stuck_transactions():
     try:
         call_command("recovery_stuck_transactions")
         try:
-            import time
             client.set("dtc:recovery:last_run_timestamp", str(time.time()))
         except Exception:
             pass
@@ -81,36 +94,56 @@ def recover_stuck_transactions():
 
 @shared_task(name="coordinator.tasks.execute_saga_task")
 def execute_saga_task(transaction_id, seat_ids=None, amount=500, user_id=None, user_email=None, skip_reserve=False, **kwargs):
+    """
+    Asynchronous Celery worker task that executes the booking saga state machine.
+    """
     from coordinator.views import _run_saga
     from coordinator.middleware import set_correlation_id
 
-    set_correlation_id(str(transaction_id))
-    logger.info("Executing async saga task for transaction_id=%s [user_id=%s, email=%s, skip_reserve=%s]", transaction_id, user_id, _mask_email(user_email), skip_reserve)
+    cid = kwargs.get("correlation_id") or str(transaction_id)
+    set_correlation_id(str(cid))
+    logger.info(
+        "Executing async saga task for transaction_id=%s [user_id=%s, email=%s, skip_reserve=%s]",
+        transaction_id,
+        user_id,
+        _mask_email(user_email),
+        skip_reserve,
+    )
 
     try:
         parsed_tid = uuid.UUID(str(transaction_id))
-    except ValueError:
+    except (ValueError, TypeError, AttributeError):
         logger.error("Invalid transaction_id UUID passed to execute_saga_task: %s", transaction_id)
         return "invalid_uuid"
+
+    actor = kwargs.pop("actor", "request")
 
     response = _run_saga(
         transaction_id=parsed_tid,
         seat_ids=seat_ids,
         amount=amount,
-        actor="request",
+        actor=actor,
         user_id=user_id,
         user_email=user_email,
         skip_reserve=skip_reserve,
         **kwargs,
     )
 
-    logger.info("Async saga task completed for transaction_id=%s with status=%s", transaction_id, getattr(response, 'status_code', 'unknown'))
+    logger.info(
+        "Async saga task completed for transaction_id=%s with status=%s",
+        transaction_id,
+        getattr(response, "status_code", "unknown"),
+    )
 
     return "completed"
 
 
 @shared_task(name="coordinator.tasks.send_ticket_email_task", bind=True, max_retries=3, default_retry_delay=10)
 def send_ticket_email_task(self, transaction_id):
+    """
+    Generates an official electronic ticket PDF with QR codes and emails it
+    to the booking owner via Resend API with automated retry handling.
+    """
     from coordinator.middleware import set_correlation_id
     set_correlation_id(str(transaction_id))
     from coordinator.models import Transaction
@@ -120,7 +153,7 @@ def send_ticket_email_task(self, transaction_id):
 
     try:
         tid = uuid.UUID(str(transaction_id))
-    except ValueError:
+    except (ValueError, TypeError, AttributeError):
         logger.error("Invalid transaction_id for ticket email task: %s", transaction_id)
         return "invalid_uuid"
 
@@ -134,24 +167,35 @@ def send_ticket_email_task(self, transaction_id):
         try:
             tickets = issue_tickets_for_transaction(txn)
         except Exception as exc:
-            logger.error("Failed to issue tickets for email dispatch on %s: %exc", tid)
+            logger.error("Failed to issue tickets for email dispatch on %s: %s", tid, exc)
             raise self.retry(exc=exc)
 
-    pdf_bytes = generate_tickets_pdf(txn, tickets)
     short_ref = str(txn.transaction_id)[:8]
     filename = f"DTC-Ticket-{short_ref}.pdf"
 
-    api_key = getattr(settings, "RESEND_API_KEY", "")
+    api_key = getattr(settings, "RESEND_API_KEY", None) or os.getenv("RESEND_API_KEY", "")
     if not api_key:
-        logger.info("RESEND_API_KEY not configured. Simulated ticket email to %s with PDF attachment %s.", _mask_email(txn.user_email), filename)
+        logger.info(
+            "RESEND_API_KEY not configured. Simulated ticket email to %s with PDF attachment %s.",
+            _mask_email(txn.user_email),
+            filename,
+        )
         return "simulated"
+
+    from_email = (
+        getattr(settings, "RESEND_FROM_EMAIL", None)
+        or getattr(settings, "DEFAULT_FROM_EMAIL", None)
+        or os.getenv("RESEND_FROM_EMAIL")
+        or "DTC Tickets <tickets@resend.dev>"
+    )
 
     resend.api_key = api_key
     try:
+        pdf_bytes = generate_tickets_pdf(txn, tickets)
         seat_labels = ", ".join(t.seat_label for t in tickets)
         event_name = tickets[0].event_name if tickets else ""
         params = {
-            "from": "DTC Tickets <tickets@resend.dev>",
+            "from": from_email,
             "to": [txn.user_email],
             "subject": f"Your Electronic Tickets: {event_name} (#{short_ref})",
             "html": f"""<p>Dear Customer,</p>
@@ -169,8 +213,16 @@ def send_ticket_email_task(self, transaction_id):
         }
         res = resend.Emails.send(params)
         res_id = res.get("id") if isinstance(res, dict) else str(res)
-        logger.info("Ticket email sent successfully: email=%s resend_id=%s", _mask_email(txn.user_email), res_id)
+        logger.info(
+            "Ticket email sent successfully: email=%s resend_id=%s",
+            _mask_email(txn.user_email),
+            res_id,
+        )
         return "sent"
     except Exception as exc:
-        logger.error("Error dispatching ticket email to %s: %s", _mask_email(txn.user_email), exc)
+        logger.error(
+            "Error dispatching ticket email to %s: %s",
+            _mask_email(txn.user_email),
+            exc,
+        )
         raise self.retry(exc=exc)
