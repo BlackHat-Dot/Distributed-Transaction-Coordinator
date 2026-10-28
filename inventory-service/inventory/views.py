@@ -1,3 +1,5 @@
+# verified
+
 from decimal import Decimal
 import logging
 import uuid
@@ -17,6 +19,7 @@ from .serializers import EventSerializer, PublicSeatSerializer, InternalSeatSeri
 
 from .auth import (
     _is_staff_request,
+    _get_authenticated_user,
     _get_authenticated_user_id,
     _verify_internal_service_key,
 )
@@ -25,6 +28,7 @@ from .services import (
     get_hold_duration,
     reclaim_expired_holds,
     _validate_reserve_input,
+    _validate_uuid,
 )
 from .throttling import (
     SeatListRateThrottle,
@@ -36,6 +40,13 @@ from .throttling import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_aware(dt):
+    """Defensively ensures datetimes are timezone-aware to prevent TypeError crashes."""
+    if dt and timezone.is_naive(dt):
+        return timezone.make_aware(dt, timezone.get_current_timezone())
+    return dt
 
 
 @api_view(["GET"])
@@ -80,6 +91,7 @@ def ready_check(request):
         status=status_code,
     )
 
+
 @api_view(["GET"])
 @throttle_classes([SeatListRateThrottle])
 def event_list(request):
@@ -91,7 +103,7 @@ def event_list(request):
     Instead, prefetch_related executes separate queries and links them in Python memory.
     """
     events = Event.objects.all().prefetch_related("seats")
-    serializer = EventSerializer(events, many=True)
+    serializer = EventSerializer(events, many=True, context={"request": request})
 
     return Response(serializer.data)
 
@@ -115,7 +127,6 @@ def seat_list(request):
                     starts_at=datetime(2026, 11, 15, 19, 30, tzinfo=zoneinfo.ZoneInfo("Asia/Kolkata"))
                 )
 
-
             seats_to_create = []
 
             for r, price in [('A', Decimal("750.00")), ('B', Decimal("500.00")), ('C', Decimal("350.00"))]:
@@ -137,6 +148,7 @@ def seat_list(request):
     seats = seats.order_by("id")
     serializer = PublicSeatSerializer(seats, many=True, context={"request": request})
     return Response(serializer.data)
+
 
 # verified
 @api_view(["POST"])
@@ -164,8 +176,9 @@ def seat_pricing(request):
         if type(s) is not int or isinstance(s, bool):
             return Response({"error": "seat_ids must be a list of integers"}, status=400)
 
-
     target_ids = list(dict.fromkeys(seat_ids))
+    if len(target_ids) > 50:
+        return Response({"error": "Cannot request pricing for more than 50 seats at once", "code": "MAX_SEATS_EXCEEDED"}, status=400)
 
     seats = Seat.objects.filter(id__in=target_ids).order_by("id")
 
@@ -188,13 +201,14 @@ def seat_pricing(request):
        # 2. Caches and returns the clean dictionary/list
        return self._data
     """
-    return Response(serializer.data) # .data ; the actual `trigger`.
+    return Response(serializer.data)  # .data ; the actual `trigger`.
+
 
 # verified
 @api_view(["POST"])
 @throttle_classes([ReserveRateThrottle, ReserveAnonRateThrottle])
 def reserve_seat(request):
-    auth_err, _ = _verify_internal_service_key(request, allow_client=False) # Service key checker
+    auth_err, _ = _verify_internal_service_key(request, allow_client=False)  # Service key checker
     if auth_err:
         return auth_err
 
@@ -202,23 +216,22 @@ def reserve_seat(request):
 
     if error_response:
         return error_response
-    
+
     transaction_id = supplied_tid
 
     from inventory.middleware import set_correlation_id
     set_correlation_id(str(transaction_id))
 
-    # Authetication isn't required , coordinator already verified.
+    # Authentication isn't required, coordinator already verified.
+    user_id = request.data.get("user_id") if isinstance(request.data, dict) else None
+    user_email = request.data.get("user_email") if isinstance(request.data, dict) else None
 
-    user_id = request.data.get("user_id")
-    user_email = request.data.get("user_email")
+    if not user_id or not str(user_id).strip():
+        return Response({"error": "user_id is required", "code": "MISSING_USER_ID"}, status=400)
+    if not user_email or not str(user_email).strip():
+        return Response({"error": "Valid user_email is required", "code": "INVALID_EMAIL"}, status=400)
 
-    if not user_id:
-        return None, None, Response({"error": "user_id is required", "code": "MISSING_USER_ID"}, status=400)
-    if not user_email:
-        return None, None, Response({"error": "Valid user_email is required", "code": "INVALID_EMAIL"}, status=400)
-    
-    user_id = str(user_id)
+    user_id = str(user_id).strip()
     user_email = str(user_email).strip().lower()
 
     max_user_holds = getattr(settings, "MAX_USER_HOLDS", 5)
@@ -227,7 +240,6 @@ def reserve_seat(request):
         with transaction.atomic():
             # CONC-01: Acquire transaction-scoped advisory lock on user_id to serialize hold checks per user
             if connection.vendor == "postgresql":
-
                 with connection.cursor() as cursor:
                     cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", [f"user_hold:{user_id}"])
 
@@ -238,10 +250,8 @@ def reserve_seat(request):
 
             now = timezone.now()
 
-
             if max_user_holds:
                 # Idempotency guard: exclude seats already held by this transaction so retries do not double-count against the user's quota.
-                # NOTE: initial hold doesn't have retries, yet .exclude is added for future safety.
                 active_holds = Seat.objects.filter(
                     user_id=user_id,
                     status=Seat.Status.HELD,
@@ -259,7 +269,7 @@ def reserve_seat(request):
                         },
                         status=429,
                     )
-            
+
             # PASS 1: Single validation & pricing pass
             booked_by_tx = 0
             total_amount = 0
@@ -326,7 +336,6 @@ def reserve_seat(request):
                     status=409,
                 )
 
-
             # PASS 2: Mutation pass (apply holds in database)
             held_until_dt = now + get_hold_duration()
 
@@ -337,7 +346,7 @@ def reserve_seat(request):
                         seat=seat,
                         transaction_id=seat.held_by_transaction_id,
                         status=Reservation.Status.RESERVED,
-                    ).update(status=Reservation.Status.RELEASED)
+                    ).update(status=Reservation.Status.RELEASED, released_reason="EXPIRED_HOLD")
 
                 seat.status = Seat.Status.HELD
                 seat.held_until = held_until_dt
@@ -353,10 +362,10 @@ def reserve_seat(request):
                     defaults={
                         'user_id': user_id, 
                         'user_email': user_email, 
-                        'status': Reservation.Status.RESERVED
+                        'status': Reservation.Status.RESERVED,
+                        'released_reason': None,
                     }
                 )
-
 
             event_data = None
             if seats and getattr(seats[0], "event", None):
@@ -371,7 +380,7 @@ def reserve_seat(request):
                 "message": f"{len(seats)} Seats reserved",
                 "transaction_id": str(transaction_id),
                 "seat_ids": seat_ids,
-                "held_until": held_until_dt,
+                "held_until": held_until_dt.isoformat() if hasattr(held_until_dt, "isoformat") else held_until_dt,
                 "total_amount": str(total_amount),
                 "event": event_data,
             }
@@ -394,6 +403,7 @@ def reserve_seat(request):
         logger.exception("[transaction_id=%s] Unexpected error in reserve_seat: %s", transaction_id if "transaction_id" in locals() else None, e)
         return Response({"error": "Internal server error occurred.", "code": "INTERNAL_ERROR"}, status=500)
 
+
 @api_view(["POST"])
 def confirm_seat(request):
     auth_err, _ = _verify_internal_service_key(request)
@@ -407,7 +417,6 @@ def confirm_seat(request):
         return Response({"error": "transaction_id is required"}, status=400)
     from inventory.middleware import set_correlation_id
     set_correlation_id(str(transaction_id))
-
 
     try:
         with transaction.atomic():
@@ -445,7 +454,8 @@ def confirm_seat(request):
                         status=409,
                     )
 
-                if seat.held_until and seat.held_until < now and seat.status != Seat.Status.BOOKED:
+                seat_held = _ensure_aware(seat.held_until)
+                if seat_held and seat_held <= now and seat.status != Seat.Status.BOOKED:
                     return Response(
                         {
                             "error": f"Seat {seat.row}{seat.seat_number} hold has expired before confirmation",
@@ -510,6 +520,7 @@ def confirm_seat(request):
         logger.exception("[transaction_id=%s] Unexpected error in confirm_seat: %s", transaction_id if "transaction_id" in locals() else None, e)
         return Response({"error": "Internal server error occurred.", "code": "INTERNAL_ERROR"}, status=500)
 
+
 # verified
 @api_view(["POST"])
 @throttle_classes([ReleaseRateThrottle, ReleaseAnonRateThrottle])
@@ -531,7 +542,6 @@ def release_seat(request):
                 {"error": "Authentication required. Please sign in to release a hold.", "code": "AUTH_REQUIRED"},
                 status=401,
             )
-
 
     raw_tid = request.data.get("transaction_id") if isinstance(request.data, dict) else None
     if not raw_tid:
@@ -652,6 +662,7 @@ def release_seat(request):
         logger.exception("[transaction_id=%s] Unexpected error in release_seat: %s", transaction_id if "transaction_id" in locals() else None, e)
         return Response({"error": "Internal server error occurred.", "code": "INTERNAL_ERROR"}, status=500)
 
+
 @api_view(["GET"])
 @throttle_classes([CheckReservationRateThrottle])
 def check_reservation(request):
@@ -660,10 +671,10 @@ def check_reservation(request):
     raw_tid = request.query_params.get("transaction_id")
     if not raw_tid:
         return Response({"error": "transaction_id is required"}, status=400)
-        
+
     try:
-        transaction_id = uuid.UUID(raw_tid)
-    except ValueError:
+        transaction_id = uuid.UUID(str(raw_tid).strip())
+    except (ValueError, TypeError):
         return Response({"error": "transaction_id must be a valid UUID"}, status=400)
 
     reservations = list(Reservation.objects.select_related("seat", "seat__event").filter(transaction_id=transaction_id))
@@ -679,7 +690,7 @@ def check_reservation(request):
                 "transaction_id": str(transaction_id),
                 "released_reason": "SEAT_TAKEN_BY_ANOTHER_TRANSACTION",
             }, status=200)
-        
+
         booked_reservations = [r for r in reservations if r.status == Reservation.Status.BOOKED]
         first_seat = booked_reservations[0].seat if booked_reservations else None
         event_data = None
@@ -708,7 +719,6 @@ def check_reservation(request):
     # If any seat hold in this transaction was released, find the first released record
     # and return RELEASED status along with its specific reason (or UNKNOWN_LEGACY for old rows).
     if any(r.status == Reservation.Status.RELEASED for r in reservations):
-        # retrives first released object
         rel_r = next(r for r in reservations if r.status == Reservation.Status.RELEASED)
         resp_data = {
             "status": Reservation.Status.RELEASED,
@@ -722,7 +732,7 @@ def check_reservation(request):
     # Checks if any reserved seat's hold timer has expired or if the seat was reallocated to another transaction.
     if any(
         r.seat and (
-            (r.seat.held_until and r.seat.held_until < now)
+            (r.seat.held_until and _ensure_aware(r.seat.held_until) <= now)
             or (r.seat.held_by_transaction_id and str(r.seat.held_by_transaction_id) != str(transaction_id))
         )
         for r in reservations
@@ -790,7 +800,6 @@ def reset_seats(request):
     return Response({"message": msg})
 
 
-
 @api_view(["POST"])
 def sweep_expired_holds(request):
     """
@@ -809,4 +818,3 @@ def sweep_expired_holds(request):
         "message": f"Swept {reclaimed_count} expired seat hold(s).",
         "reclaimed_count": reclaimed_count,
     }, status=200)
-
