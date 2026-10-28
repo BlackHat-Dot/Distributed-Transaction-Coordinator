@@ -1194,16 +1194,49 @@ def verify_otp(request):
 @api_view(["GET"])
 def get_me(request):
     """
-    Phase 3: Returns current authenticated user identity from JWT footprint.
+    Phase 3: Returns current authenticated user identity from verified JWT footprint.
+    Includes staff role determination and validates against superseded sessions.
     """
     user_info = get_user_from_request(request)
-    if not user_info:
-        # Returned None
+    if not user_info or not user_info.get("is_authenticated"):
         return Response({"authenticated": False, "user": None}, status=401)
+
+    email = _normalize_email(user_info.get("email") or user_info.get("user_email"))
+    token_sid = user_info.get("sid")
+
+    # Guard: Detect if session was already superseded on another device
+    if token_sid and email:
+        client = _get_redis_client()
+        active_sid = None
+        if client:
+            try:
+                raw_val = client.get(f"dtc:session:{email}")
+                if raw_val:
+                    active_sid = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else raw_val
+            except Exception:
+                pass
+        if not active_sid:
+            try:
+                active_sid = cache.get(f"dtc:session:{email}")
+            except Exception:
+                pass
+
+        if active_sid and not hmac.compare_digest(str(active_sid), str(token_sid)):
+            return Response(
+                {
+                    "authenticated": False,
+                    "error": "Session superseded by another login.",
+                    "code": "SESSION_SUPERSEDED",
+                },
+                status=401,
+            )
+
+    user_data = dict(user_info)
+    user_data["is_staff"] = _is_admin_email(email)
 
     return Response({
         "authenticated": True,
-        "user": user_info
+        "user": user_data,
     }, status=200)
 
 
@@ -1233,7 +1266,7 @@ def heartbeat(request):
     if not user_info or not user_info.get("is_authenticated"):
         return Response({"error": "Unauthorized"}, status=401)
 
-    email = user_info.get("email")
+    email = _normalize_email(user_info.get("email") or user_info.get("user_email"))
     user_id = user_info.get("user_id")
     if not email and not user_id:
         return Response({"error": "Missing email"}, status=400)
@@ -1246,30 +1279,38 @@ def heartbeat(request):
     if user_id:
         session_keys.append(f"dtc:session:{user_id}")
 
+    check_key = f"dtc:session:{email}" if email else f"dtc:session:{user_id}"
+
+    # 1. Redis supersession check and refresh
     if client:
         try:
-            if email:
-                raw_val = client.get(f"dtc:session:{email}")
-                if raw_val:
-                    active_sid = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else raw_val
-                    if token_sid and active_sid and active_sid != token_sid:
-                        return Response({
+            raw_val = client.get(check_key)
+            if raw_val:
+                active_sid = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else raw_val
+                if token_sid and active_sid and not hmac.compare_digest(str(active_sid), str(token_sid)):
+                    return Response(
+                        {
                             "error": "Session superseded by another login.",
-                            "code": "SESSION_SUPERSEDED"
-                        }, status=401)
+                            "code": "SESSION_SUPERSEDED",
+                        },
+                        status=401,
+                    )
             for k in session_keys:
                 client.setex(k, 30, token_sid or "active")
         except Exception:
             pass
 
+    # 2. Cache fallback supersession check and refresh
     try:
-        if email:
-            cache_sid = cache.get(f"dtc:session:{email}")
-            if cache_sid and token_sid and cache_sid != token_sid:
-                return Response({
+        cache_sid = cache.get(check_key)
+        if cache_sid and token_sid and not hmac.compare_digest(str(cache_sid), str(token_sid)):
+            return Response(
+                {
                     "error": "Session superseded by another login.",
-                    "code": "SESSION_SUPERSEDED"
-                }, status=401)
+                    "code": "SESSION_SUPERSEDED",
+                },
+                status=401,
+            )
         for k in session_keys:
             cache.set(k, token_sid or "active", timeout=30)
     except Exception:
@@ -1281,25 +1322,31 @@ def heartbeat(request):
 @api_view(["POST"])
 def logout(request):
     """
-    Deletes the user's active session in Redis and cache.
+    Deletes the authenticated user's active session in Redis and cache.
+    Guaranteed idempotent (returns 200 OK regardless).
     """
     user_info = get_user_from_request(request)
     if user_info:
+        email = _normalize_email(user_info.get("email") or user_info.get("user_email"))
+        user_id = user_info.get("user_id")
+
         keys_to_del = []
-        if user_info.get("email"):
-            keys_to_del.append(f"dtc:session:{user_info.get('email')}")
-        if user_info.get("user_id"):
-            keys_to_del.append(f"dtc:session:{user_info.get('user_id')}")
-        client = _get_redis_client()
-        for k in keys_to_del:
+        if email:
+            keys_to_del.append(f"dtc:session:{email}")
+        if user_id:
+            keys_to_del.append(f"dtc:session:{user_id}")
+
+        if keys_to_del:
+            client = _get_redis_client()
             if client:
                 try:
-                    client.delete(k)
+                    client.delete(*keys_to_del)
                 except Exception:
                     pass
-            try:
-                cache.delete(k)
-            except Exception:
-                pass
+            for k in keys_to_del:
+                try:
+                    cache.delete(k)
+                except Exception:
+                    pass
 
     return Response({"status": "logged_out"}, status=200)
