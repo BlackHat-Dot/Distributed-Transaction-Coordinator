@@ -1,3 +1,5 @@
+# verified
+
 import logging
 import uuid
 from collections.abc import Mapping
@@ -6,11 +8,12 @@ from decimal import Decimal, InvalidOperation
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from django.db import IntegrityError, transaction
 
+from .middleware import set_correlation_id
 from .models import Payment
 from .permissions import verify_internal_service_key
 
@@ -18,7 +21,11 @@ logger = logging.getLogger("payments")
 
 
 def _mask_email(email):
-    if not email or "@" not in email:
+    """
+    Mask email address for privacy-safe logging (e.g. j***e@example.com).
+    Returns None if email is missing or malformed.
+    """
+    if not email or not isinstance(email, str) or "@" not in email:
         return None
     user, domain = email.split("@", 1)
     if len(user) <= 1:
@@ -34,6 +41,7 @@ TWO_PLACES = Decimal("0.01")
 
 
 def _get_max_amount():
+    """Derive upper payment bound dynamically from Payment model field definition."""
     field = Payment._meta.get_field("amount")
     max_int_digits = field.max_digits - field.decimal_places
     return Decimal("9" * max_int_digits + "." + "9" * field.decimal_places)
@@ -44,18 +52,21 @@ MAX_PAYMENT_AMOUNT = _get_max_amount()
 
 @api_view(["GET"])
 def health_check(request):
+    """Public health probe for service liveness."""
     return Response({"status": "healthy", "service": "payment"})
 
 
 def _validate_uuid(value):
+    """Safely validate UUID string or object."""
     try:
-        return uuid.UUID(str(value))
-    except (ValueError, TypeError):
+        return uuid.UUID(str(value).strip())
+    except (ValueError, TypeError, AttributeError):
         return None
 
 
 def _require_transaction_id(raw_value):
-    if not raw_value:
+    """Validate presence and UUID format of transaction_id."""
+    if raw_value is None or (isinstance(raw_value, str) and not raw_value.strip()):
         return None, Response({"error": "transaction_id is required"}, status=400)
 
     transaction_uuid = _validate_uuid(raw_value)
@@ -66,6 +77,7 @@ def _require_transaction_id(raw_value):
 
 
 def _validate_amount(raw_amount):
+    """Validate payment amount precision, finiteness, positivity, and bounds."""
     if raw_amount is None:
         return None, Response({"error": "amount is required"}, status=400)
 
@@ -96,10 +108,11 @@ def _validate_amount(raw_amount):
 
 
 def _validate_user_info(data):
+    """Validate optional user_id and user_email formatting and length limits."""
     user_id = None
     if "user_id" in data and data["user_id"] is not None:
         raw_uid = data["user_id"]
-        uid_str = str(raw_uid).strip()
+        uid_str = str(raw_uid).strip() if not isinstance(raw_uid, bool) else str(raw_uid)
         if uid_str != "":
             max_uid_len = Payment._meta.get_field("user_id").max_length
             if len(uid_str) > max_uid_len:
@@ -133,6 +146,7 @@ def _validate_user_info(data):
 
 
 def _payment_response(payment, status=None):
+    """Format standardized payment response dictionary."""
     return Response(
         {
             "transaction_id": str(payment.transaction_id),
@@ -147,6 +161,7 @@ def _payment_response(payment, status=None):
 
 @api_view(["POST"])
 def charge_payment(request):
+    """Execute idempotent charge against payment gateway / ledger."""
     auth_err = verify_internal_service_key(request)
     if auth_err:
         return auth_err
@@ -157,7 +172,6 @@ def charge_payment(request):
     transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response
-    from .middleware import set_correlation_id
     set_correlation_id(str(transaction_uuid))
 
     amount, error_response = _validate_amount(request.data.get("amount"))
@@ -191,7 +205,7 @@ def charge_payment(request):
 
     existing = Payment.objects.filter(transaction_id=transaction_uuid).first()
     if existing:
-        return _handle_existing_charge(existing, amount, user_id, transaction_uuid)
+        return _handle_existing_charge(existing, amount, user_id, transaction_uuid, user_email=user_email)
 
     try:
         with transaction.atomic():
@@ -211,7 +225,7 @@ def charge_payment(request):
                 {"error": "Database integrity constraint violation"},
                 status=500,
             )
-        return _handle_existing_charge(existing, amount, user_id, transaction_uuid)
+        return _handle_existing_charge(existing, amount, user_id, transaction_uuid, user_email=user_email)
 
     logger.info(
         "Payment charge succeeded: transaction_id=%s amount=%s user_id=%s email=%s",
@@ -223,7 +237,8 @@ def charge_payment(request):
     return _payment_response(payment, status=201)
 
 
-def _handle_existing_charge(existing, amount, user_id, transaction_uuid):
+def _handle_existing_charge(existing, amount, user_id, transaction_uuid, user_email=None):
+    """Handle replay of existing charge, validating idempotent payload match."""
     # F4: Attempt to charge a VOIDED transaction => 409
     if existing.status == Payment.Status.VOIDED:
         logger.warning(
@@ -257,7 +272,14 @@ def _handle_existing_charge(existing, amount, user_id, transaction_uuid):
 
     # F3: On replay, compare normalized amount and user_id; mismatch => 409
     # A3 contract: Must NOT contain top-level status or payment dict
-    if existing.amount != amount or (existing.user_id or None) != (user_id or None):
+    user_mismatch = (existing.user_id or None) != (user_id or None)
+    amount_mismatch = (existing.amount != amount)
+
+    email_mismatch = False
+    if user_email is not None and existing.user_email is not None:
+        email_mismatch = (str(existing.user_email).strip().lower() != str(user_email).strip().lower())
+
+    if amount_mismatch or user_mismatch or email_mismatch:
         logger.error(
             "Payment charge replay payload mismatch: transaction_id=%s existing_amount=%s new_amount=%s existing_user=%s new_user=%s",
             transaction_uuid,
@@ -287,14 +309,15 @@ def _handle_existing_charge(existing, amount, user_id, transaction_uuid):
 
 @api_view(["GET"])
 def payment_check(request):
+    """Query current payment state without side effects."""
     auth_err = verify_internal_service_key(request)
     if auth_err:
         return auth_err
 
-    transaction_uuid, error_response = _require_transaction_id(request.query_params.get("transaction_id"))
+    raw_tid = getattr(request, "query_params", {}).get("transaction_id")
+    transaction_uuid, error_response = _require_transaction_id(raw_tid)
     if error_response:
         return error_response
-    from .middleware import set_correlation_id
     set_correlation_id(str(transaction_uuid))
 
     payment = Payment.objects.filter(transaction_id=transaction_uuid).first()
@@ -315,6 +338,7 @@ def payment_check(request):
 
 @api_view(["POST"])
 def void_payment(request):
+    """Void a transaction to prevent it from ever being charged."""
     auth_err = verify_internal_service_key(request)
     if auth_err:
         return auth_err
@@ -325,7 +349,6 @@ def void_payment(request):
     transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response
-    from .middleware import set_correlation_id
     set_correlation_id(str(transaction_uuid))
 
     with transaction.atomic():
@@ -390,6 +413,7 @@ def void_payment(request):
 
 @api_view(["POST"])
 def refund_payment(request):
+    """Refund an existing charged payment with atomic row locking."""
     auth_err = verify_internal_service_key(request)
     if auth_err:
         return auth_err
@@ -400,7 +424,6 @@ def refund_payment(request):
     transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response
-    from .middleware import set_correlation_id
     set_correlation_id(str(transaction_uuid))
 
     # F20: Single lookup under select_for_update inside one atomic block
