@@ -1,11 +1,12 @@
 import os
+import uuid
 import requests
 from django.conf import settings
 from coordinator.models import Transaction, SagaEvent
 from coordinator.saga_log import _set_status_with_event
 
-INVENTORY_BASE_URL = os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000").rstrip("/")
-PAYMENT_BASE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rstrip("/")
+INVENTORY_BASE_URL = getattr(settings, "INVENTORY_SERVICE_URL", None) or os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000").rstrip("/")
+PAYMENT_BASE_URL = getattr(settings, "PAYMENT_SERVICE_URL", None) or os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rstrip("/")
 
 PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
 PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
@@ -20,6 +21,44 @@ INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.get
 # Single source of truth from Transaction model
 TERMINAL_STATUSES = Transaction.TERMINAL_STATUSES
 RECOVERABLE_STATUSES = Transaction.RECOVERABLE_STATUSES
+
+
+def _safe_call_http(func, method, url, **kwargs):
+    """
+    Invokes an HTTP helper function regardless of whether it expects:
+    1. (url, **kwargs)          -- e.g. requests.get, requests.post
+    2. (method, url, **kwargs)  -- e.g. coordinator.views._http
+    """
+    if func is requests.get or func is requests.post:
+        return func(url, **kwargs)
+    try:
+        import inspect
+        sig = inspect.signature(func)
+        params = list(sig.parameters.keys())
+        if params and params[0] in ("url", "uri"):
+            return func(url, **kwargs)
+        if params and params[0] in ("method", "verb"):
+            return func(method, url, **kwargs)
+    except (ValueError, TypeError):
+        pass
+    try:
+        return func(url, **kwargs)
+    except TypeError:
+        return func(method, url, **kwargs)
+
+
+def _get_urls():
+    """Dynamically resolves downstream URLs with runtime settings/env overrides."""
+    inv_base = (getattr(settings, "INVENTORY_SERVICE_URL", None) or os.getenv("INVENTORY_SERVICE_URL", INVENTORY_BASE_URL)).rstrip("/")
+    pay_base = (getattr(settings, "PAYMENT_SERVICE_URL", None) or os.getenv("PAYMENT_SERVICE_URL", PAYMENT_BASE_URL)).rstrip("/")
+    return {
+        "payment_check": f"{pay_base}/payments/check/",
+        "payment_refund": f"{pay_base}/payments/refund/",
+        "payment_void": f"{pay_base}/payments/void/",
+        "inventory_release": f"{inv_base}/seats/release/",
+        "inventory_confirm": f"{inv_base}/seats/confirm/",
+        "inventory_check": f"{inv_base}/reserve/check/",
+    }
 
 
 def execute_compensation_sweep(
@@ -42,20 +81,33 @@ def execute_compensation_sweep(
        - If refund_ok and release_ok -> COMPENSATED (or COMPENSATED_ON_RETRY)
        - Else -> COMPENSATION_FAILED (or RETRY_COMPENSATION_FAILED)
     """
+    try:
+        tid = uuid.UUID(str(transaction_id))
+    except (ValueError, TypeError, AttributeError):
+        return {
+            "success": False,
+            "status_code": 404,
+            "status": Transaction.Status.COMPENSATION_FAILED,
+            "error": "Invalid transaction_id format",
+        }
+
     from coordinator.middleware import get_correlation_id, set_correlation_id
     if get_correlation_id() != "bgworker":
-        set_correlation_id(str(transaction_id))
+        set_correlation_id(str(tid))
 
     get_http = get_func or requests.get
     post_http = post_func or requests.post
 
-    cid = str(transaction_id)
+    urls = _get_urls()
+    cid = str(tid)
+    internal_key = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY", INTERNAL_SERVICE_KEY)
     headers = {
         "X-Correlation-ID": cid,
-        "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
+        "X-Transaction-ID": cid,
+        "X-Internal-Service-Key": internal_key,
     }
 
-    txn = Transaction.objects.filter(transaction_id=transaction_id).first()
+    txn = Transaction.objects.filter(transaction_id=tid).first()
     seat_ids = txn.seat_ids if txn else []
 
     # 1. Payment Check in EVERY status
@@ -63,19 +115,26 @@ def execute_compensation_sweep(
     payment_status = None
     payment_voided = False
     try:
-        p_resp = get_http(
+        p_resp = _safe_call_http(
+            get_http,
             "GET",
-            PAYMENT_CHECK_URL,
-            params={"transaction_id": str(transaction_id)},
+            urls["payment_check"],
+            params={"transaction_id": cid},
             headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
         if p_resp.status_code >= 500:
             payment_check_failed = True
         elif p_resp.status_code == 200:
-            p_data = p_resp.json() if p_resp.content else {}
-            payment_status = p_data.get("status")
-            payment_voided = bool(p_data.get("voided", False))
+            try:
+                p_data = p_resp.json() if p_resp.content else {}
+            except Exception:
+                p_data = {}
+            if isinstance(p_data, dict):
+                payment_status = p_data.get("status")
+                payment_voided = bool(p_data.get("voided", False))
+            else:
+                payment_check_failed = True
         else:
             payment_check_failed = True
     except (requests.exceptions.RequestException, Exception):
@@ -84,7 +143,7 @@ def execute_compensation_sweep(
     if payment_check_failed:
         revert_status = original_status or Transaction.Status.COMPENSATION_FAILED
         _set_status_with_event(
-            transaction_id=transaction_id,
+            transaction_id=tid,
             to_status=revert_status,
             expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
             actor=actor,
@@ -101,7 +160,7 @@ def execute_compensation_sweep(
     # For recovery sweeper, record the COMPENSATING transition before external calls
     if actor == SagaEvent.ACTOR_RECOVERY:
         _set_status_with_event(
-            transaction_id=transaction_id,
+            transaction_id=tid,
             to_status=Transaction.Status.COMPENSATING,
             expected_status=Transaction.Status.RECOVERY_IN_PROGRESS,
             actor=actor,
@@ -125,18 +184,25 @@ def execute_compensation_sweep(
         # Fence against in-flight charge landing after release
         void_ok = False
         try:
-            v_resp = post_http(
+            v_resp = _safe_call_http(
+                post_http,
                 "POST",
-                PAYMENT_VOID_URL,
-                json={"transaction_id": str(transaction_id)},
+                urls["payment_void"],
+                json={"transaction_id": cid},
                 headers=headers,
                 timeout=REQUEST_TIMEOUT,
             )
             if v_resp.status_code == 200:
-                v_data = v_resp.json() if v_resp.content else {}
-                if v_data.get("status") == "CHARGED":
-                    payment_status = "CHARGED"  # Late charge landed; route to confirm below
-                    void_revealed_charge = True
+                try:
+                    v_data = v_resp.json() if v_resp.content else {}
+                except Exception:
+                    v_data = {}
+                if isinstance(v_data, dict):
+                    if v_data.get("status") == "CHARGED":
+                        payment_status = "CHARGED"  # Late charge landed; route to confirm below
+                        void_revealed_charge = True
+                    else:
+                        void_ok = True
                 else:
                     void_ok = True
         except (requests.exceptions.RequestException, Exception):
@@ -148,7 +214,7 @@ def execute_compensation_sweep(
             # Void failed and payment not confirmed charged -> state uncertain, abort compensation
             revert_status = original_status or Transaction.Status.COMPENSATION_FAILED
             _set_status_with_event(
-                transaction_id=transaction_id,
+                transaction_id=tid,
                 to_status=revert_status,
                 expected_status=expected_final_status,
                 actor=actor,
@@ -169,10 +235,11 @@ def execute_compensation_sweep(
         confirm_status_code = None
         confirm_transport_error = False
         try:
-            c_resp = post_http(
+            c_resp = _safe_call_http(
+                post_http,
                 "POST",
-                INVENTORY_CONFIRM_URL,
-                json={"transaction_id": str(transaction_id), "seat_ids": seat_ids},
+                urls["inventory_confirm"],
+                json={"transaction_id": cid, "seat_ids": seat_ids},
                 headers=headers,
                 timeout=REQUEST_TIMEOUT,
             )
@@ -194,7 +261,7 @@ def execute_compensation_sweep(
 
         if confirm_ok:
             _set_status_with_event(
-                transaction_id=transaction_id,
+                transaction_id=tid,
                 to_status=Transaction.Status.COMPLETED,
                 expected_status=expected_final_status,
                 actor=actor,
@@ -214,7 +281,7 @@ def execute_compensation_sweep(
         if confirm_transport_error or (confirm_status_code and confirm_status_code >= 500):
             revert_status = original_status or Transaction.Status.COMPENSATION_FAILED
             _set_status_with_event(
-                transaction_id=transaction_id,
+                transaction_id=tid,
                 to_status=revert_status,
                 expected_status=expected_final_status,
                 actor=actor,
@@ -236,23 +303,28 @@ def execute_compensation_sweep(
 
         if not released_reason:
             try:
-                chk_resp = get_http(
+                chk_resp = _safe_call_http(
+                    get_http,
                     "GET",
-                    f"{INVENTORY_BASE_URL}/reserve/check/",
-                    params={"transaction_id": str(transaction_id)},
+                    urls["inventory_check"],
+                    params={"transaction_id": cid},
                     headers=headers,
                     timeout=REQUEST_TIMEOUT,
                 )
                 if chk_resp.status_code == 200:
-                    chk_data = chk_resp.json() if chk_resp.content else {}
-                    released_reason = chk_data.get("released_reason")
+                    try:
+                        chk_data = chk_resp.json() if chk_resp.content else {}
+                    except Exception:
+                        chk_data = {}
+                    if isinstance(chk_data, dict):
+                        released_reason = chk_data.get("released_reason")
             except Exception:
                 pass
 
         if released_reason == "ADMIN_RESET":
             revert_status = original_status or Transaction.Status.COMPENSATION_FAILED
             _set_status_with_event(
-                transaction_id=transaction_id,
+                transaction_id=tid,
                 to_status=revert_status,
                 expected_status=expected_final_status,
                 actor=actor,
@@ -277,20 +349,30 @@ def execute_compensation_sweep(
 
     if payment_status == "CHARGED":
         try:
-            r_resp = post_http(
+            r_resp = _safe_call_http(
+                post_http,
                 "POST",
-                PAYMENT_REFUND_URL,
-                json={"transaction_id": str(transaction_id)},
+                urls["payment_refund"],
+                json={"transaction_id": cid},
                 headers=headers,
                 timeout=REQUEST_TIMEOUT,
             )
             refund_status_code = r_resp.status_code
-            refund_ok = (r_resp.status_code == 200)
             if r_resp.content:
                 try:
                     refund_payload = r_resp.json()
                 except Exception:
                     pass
+            refund_ok = (r_resp.status_code == 200)
+            if not refund_ok and isinstance(refund_payload, dict):
+                msg = str(refund_payload.get("message", "")).lower() + " " + str(refund_payload.get("error", "")).lower()
+                code = str(refund_payload.get("code", "")).upper()
+                if (
+                    "already refunded" in msg
+                    or "payment not found" in msg
+                    or code in ("ALREADY_REFUNDED", "NOT_FOUND")
+                ):
+                    refund_ok = True
         except (requests.exceptions.RequestException, Exception):
             refund_ok = False
     elif payment_status != "NOT_CHARGED" and payment_status != "REFUNDED":
@@ -301,10 +383,11 @@ def execute_compensation_sweep(
     release_status_code = None
     release_payload = None
     try:
-        rel_resp = post_http(
+        rel_resp = _safe_call_http(
+            post_http,
             "POST",
-            INVENTORY_RELEASE_URL,
-            json={"transaction_id": str(transaction_id), "seat_ids": seat_ids},
+            urls["inventory_release"],
+            json={"transaction_id": cid, "seat_ids": seat_ids},
             headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
@@ -336,7 +419,7 @@ def execute_compensation_sweep(
             else Transaction.Status.COMPENSATED
         )
         _set_status_with_event(
-            transaction_id=transaction_id,
+            transaction_id=tid,
             to_status=success_status,
             expected_status=expected_final_status,
             actor=actor,
@@ -357,7 +440,7 @@ def execute_compensation_sweep(
             else Transaction.Status.COMPENSATION_FAILED
         )
         _set_status_with_event(
-            transaction_id=transaction_id,
+            transaction_id=tid,
             to_status=failed_status,
             expected_status=expected_final_status,
             actor=actor,
