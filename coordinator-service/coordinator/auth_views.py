@@ -417,34 +417,69 @@ def _verify_staff_key(header_val):
 
     return hmac.compare_digest(header_val.strip(), staff_key.strip())
 
-
+# verified
 def _is_admin_email(email):
-    """Check if email belongs to the configured ADMIN_DOMAIN."""
-    if not email or not isinstance(email, str):
-        return False
-    admin_domain = os.getenv("ADMIN_DOMAIN", "").strip().lower()
-    if not admin_domain:
-        return False
-    admin_domain = admin_domain.removeprefix("@")
-    if not admin_domain:
+    """
+    Check if email belongs to configured ADMIN_DOMAIN(s).
+    Supports Django settings, env vars, comma-separated domains, and leading '@' stripping.
+    """
+    norm = _normalize_email(email)
+    if not norm:
         return False
 
-    parts = email.strip().lower().split("@")
+    raw_domain = getattr(settings, "ADMIN_DOMAIN", None) or os.getenv("ADMIN_DOMAIN", "")
+    if not raw_domain or not isinstance(raw_domain, str):
+        return False
+
+    # Normalize comma-separated domains into a clean set
+    admin_domains = {
+        d.strip().removeprefix("@").lower()
+        for d in raw_domain.split(",")
+        if d.strip() and d.strip() != "@"
+    }
+    if not admin_domains:
+        return False
+
+    parts = norm.split("@")
     if len(parts) != 2 or not parts[0] or not parts[1]:
         return False
-    return parts[1] == admin_domain
 
+    return parts[1] in admin_domains
 
+# verified
 class RequesterIdentity(tuple):
-    """Caller identity 3-tuple (is_authenticated, user_id, is_staff) with .user_email."""
+    """
+    Caller identity 3-tuple (is_authenticated, user_id, is_staff) with .user_email.
+    Fully compatible with 3-tuple unpacking, pickle serialization, and caching.
+    """
 
-    def __new__(cls, is_authenticated, user_id, is_staff, user_email=None):
-        instance = super().__new__(cls, (is_authenticated, user_id, is_staff))
-        instance.is_authenticated = is_authenticated
+    def __new__(cls, is_authenticated, user_id=None, is_staff=False, user_email=None):
+        # Support reconstitution from single sequence tuple (pickle/cache unpacking)
+        if isinstance(is_authenticated, tuple) and user_id is None:
+            seq = is_authenticated
+            is_authenticated = seq[0] if len(seq) > 0 else False
+            user_id = seq[1] if len(seq) > 1 else None
+            is_staff = seq[2] if len(seq) > 2 else False
+
+        auth_bool = bool(is_authenticated)
+        staff_bool = bool(is_staff)
+
+        instance = super().__new__(cls, (auth_bool, user_id, staff_bool))
+        instance.is_authenticated = auth_bool
         instance.user_id = user_id
-        instance.is_staff = is_staff
+        instance.is_staff = staff_bool
         instance.user_email = user_email
         return instance
+
+    def __reduce__(self):
+        """Preserve all tuple elements and user_email across pickle / cache round-trips."""
+        return (self.__class__, (self.is_authenticated, self.user_id, self.is_staff, self.user_email))
+
+    def __repr__(self):
+        return (
+            f"RequesterIdentity(is_authenticated={self.is_authenticated!r}, "
+            f"user_id={self.user_id!r}, is_staff={self.is_staff!r}, user_email={self.user_email!r})"
+        )
 
 # verified
 def _get_caller(request):
