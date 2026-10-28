@@ -978,9 +978,16 @@ def send_otp(request):
 @api_view(["POST"])
 def verify_otp(request):
     """
-    Phase 2: Compares submitted OTP against Redis value, deletes Redis key on match (single-use),
-    and issues a JWT token. Wrong OTPs are tracked per IP+email — 5 failures triggers a 24h block.
+    Phase 2: Compares submitted OTP using constant-time comparison, deletes OTP on match (single-use),
+    and issues a signed JWT token. Failed OTPs are tracked per IP+email (5 strikes = 24h block).
+    Records a 30s single-device active session on success.
     """
+    if not isinstance(request.data, dict):
+        return Response(
+            {"error": "Invalid request payload, expected JSON object.", "code": "INVALID_PAYLOAD"},
+            status=400,
+        )
+
     email_raw = request.data.get("email")
     submitted_otp = str(request.data.get("otp", "")).strip()
 
@@ -988,6 +995,9 @@ def verify_otp(request):
         return Response({"error": "email and otp are required"}, status=400)
 
     email = _normalize_email(email_raw)
+    if not email:
+        return Response({"error": "email and otp are required"}, status=400)
+
     cache_key = f"dtc:otp:{email}"
 
     is_dev_mode = _is_dev_auth_mode()
@@ -1065,7 +1075,11 @@ def verify_otp(request):
         except Exception:
             pass
 
-    if not stored_otp or str(stored_otp).strip() != submitted_otp:
+    # Constant-time comparison to prevent timing attacks
+    stored_str = stored_otp.decode("utf-8") if isinstance(stored_otp, bytes) else str(stored_otp or "")
+    otp_matches = bool(stored_otp) and hmac.compare_digest(stored_str.strip(), submitted_otp)
+
+    if not otp_matches:
         # Dev mode: unlimited attempts, no tracking
         if is_dev_mode:
             return Response(
@@ -1082,7 +1096,7 @@ def verify_otp(request):
         if client:
             try:
                 fail_count = client.incr(fail_key)
-                if fail_count == 1:
+                if fail_count == 1 or client.ttl(fail_key) == -1:
                     client.expire(fail_key, 86400)  # 24-hour window
             except Exception:
                 fail_count = None
@@ -1128,10 +1142,9 @@ def verify_otp(request):
             status=400,
         )
 
-    # OTP matched: success path
+    # OTP matched: clean slate on success (single-use)
     if client:
         try:
-            # Clear OTP, fail counter, and abandon counter; clean slate on success
             client.delete(cache_key)
             client.delete(fail_key)
             client.delete(abandon_key)
@@ -1160,7 +1173,10 @@ def verify_otp(request):
     except Exception:
         pass
 
-    jwt_expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "18000"))
+    jwt_expires_in = int(
+        getattr(settings, "JWT_EXPIRES_IN_SECONDS", None)
+        or os.getenv("JWT_EXPIRES_IN_SECONDS", "1800")
+    )
     jwt_token = _create_jwt(user_id=user_id, user_email=email, session_id=session_id, expires_in=jwt_expires_in)
 
     return Response({
@@ -1170,7 +1186,7 @@ def verify_otp(request):
         "user_id": user_id,
         "user_email": email,
         "email": email,
-        "expires_in": jwt_expires_in
+        "expires_in": jwt_expires_in,
     }, status=200)
 
 
