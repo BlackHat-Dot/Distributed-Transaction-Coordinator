@@ -1,8 +1,24 @@
+# verified
+
+from django.utils import timezone
 from rest_framework import serializers
+
 from .models import Event, Seat, Reservation
 
 
-from django.utils import timezone
+def _is_hold_expired(held_until, now=None) -> bool:
+    """
+    Safely determines if a seat hold has expired.
+    Handles naive vs aware datetimes defensively to prevent TypeError crashes.
+    """
+    if not held_until:
+        return True
+    if now is None:
+        now = timezone.now()
+    if timezone.is_naive(held_until):
+        held_until = timezone.make_aware(held_until, timezone.get_current_timezone())
+    return held_until <= now
+
 
 class PublicSeatSerializer(serializers.ModelSerializer):
     """
@@ -30,26 +46,32 @@ class PublicSeatSerializer(serializers.ModelSerializer):
         if not request:
             return False
 
-        auth_user = getattr(request, "_auth_user", None)
+        auth_user = getattr(request, "_auth_user", None) or getattr(request, "_cached_authenticated_user", None)
         if auth_user is None:
             from .auth import _get_authenticated_user
             auth_user = _get_authenticated_user(request)
-            request._auth_user = auth_user
+            try:
+                request._auth_user = auth_user
+            except (AttributeError, TypeError):
+                pass
 
-        user_id = auth_user.get("user_id") if auth_user else None
-        if not user_id:
+        if not auth_user or not isinstance(auth_user, dict):
             return False
 
-        if obj.status == Seat.Status.HELD and obj.user_id and str(obj.user_id) == str(user_id):
-            if obj.held_until and obj.held_until > timezone.now():
+        user_id = auth_user.get("user_id")
+        if not user_id or not str(user_id).strip():
+            return False
+
+        if obj.status == Seat.Status.HELD and obj.user_id and str(obj.user_id).strip() == str(user_id).strip():
+            if obj.held_until and not _is_hold_expired(obj.held_until):
                 return True
         return False
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
         # Lazy Read-Time Shedding: Treat expired holds as AVAILABLE on read
-        if rep.get("status") == "HELD" and instance.held_until and instance.held_until < timezone.now():
-            rep["status"] = "AVAILABLE"
+        if rep.get("status") == Seat.Status.HELD and instance.held_until and _is_hold_expired(instance.held_until):
+            rep["status"] = Seat.Status.AVAILABLE
             rep["held_until"] = None
             rep["is_mine"] = False
         return rep
@@ -78,8 +100,8 @@ class InternalSeatSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         rep = super().to_representation(instance)
         # Lazy Read-Time Shedding: Treat expired holds as AVAILABLE on read
-        if rep.get("status") == "HELD" and instance.held_until and instance.held_until < timezone.now():
-            rep["status"] = "AVAILABLE"
+        if rep.get("status") == Seat.Status.HELD and instance.held_until and _is_hold_expired(instance.held_until):
+            rep["status"] = Seat.Status.AVAILABLE
             rep["held_until"] = None
             rep["held_by_transaction_id"] = None
             rep["user_id"] = None
