@@ -1753,8 +1753,7 @@ def _confirm(transaction_id, seat_ids=None, correlation_id=None, **kwargs):
     cid = correlation_id or _corr_id(transaction_id)
     headers = {
         "X-Correlation-ID": cid,
-        "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
-        "X-Idempotency-Key": str(transaction_id),
+        "X-Internal-Service-Key": INTERNAL_SERVICE_KEY
     }
     try:
         response = _http(
@@ -1884,8 +1883,7 @@ def _compensate(
     cid = correlation_id or _corr_id(transaction_id)
     headers = {
         "X-Correlation-ID": cid,
-        "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
-        "X-Idempotency-Key": str(transaction_id),
+        "X-Internal-Service-Key": INTERNAL_SERVICE_KEY
     }
 
     claimed = _set_status_with_event(
