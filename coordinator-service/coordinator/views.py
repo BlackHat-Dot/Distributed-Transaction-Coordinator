@@ -1876,8 +1876,6 @@ def _compensate(
     payment_data,
     payment_status_code=None,
     correlation_id=None,
-    seat_ids=None,
-    **kwargs,
 ):
     """Compensate failed transaction (void/refund payment and release reserved seats)."""
     cid = correlation_id or _corr_id(transaction_id)
