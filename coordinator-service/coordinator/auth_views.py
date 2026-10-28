@@ -100,14 +100,14 @@ def _get_redis_client():
             return None
 
 import difflib
-
+# verified
 def _is_dev_auth_mode():
     """Return True only if in local development mode (DEBUG=True and not in test suite)."""
     if getattr(settings, "IS_TESTING", False):
         return False
     return bool(getattr(settings, "DEBUG", False))
 
-
+# verified
 def _normalize_email(email_str):
     """Safely strip, sanitize zero-width unicode characters, and lowercase email string."""
     if not email_str or not isinstance(email_str, str):
@@ -146,7 +146,7 @@ _NON_TYPO_REAL_DOMAINS = frozenset({
     "proton.me", "protonmail.com", "aol.com", "zoho.com", "g.com",
 })
 
-
+# verified
 def _suggest_domain(domain_part):
     """
     Returns a suggested correction for `domain_part` if it looks like a
@@ -178,7 +178,7 @@ def _suggest_domain(domain_part):
 
     return None
 
-
+# verified
 def validate_email(email):
     """
     Validates that the email address is a valid @gmail.com address
@@ -237,9 +237,13 @@ def validate_email(email):
 validate_custom_email = validate_email
 
 def _generate_user_id(email):
+    """Generate deterministic user ID prefixed with usr_ from normalized email SHA256."""
     norm = _normalize_email(email)
+    if not norm:
+        return ""
     sha = hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
     return f"usr_{sha}"
+
 
 def _get_client_ip(request):
     """
@@ -247,16 +251,24 @@ def _get_client_ip(request):
     X-Forwarded-For is only trusted if the immediate peer (REMOTE_ADDR)
     is in the configured TRUSTED_PROXIES set. Otherwise REMOTE_ADDR is used.
     """
-    # The immediate network peer IP connecting directly to this server (e.g. Nginx, load balancer, or direct client)
-    remote_addr = request.META.get("REMOTE_ADDR", "unknown").strip()
+    if not request or not hasattr(request, "META"):
+        return "unknown"
 
-    # Read whitelist of trusted proxy IPs from Django settings (if defined)
+    # Safely extract REMOTE_ADDR without crashing if value is None
+    raw_remote = request.META.get("REMOTE_ADDR")
+    remote_addr = (raw_remote.strip() if isinstance(raw_remote, str) else "") or "unknown"
+
+    # Normalize whitelist of trusted proxy IPs from settings or environment
     trusted_proxies = getattr(settings, "TRUSTED_PROXIES", None)
     if trusted_proxies is None:
-        # Fallback to TRUSTED_PROXIES environment variable (defaults to localhost IPv4 & IPv6)
         raw = os.getenv("TRUSTED_PROXIES", "127.0.0.1,::1")
-        # Parse comma-separated IPs into a set for fast O(1) membership lookup
         trusted_proxies = {ip.strip() for ip in raw.split(",") if ip.strip()}
+    elif isinstance(trusted_proxies, (list, tuple, set)):
+        trusted_proxies = {str(p).strip() for p in trusted_proxies if str(p).strip()}
+    elif isinstance(trusted_proxies, str):
+        trusted_proxies = {p.strip() for p in trusted_proxies.split(",") if p.strip()}
+    else:
+        trusted_proxies = {"127.0.0.1", "::1"}
 
     # If the direct peer is not a trusted proxy, it might be an untrusted client attempting to spoof headers; ignore XFF
     if remote_addr not in trusted_proxies:
@@ -264,32 +276,42 @@ def _get_client_ip(request):
 
     # Fetch X-Forwarded-For header containing proxy chain: "client_ip, proxy1_ip, proxy2_ip"
     xff = request.META.get("HTTP_X_FORWARDED_FOR")
-    if not xff:
+    if not xff or not isinstance(xff, str):
         return remote_addr
 
-    # Parse comma-separated XFF IPs in order, stripping whitespace
-    ips = [ip.strip() for ip in xff.split(",") if ip.strip()]
-    if not ips:
+    # Parse comma-separated XFF IPs in order, sanitizing valid IP characters to prevent Redis key injection
+    raw_ips = [ip.strip() for ip in xff.split(",") if ip.strip()]
+    clean_ips = []
+    for ip in raw_ips:
+        sanitized = re.sub(r"[^a-zA-Z0-9.:%-]", "", ip)
+        if sanitized:
+            clean_ips.append(sanitized)
+
+    if not clean_ips:
         return remote_addr
 
     # Iterate backwards (right-to-left) from the most recent proxy toward the original caller.
-    # The first IP from the right that is NOT in our trusted proxy list is the authentic client IP
-    # (any IPs to the left of it could have been forged by that client).
-    for ip in reversed(ips):
+    # The first IP from the right that is NOT in our trusted proxy list is the authentic client IP.
+    for ip in reversed(clean_ips):
         if ip not in trusted_proxies:
             return ip
 
     # Fallback: if every IP in the chain was trusted, return the earliest one in the list
-    return ips[0]
+    return clean_ips[0]
+
 
 def _email_hash(email):
-    """Short hash of email used in Redis keys (avoids storing raw emails in key names)."""
-    return hashlib.sha256(email.encode("utf-8")).hexdigest()[:20]
+    """
+    Short hash of normalized email used in Redis keys.
+    Guarantees canonical lowercase hashing and prevents lockout bypass.
+    """
+    norm = _normalize_email(email)
+    return hashlib.sha256(norm.encode("utf-8")).hexdigest()[:20]
 
 
 
 
-
+# verfied
 def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
     """Create a signed HS256 JWT."""
     now = int(time.time())
@@ -307,7 +329,7 @@ def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
 
     return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
-
+# verified
 def verify_jwt(token):
     """Verify and decode a JWT. Returns (payload, None) on success, or (None, err_str)."""
     if not token or not isinstance(token, str) or token.count(".") != 2:
