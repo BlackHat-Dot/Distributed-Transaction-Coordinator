@@ -1,5 +1,7 @@
 import json
 import logging
+import threading
+import time
 import redis
 from django.conf import settings
 from django.db import transaction as db_transaction
@@ -11,24 +13,53 @@ from .models import Transaction, SagaEvent
 logger = logging.getLogger(__name__)
 
 _pub_client = None
+_pub_last_check = 0.0
+_pub_lock = threading.Lock()
 
 
 def _get_pub_client():
-    global _pub_client
-    if _pub_client is None:
+    """
+    Thread-safe, self-healing Redis publisher client.
+    Guarded by double-checked locking and a 5.0s circuit-breaker cooldown.
+    """
+    global _pub_client, _pub_last_check
+
+    if _pub_client is not None:
+        return _pub_client
+
+    with _pub_lock:
+        if _pub_client is not None:
+            return _pub_client
+
+        now = time.monotonic()
+        if now - _pub_last_check < 5.0:
+            return None
+
+        _pub_last_check = now
         broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
-        timeout = getattr(settings, "REDIS_SOCKET_TIMEOUT", 1.0)
+        testing_mode = bool(getattr(settings, "IS_TESTING", False))
+        timeout = getattr(settings, "REDIS_SOCKET_TIMEOUT", 0.05 if testing_mode else 1.0)
+
+        client = None
         try:
-            _pub_client = redis.Redis.from_url(
+            client = redis.Redis.from_url(
                 broker_url,
                 decode_responses=True,
                 socket_connect_timeout=timeout,
                 socket_timeout=timeout,
             )
+            client.ping()
+            _pub_client = client
+            return _pub_client
         except Exception as e:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    pass
+            _pub_client = None
             logger.warning("Failed to initialize Redis publisher client: %s", e)
             return None
-    return _pub_client
 
 
 TERMINAL_STATUSES = Transaction.TERMINAL_STATUSES
@@ -128,6 +159,8 @@ ALLOWED_TRANSITIONS = {
 
 
 def _publish_transaction_update(transaction_id, to_status, from_status=None):
+    """Publish real-time transaction state update to Redis pub/sub channel for SSE streaming."""
+    global _pub_client
     try:
         client = _get_pub_client()
         if not client:
@@ -142,11 +175,20 @@ def _publish_transaction_update(transaction_id, to_status, from_status=None):
         client.publish(f"dtc:tx_stream:{transaction_id}", payload)
     except Exception as exc:
         logger.warning("Failed to publish SSE event for tx %s: %s", transaction_id, exc)
+        with _pub_lock:
+            if _pub_client is not None:
+                try:
+                    _pub_client.close()
+                except Exception:
+                    pass
+                _pub_client = None
 
 
 SENSITIVE_KEYS = {
     "user_email", "email", "card_number", "credit_card", "pan", "cvv", "cvc",
     "password", "token", "otp", "secret", "authorization",
+    "api_key", "apikey", "access_token", "refresh_token", "private_key",
+    "secret_key", "staff_key", "x-staff-key",
 }
 
 
@@ -159,7 +201,8 @@ def _mask_pii(data):
     if isinstance(data, dict):
         masked = {}
         for k, v in data.items():
-            if str(k).lower() in SENSITIVE_KEYS:
+            clean_k = str(k).strip().lower()
+            if clean_k in SENSITIVE_KEYS:
                 if isinstance(v, str) and "@" in v:
                     parts = v.split("@", 1)
                     user_part = parts[0]
@@ -178,6 +221,7 @@ def _mask_pii(data):
         return [_mask_pii(item) for item in data]
     return data
 
+
 # verified
 def _set_status_with_event(
     transaction_id,
@@ -187,7 +231,12 @@ def _set_status_with_event(
     http_status_code=None,
     http_payload=None,
 ):
-
+    """
+    Execute compare-and-swap (CAS) status update within an exclusive database transaction lock.
+    Records an append-only SagaEvent audit log entry and registers an on_commit SSE broadcast.
+    """
+    if not transaction_id:
+        return False
 
     if to_status not in Transaction.Status.values:
         logger.warning(
@@ -195,33 +244,24 @@ def _set_status_with_event(
             transaction_id,
             to_status,
         )
-
         return False
-    
+
     with db_transaction.atomic():
         qs = Transaction.objects.select_for_update().filter(
             transaction_id=transaction_id
         )
         if expected_status is not None:
             if isinstance(expected_status, (list, tuple, set)):
-                qs = qs.filter(status__in=expected_status)
+                qs = qs.filter(status__in=[s for s in expected_status if s is not None])
             else:
                 qs = qs.filter(status=expected_status)
 
         rows = list(qs.values("id", "status"))
-        """
-        rows = [
-            {
-                "id": 42,                        # Primary key (auto-increment integer)
-                "status": "PAYMENT_PROCESSING"   # Current status column value
-            }
-        ]
-        """
         if not rows:
             return False
 
-        txn_pk = rows[0]["id"] # 42
-        from_status = rows[0]["status"] # "PAYMENT_PROCESSING"
+        txn_pk = rows[0]["id"]
+        from_status = rows[0]["status"]
 
         if to_status == from_status:
             return True
@@ -244,18 +284,12 @@ def _set_status_with_event(
             updated_at=timezone.now(),
         )
 
-    # filter(transaction_id=txn_pk): Filters the SagaEvent table to only include events belonging to this specific transaction.
-    # .aggregate(m=Max("seq")): Tells PostgreSQL to run an aggregate SQL query:
-    # like, SELECT MAX("seq") AS m FROM "coordinator_sagaevent" WHERE "transaction_id" = 42;
-    # SagaEvent.objects.filter(transaction_id=txn_pk).aggregate(m=Max("seq")) --> result_dict = {"m": 3} --> result_dict["m"]
-    # if the sagaevent record doesn't exist then None returned , None or 0 --> 0
-
         last_seq = (
             SagaEvent.objects.filter(transaction_id=txn_pk)
             .aggregate(m=Max("seq"))["m"]
             or 0
         )
-        next_seq = last_seq + 1 # new/prev sequence +1
+        next_seq = last_seq + 1
 
         SagaEvent.objects.create(
             transaction_id=txn_pk,

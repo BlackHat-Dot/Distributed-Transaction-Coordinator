@@ -974,7 +974,7 @@ def send_otp(request):
 
     return Response(resp_data, status=200)
 
-
+# verified
 @api_view(["POST"])
 def verify_otp(request):
     """
@@ -1190,7 +1190,7 @@ def verify_otp(request):
     }, status=200)
 
 
-
+# verified
 @api_view(["GET"])
 def get_me(request):
     """
@@ -1239,7 +1239,7 @@ def get_me(request):
         "user": user_data,
     }, status=200)
 
-
+# verified
 @api_view(["POST"])
 def heartbeat(request):
     """
@@ -1318,7 +1318,7 @@ def heartbeat(request):
 
     return Response({"status": "alive"}, status=200)
 
-
+# verified
 @api_view(["POST"])
 def logout(request):
     """
