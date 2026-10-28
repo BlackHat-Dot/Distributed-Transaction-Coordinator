@@ -532,7 +532,7 @@ def _get_caller(request):
 
 
 resend.api_key = os.getenv("RESEND_API_KEY")
-
+# verified
 def _dispatch_otp_email(to_email, otp_code):
     """
     Dispatch 6-digit verification OTP email via Resend API.
@@ -694,13 +694,16 @@ def _dispatch_otp_email(to_email, otp_code):
 @api_view(["POST"])
 def send_otp(request):
     """
-    generates random 6-digit OTP, stores in Redis (5-min TTL),
-    and sends via Gmail SMTP with console fallback.
+    Phase 1: Generates random 6-digit numeric OTP, stores in Redis (5-min TTL) with in-memory fallback,
+    enforces rate limits (cooldown, daily limit, abandonment), and dispatches via Resend.
     """
+    if not isinstance(request.data, dict):
+        return Response(
+            {"error": "Invalid request payload, expected JSON object.", "code": "INVALID_PAYLOAD"},
+            status=400,
+        )
 
     email_raw = request.data.get("email")
-
-    # If email is not sent reject the request
     if not email_raw:
         return Response({"error": "email is required"}, status=400)
 
@@ -710,6 +713,7 @@ def send_otp(request):
         return Response({"error": err_msg, "code": "INVALID_EMAIL"}, status=400)
 
     is_dev_mode = _is_dev_auth_mode()
+    is_testing = bool(getattr(settings, "IS_TESTING", False))
     client = _get_redis_client()
 
     chances_remaining = 10
@@ -742,18 +746,17 @@ def send_otp(request):
             status=409,
         )
 
-
     daily_block_key = f"dtc:otp_daily_blocked:{email}"
     daily_key       = f"dtc:otp_daily:{email}"
     cooldown_key    = f"dtc:otp_cooldown:{email}"
 
     # In production/testing: enforce IP+email block, cooldown, abandonment tracking, and daily limit
     if not is_dev_mode:
-        client_ip       = _get_client_ip(request)
-        block_key       = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
-        abandon_key     = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
+        client_ip   = _get_client_ip(request)
+        block_key   = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
+        abandon_key = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
 
-        # IP+email block check (wrong OTPs or abandonment abuse)
+        # 1. IP+email block check (wrong OTPs or abandonment abuse)
         is_blocked = False
         ttl = 86400
         if client:
@@ -780,43 +783,83 @@ def send_otp(request):
                 status=429,
             )
 
+        # 2. Cooldown check: prevent re-send within 30 seconds
+        cooldown_active = False
+        cooldown_ttl = 30
         if client:
             try:
-
-                # Cooldown: prevent re-send within 30 seconds
                 if client.exists(cooldown_key):
-                    ttl = client.ttl(cooldown_key)
-                    if ttl > 0:
-                        return Response({
-                            "success": True,
-                            "message": "Verification code was recently sent.",
-                            "user_email": email,
-                            "user_id": _generate_user_id(email),
-                            "cooldown_remaining": ttl,
-                            "is_cooldown": True,
-                            "chances_remaining": max(0, 10 - int(client.get(daily_key) or 0)),
-                        }, status=200)
+                    t = client.ttl(cooldown_key)
+                    if t > 0:
+                        cooldown_active = True
+                        cooldown_ttl = t
+            except Exception:
+                pass
+        if not cooldown_active:
+            try:
+                if cache.get(cooldown_key):
+                    cooldown_active = True
+            except Exception:
+                pass
 
-                # Hard daily block (set after limit is crossed)
+        if cooldown_active:
+            daily_used = 0
+            if client:
+                try:
+                    daily_used = int(client.get(daily_key) or 0)
+                except Exception:
+                    pass
+            return Response(
+                {
+                    "success": True,
+                    "message": "Verification code was recently sent.",
+                    "user_email": email,
+                    "user_id": _generate_user_id(email),
+                    "cooldown_remaining": cooldown_ttl,
+                    "is_cooldown": True,
+                    "chances_remaining": max(0, 10 - daily_used),
+                },
+                status=200,
+            )
+
+        # 3. Hard daily block (set after limit is crossed)
+        daily_blocked = False
+        if client:
+            try:
                 if client.exists(daily_block_key):
-                    return Response(
-                        {"error": "Daily OTP limit reached. You can request a new code tomorrow.",
-                         "code": "DAILY_LIMIT_REACHED"},
-                        status=429,
-                    )
+                    daily_blocked = True
+            except Exception:
+                pass
+        if not daily_blocked:
+            try:
+                if cache.get(daily_block_key):
+                    daily_blocked = True
+            except Exception:
+                pass
 
-                # Abandonment tracking: send without verify
-                # Each OTP send increments the abandon counter.
-                # A successful verify resets it. 5+ unverified sends = 24h IP+email block.
-                abandon_count = client.incr(abandon_key) # atomic
+        if daily_blocked:
+            return Response(
+                {
+                    "error": "Daily OTP limit reached. You can request a new code tomorrow.",
+                    "code": "DAILY_LIMIT_REACHED",
+                },
+                status=429,
+            )
 
-                if abandon_count == 1:
+        # 4. Abandonment tracking: send without verify (5+ unverified sends = 24h block)
+        if client:
+            try:
+                abandon_count = client.incr(abandon_key)
+                if abandon_count == 1 or client.ttl(abandon_key) == -1:
                     client.expire(abandon_key, 7200)  # 2-hour rolling window
 
                 if abandon_count > 5:
                     client.setex(block_key, 86400, "abandon")
                     client.delete(abandon_key)
-
+                    try:
+                        cache.set(block_key, "abandon", timeout=86400)
+                    except Exception:
+                        pass
                     return Response(
                         {
                             "error": "Too many OTP requests without completing verification. Your network is blocked for 24 hours.",
@@ -825,25 +868,34 @@ def send_otp(request):
                         },
                         status=429,
                     )
+            except Exception:
+                pass
 
-                now_dt = datetime.now()
+        # 5. Daily limit tracking (expires at midnight)
+        if client:
+            try:
+                now_dt = timezone.now()
                 midnight = (now_dt + timedelta(days=1)).replace(
                     hour=0, minute=0, second=0, microsecond=0
                 )
                 ttl_until_midnight = max(1, int((midnight - now_dt).total_seconds()))
 
-                # Increment today's counter (expires at midnight via TTL)
-                daily_count = client.incr(daily_key) # "key created"
-
-                if daily_count == 1:
-                    client.expire(daily_key, ttl_until_midnight) # "expiry added"
+                daily_count = client.incr(daily_key)
+                if daily_count == 1 or client.ttl(daily_key) == -1:
+                    client.expire(daily_key, ttl_until_midnight)
 
                 if daily_count > 10:
-                    # Block expires at midnight so user can request OTP again next day morning
                     client.setex(daily_block_key, ttl_until_midnight, "blocked")
                     client.delete(daily_key)
+                    try:
+                        cache.set(daily_block_key, "blocked", timeout=ttl_until_midnight)
+                    except Exception:
+                        pass
                     return Response(
-                        {"error": "Daily OTP limit reached. You can request a new code tomorrow.", "code": "DAILY_LIMIT_REACHED"},
+                        {
+                            "error": "Daily OTP limit reached. You can request a new code tomorrow.",
+                            "code": "DAILY_LIMIT_REACHED",
+                        },
                         status=429,
                     )
 
@@ -851,9 +903,7 @@ def send_otp(request):
             except Exception:
                 pass
 
-    # sometimes randbelow produce less than 6 digits, so adding those kind of value with '100000' will make it 6 digit
-    # eg., 45 + 100000 = 100045
-    # randbelow (1 - 899999) not 900000 itself.
+    # Generate cryptographically secure 6-digit numeric OTP [100000, 999999]
     otp_code = f"{secrets.randbelow(900000) + 100000}"
     cache_key = f"dtc:otp:{email}"
 
@@ -863,8 +913,9 @@ def send_otp(request):
             if is_dev_mode:
                 for leftover_k in [
                     daily_block_key,
-                    daily_key ,
+                    daily_key,
                     cooldown_key,
+                    f"dtc:otp_session_blocked:{email}",
                 ]:
                     client.delete(leftover_k)
         except Exception:
@@ -872,27 +923,29 @@ def send_otp(request):
 
     # Redundant memory backup in case Redis is rebooting
     try:
-        # stored inside Django Process RAM
         cache.set(cache_key, otp_code, timeout=300)
     except Exception:
         pass
 
     # Only dispatch real email if NOT running in development or test mode
-
     if not is_dev_mode and not is_testing:
-        # Non blocking mechanism is used : Threads
-        # daemon=True: Make is as a daemon thread, If servers shutsdown , python will not freeze/hang waiting for this thread to finish,
-        # non-daemon block process shutdown , daemon threads exit gracefully with the process.
-        # .start(): Immediately creates and starts the OS level thread
-
-        # target=_dispatch_otp_email, args=(email, otp_code) together form `_dispatch_otp_email(email, otp_code)`
         threading.Thread(target=_dispatch_otp_email, args=(email, otp_code), daemon=True).start()
     else:
-        print(f"[Local Auth] Simulated OTP generated for {email}: {otp_code} (Infinite dev resends enabled)")
+        logger.info(
+            "[Local Auth] Simulated OTP generated for %s: %s (Infinite dev resends enabled)",
+            email,
+            otp_code,
+        )
 
-    if client and not is_dev_mode:
+    # Set cooldown (30 seconds) in non-dev mode
+    if not is_dev_mode:
+        if client:
+            try:
+                client.setex(cooldown_key, 30, "1")
+            except Exception:
+                pass
         try:
-            client.setex(cooldown_key, 30, "1")
+            cache.set(cooldown_key, "1", timeout=30)
         except Exception:
             pass
 
@@ -900,7 +953,11 @@ def send_otp(request):
 
     resp_data = {
         "success": True,
-        "message": f"[LOCAL DEV] Verification code: {otp_code} (Infinite resends enabled)" if is_dev_mode else f"Verification code sent to {email}",
+        "message": (
+            f"[LOCAL DEV] Verification code: {otp_code} (Infinite resends enabled)"
+            if is_dev_mode
+            else f"Verification code sent to {email}"
+        ),
         "email": email,
         "user_email": email,
         "user_id": user_id,
