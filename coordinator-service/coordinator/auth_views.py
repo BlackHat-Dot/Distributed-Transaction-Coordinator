@@ -534,13 +534,42 @@ def _get_caller(request):
 resend.api_key = os.getenv("RESEND_API_KEY")
 
 def _dispatch_otp_email(to_email, otp_code):
-    subject = f"Your DTC Verification Code: {otp_code}"
+    """
+    Dispatch 6-digit verification OTP email via Resend API.
+    Designed for safe execution inside daemon background threads with structured logging.
+    """
+    clean_to = _normalize_email(to_email)
+    if not clean_to:
+        logger.error("Failed to dispatch OTP email: Recipient email address is missing or invalid.")
+        return False
+
+    # Defensively enforce strictly 6 numeric digits to prevent template injection
+    clean_otp = re.sub(r"[^0-9]", "", str(otp_code or ""))
+    if len(clean_otp) != 6:
+        logger.error("Failed to dispatch OTP email to %s: Invalid OTP code format.", clean_to)
+        return False
+
+    api_key = getattr(settings, "RESEND_API_KEY", None) or os.getenv("RESEND_API_KEY")
+    if not api_key:
+        logger.error("Failed to dispatch OTP email: RESEND_API_KEY is not configured on the server.")
+        return False
+
+    resend.api_key = api_key
+
+    from_email = (
+        getattr(settings, "RESEND_FROM_EMAIL", None)
+        or getattr(settings, "DEFAULT_FROM_EMAIL", None)
+        or os.getenv("RESEND_FROM_EMAIL")
+        or "DTC Security <otp@relaydtc.online>"
+    )
+
+    subject = f"Your DTC Verification Code: {clean_otp}"
 
     text_content = f"""Hello,
 
     Your verification code for the Distributed Transaction Coordinator is:
 
-        {otp_code}
+        {clean_otp}
 
     This code will expire in 5 minutes.
 
@@ -560,7 +589,7 @@ def _dispatch_otp_email(to_email, otp_code):
     <body style="margin:0; padding:0; background-color:#f4f4f5; -webkit-text-size-adjust:100%;">
       <!-- Preheader (hidden, shows next to subject line in inbox) -->
       <div style="display:none; max-height:0; overflow:hidden; opacity:0;">
-        Your DTC verification code is {otp_code}. It expires in 5 minutes.
+        Your DTC verification code is {clean_otp}. It expires in 5 minutes.
       </div>
 
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f5; padding:40px 20px;">
@@ -596,7 +625,7 @@ def _dispatch_otp_email(to_email, otp_code):
                     <tr>
                       <td style="background-color:#f4f4f5; border:1px solid #e4e4e7; border-radius:8px; padding:18px 28px;">
                         <span style="font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace; font-size:32px; font-weight:700; color:#111827; letter-spacing:8px;">
-                          {otp_code}
+                          {clean_otp}
                         </span>
                       </td>
                     </tr>
@@ -641,19 +670,26 @@ def _dispatch_otp_email(to_email, otp_code):
     </body>
     </html>"""
 
-
     try:
         params: resend.Emails.SendParams = {
-            "from": "DTC Security <otp@relaydtc.online>",
-            "to": [to_email],
+            "from": from_email,
+            "to": [clean_to],
             "subject": subject,
             "html": html_content,
             "text": text_content,
         }
         result = resend.Emails.send(params)
-        print(f"[Email Dispatch Success] Verification code delivered to {to_email} via Resend. id={result.get('id')}")
-    except Exception as e:
-        print(f"[Email Dispatch Error] {type(e).__name__}: {e}")
+        msg_id = result.get("id") if isinstance(result, dict) else None
+        logger.info("Verification code delivered to %s via Resend (id=%s).", clean_to, msg_id)
+        return True
+    except Exception as exc:
+        logger.error(
+            "Failed to deliver verification code to %s via Resend: %s",
+            clean_to,
+            exc,
+            exc_info=True,
+        )
+        return False
 
 @api_view(["POST"])
 def send_otp(request):
