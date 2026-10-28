@@ -99,17 +99,22 @@ def _get_redis_client():
             _redis_client_instance = None
             return None
 
-def _is_dev_auth_mode():
-    if is_testing:
-        return False
+import difflib
 
+def _is_dev_auth_mode():
+    """Return True only if in local development mode (DEBUG=True and not in test suite)."""
+    if getattr(settings, "IS_TESTING", False):
+        return False
     return bool(getattr(settings, "DEBUG", False))
 
-# remove spaces and lower the email
-def _normalize_email(email_str):
-    # email_str can be of other types , so guard it by converting it to string before performing string operations.
-    return str(email_str).strip().lower()
 
+def _normalize_email(email_str):
+    """Safely strip, sanitize zero-width unicode characters, and lowercase email string."""
+    if not email_str or not isinstance(email_str, str):
+        return ""
+    # Strip invisible zero-width unicode characters (\u200b, \u200c, \u200d, \ufeff)
+    cleaned = re.sub(r"[\u200b\u200c\u200d\ufeff]", "", email_str)
+    return cleaned.strip().lower()
 
 
 """
@@ -124,15 +129,21 @@ def _normalize_email(email_str):
 """
 GMAIL_LOCAL_REGEX = re.compile(r"^[a-z0-9][a-z0-9._%+-]{1,62}[a-z0-9]$")
 
-# A frozenset is an immutable (read-only) set. Once created, its elements cannot be changed, added, or deleted.
 _PROD_DOMAINS = frozenset({"gmail.com"})
 _TEST_DOMAINS = frozenset({"example.com", "test.io", "local.io"})
 
-# Common gmail typos worth catching explicitly (fast path, no distance calc needed)
+# Common gmail typos worth catching explicitly (fast O(1) path)
 _KNOWN_GMAIL_TYPOS = frozenset({
     "gmial.com", "gmal.com", "gmai.com", "gnail.com", "gmail.co",
     "gmail.cm", "gmail.con", "gamil.com", "gmail.comm", "gmaill.com",
     "gmail.vom", "gmali.com", "gmailc.om", "gmail",
+})
+
+# Real distinct external domains that must NEVER be suggested as gmail typos
+_NON_TYPO_REAL_DOMAINS = frozenset({
+    "gail.com", "mail.com", "email.com", "ymail.com", "yahoo.com",
+    "yaho.com", "outlook.com", "hotmail.com", "icloud.com",
+    "proton.me", "protonmail.com", "aol.com", "zoho.com", "g.com",
 })
 
 
@@ -140,12 +151,33 @@ def _suggest_domain(domain_part):
     """
     Returns a suggested correction for `domain_part` if it looks like a
     near-miss typo of gmail.com, else None.
-      1. Exact match against a known-typo list (cheap, catches 90% of cases).
+    
+    1. Rejects distinct legitimate domains and malformed TLDs.
+    2. O(1) lookup against known Gmail typo catalog.
+    3. Dynamic SequenceMatcher ratio (>= 0.85) for single-letter keyboard slips.
     """
-    if domain_part in _KNOWN_GMAIL_TYPOS:
+    if not domain_part or not isinstance(domain_part, str):
+        return None
+
+    d = domain_part.strip().lower()
+
+    # Guard: legitimate third-party services and malformed non-TLDs must never suggest gmail.com
+    if d in _NON_TYPO_REAL_DOMAINS:
+        return None
+    if "." not in d and d != "gmail":
+        return None
+
+    # Fast path: known high-frequency typos
+    if d in _KNOWN_GMAIL_TYPOS:
+        return "gmail.com"
+
+    # Dynamic path: smart similarity check for keyboard slips (ratio >= 0.85)
+    matcher = difflib.SequenceMatcher(None, d, "gmail.com")
+    if matcher.ratio() >= 0.85:
         return "gmail.com"
 
     return None
+
 
 def validate_email(email):
     """
@@ -153,13 +185,20 @@ def validate_email(email):
     (plus test domains when IS_TESTING/DEBUG is on).
 
     Enforces:
-      1. Only @gmail.com domain (or test domains in test/debug mode).
-      2. Local-part syntax: no consecutive dots, no leading/trailing dot.
-      3. Local-part length between 3 and 64 characters.
+      1. Type safety and non-empty string check.
+      2. Maximum length of 254 characters (RFC 5321).
+      3. Exactly one '@' delimiter.
+      4. Only @gmail.com domain (or test domains in test/debug mode).
+      5. Local-part syntax: no consecutive dots, no leading/trailing dot.
+      6. Local-part length between 3 and 64 characters.
 
     On domain failure, attempts a typo suggestion (e.g. 'gmial.com' ->
     'gmail.com') and includes it in the error message when found.
     """
+    if not email or not isinstance(email, str):
+        return False, "Email address is required."
+
+    email = email.strip().lower()
 
     if len(email) > 254:
         return False, "Email address exceeds maximum length of 254 characters."
