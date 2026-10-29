@@ -363,7 +363,7 @@ def reserve_seat(request):
                         'user_id': user_id, 
                         'user_email': user_email, 
                         'status': Reservation.Status.RESERVED,
-                        'released_reason': None,
+                        'released_reason': "",
                     }
                 )
 
