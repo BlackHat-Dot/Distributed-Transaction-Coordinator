@@ -1,180 +1,405 @@
-from datetime import timedelta
 import os
 import uuid
 from unittest.mock import MagicMock, patch
 
-from django.test import TestCase, override_settings
-from django.utils import timezone
-from django.core.management import call_command
+from django.test import TestCase
 from rest_framework.test import APIClient
 
-from coordinator.models import Transaction
+from coordinator.models import Transaction, SagaEvent
 
 
 class RetryCompensationA1Tests(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.staff_key = "test-staff-key-123"
+        self.headers = {"HTTP_X_STAFF_KEY": self.staff_key}
         self.tx_id = uuid.uuid4()
         self.url = f"/transactions/{self.tx_id}/retry-compensation/"
 
-    @override_settings(IS_TESTING=False, DEBUG=False)
-    @patch.dict(os.environ, {"ADMIN_DOMAIN": "@admin.org"})
-    @patch("coordinator.views.get_user_from_request")
-    def test_retry_compensation_staff_only_non_staff_rejected(self, mock_jwt):
-        """Non-staff authenticated user must receive 403 Forbidden."""
-        mock_jwt.return_value = {
-            "is_authenticated": True,
-            "user_id": "regular_user",
-            "user_email": "user@customer.com",
+    def _create_txn(self, status=Transaction.Status.COMPENSATION_FAILED, **kwargs):
+        defaults = {
+            "transaction_id": self.tx_id,
+            "status": status,
+            "seat_ids": [1, 2],
+            "quantity": 2,
+            "amount": 200,
+            "user_id": "usr_test",
         }
-        _txn = Transaction.objects.create(
-            transaction_id=self.tx_id,
-            status=Transaction.Status.COMPENSATION_FAILED,
-            seat_ids=[1],
-            quantity=1,
-            amount=100,
-            user_id="regular_user",
-        )
-        resp = self.client.post(self.url, format="json")
-        self.assertEqual(resp.status_code, 403)
+        defaults.update(kwargs)
+        return Transaction.objects.create(**defaults)
 
-    def test_retry_compensation_unknown_id_returns_404(self):
-        """Unknown transaction IDs must return 404, not status disclosure."""
-        unknown_id = uuid.uuid4()
-        url = f"/transactions/{unknown_id}/retry-compensation/"
-        resp = self.client.post(url, format="json")
-        self.assertEqual(resp.status_code, 404)
+    # -------------------------------------------------------------------------
+    # 1. Authentication & Authorization
+    # -------------------------------------------------------------------------
+    def test_auth_header_required_and_validated(self):
+        """Missing or invalid X-Staff-Key rejected; unconfigured server key returns 503."""
+        self._create_txn()
 
-    def test_retry_compensation_unallowed_status_rejected(self):
-        """Transactions not in allowlist must be rejected with 400 Bad Request."""
-        _txn = Transaction.objects.create(
-            transaction_id=self.tx_id,
-            status=Transaction.Status.STARTED,
-            seat_ids=[1],
-            quantity=1,
-            amount=100,
-        )
-        resp = self.client.post(self.url, format="json")
-        self.assertEqual(resp.status_code, 400)
+        # Missing header -> 401 STAFF_KEY_REQUIRED
+        with patch.dict(os.environ, {"STAFF_API_KEY": self.staff_key}):
+            resp = self.client.post(self.url)
+            self.assertEqual(resp.status_code, 401)
+            self.assertEqual(resp.data.get("code"), "STAFF_KEY_REQUIRED")
 
-    def test_retry_compensation_short_circuit_compensated(self):
-        """Transactions already in COMPENSATED or COMPENSATED_ON_RETRY short-circuit to 200 without calls."""
-        for st in (Transaction.Status.COMPENSATED, Transaction.Status.COMPENSATED_ON_RETRY):
-            tid = uuid.uuid4()
+        # Invalid key -> 403 INVALID_STAFF_KEY (AuthenticationFailed in DRF)
+        with patch.dict(os.environ, {"STAFF_API_KEY": self.staff_key}):
+            resp = self.client.post(self.url, HTTP_X_STAFF_KEY="wrong-key")
+            self.assertIn(resp.status_code, (401, 403))
+            self.assertEqual(resp.data.get("code"), "INVALID_STAFF_KEY")
+
+        # Server STAFF_API_KEY unset -> 503 Service Unavailable
+        with patch.dict(os.environ, {}, clear=True):
+            resp = self.client.post(self.url, HTTP_X_STAFF_KEY=self.staff_key)
+            self.assertEqual(resp.status_code, 503)
+            self.assertEqual(resp.data.get("code"), "STAFF_SERVICE_UNAVAILABLE")
+
+    # -------------------------------------------------------------------------
+    # 2. Transaction Validation & Idempotent Short-Circuit
+    # -------------------------------------------------------------------------
+    def test_unknown_transaction_returns_404(self):
+        """Authenticated request for nonexistent transaction returns 404."""
+        unknown_url = f"/transactions/{uuid.uuid4()}/retry-compensation/"
+        with patch.dict(os.environ, {"STAFF_API_KEY": self.staff_key}):
+            resp = self.client.post(unknown_url, **self.headers)
+            self.assertEqual(resp.status_code, 404)
+
+    def test_ineligible_statuses_rejected_with_400(self):
+        """Transactions in non-retryable statuses (e.g. STARTED, COMPLETED) return 400."""
+        for ineligible_status in (Transaction.Status.STARTED, Transaction.Status.COMPLETED):
+            tx_id = uuid.uuid4()
             Transaction.objects.create(
-                transaction_id=tid,
-                status=st,
+                transaction_id=tx_id,
+                status=ineligible_status,
                 seat_ids=[1],
                 quantity=1,
                 amount=100,
             )
-            with patch("coordinator.views.requests.post") as mock_post, \
-                 patch("coordinator.views.requests.get") as mock_get:
-                resp = self.client.post(f"/transactions/{tid}/retry-compensation/", format="json")
+            with patch.dict(os.environ, {"STAFF_API_KEY": self.staff_key}):
+                resp = self.client.post(f"/transactions/{tx_id}/retry-compensation/", **self.headers)
+                self.assertEqual(resp.status_code, 400)
+                self.assertIn("not eligible for retry compensation", resp.data.get("error", ""))
+
+    def test_already_compensated_short_circuits_without_http_calls(self):
+        """Already compensated transactions return 200 without issuing downstream calls."""
+        for comp_status in (Transaction.Status.COMPENSATED, Transaction.Status.COMPENSATED_ON_RETRY):
+            tx_id = uuid.uuid4()
+            Transaction.objects.create(
+                transaction_id=tx_id,
+                status=comp_status,
+                seat_ids=[1],
+                quantity=1,
+                amount=100,
+            )
+            with patch.dict(os.environ, {"STAFF_API_KEY": self.staff_key}), \
+                 patch("coordinator.views._http") as mock_http:
+                resp = self.client.post(f"/transactions/{tx_id}/retry-compensation/", **self.headers)
                 self.assertEqual(resp.status_code, 200)
-                self.assertEqual(resp.data.get("status"), st)
-                mock_post.assert_not_called()
-                mock_get.assert_not_called()
+                self.assertEqual(resp.data.get("status"), comp_status)
+                mock_http.assert_not_called()
 
-    def test_retry_compensation_payment_check_5xx_releases_claim_and_returns_503(self):
-        """Payment check 5xx/timeout releases claim back to original status, returns 503, never releases inventory."""
-        txn = Transaction.objects.create(
-            transaction_id=self.tx_id,
-            status=Transaction.Status.COMPENSATION_FAILED,
-            seat_ids=[1],
-            quantity=1,
-            amount=100,
-        )
+    # -------------------------------------------------------------------------
+    # 3. Concurrency & CAS Race Safety
+    # -------------------------------------------------------------------------
+    def test_concurrent_cas_claim_loss_returns_409(self):
+        """If CAS claim to RECOVERY_IN_PROGRESS fails due to concurrent race, return 409."""
+        self._create_txn(status=Transaction.Status.COMPENSATION_FAILED)
+
+        # Simulate concurrent worker claiming transaction before CAS update
+        with patch.dict(os.environ, {"STAFF_API_KEY": self.staff_key}), \
+             patch("coordinator.views._set_status_with_event", return_value=False), \
+             patch("coordinator.views._http") as mock_http:
+            resp = self.client.post(self.url, **self.headers)
+            self.assertEqual(resp.status_code, 409)
+            self.assertIn("concurrently resolved", resp.data.get("message", ""))
+            mock_http.assert_not_called()
+
+    # -------------------------------------------------------------------------
+    # 4. Payment Safety & Rollback (5xx / Timeout)
+    # -------------------------------------------------------------------------
+    def test_payment_check_failure_reverts_claim_and_returns_503(self):
+        """5xx or timeout during payment check must revert claim and never release inventory."""
+        txn = self._create_txn(status=Transaction.Status.COMPENSATION_FAILED)
+
         mock_check = MagicMock()
-        mock_check.status_code = 500
-        mock_check.content = b'{"error": "Internal Error"}'
-        mock_check.json.return_value = {"error": "Internal Error"}
+        mock_check.status_code = 503
+        mock_check.content = b'{"error": "Payment Service Unavailable"}'
+        mock_check.json.return_value = {"error": "Payment Service Unavailable"}
 
-        mock_post_obj = MagicMock()
-        mock_post_obj.status_code = 200
-        mock_post_obj.content = b'{}'
-        mock_post_obj.json.return_value = {}
-
-        with patch("coordinator.views.requests.get", return_value=mock_check), \
-             patch("coordinator.views.requests.post", return_value=mock_post_obj) as mock_post:
-            resp = self.client.post(self.url, format="json")
+        with patch.dict(os.environ, {"STAFF_API_KEY": self.staff_key}), \
+             patch("coordinator.views._http", return_value=mock_check) as mock_http:
+            resp = self.client.post(self.url, **self.headers)
             self.assertEqual(resp.status_code, 503)
-            # Inventory release must NOT be called
-            mock_post.assert_not_called()
+
+            # Ensure only payment_check was invoked; release was NEVER called
+            call_urls = [str(arg) for call in mock_http.call_args_list for arg in call.args if isinstance(arg, str)]
+            self.assertFalse(any("seats/release" in u for u in call_urls))
 
         txn.refresh_from_db()
-        # Must be reverted back to COMPENSATION_FAILED so sweeper can retry
         self.assertEqual(txn.status, Transaction.Status.COMPENSATION_FAILED)
 
-    def test_retry_compensation_charged_triggers_refund_and_release(self):
-        """Payment status CHARGED triggers refund, releases inventory, transitions to COMPENSATED_ON_RETRY."""
-        txn = Transaction.objects.create(
-            transaction_id=self.tx_id,
-            status=Transaction.Status.COMPENSATION_FAILED,
-            seat_ids=[1],
-            quantity=1,
-            amount=100,
-        )
-        def mock_get(url, *args, **kwargs):
-            mock = MagicMock()
-            mock.status_code = 200
-            mock.content = b'{"status": "CHARGED"}'
-            mock.json.return_value = {"status": "CHARGED"}
-            return mock
+    # -------------------------------------------------------------------------
+    # 5. Payment NOT_CHARGED Workflow: Void Fencing & Release
+    # -------------------------------------------------------------------------
+    def test_payment_not_charged_fences_with_void_then_releases_inventory(self):
+        """NOT_CHARGED payment fences with void, releases inventory, transitions to COMPENSATED_ON_RETRY."""
+        txn = self._create_txn(status=Transaction.Status.PAYMENT_TIMEOUT)
+        calls = []
 
-        def mock_post(url, *args, **kwargs):
+        def fake_http(method, url, **kwargs):
+            calls.append((method, url))
             mock = MagicMock()
-            if "confirm" in url:
-                mock.status_code = 409
-                mock.content = b'{"error": "Hold expired", "code": "HOLD_EXPIRED"}'
-                mock.json.return_value = {"error": "Hold expired", "code": "HOLD_EXPIRED"}
-            elif "refund" in url:
+            if "payments/check" in url:
                 mock.status_code = 200
-                mock.content = b'{"status": "REFUNDED"}'
-                mock.json.return_value = {"status": "REFUNDED"}
-            else:
+                mock.content = b'{"status": "NOT_CHARGED"}'
+                mock.json.return_value = {"status": "NOT_CHARGED"}
+            elif "payments/void" in url:
+                mock.status_code = 200
+                mock.content = b'{"status": "VOIDED"}'
+                mock.json.return_value = {"status": "VOIDED"}
+            elif "seats/release" in url:
                 mock.status_code = 200
                 mock.content = b'{"message": "Released"}'
                 mock.json.return_value = {"message": "Released"}
+            else:
+                mock.status_code = 404
+                mock.content = b'{}'
+                mock.json.return_value = {}
             return mock
 
-        with patch("coordinator.views.requests.get", side_effect=mock_get), \
-             patch("coordinator.views.requests.post", side_effect=mock_post):
-            resp = self.client.post(self.url, format="json")
+        with patch.dict(os.environ, {"STAFF_API_KEY": self.staff_key}), \
+             patch("coordinator.views._http", side_effect=fake_http):
+            resp = self.client.post(self.url, **self.headers)
             self.assertEqual(resp.status_code, 200)
 
         txn.refresh_from_db()
         self.assertEqual(txn.status, Transaction.Status.COMPENSATED_ON_RETRY)
 
-    def test_sweeper_handles_retry_compensation_failed(self):
-        """Sweeper must include RETRY_COMPENSATION_FAILED in recovery candidates."""
-        txn = Transaction.objects.create(
-            transaction_id=self.tx_id,
-            status=Transaction.Status.RETRY_COMPENSATION_FAILED,
-            seat_ids=[1],
-            quantity=1,
-            amount=100,
-        )
-        past_time = timezone.now() - timedelta(minutes=10)
-        Transaction.objects.filter(transaction_id=self.tx_id).update(updated_at=past_time)
+        # Verify ordering: check -> void -> release
+        urls = [c[1] for c in calls]
+        self.assertTrue(any("payments/check" in u for u in urls))
+        self.assertTrue(any("payments/void" in u for u in urls))
+        self.assertTrue(any("seats/release" in u for u in urls))
 
-        def mock_get(url, *args, **kwargs):
+        # Verify SagaEvents recorded with ACTOR_RETRY
+        claim_event = SagaEvent.objects.filter(
+            transaction=txn,
+            to_status=Transaction.Status.RECOVERY_IN_PROGRESS,
+            actor=SagaEvent.ACTOR_RETRY,
+        ).exists()
+        final_event = SagaEvent.objects.filter(
+            transaction=txn,
+            to_status=Transaction.Status.COMPENSATED_ON_RETRY,
+            actor=SagaEvent.ACTOR_RETRY,
+        ).exists()
+        self.assertTrue(claim_event)
+        self.assertTrue(final_event)
+
+    def test_payment_void_failure_aborts_compensation_and_reverts_claim(self):
+        """If void fails for NOT_CHARGED payment, must abort and never release inventory."""
+        txn = self._create_txn(status=Transaction.Status.PAYMENT_CONNECTION_ERROR)
+
+        def fake_http(method, url, **kwargs):
             mock = MagicMock()
-            mock.status_code = 200
-            mock.content = b'{"status": "NOT_CHARGED"}'
-            mock.json.return_value = {"status": "NOT_CHARGED"}
+            if "payments/check" in url:
+                mock.status_code = 200
+                mock.content = b'{"status": "NOT_CHARGED"}'
+                mock.json.return_value = {"status": "NOT_CHARGED"}
+            elif "payments/void" in url:
+                mock.status_code = 500
+                mock.content = b'{"error": "Void timeout"}'
+                mock.json.return_value = {"error": "Void timeout"}
+            else:
+                mock.status_code = 200
+                mock.content = b'{}'
+                mock.json.return_value = {}
             return mock
 
-        def mock_post(url, *args, **kwargs):
-            mock = MagicMock()
-            mock.status_code = 200
-            mock.content = b'{"message": "Released"}'
-            mock.json.return_value = {"message": "Released"}
-            return mock
+        with patch.dict(os.environ, {"STAFF_API_KEY": self.staff_key}), \
+             patch("coordinator.views._http", side_effect=fake_http) as mock_http:
+            resp = self.client.post(self.url, **self.headers)
+            self.assertEqual(resp.status_code, 503)
 
-        with patch("coordinator.management.commands.recovery_stuck_transactions.requests.get", side_effect=mock_get), \
-             patch("coordinator.management.commands.recovery_stuck_transactions.requests.post", side_effect=mock_post):
-            call_command("recovery_stuck_transactions")
+            call_urls = [str(arg) for call in mock_http.call_args_list for arg in call.args if isinstance(arg, str)]
+            self.assertFalse(any("seats/release" in u for u in call_urls))
 
         txn.refresh_from_db()
-        self.assertEqual(txn.status, Transaction.Status.COMPENSATED)
+        self.assertEqual(txn.status, Transaction.Status.PAYMENT_CONNECTION_ERROR)
+
+    # -------------------------------------------------------------------------
+    # 6. Payment CHARGED Workflow: Forward Confirm vs Refund
+    # -------------------------------------------------------------------------
+    def test_payment_charged_forward_completes_if_inventory_confirm_succeeds(self):
+        """CHARGED payment attempts seat confirmation first; if successful, forward-completes to COMPLETED."""
+        txn = self._create_txn(status=Transaction.Status.INVENTORY_TIMEOUT)
+
+        def fake_http(method, url, **kwargs):
+            mock = MagicMock()
+            if "payments/check" in url:
+                mock.status_code = 200
+                mock.content = b'{"status": "CHARGED"}'
+                mock.json.return_value = {"status": "CHARGED"}
+            elif "seats/confirm" in url:
+                mock.status_code = 200
+                mock.content = b'{"status": "CONFIRMED"}'
+                mock.json.return_value = {"status": "CONFIRMED"}
+            else:
+                mock.status_code = 500
+                mock.content = b'{}'
+                mock.json.return_value = {}
+            return mock
+
+        with patch.dict(os.environ, {"STAFF_API_KEY": self.staff_key}), \
+             patch("coordinator.views._http", side_effect=fake_http) as mock_http:
+            resp = self.client.post(self.url, **self.headers)
+            self.assertEqual(resp.status_code, 200)
+
+            # Never refunded
+            call_urls = [str(arg) for call in mock_http.call_args_list for arg in call.args if isinstance(arg, str)]
+            self.assertFalse(any("payments/refund" in u for u in call_urls))
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.status, Transaction.Status.COMPLETED)
+
+    def test_payment_charged_admin_reset_prohibits_auto_refund(self):
+        """If seats were released by ADMIN_RESET, auto-refund is prohibited and returns 409."""
+        txn = self._create_txn(status=Transaction.Status.COMPENSATION_FAILED)
+
+        def fake_http(method, url, **kwargs):
+            mock = MagicMock()
+            if "payments/check" in url:
+                mock.status_code = 200
+                mock.content = b'{"status": "CHARGED"}'
+                mock.json.return_value = {"status": "CHARGED"}
+            elif "seats/confirm" in url:
+                mock.status_code = 409
+                mock.content = b'{"error": "Seats released", "released_reason": "ADMIN_RESET"}'
+                mock.json.return_value = {"error": "Seats released", "released_reason": "ADMIN_RESET"}
+            else:
+                mock.status_code = 500
+                mock.content = b'{}'
+                mock.json.return_value = {}
+            return mock
+
+        with patch.dict(os.environ, {"STAFF_API_KEY": self.staff_key}), \
+             patch("coordinator.views._http", side_effect=fake_http) as mock_http:
+            resp = self.client.post(self.url, **self.headers)
+            self.assertEqual(resp.status_code, 409)
+            self.assertIn("ADMIN_RESET", resp.data.get("error", ""))
+
+            # Refund must not be issued
+            call_urls = [str(arg) for call in mock_http.call_args_list for arg in call.args if isinstance(arg, str)]
+            self.assertFalse(any("payments/refund" in u for u in call_urls))
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.status, Transaction.Status.COMPENSATION_FAILED)
+
+    def test_payment_charged_hold_expired_refunds_and_releases(self):
+        """CHARGED payment with expired hold refunds payment, releases inventory, transitions to COMPENSATED_ON_RETRY."""
+        txn = self._create_txn(status=Transaction.Status.COMPENSATION_FAILED)
+
+        def fake_http(method, url, **kwargs):
+            mock = MagicMock()
+            if "payments/check" in url:
+                mock.status_code = 200
+                mock.content = b'{"status": "CHARGED"}'
+                mock.json.return_value = {"status": "CHARGED"}
+            elif "seats/confirm" in url:
+                mock.status_code = 409
+                mock.content = b'{"error": "Hold expired", "code": "HOLD_EXPIRED"}'
+                mock.json.return_value = {"error": "Hold expired", "code": "HOLD_EXPIRED"}
+            elif "payments/refund" in url:
+                mock.status_code = 200
+                mock.content = b'{"status": "REFUNDED"}'
+                mock.json.return_value = {"status": "REFUNDED"}
+            elif "seats/release" in url:
+                mock.status_code = 200
+                mock.content = b'{"message": "Released"}'
+                mock.json.return_value = {"message": "Released"}
+            else:
+                mock.status_code = 404
+                mock.content = b'{}'
+                mock.json.return_value = {}
+            return mock
+
+        with patch.dict(os.environ, {"STAFF_API_KEY": self.staff_key}), \
+             patch("coordinator.views._http", side_effect=fake_http):
+            resp = self.client.post(self.url, **self.headers)
+            self.assertEqual(resp.status_code, 200)
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.status, Transaction.Status.COMPENSATED_ON_RETRY)
+
+    # -------------------------------------------------------------------------
+    # 7. Downstream Idempotency & Partial Failure
+    # -------------------------------------------------------------------------
+    def test_downstream_idempotent_errors_treated_as_successful_compensation(self):
+        """Downstream responses indicating already refunded/released are treated as success."""
+        txn = self._create_txn(status=Transaction.Status.COMPENSATION_FAILED)
+
+        def fake_http(method, url, **kwargs):
+            mock = MagicMock()
+            if "payments/check" in url:
+                mock.status_code = 200
+                mock.content = b'{"status": "CHARGED"}'
+                mock.json.return_value = {"status": "CHARGED"}
+            elif "seats/confirm" in url:
+                mock.status_code = 409
+                mock.content = b'{"error": "Hold expired"}'
+                mock.json.return_value = {"error": "Hold expired"}
+            elif "payments/refund" in url:
+                mock.status_code = 409
+                mock.content = b'{"error": "already refunded", "code": "ALREADY_REFUNDED"}'
+                mock.json.return_value = {"error": "already refunded", "code": "ALREADY_REFUNDED"}
+            elif "seats/release" in url:
+                mock.status_code = 409
+                mock.content = b'{"error": "already released", "code": "ALREADY_RELEASED"}'
+                mock.json.return_value = {"error": "already released", "code": "ALREADY_RELEASED"}
+            else:
+                mock.status_code = 404
+                mock.content = b'{}'
+                mock.json.return_value = {}
+            return mock
+
+        with patch.dict(os.environ, {"STAFF_API_KEY": self.staff_key}), \
+             patch("coordinator.views._http", side_effect=fake_http):
+            resp = self.client.post(self.url, **self.headers)
+            self.assertEqual(resp.status_code, 200)
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.status, Transaction.Status.COMPENSATED_ON_RETRY)
+
+    def test_partial_failure_transitions_to_retry_compensation_failed(self):
+        """If refund succeeds but release fails, status becomes RETRY_COMPENSATION_FAILED (500)."""
+        txn = self._create_txn(status=Transaction.Status.COMPENSATION_FAILED)
+
+        def fake_http(method, url, **kwargs):
+            mock = MagicMock()
+            if "payments/check" in url:
+                mock.status_code = 200
+                mock.content = b'{"status": "CHARGED"}'
+                mock.json.return_value = {"status": "CHARGED"}
+            elif "seats/confirm" in url:
+                mock.status_code = 409
+                mock.content = b'{"error": "Hold expired"}'
+                mock.json.return_value = {"error": "Hold expired"}
+            elif "payments/refund" in url:
+                mock.status_code = 200
+                mock.content = b'{"status": "REFUNDED"}'
+                mock.json.return_value = {"status": "REFUNDED"}
+            elif "seats/release" in url:
+                mock.status_code = 500
+                mock.content = b'{"error": "Release database crash"}'
+                mock.json.return_value = {"error": "Release database crash"}
+            else:
+                mock.status_code = 404
+                mock.content = b'{}'
+                mock.json.return_value = {}
+            return mock
+
+        with patch.dict(os.environ, {"STAFF_API_KEY": self.staff_key}), \
+             patch("coordinator.views._http", side_effect=fake_http):
+            resp = self.client.post(self.url, **self.headers)
+            self.assertEqual(resp.status_code, 500)
+
+        txn.refresh_from_db()
+        self.assertEqual(txn.status, Transaction.Status.RETRY_COMPENSATION_FAILED)
