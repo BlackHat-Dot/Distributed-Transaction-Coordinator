@@ -13,6 +13,7 @@ from coordinator.auth_views import (
     _create_jwt,
     _get_caller,
     _get_client_ip,
+    _get_redis_client,
     _is_admin_email,
     _normalize_email,
     validate_email,
@@ -25,9 +26,30 @@ class AuthAndSessionTests(TestCase):
         self.client = APIClient()
         self.email = "shopper@gmail.com"
         cache.clear()
+        try:
+            r = _get_redis_client()
+            if r:
+                r.flushdb()
+        except Exception:
+            pass
 
     def tearDown(self):
         cache.clear()
+        try:
+            r = _get_redis_client()
+            if r:
+                r.flushdb()
+        except Exception:
+            pass
+
+    def _set_cache_and_redis(self, key, value, timeout=30):
+        cache.set(key, value, timeout=timeout)
+        try:
+            r = _get_redis_client()
+            if r:
+                r.setex(key, timeout, value)
+        except Exception:
+            pass
 
     def test_validate_email_domain_and_typo_suggestions(self):
         """Email validation requires valid format, allows gmail, and provides typo suggestions."""
@@ -66,7 +88,7 @@ class AuthAndSessionTests(TestCase):
 
     def test_send_otp_blocked_if_active_session_exists(self):
         """Single-device guard: send_otp returns 409 CONCURRENT_LOGIN_BLOCKED if an active session exists."""
-        cache.set(f"dtc:session:{self.email}", "active_session_123", timeout=30)
+        self._set_cache_and_redis(f"dtc:session:{self.email}", "active_session_123", timeout=30)
 
         resp = self.client.post("/auth/send-otp/", {"email": self.email}, format="json")
         self.assertEqual(resp.status_code, 409)
@@ -75,7 +97,7 @@ class AuthAndSessionTests(TestCase):
     def test_verify_otp_success_issues_jwt_and_clears_otp(self):
         """Correct OTP issues signed JWT with session ID, establishes active session, and deletes OTP."""
         otp_code = "654321"
-        cache.set(f"dtc:otp:{self.email}", otp_code, timeout=300)
+        self._set_cache_and_redis(f"dtc:otp:{self.email}", otp_code, timeout=300)
 
         resp = self.client.post(
             "/auth/verify-otp/",
@@ -102,7 +124,7 @@ class AuthAndSessionTests(TestCase):
 
     def test_verify_otp_failure_and_brute_force_lockout(self):
         """Failed OTP submissions decrement remaining attempts; 5 failures trigger 24h lockout."""
-        cache.set(f"dtc:otp:{self.email}", "123456", timeout=300)
+        self._set_cache_and_redis(f"dtc:otp:{self.email}", "123456", timeout=300)
 
         with patch("coordinator.auth_views._is_dev_auth_mode", return_value=False):
             # Attempts 1 to 4 should return 400 INVALID_OTP
@@ -136,8 +158,8 @@ class AuthAndSessionTests(TestCase):
 
     def test_verify_otp_blocked_when_active_session_already_present(self):
         """Concurrent verify_otp attempts reject with 409 CONCURRENT_LOGIN_BLOCKED."""
-        cache.set(f"dtc:otp:{self.email}", "123456", timeout=300)
-        cache.set(f"dtc:session:{self.email}", "existing_device_sid", timeout=30)
+        self._set_cache_and_redis(f"dtc:otp:{self.email}", "123456", timeout=300)
+        self._set_cache_and_redis(f"dtc:session:{self.email}", "existing_device_sid", timeout=30)
 
         resp = self.client.post(
             "/auth/verify-otp/",
@@ -172,7 +194,7 @@ class AuthAndSessionTests(TestCase):
         old_jwt = _create_jwt("usr_123", self.email, session_id=old_sid)
 
         # Device B logs in, setting the active session key to new_sid
-        cache.set(f"dtc:session:{self.email}", new_sid, timeout=30)
+        self._set_cache_and_redis(f"dtc:session:{self.email}", new_sid, timeout=30)
 
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {old_jwt}")
 
@@ -190,7 +212,7 @@ class AuthAndSessionTests(TestCase):
         """Active session heartbeat refreshes session TTL and returns status alive."""
         sid = "sid_active"
         jwt_token = _create_jwt("usr_123", self.email, session_id=sid)
-        cache.set(f"dtc:session:{self.email}", sid, timeout=30)
+        self._set_cache_and_redis(f"dtc:session:{self.email}", sid, timeout=30)
 
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {jwt_token}")
         resp = self.client.post("/auth/heartbeat/")
@@ -204,8 +226,8 @@ class AuthAndSessionTests(TestCase):
         """Logout purges session keys and returns 200 OK even when called repeatedly."""
         sid = "sid_to_logout"
         jwt_token = _create_jwt("usr_123", self.email, session_id=sid)
-        cache.set(f"dtc:session:{self.email}", sid, timeout=30)
-        cache.set("dtc:session:usr_123", sid, timeout=30)
+        self._set_cache_and_redis(f"dtc:session:{self.email}", sid, timeout=30)
+        self._set_cache_and_redis("dtc:session:usr_123", sid, timeout=30)
 
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {jwt_token}")
         resp = self.client.post("/auth/logout/")
