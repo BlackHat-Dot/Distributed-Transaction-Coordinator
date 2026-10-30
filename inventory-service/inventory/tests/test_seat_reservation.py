@@ -5,11 +5,17 @@ import uuid
 
 from django.conf import settings
 from django.core.cache import cache
-from django.test import TestCase
+from django.test import TestCase, SimpleTestCase
 from django.utils import timezone
-from rest_framework.test import APIClient
+from rest_framework.test import APIClient, APIRequestFactory
 
 from inventory.models import Event, Seat, Reservation
+from inventory.throttling import (
+    AnonIpRateThrottle,
+    CheckReservationRateThrottle,
+    SeatListRateThrottle,
+    UserActionRateThrottle,
+)
 
 
 class SeatReservationLifecycleTests(TestCase):
@@ -332,3 +338,72 @@ class SeatReservationLifecycleTests(TestCase):
         self.assertEqual(resp.data.get("status"), "BOOKED")
         self.assertEqual(len(resp.data.get("seats")), 1)
         self.assertEqual(resp.data["seats"][0]["seat_label"], "A1")
+
+
+class InventoryThrottlingUnitTests(SimpleTestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+
+    def test_anon_throttle_uses_session_id_when_provided(self):
+        """Anonymous throttle creates cache key using session ID if provided in header."""
+        request = self.factory.post(
+            "/seats/release/",
+            {"transaction_id": "tx_123"},
+            HTTP_X_SESSION_ID="sess_user_alpha",
+        )
+        throttle = AnonIpRateThrottle()
+        key = throttle.get_cache_key(request, None)
+        self.assertIn("session_sess_user_alpha", key)
+
+    def test_anon_throttle_falls_back_to_ip_when_no_session(self):
+        """Anonymous throttle falls back to IP address when no session is present."""
+        request = self.factory.post(
+            "/seats/release/",
+            {"transaction_id": "tx_123"},
+            REMOTE_ADDR="192.168.1.100",
+        )
+        throttle = AnonIpRateThrottle()
+        key = throttle.get_cache_key(request, None)
+        self.assertIn("ip_", key)
+        self.assertIn("192.168.1.100", key)
+
+    def test_anon_throttle_bypasses_authenticated_jwt_users(self):
+        """Anon throttle returns None for authenticated users so UserActionRateThrottle handles them."""
+        request = self.factory.post("/seats/release/", {"transaction_id": "tx_123"})
+        throttle = AnonIpRateThrottle()
+        with patch("inventory.throttling._get_authenticated_user_id", return_value="usr_verified"):
+            key = throttle.get_cache_key(request, None)
+            self.assertIsNone(key)
+
+    def test_check_reservation_throttle_uses_session_with_ip_fallback(self):
+        """CheckReservationRateThrottle uses session ID if present, else client IP."""
+        throttle = CheckReservationRateThrottle()
+
+        # With session ID
+        req_with_session = self.factory.get("/seats/check/", HTTP_X_SESSION_ID="sess_chk_789")
+        key_session = throttle.get_cache_key(req_with_session, None)
+        self.assertIn("session_sess_chk_789", key_session)
+
+        # Without session ID (IP fallback)
+        req_without_session = self.factory.get("/seats/check/", REMOTE_ADDR="10.0.0.5")
+        key_ip = throttle.get_cache_key(req_without_session, None)
+        self.assertIn("ip_", key_ip)
+        self.assertIn("10.0.0.5", key_ip)
+
+    def test_user_action_throttle_ignores_untrusted_client_payload(self):
+        """UserActionRateThrottle rejects unverified request.data user_id and only trusts JWT."""
+        throttle = UserActionRateThrottle()
+        req_unverified = self.factory.post(
+            "/seats/reserve/",
+            {"user_id": "unverified_attacker"},
+            format="json",
+        )
+        # Without valid JWT token
+        key = throttle.get_cache_key(req_unverified, None)
+        self.assertIsNone(key)
+
+        # With valid JWT token
+        with patch("inventory.throttling._get_authenticated_user_id", return_value="usr_jwt_999"):
+            key = throttle.get_cache_key(req_unverified, None)
+            self.assertIn("usr_jwt_999", key)
+

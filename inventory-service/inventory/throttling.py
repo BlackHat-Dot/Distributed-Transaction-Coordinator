@@ -108,35 +108,38 @@ class UserActionRateThrottle(BaseInventoryThrottle):
     scope = "inventory_user"
 
     def get_cache_key(self, request, view):
+        # STRICT: Only verified JWTs get user throttling
         uid = _get_authenticated_user_id(request)
-        if not uid and hasattr(request, "data") and isinstance(request.data, dict):
-            uid = request.data.get("user_id")
-
-        uid_str = str(uid).strip() if uid is not None else ""
-        if not uid_str:
-            return None
+        if not uid:
+            return None  # Pass through to AnonIpRateThrottle
 
         return self.cache_format % {
             "scope": self.scope,
-            "ident": uid_str,
+            "ident": str(uid).strip(),
         }
 
 
 class AnonIpRateThrottle(BaseInventoryThrottle):
+    """
+    Rate limits unauthenticated requests using session ID where available,
+    falling back to client IP when no session header or cookie is present.
+    """
     scope = "inventory_anon"
 
     def get_cache_key(self, request, view):
         uid = _get_authenticated_user_id(request)
-        if not uid and hasattr(request, "data") and isinstance(request.data, dict):
-            uid = request.data.get("user_id")
+        if uid:
+            return None  # Authenticated; already handled by UserActionRateThrottle
 
-        uid_str = str(uid).strip() if uid is not None else ""
-        if uid_str:
-            return None  # Authenticated requests are throttled per user, not IP anon limit
+        session_id = _get_session_id(request)
+        if session_id:
+            ident = f"session_{session_id}"
+        else:
+            ident = f"ip_{self.get_ident(request)}"
 
         return self.cache_format % {
             "scope": self.scope,
-            "ident": self.get_ident(request),
+            "ident": ident,
         }
 
 
@@ -167,13 +170,23 @@ class SeatListRateThrottle(BaseInventoryThrottle):
 
 
 class CheckReservationRateThrottle(BaseInventoryThrottle):
+    """
+    Rate limits transaction reservation checks using session ID where available,
+    falling back to client IP. Internal service calls are exempt.
+    """
     scope = "inventory_check"
     fallback_scope = "inventory_anon"
 
     def get_cache_key(self, request, view):
+        session_id = _get_session_id(request)
+        if session_id:
+            ident = f"session_{session_id}"
+        else:
+            ident = f"ip_{self.get_ident(request)}"
+
         return self.cache_format % {
             "scope": self.scope,
-            "ident": self.get_ident(request),
+            "ident": ident,
         }
 
 
