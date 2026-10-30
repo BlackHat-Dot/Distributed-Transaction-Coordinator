@@ -83,6 +83,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'inventory.middleware.CorrelationIdMiddleware',
+    'inventory.middleware.AnonymousSessionMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -139,6 +140,7 @@ CORS_EXPOSE_HEADERS = [
     "x-page-offset",
     "x-correlation-id",
     "x-transaction-id",
+    "x-session-id",
     "content-type",
 ]
 

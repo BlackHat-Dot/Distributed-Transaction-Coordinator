@@ -7,6 +7,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.test import TestCase, SimpleTestCase
 from django.utils import timezone
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.test import APIClient, APIRequestFactory
 
 from inventory.models import Event, Seat, Reservation
@@ -15,6 +16,7 @@ from inventory.throttling import (
     CheckReservationRateThrottle,
     SeatListRateThrottle,
     UserActionRateThrottle,
+    issue_signed_session_id,
 )
 
 
@@ -344,19 +346,33 @@ class InventoryThrottlingUnitTests(SimpleTestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
 
-    def test_anon_throttle_uses_session_id_when_provided(self):
-        """Anonymous throttle creates cache key using session ID if provided in header."""
+    def test_anon_throttle_uses_session_id_when_validly_signed(self):
+        """Anonymous throttle creates cache key using verified raw session ID from signed token."""
+        signed_token = issue_signed_session_id("sess_user_alpha")
         request = self.factory.post(
             "/seats/release/",
             {"transaction_id": "tx_123"},
-            HTTP_X_SESSION_ID="sess_user_alpha",
+            HTTP_X_SESSION_ID=signed_token,
         )
         throttle = AnonIpRateThrottle()
         key = throttle.get_cache_key(request, None)
         self.assertIn("session_sess_user_alpha", key)
 
+    def test_anon_throttle_rejects_tampered_or_unverified_session_without_fallback(self):
+        """Unverified/tampered session IDs are rejected immediately with PermissionDenied (no fallback to IP)."""
+        request = self.factory.post(
+            "/seats/release/",
+            {"transaction_id": "tx_123"},
+            HTTP_X_SESSION_ID="forged_bot_session_id",
+            REMOTE_ADDR="192.168.1.100",
+        )
+        throttle = AnonIpRateThrottle()
+        with self.assertRaises(PermissionDenied) as ctx:
+            throttle.get_cache_key(request, None)
+        self.assertEqual(ctx.exception.detail.get("code"), "INVALID_SESSION")
+
     def test_anon_throttle_falls_back_to_ip_when_no_session(self):
-        """Anonymous throttle falls back to IP address when no session is present."""
+        """Anonymous throttle falls back to IP address only when no session header or cookie is present."""
         request = self.factory.post(
             "/seats/release/",
             {"transaction_id": "tx_123"},
@@ -375,12 +391,18 @@ class InventoryThrottlingUnitTests(SimpleTestCase):
             key = throttle.get_cache_key(request, None)
             self.assertIsNone(key)
 
-    def test_check_reservation_throttle_uses_session_with_ip_fallback(self):
-        """CheckReservationRateThrottle uses session ID if present, else client IP."""
+    def test_check_reservation_throttle_rejects_tampered_session_without_fallback(self):
+        """CheckReservationRateThrottle halts invalid session ID immediately without IP fallback."""
         throttle = CheckReservationRateThrottle()
+        tampered_req = self.factory.get("/seats/check/", HTTP_X_SESSION_ID="bad_chk_session", REMOTE_ADDR="10.0.0.5")
+        with self.assertRaises(PermissionDenied):
+            throttle.get_cache_key(tampered_req, None)
 
-        # With session ID
-        req_with_session = self.factory.get("/seats/check/", HTTP_X_SESSION_ID="sess_chk_789")
+    def test_check_reservation_throttle_uses_signed_session(self):
+        """CheckReservationRateThrottle uses verified session ID when valid signed token provided."""
+        throttle = CheckReservationRateThrottle()
+        signed_token = issue_signed_session_id("sess_chk_789")
+        req_with_session = self.factory.get("/seats/check/", HTTP_X_SESSION_ID=signed_token)
         key_session = throttle.get_cache_key(req_with_session, None)
         self.assertIn("session_sess_chk_789", key_session)
 
@@ -406,4 +428,5 @@ class InventoryThrottlingUnitTests(SimpleTestCase):
         with patch("inventory.throttling._get_authenticated_user_id", return_value="usr_jwt_999"):
             key = throttle.get_cache_key(req_unverified, None)
             self.assertIn("usr_jwt_999", key)
+
 

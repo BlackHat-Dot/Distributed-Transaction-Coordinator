@@ -822,3 +822,14 @@ def sweep_expired_holds(request):
         "message": f"Swept {reclaimed_count} expired seat hold(s).",
         "reclaimed_count": reclaimed_count,
     }, status=200)
+
+
+@api_view(["GET"])
+def get_session_token(request):
+    """Issues a cryptographically signed anonymous session token."""
+    from .throttling import issue_signed_session_id
+    token = issue_signed_session_id()
+    resp = Response({"session_id": token}, status=200)
+    resp["X-Session-ID"] = token
+    resp.set_cookie("dtc_anon_sid", token, max_age=86400 * 30, httponly=True, samesite="Lax")
+    return resp
