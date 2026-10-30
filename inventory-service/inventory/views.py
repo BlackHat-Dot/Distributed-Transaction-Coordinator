@@ -790,8 +790,7 @@ def reset_seats(request):
             status=Reservation.Status.RELEASED,
             released_reason="ADMIN_RESET",
         )
-        deleted_res, _ = res_qs.exclude(status=Reservation.Status.RELEASED).delete()
-        rows_affected = updated_seats + updated_booked + deleted_res
+        rows_affected = updated_seats + updated_booked
 
         who = "staff" if _is_staff_request(request) else "unauthenticated"
         logger.info(
