@@ -387,19 +387,18 @@ def gate_redeem_ticket(request):
         )
 
     # Verify GATE_API_KEY (supports X-Staff-Key, X-Gate-Api-Key, gate_key in body, or Bearer auth)
-    expected_key = getattr(settings, "GATE_API_KEY", os.getenv("GATE_API_KEY", "gate-secret-key-change-in-production"))
-    provided_key = (
-        request.headers.get("X-Staff-Key")
-        or request.headers.get("X-Gate-Api-Key")
-        or request.data.get("gate_key")
-        or request.data.get("gate_api_key")
-        or ""
-    )
-    if not provided_key:
-        auth_hdr = request.headers.get("Authorization", "")
-        if auth_hdr.startswith("Bearer "):
-            provided_key = auth_hdr.split(" ", 1)[1].strip()
+    expected_key = getattr(settings, "GATE_API_KEY", os.getenv("GATE_API_KEY"))
 
+    if not expected_key:
+        logging.critical("Redeem ticket service is unavailable due to unset GATE_API_KEY, Rejecting incoming traffic.")
+        raise Response(
+            "The service is currently unavailable and undergoing maintenance. "
+            "Operations are expected to resume shortly.",
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    
+    provided_key = request.headers.get("X-Gate-Api-Key","")
+    
     if not provided_key or not hmac.compare_digest(str(provided_key), str(expected_key)):
         return Response({"error": "Invalid or missing gate API key.", "code": "UNAUTHORIZED"}, status=status.HTTP_401_UNAUTHORIZED)
 
