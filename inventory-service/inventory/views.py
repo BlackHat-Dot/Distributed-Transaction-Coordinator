@@ -206,7 +206,6 @@ def seat_pricing(request):
 
 # verified
 @api_view(["POST"])
-@throttle_classes([ReserveRateThrottle, ReserveAnonRateThrottle])
 def reserve_seat(request):
     auth_err, _ = _verify_internal_service_key(request, allow_client=False)  # Service key checker
     if auth_err:
