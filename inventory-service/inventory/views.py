@@ -668,7 +668,13 @@ def release_seat(request):
 def check_reservation(request):
     """Returns the real-time ground-truth status (BOOKED, RELEASED, RESERVED) for a transaction's seats,
        verifying actual physical seat ownership to prevent double-booking before ticket issuance."""
+
+    auth_err, _ = _verify_internal_service_key(request)
+    if auth_err:
+        return auth_err
+    
     raw_tid = request.query_params.get("transaction_id")
+    
     if not raw_tid:
         return Response({"error": "transaction_id is required"}, status=400)
 

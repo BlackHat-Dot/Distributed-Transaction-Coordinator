@@ -8,40 +8,39 @@ was performed.
 
 | # | Severity | File | Lines | Vulnerability | Confidence |
 |---|----------|------|-------|---------------|------------|
-| 1 | 🟠 HIGH | [docker-compose.yml](./docker-compose.yml) | 25-38, 63-66 | PostgreSQL and Redis are published on all host interfaces; PostgreSQL defaults to `postgres`/`postgres`, and Redis has no authentication. | 10/10 |
-| 2 | 🔴 CRITICAL | [coordinator-service/coordinator/auth_views.py](./coordinator-service/coordinator/auth_views.py) | 912-916, 1003, 1067-1082 | OTP verification trusts Redis state that is unauthenticated and externally reachable in the supplied deployment, enabling account takeover. | 10/10 |
+| 1 | ⚪ LOW | [docker-compose.yml](./docker-compose.yml) | 25-38, 63-66 | The local compose setup publishes PostgreSQL and Redis and uses development-friendly defaults. This is a deployment-hardening concern, not proof of internet exposure. | 10/10 |
+| 2 | 🟠 HIGH (conditional) | [coordinator-service/coordinator/auth_views.py](./coordinator-service/coordinator/auth_views.py) | 912-916, 1003, 1067-1082 | If an attacker can write the Redis instance used by the coordinator, OTP verification accepts the attacker-written value and can issue a victim JWT. The repository does not show that an external attacker can obtain Redis access in a normal local deployment. | 10/10 |
 | 3 | 🟠 HIGH | [coordinator-service/coordinator_service/settings.py](./coordinator-service/coordinator_service/settings.py), [coordinator-service/coordinator/ticket_views.py](./coordinator-service/coordinator/ticket_views.py) | 337; 390 | Gate redemption falls back to the public fixed key `gate-secret-key-change-in-production` when `GATE_API_KEY` is unset, including with `DEBUG=False`. | 9/10 |
 
 ## Detailed Findings
 
-### 1. Exposed unauthenticated Redis and weakly credentialed PostgreSQL
+### 1. Development-oriented database service exposure
 
 **Affected locations:** `docker-compose.yml:25-38, 63-66`
 
-**Reproduction:**
+**Configuration evidence:**
 
-1. Deploy the supplied compose configuration.
-2. Reach the host's published PostgreSQL or Redis ports from a network that
-   can access the host.
-3. Connect to Redis without credentials, or authenticate to PostgreSQL using
-   the default `postgres`/`postgres` credentials.
-4. Read or modify application state.
+The compose file publishes PostgreSQL and Redis ports and supplies development
+defaults. Docker's host binding can make those ports reachable from networks
+allowed by the host firewall, but this file alone does not establish internet
+reachability or identify an attacker who can access them.
 
-**Impact:** An attacker can tamper with payment, inventory, coordinator, OTP,
-session, and Celery state, compromising data confidentiality and integrity and
-potentially affecting availability.
+**Impact if deployed on an exposed or shared network:** An attacker with
+network access could tamper with payment, inventory, coordinator, OTP, session,
+and Celery state.
 
-**Remediation:** Remove public host port publishing where it is unnecessary,
-bind administrative services to loopback or private networks, require strong
-PostgreSQL credentials, and configure Redis authentication, TLS, and network
-ACLs.
+**Remediation:** For local use, document the intended trust boundary and rely
+on host firewall controls. For shared or production deployments, remove public
+host port publishing where unnecessary, bind services to private networks,
+require strong PostgreSQL credentials, and configure Redis authentication, TLS,
+and network ACLs.
 
-### 2. Redis compromise enables OTP account takeover
+### 2. Redis compromise enables OTP account takeover (conditional)
 
 **Affected locations:** `coordinator-service/coordinator/auth_views.py:912-916,
 1003, 1067-1082`
 
-**Reproduction:**
+**Reproduction if Redis access is already obtained:**
 
 1. Set `dtc:otp:<normalized-victim-email>` in Redis to an attacker-chosen
    six-digit value.
@@ -49,13 +48,16 @@ ACLs.
 3. Receive the signed JWT issued by the verification endpoint.
 4. Use the token to access the victim's authenticated operations.
 
-**Impact:** Account takeover and unauthorized access to the victim's
-transactions, tickets, and other authenticated operations.
+**Impact:** In a deployment where an attacker can write the coordinator's Redis
+instance, account takeover and unauthorized access to the victim's
+transactions, tickets, and other authenticated operations are possible. This
+is not an independent remote authentication bypass: the prerequisite Redis
+write access is not established by `auth_views.py`.
 
-**Remediation:** Isolate Redis and require authentication and TLS. Bind OTP
-verification to server-issued challenge state, enforce strict cache access
-controls, and ensure OTP verification cannot be satisfied by attacker-written
-cache state.
+**Remediation:** Isolate Redis and require authentication and TLS in shared
+deployments. Treat Redis as trusted server-side state and enforce strict cache
+access controls. Additional OTP challenge binding is defense in depth, not a
+replacement for securing Redis.
 
 ### 3. Public fallback gate API key
 
@@ -79,6 +81,8 @@ restrict redemption to a private gate network.
 
 ## Scope and limitations
 
-The findings above are confirmed from repository code and deployment
-configuration. Runtime behavior, network exposure in a particular deployment,
-and controls outside this repository were not independently verified.
+The OTP data flow and compose defaults are confirmed from repository code and
+configuration. External exploitability depends on deployment network exposure,
+host firewall rules, and controls outside this repository; those were not
+independently verified. The report therefore distinguishes the conditional OTP
+impact from the local compose configuration.
