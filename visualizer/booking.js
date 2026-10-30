@@ -360,9 +360,9 @@ function isUserAuthenticated(promptIfNeeded = true) {
 
 function getOrCreateSessionId() {
   let sessionId = localStorage.getItem("dtc_anon_session_id");
-  if (!sessionId) {
-    sessionId = "sess_" + (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36));
-    localStorage.setItem("dtc_anon_session_id", sessionId);
+  if (sessionId && !sessionId.includes(":")) {
+    localStorage.removeItem("dtc_anon_session_id");
+    sessionId = null;
   }
   return sessionId;
 }
@@ -375,9 +375,10 @@ async function fetchJson(url, options = {}, timeoutMs = 8000) {
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   const isBodyMethod = ["POST", "PUT", "PATCH"].includes((options.method || "GET").toUpperCase());
+  const currentSid = getOrCreateSessionId();
   const headers = {
     Accept: "application/json",
-    "X-Session-ID": getOrCreateSessionId(),
+    ...(currentSid ? { "X-Session-ID": currentSid } : {}),
     ...(isBodyMethod ? { "Content-Type": "application/json" } : {}),
     ...(options.headers || {}),
   };
@@ -397,6 +398,13 @@ async function fetchJson(url, options = {}, timeoutMs = 8000) {
   try {
     const res = await fetch(url, { ...options, signal: controller.signal, headers });
     clearTimeout(timeoutId);
+    try {
+      const serverSid = res.headers ? res.headers.get("x-session-id") : null;
+      if (serverSid && serverSid.includes(":")) {
+        localStorage.setItem("dtc_anon_session_id", serverSid);
+      }
+    } catch (_) {}
+
     let data = null;
     try {
       data = await res.json();

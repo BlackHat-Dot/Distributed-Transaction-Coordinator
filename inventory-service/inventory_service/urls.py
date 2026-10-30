@@ -12,9 +12,12 @@ from inventory.views import (
     sweep_expired_holds,
     health_check,
     ready_check,
+    get_session_token,
 )
 
 urlpatterns = [
+    path('session/', get_session_token),
+    path('seats/session/', get_session_token),
     path('events/', event_list),
     path('seats/', seat_list),
     path('seats/pricing/', seat_pricing),
