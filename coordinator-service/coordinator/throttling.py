@@ -40,6 +40,14 @@ class IsBookingAuthenticated(BasePermission):
     def has_permission(self, request, view):
         caller = _get_caller(request)
         if not caller or not caller.is_authenticated:
+            # Enforce throttle check on unauthenticated callers before raising NotAuthenticated
+            if hasattr(view, "check_throttles"):
+                view.check_throttles(request)
+            elif hasattr(view, "get_throttles"):
+                for throttle in view.get_throttles():
+                    if not throttle.allow_request(request, view):
+                        wait = throttle.wait()
+                        raise Throttled(wait=wait)
             raise NotAuthenticated(detail=AUTH_MSG)
         return True
 
