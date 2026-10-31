@@ -49,6 +49,7 @@ def _ensure_aware(dt):
     return dt
 
 
+# Lightweight liveness probe endpoint used by container orchestrators to verify service uptime
 @api_view(["GET"])
 def health_check(request):
     return Response({"status": "healthy", "service": "inventory"})
