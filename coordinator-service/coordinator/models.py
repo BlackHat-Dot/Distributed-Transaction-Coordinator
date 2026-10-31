@@ -42,6 +42,7 @@ class Transaction(models.Model):
         Status.INVENTORY_CONNECTION_ERROR,
     }
 
+    # Non-terminal states that qualify for automated saga recovery and compensation sweeps
     RECOVERABLE_STATUSES = {
         Status.PAYMENT_PROCESSING,
         Status.INVENTORY_RESERVED,
