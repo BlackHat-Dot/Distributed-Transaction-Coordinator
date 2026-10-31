@@ -1,5 +1,6 @@
 # verified
 
+import logging
 import math
 
 from rest_framework.exceptions import NotAuthenticated, PermissionDenied, Throttled
@@ -9,6 +10,7 @@ from rest_framework.views import exception_handler
 
 from coordinator.auth_views import _get_caller, _get_client_ip
 
+logger = logging.getLogger(__name__)
 
 AUTH_MSG = "Authentication required. Please sign in to book seats."
 
@@ -23,9 +25,15 @@ class SafeRateThrottle(SimpleRateThrottle):
             ip = _get_client_ip(request)
             if ip and ip != "unknown":
                 return ip
-        except Exception:
-            pass
-        return super().get_ident(request)
+        except Exception as exc:
+            logger.warning("Failed to resolve client IP in SafeRateThrottle: %s", exc)
+
+        meta = getattr(request, "META", None)
+        if meta and hasattr(meta, "get"):
+            remote_addr = meta.get("REMOTE_ADDR")
+            if isinstance(remote_addr, str) and remote_addr.strip():
+                return remote_addr.strip()
+        return "unknown"
 
 
 class IsBookingAuthenticated(BasePermission):
