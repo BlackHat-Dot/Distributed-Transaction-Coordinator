@@ -35,6 +35,29 @@ class SafeRateThrottle(SimpleRateThrottle):
                 return remote_addr.strip()
         return "unknown"
 
+    def allow_request(self, request, view):
+        if self.rate is None:
+            return True
+
+        self.key = self.get_cache_key(request, view)
+        if self.key is None:
+            return True
+
+        # Atomic fixed-window rate limiting using cache.add + cache.incr
+        self.cache.add(self.key, 0, timeout=self.duration)
+        try:
+            count = self.cache.incr(self.key)
+        except Exception:
+            self.cache.set(self.key, 1, timeout=self.duration)
+            count = 1
+
+        if count > self.num_requests:
+            return False
+        return True
+
+    def wait(self):
+        return self.duration
+
 
 class IsBookingAuthenticated(BasePermission):
     def has_permission(self, request, view):
