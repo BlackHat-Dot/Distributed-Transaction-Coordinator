@@ -35,8 +35,10 @@ def _mask_email(email):
     return f"{masked_user}@{domain}"
 
 
+# Sentinel amount used during test runs to intentionally simulate downstream gateway payment failure
 TESTING_FAILURE_AMOUNT = Decimal("9999")
 
+# Currency quantizer constant used to enforce exact two-decimal precision for monetary transactions
 TWO_PLACES = Decimal("0.01")
 
 
