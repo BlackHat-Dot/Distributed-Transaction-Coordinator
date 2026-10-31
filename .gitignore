@@ -16,4 +16,6 @@ prototypes
 scratch/
 scripts/
 pr.cmd
+pr.sh
+pr
 .vscode/
