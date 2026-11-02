@@ -47,32 +47,56 @@ class SafeRateThrottle(SimpleRateThrottle):
         self.cache.add(self.key, 0, timeout=self.duration)
         try:
             count = self.cache.incr(self.key)
-        except Exception:
+        except ValueError:
             self.cache.set(self.key, 1, timeout=self.duration)
             count = 1
+
+        # Guarantee TTL if key was recreated by incr without expiry
+        if count == 1:
+            self.cache.touch(self.key, self.duration)
 
         if count > self.num_requests:
             return False
         return True
 
     def wait(self):
+        """
+        Returns the exact remaining TTL (seconds) for the current window on Redis,
+        falling back to the full window duration if TTL is unavailable.
+        """
+        if self.key:
+            # 1. Direct ttl() support (e.g. django-redis)
+            if hasattr(self.cache, "ttl"):
+                try:
+                    ttl = self.cache.ttl(self.key)
+                    if ttl is not None and ttl > 0:
+                        return ttl
+                except Exception:
+                    pass
+
+            # 2. Django built-in RedisCache (inspects internal _cache client; falls back to duration on changes)
+            if hasattr(self.cache, "_cache") and hasattr(self.cache._cache, "get_client"):
+                try:
+                    client = self.cache._cache.get_client()
+                    full_key = self.cache.make_and_validate_key(self.key)
+                    ttl = client.ttl(full_key)
+                    if ttl is not None and ttl > 0:
+                        return ttl
+                except Exception:
+                    pass
+
         return self.duration
 
 
 class IsBookingAuthenticated(BasePermission):
     def has_permission(self, request, view):
         caller = _get_caller(request)
-        if not caller or not caller.is_authenticated:
-            # Enforce throttle check on unauthenticated callers before raising NotAuthenticated
-            if hasattr(view, "check_throttles"):
-                view.check_throttles(request)
-            elif hasattr(view, "get_throttles"):
-                for throttle in view.get_throttles():
-                    if not throttle.allow_request(request, view):
-                        wait = throttle.wait()
-                        raise Throttled(wait=wait)
-            raise NotAuthenticated(detail=AUTH_MSG)
-        return True
+        if caller and caller.is_authenticated:
+            return True
+
+        if hasattr(view, "check_throttles"):
+            view.check_throttles(request)
+        raise NotAuthenticated(detail=AUTH_MSG)
 
 
 class BookingRateThrottle(SafeRateThrottle):
@@ -104,7 +128,7 @@ class TransactionReadRateThrottle(SafeRateThrottle):
     """
     Rate limits GET (fetch) requests per authenticated user to prevent DB DoS/polling spam.
     Falls back to client IP for unauthenticated callers to prevent cache collision DoS.
-    The rate comes from DEFAULT_THROTTLE_RATES["coordinator_transaction_reads"] (10/min).
+    The rate comes from DEFAULT_THROTTLE_RATES["coordinator_transaction_reads"] (60/min).
     Attach to transaction views together with IsBookingAuthenticated.
     """
     scope = "coordinator_transaction_reads"
@@ -152,13 +176,14 @@ def coordinator_exception_handler(exc, context):
 
         req = context.get("request") if isinstance(context, dict) else None
         if req and getattr(req, "method", None) == "GET":
-            error_msg = f"Something went wrong. Please wait for {wait} seconds."
+            error_msg = f"You are checking status too often. Please wait {wait} seconds before trying again."
         else:
             error_msg = f"Request limit exceeded. Try again in {wait} seconds."
         response.data = {
             "error": error_msg,
             "code": "THROTTLED",
             "wait": wait,
+            "available_in_seconds": wait,
         }
     elif isinstance(exc, (NotAuthenticated, PermissionDenied)):
         req = context.get("request") if isinstance(context, dict) else None

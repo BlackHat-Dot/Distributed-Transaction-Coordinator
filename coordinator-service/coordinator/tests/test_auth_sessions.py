@@ -5,8 +5,11 @@ from unittest.mock import MagicMock, patch
 
 from django.conf import settings
 from django.core.cache import cache
-from django.test import TestCase
+from django.test import TestCase, SimpleTestCase, RequestFactory
+from rest_framework.exceptions import Throttled
 from rest_framework.test import APIClient
+
+from coordinator.throttling import TransactionReadRateThrottle, coordinator_exception_handler
 
 from coordinator.auth_views import (
     RequesterIdentity,
@@ -259,3 +262,134 @@ class AuthAndSessionTests(TestCase):
             request_bad = rf.get("/", HTTP_X_STAFF_KEY="wrong-key")
             with self.assertRaises(AuthenticationFailed):
                 _get_caller(request_bad)
+
+
+class CoordinatorThrottlingTests(SimpleTestCase):
+    def setUp(self):
+        self.rf = RequestFactory()
+
+    def test_get_throttled_message_informs_client_checking_too_often(self):
+        """GET request throttling returns explicit 'checking status too often' message with wait time."""
+        request = self.rf.get("/transactions/123/")
+        exc = Throttled(wait=15)
+        resp = coordinator_exception_handler(exc, {"request": request})
+        self.assertEqual(resp.status_code, 429)
+        self.assertEqual(resp.data.get("code"), "THROTTLED")
+        self.assertEqual(resp.data.get("wait"), 15)
+        self.assertEqual(resp.data.get("available_in_seconds"), 15)
+        self.assertIn("You are checking status too often", resp.data.get("error"))
+        self.assertIn("15 seconds", resp.data.get("error"))
+
+    def test_post_throttled_message_standard_rate_limit(self):
+        """POST request throttling returns standard request limit exceeded message with wait time."""
+        request = self.rf.post("/transactions/")
+        exc = Throttled(wait=30)
+        resp = coordinator_exception_handler(exc, {"request": request})
+        self.assertEqual(resp.status_code, 429)
+        self.assertEqual(resp.data.get("code"), "THROTTLED")
+        self.assertEqual(resp.data.get("wait"), 30)
+        self.assertIn("Request limit exceeded", resp.data.get("error"))
+
+    def test_transaction_read_rate_throttle_rate(self):
+        """TransactionReadRateThrottle uses raised read rate (60/min)."""
+        throttle = TransactionReadRateThrottle()
+        self.assertEqual(throttle.get_rate(), "60/min")
+
+    def test_safe_rate_throttle_handles_value_error_on_expired_key(self):
+        """When cache.incr raises ValueError (key expired between add and incr), it recovers safely."""
+        from coordinator.throttling import SafeRateThrottle
+        class DummyThrottle(SafeRateThrottle):
+            rate = "5/min"
+        throttle = DummyThrottle()
+        request = self.rf.get("/test/")
+
+        with patch.object(throttle, "get_cache_key", return_value="dummy_key"), \
+             patch.object(throttle.cache, "incr", side_effect=ValueError("Key not found")), \
+             patch.object(throttle.cache, "set") as mock_set:
+            allowed = throttle.allow_request(request, None)
+            self.assertTrue(allowed)
+            mock_set.assert_called_once()
+
+    def test_safe_rate_throttle_does_not_catch_generic_backend_exceptions(self):
+        """Generic backend errors (e.g. connection error) are not caught by ValueError, preventing counter reset."""
+        from coordinator.throttling import SafeRateThrottle
+        class DummyThrottle(SafeRateThrottle):
+            rate = "5/min"
+        throttle = DummyThrottle()
+        request = self.rf.get("/test/")
+
+        with patch.object(throttle, "get_cache_key", return_value="dummy_key"), \
+             patch.object(throttle.cache, "incr", side_effect=RuntimeError("Redis connection lost")):
+            with self.assertRaises(RuntimeError):
+                throttle.allow_request(request, None)
+
+    def test_is_booking_authenticated_checks_throttles_before_raising(self):
+        """Unauthenticated caller triggers view.check_throttles before raising NotAuthenticated."""
+        from coordinator.throttling import IsBookingAuthenticated
+        from rest_framework.exceptions import NotAuthenticated
+        from unittest.mock import MagicMock
+
+        perm = IsBookingAuthenticated()
+        mock_view = MagicMock()
+        request = self.rf.get("/test/")
+
+        with patch("coordinator.throttling._get_caller", return_value=None):
+            with self.assertRaises(NotAuthenticated):
+                perm.has_permission(request, mock_view)
+
+        mock_view.check_throttles.assert_called_once_with(request)
+
+    def test_wait_returns_exact_ttl_when_available(self):
+        """wait() returns exact TTL from Redis cache when available, else duration."""
+        from coordinator.throttling import SafeRateThrottle
+        from unittest.mock import MagicMock
+
+        class DummyThrottle(SafeRateThrottle):
+            rate = "5/min"
+        throttle = DummyThrottle()
+        throttle.key = "test_throttle_key"
+
+        # 1. When ttl is available (e.g. 14s remaining)
+        mock_cache = MagicMock()
+        mock_cache.ttl.return_value = 14
+        with patch.object(throttle, "cache", mock_cache):
+            self.assertEqual(throttle.wait(), 14)
+
+        # 2. When ttl is unavailable, falls back to full duration (60s)
+        mock_cache_no_ttl = MagicMock(spec=[])  # no ttl attribute
+        with patch.object(throttle, "cache", mock_cache_no_ttl):
+            self.assertEqual(throttle.wait(), 60)
+
+    def test_allow_request_touches_key_on_first_count(self):
+        """When count reaches 1, cache.touch is called to guarantee a TTL on new window."""
+        from coordinator.throttling import SafeRateThrottle
+        from unittest.mock import MagicMock
+
+        class DummyThrottle(SafeRateThrottle):
+            rate = "5/min"
+        throttle = DummyThrottle()
+        request = self.rf.get("/test/")
+
+        # 1. When count == 1, touch is called
+        mock_cache = MagicMock()
+        mock_cache.incr.return_value = 1
+        with patch.object(throttle, "get_cache_key", return_value="dummy_key"), \
+             patch.object(throttle, "cache", mock_cache):
+            allowed = throttle.allow_request(request, None)
+            self.assertTrue(allowed)
+            mock_cache.touch.assert_called_once_with("dummy_key", throttle.duration)
+
+        # 2. When count > 1, touch is not called again
+        mock_cache_subsequent = MagicMock()
+        mock_cache_subsequent.incr.return_value = 2
+        with patch.object(throttle, "get_cache_key", return_value="dummy_key"), \
+             patch.object(throttle, "cache", mock_cache_subsequent):
+            allowed = throttle.allow_request(request, None)
+            self.assertTrue(allowed)
+            mock_cache_subsequent.touch.assert_not_called()
+
+
+
+
+
+

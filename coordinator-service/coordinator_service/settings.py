@@ -85,7 +85,7 @@ if DEBUG:
         ],
         'DEFAULT_THROTTLE_RATES': {
             'coordinator_transactions': '4/min',
-            'coordinator_transaction_reads': '10/min',
+            'coordinator_transaction_reads': '60/min',
             'coordinator_recovery_status': '1/min',
         },
         'EXCEPTION_HANDLER': 'coordinator.throttling.coordinator_exception_handler',
@@ -98,7 +98,7 @@ else:
         ],
         'DEFAULT_THROTTLE_RATES': {
             'coordinator_transactions': '4/min',
-            'coordinator_transaction_reads': '10/min',
+            'coordinator_transaction_reads': '60/min',
             'coordinator_recovery_status': '1/min',
         },
         'EXCEPTION_HANDLER': 'coordinator.throttling.coordinator_exception_handler',
