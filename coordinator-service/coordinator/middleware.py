@@ -49,6 +49,3 @@ class CorrelationIdMiddleware:
             return self.get_response(request)
         finally:
             _correlation_id_ctx.reset(token)
-
-
-TransactionIdMiddleware = CorrelationIdMiddleware

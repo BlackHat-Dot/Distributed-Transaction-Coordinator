@@ -12,20 +12,14 @@ from coordinator.models import Transaction, Ticket
 
 logger = logging.getLogger("coordinator")
 
-INVENTORY_BASE_URL = getattr(
-    settings,
-    "INVENTORY_SERVICE_URL",
-    os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000")
-).rstrip("/")
-
 
 def _get_inventory_base_url() -> str:
     """Dynamically resolve inventory service URL with settings/env fallback."""
-    return getattr(
+    return (getattr(
         settings,
         "INVENTORY_SERVICE_URL",
-        os.getenv("INVENTORY_SERVICE_URL", INVENTORY_BASE_URL)
-    ).rstrip("/")
+        None
+    ) or os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000")).rstrip("/")
 
 
 class TicketIssuanceError(Exception):

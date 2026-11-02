@@ -28,8 +28,6 @@ _redis_last_ping = 0.0
 _redis_client_instance = None
 _redis_lock = threading.Lock()
 
-is_testing = bool(getattr(settings, "IS_TESTING", False))
-
 
 class ServiceUnavailable(APIException):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
@@ -236,8 +234,6 @@ def validate_email(email):
 
     return True, None
 
-
-validate_custom_email = validate_email
 
 def _generate_user_id(email):
     """Generate deterministic user ID prefixed with usr_ from normalized email SHA256."""
@@ -534,7 +530,6 @@ def _get_caller(request):
     return identity
 
 
-resend.api_key = os.getenv("RESEND_API_KEY")
 # verified
 def _dispatch_otp_email(to_email, otp_code):
     """
