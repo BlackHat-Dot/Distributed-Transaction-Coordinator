@@ -1,5 +1,3 @@
-# verified
-
 import jwt
 import hashlib
 import hmac
@@ -21,52 +19,76 @@ from rest_framework.response import Response
 from rest_framework.exceptions import APIException, AuthenticationFailed
 from django.utils import timezone
 
+# reates a namespaced logger instance tied to this module so error and debug messages trace back here.
 logger = logging.getLogger(__name__)
 
+# Timestamp tracker storing the last time Redis connection health was evaluated to prevent spamming status checks.
 _redis_last_check = 0.0
+
+# Timestamp tracker recording the last 'successful' ping response from the Redis server.
 _redis_last_ping = 0.0
+
+# Module-level singleton variable holding the reusable, active Redis connection pool instance.
 _redis_client_instance = None
+
+# A mutex lock ensuring only one thread initializes or rebuilds the Redis connection at a time to prevent race conditions.
 _redis_lock = threading.Lock()
 
-
+# Defines a custom Django REST Framework exception to signal that a critical dependency is down.
 class ServiceUnavailable(APIException):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     default_code = "STAFF_SERVICE_UNAVAILABLE"
 
 
-# verified
+# Defines an internal helper function that manages, health-checks, and safely returns an active Redis client connection.
 def _get_redis_client():
     """Return a healthy cached Redis client with thread-safety and circuit-breaker self-healing."""
     global _redis_last_check, _redis_last_ping, _redis_client_instance
 
+    # Captures a clock timestamp that always moves forward and never jumps backwards (even if system time changes), making it ideal for measuring elapsed intervals.
     now = time.monotonic()
 
-    # Fast path: healthy client instance with periodic health verification (every 2.0s)
     if _redis_client_instance is not None:
+        # Checks if a Redis health ping succeeded within the last 2 seconds to avoid overloading Redis with unnecessary ping calls on every request.
         if now - _redis_last_ping < 2.0:
             return _redis_client_instance
         try:
+            # Sends a lightweight heartbeat ping to Redis to actively verify the connection is still alive.
             _redis_client_instance.ping()
+
+            # Updates the last verified ping timestamp so subsequent calls within the 2-second grace period can skip pinging.
             _redis_last_ping = now
+
             return _redis_client_instance
+
+        # Catches any ping failure (network drop, timeout, or closed connection) and binds the error object to exc.
         except Exception as exc:
+            # Records a warning log containing the failure reason so operators can detect connection health issues.
             logger.warning("Cached Redis client failed health ping (%s); invalidating instance.", exc)
+
+            # Acquires the thread lock to ensure only one thread mutates the shared Redis connection state at a time.
             with _redis_lock:
                 if _redis_client_instance is not None:
+                    # Safely closes open socket connections without crashing if the socket is already corrupted.
                     try:
                         _redis_client_instance.close()
                     except Exception:
                         pass
+
+                    # Wipes the cached instance variable so subsequent requests know they must re-establish a fresh connection.
                     _redis_client_instance = None
+
+                    # Records when the failure occurred to enforce a cooldown before attempting another connection.
                     _redis_last_check = now
             return None
 
-    # Circuit breaker cooldown: avoid hammering an unreachable Redis server
+    # Circuit breaker cooldown: Redis failed within the last 5 seconds, it immediately returns None without wasting time attempting to reconnect.
     if now - _redis_last_check < 5.0:
         return None
 
-    # Double-checked locking to prevent connection stampedes across worker threads
+    # Acquires the lock to guarantee only one thread attempts reconnection at any given moment.
     with _redis_lock:
+        # Double-checked locking pattern; returns the client if another thread already reconnected while this thread was waiting.
         if _redis_client_instance is not None:
             return _redis_client_instance
 
@@ -77,27 +99,39 @@ def _get_redis_client():
         _redis_last_check = now
         broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
         testing_mode = bool(getattr(settings, "IS_TESTING", False))
+
+        # Sets a tight network socket timeout (0.02s in tests, 0.5s in production) to fail fast on outages.
         timeout = getattr(settings, "REDIS_SOCKET_TIMEOUT", 0.02 if testing_mode else 0.5)
 
+        # Initializes the client variable to ensure clean error handling in the except block if connection setup fails.
         client = None
         try:
+            # Creates a new Redis client with UTF-8 string decoding and strict connection/read timeouts.
             client = redis.Redis.from_url(
                 broker_url,
                 decode_responses=True,
                 socket_connect_timeout=timeout,
                 socket_timeout=timeout,
             )
+
+            # Immediately tests whether the newly created connection is actually responsive.
             client.ping()
             _redis_client_instance = client
             _redis_last_ping = now
+
             return client
+
+        # Catches any connection failure, DNS resolution error, or ping timeout during the connection attempt.
         except Exception:
+            # Cleanly shuts down dangling network sockets if the client was partially constructed before failing.
             if client is not None:
                 try:
                     client.close()
                 except Exception:
                     pass
             _redis_client_instance = None
+
+            # Returns None to indicate to caller services that Redis remains unavailable.
             return None
 
 import difflib
