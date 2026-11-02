@@ -64,8 +64,6 @@ def _get_pub_client():
             return None
 
 
-TERMINAL_STATUSES = Transaction.TERMINAL_STATUSES
-
 ALLOWED_TRANSITIONS = {
     Transaction.Status.STARTED: {
         Transaction.Status.INVENTORY_RESERVED,

@@ -8,11 +8,6 @@ from coordinator.saga_log import _set_status_with_event
 INVENTORY_BASE_URL = getattr(settings, "INVENTORY_SERVICE_URL", None) or os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000").rstrip("/")
 PAYMENT_BASE_URL = getattr(settings, "PAYMENT_SERVICE_URL", None) or os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rstrip("/")
 
-PAYMENT_CHECK_URL = f"{PAYMENT_BASE_URL}/payments/check/"
-PAYMENT_REFUND_URL = f"{PAYMENT_BASE_URL}/payments/refund/"
-PAYMENT_VOID_URL = f"{PAYMENT_BASE_URL}/payments/void/"
-INVENTORY_RELEASE_URL = f"{INVENTORY_BASE_URL}/seats/release/"
-INVENTORY_CONFIRM_URL = f"{INVENTORY_BASE_URL}/seats/confirm/"
 REQUEST_CONNECT_TIMEOUT = float(os.getenv("REQUEST_CONNECT_TIMEOUT", "2.0"))
 REQUEST_READ_TIMEOUT = float(os.getenv("REQUEST_READ_TIMEOUT", os.getenv("REQUEST_TIMEOUT", "5.0")))
 # Separate connect and read timeouts prevent indefinite socket hanging during network partitions
