@@ -70,7 +70,9 @@ def _get_pub_client():
             return None
 
 
+# Strict directed acyclic/cyclic state transition graph enforcing legal status paths to prevent illegal state jumps or out-of-order execution.
 ALLOWED_TRANSITIONS = {
+    # Starting state: may transition forward into inventory reservation, holding, or directly into failure/recovery modes on immediate fault.
     Transaction.Status.STARTED: {
         Transaction.Status.INVENTORY_RESERVED,
         Transaction.Status.HOLDING,
