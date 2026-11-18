@@ -4,9 +4,11 @@ import contextvars
 # Imports Python's standard logging library to customize log formatting and dynamically inject distributed tracking tags.
 import logging
 
+# ContextVar -> A thread-safe, coroutine-aware variable that holds the current transaction or caller ID scoped strictly to the active request flow.
 _correlation_id_ctx = contextvars.ContextVar("correlation_id", default="AnonUser")
 
 
+# Helper function to explicitly bind a transaction ID or worker identifier to the current thread's execution context.
 def set_correlation_id(transaction_id):
     """Set transaction ID for current execution context."""
     return _correlation_id_ctx.set(str(transaction_id) if transaction_id else "AnonUser")
