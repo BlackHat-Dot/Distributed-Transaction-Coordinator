@@ -56,7 +56,9 @@ def _get_pub_client():
         if now - _pub_last_check < 5.0:
             return None
 
+        # Records current timestamp to mark this probe attempt and enforce the next cooldown window.
         _pub_last_check = now
+        # Resolves Redis connection URL from Celery broker configuration with local default fallback.
         broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
         testing_mode = bool(getattr(settings, "IS_TESTING", False))
         timeout = getattr(settings, "REDIS_SOCKET_TIMEOUT", 0.05 if testing_mode else 1.0)
