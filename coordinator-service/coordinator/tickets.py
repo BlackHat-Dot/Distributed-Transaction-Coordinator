@@ -118,9 +118,11 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
 
     # Configures HTTP request timeout in seconds with fallback to 5s to avoid holding connections.
     timeout = getattr(settings, "REQUEST_TIMEOUT", getattr(settings, "INVENTORY_TIMEOUT", 5))
+    # Dispatches synchronous HTTP GET request to check Inventory ground-truth status for this booking.
     try:
         # Outbound HTTP check: queries Inventory Service outside any database lock to prevent holding PostgreSQL transaction locks during network I/O.
         resp = requests.get(check_url, headers=headers, timeout=timeout)
+    # Catches transport and network errors during inventory verification, escalating to 409 TicketIssuanceError.
     except Exception as exc:
         logger.error(
             "Failed to reach inventory service for ground-truth check on %s: %s",
