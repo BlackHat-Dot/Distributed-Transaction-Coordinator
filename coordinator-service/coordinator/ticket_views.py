@@ -529,7 +529,9 @@ def gate_redeem_ticket(request):
     # Rate limit gate check: 10 attempts per minute (relaxed on loopback in dev/debug mode)
     # Resolves client IP address to apply gate redemption rate limiting per scanner device.
     ip = _get_client_ip(request)
+    # Configures gate check rate limit threshold, permitting elevated throughput on local loops during debug mode.
     gate_limit = int(os.getenv("GATE_RATE_LIMIT", 1000 if (ip in ("127.0.0.1", "::1", "localhost") and getattr(settings, "DEBUG", False)) else 10))
+    # Constructs namespaced Redis cache key for client IP rate limit tracking.
     rate_key = f"dtc:ratelimit:gate:{ip}"
     if not check_rate_limit(rate_key, limit=gate_limit, window=60):
         return Response({"error": "Rate limit exceeded on gate redemption.", "code": "RATE_LIMITED"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
