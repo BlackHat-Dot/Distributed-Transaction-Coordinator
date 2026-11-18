@@ -153,6 +153,7 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, user_id=None, u
     return "completed"
 
 
+# Asynchronous Celery task with exponential backoff retries that renders an electronic ticket PDF and emails it to the buyer.
 @shared_task(name="coordinator.tasks.send_ticket_email_task", bind=True, max_retries=3, default_retry_delay=10)
 def send_ticket_email_task(self, transaction_id):
     """
@@ -172,6 +173,7 @@ def send_ticket_email_task(self, transaction_id):
         logger.error("Invalid transaction_id for ticket email task: %s", transaction_id)
         return "invalid_uuid"
 
+    # Loads the transaction record from PostgreSQL to verify completion and retrieve buyer email address.
     txn = Transaction.objects.filter(transaction_id=tid).first()
     if not txn or not txn.user_email:
         logger.warning("Transaction %s not found or has no email.", tid)
