@@ -297,9 +297,11 @@ def get_ticket_pdf(request, transaction_id):
     # Formats the complete attachment filename combining DTC prefix, seat slug, and transaction ref.
     filename = f"DTC-{seat_slug}-{short_ref}.pdf"
 
+    # Wraps PDF binary payload in an HttpResponse with application/pdf MIME type.
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     # Sets Content-Disposition header with sanitized filename to force direct file download in the user's browser rather than in-tab rendering.
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    # Streams the downloadable PDF response directly to the client browser.
     return response
 
 
