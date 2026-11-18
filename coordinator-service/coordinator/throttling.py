@@ -5,7 +5,9 @@ import logging
 # Imports standard math module for ceiling calculations when formatting retry-after delay durations.
 import math
 
+# Imports DRF exception classes representing authentication failures, permission denials, and rate throttled states.
 from rest_framework.exceptions import NotAuthenticated, PermissionDenied, Throttled
+# Imports DRF base permission class to implement custom authentication guards on booking endpoints.
 from rest_framework.permissions import BasePermission
 # Imports DRF's base throttle class which calculates window durations and formats Redis cache keys for rate limiting.
 from rest_framework.throttling import SimpleRateThrottle
