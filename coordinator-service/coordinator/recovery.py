@@ -99,6 +99,7 @@ def execute_compensation_sweep(
     try:
         # Parses the transaction ID strictly as a 128-bit UUID to prevent URL injection and fail-fast on malformed parameters.
         tid = uuid.UUID(str(transaction_id))
+    # Intercepts malformed or non-UUID inputs, returning structured failure response without executing remote calls.
     except (ValueError, TypeError, AttributeError):
         return {
             "success": False,
@@ -107,6 +108,7 @@ def execute_compensation_sweep(
             "error": "Invalid transaction_id format",
         }
 
+    # Imports correlation ID context utilities lazily to avoid circular dependencies with middleware.
     from coordinator.middleware import get_correlation_id, set_correlation_id
     # Binds transaction ID into contextvars correlation context unless executing inside Celery worker thread where bgworker is preserved.
     if get_correlation_id() != "bgworker":
