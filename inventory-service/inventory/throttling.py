@@ -211,6 +211,7 @@ class AnonIpRateThrottle(BaseInventoryThrottle):
         else:
             ident = f"ip_{self.get_ident(request)}"
 
+        # Employs persistent session-bound cache keys to enforce a 10 requests per minute cap on public seat catalog browsing.
         return self.cache_format % {
             "scope": self.scope,
             "ident": ident,
@@ -227,6 +228,7 @@ class SeatListRateThrottle(BaseInventoryThrottle):
     fallback_scope = "inventory_anon"
 
     def get_cache_key(self, request, view):
+        # Restricts seat list rate limiting exclusively to HTTP GET queries, allowing other HTTP verbs to be handled by action throttles.
         if request.method != "GET":
             return None
 
@@ -238,6 +240,7 @@ class SeatListRateThrottle(BaseInventoryThrottle):
         else:
             ident = f"ip_{self.get_ident(request)}"
 
+        # Employs persistent session-bound cache keys to enforce a 10 requests per minute cap on public seat catalog browsing.
         return self.cache_format % {
             "scope": self.scope,
             "ident": ident,
@@ -260,6 +263,7 @@ class CheckReservationRateThrottle(BaseInventoryThrottle):
         else:
             ident = f"ip_{self.get_ident(request)}"
 
+        # Employs persistent session-bound cache keys to enforce a 10 requests per minute cap on public seat catalog browsing.
         return self.cache_format % {
             "scope": self.scope,
             "ident": ident,
