@@ -123,6 +123,7 @@ def _verify_internal_service_key(request, allow_client=False):
     """
     key = None
     if request:
+        # Extracts the inter-service authentication secret from incoming request headers or Django META environment dictionaries.
         if hasattr(request, "headers") and request.headers:
             key = request.headers.get("X-Internal-Service-Key")
         elif hasattr(request, "META") and request.META:
@@ -131,6 +132,7 @@ def _verify_internal_service_key(request, allow_client=False):
     configured_key = getattr(settings, "INTERNAL_SERVICE_KEY", None)
 
     if key is not None:
+        # Fails closed with 503 SERVICE_UNAVAILABLE if INTERNAL_SERVICE_KEY is unconfigured on the server, preventing unauthorized RPC access.
         if not configured_key:
             logger.error("INTERNAL_SERVICE_KEY is not configured on this server.")
             return Response(
