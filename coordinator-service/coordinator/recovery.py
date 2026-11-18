@@ -7,7 +7,9 @@ from coordinator.models import Transaction, SagaEvent
 # Imports Compare-And-Swap (CAS) state transition helper to record state updates and append-only audit events in the database.
 from coordinator.saga_log import _set_status_with_event
 
+# Base URL for Inventory Service, resolving dynamically from Django settings, environment variables, or localhost default.
 INVENTORY_BASE_URL = getattr(settings, "INVENTORY_SERVICE_URL", None) or os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000").rstrip("/")
+# Base URL for Payment Service, resolving dynamically from Django settings, environment variables, or localhost default.
 PAYMENT_BASE_URL = getattr(settings, "PAYMENT_SERVICE_URL", None) or os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rstrip("/")
 
 REQUEST_CONNECT_TIMEOUT = float(os.getenv("REQUEST_CONNECT_TIMEOUT", "2.0"))
