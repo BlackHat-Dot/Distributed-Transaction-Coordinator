@@ -552,6 +552,7 @@ def trigger_recovery_sweep(request):
     try:
         redis_client = get_redis_client()
         lock_token = str(uuid.uuid4())
+        # Acquires a distributed Redis mutex lock with 120-second lease to ensure only one coordinator node runs recovery at any instant.
         lock_acquired = bool(redis_client.set(LOCK_KEY, lock_token, nx=True, ex=120))
         if not lock_acquired:
             return Response(
@@ -606,6 +607,7 @@ def recovery_status(request):
 
     if last_run_ts:
         elapsed = max(0.0, now - last_run_ts)
+        # Evaluates background Celery Beat sweeper health by checking whether the elapsed time exceeds the 90-second scheduled sweep interval.
         if elapsed >= cycle:
             next_in = 0
             status = "overdue"
