@@ -25,7 +25,9 @@ class Transaction(models.Model):
         INVENTORY_CONNECTION_ERROR = "INVENTORY_CONNECTION_ERROR"
         # Active in-flight state indicating payment charge request has been dispatched to Payment Service and awaits gateway confirmation.
         PAYMENT_PROCESSING = "PAYMENT_PROCESSING"
+        # Terminal failure state recorded when Payment Service explicitly declines the charge (e.g. insufficient funds or card failure).
         PAYMENT_FAILED = "PAYMENT_FAILED"
+        # Ambiguous state recorded when charge call to Payment Service times out, requiring recovery sweeper to verify charge status.
         PAYMENT_TIMEOUT = "PAYMENT_TIMEOUT"
         PAYMENT_CONNECTION_ERROR = "PAYMENT_CONNECTION_ERROR"
         COMPENSATING = "COMPENSATING"
