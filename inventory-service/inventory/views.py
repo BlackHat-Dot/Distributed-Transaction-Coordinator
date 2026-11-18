@@ -262,6 +262,7 @@ def reserve_seat(request):
 
             if max_user_holds:
                 # Idempotency guard: exclude seats already held by this transaction so retries do not double-count against the user's quota.
+                # Computes the buyer's current unexpired active holds while excluding the current transaction to allow idempotent retries.
                 active_holds = Seat.objects.filter(
                     user_id=user_id,
                     status=Seat.Status.HELD,
@@ -281,6 +282,7 @@ def reserve_seat(request):
                     )
 
             # PASS 1: Single validation & pricing pass
+            # PASS 1: Validates that all requested seats are unbooked, unheld, or already owned by the current transaction before mutating state.
             booked_by_tx = 0
             total_amount = 0
 
