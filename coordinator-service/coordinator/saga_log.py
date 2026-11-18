@@ -217,6 +217,7 @@ def _publish_transaction_update(transaction_id, to_status, from_status=None):
         })
         # Publishes the serialized JSON event to the per-transaction Redis channel subscribed to by EventSource SSE clients.
         client.publish(f"dtc:tx_stream:{transaction_id}", payload)
+    # Catches pub/sub network errors, logs non-fatal diagnostic warning, and invalidates cached client under mutex lock.
     except Exception as exc:
         logger.warning("Failed to publish SSE event for tx %s: %s", transaction_id, exc)
         with _pub_lock:
@@ -242,6 +243,7 @@ def _mask_pii(data):
     """
     Recursively masks sensitive fields (email, credentials, tokens) in audit payloads.
     """
+    # Short-circuit check returning non-collection or empty payloads unmodified.
     if not data:
         return data
     if isinstance(data, dict):
