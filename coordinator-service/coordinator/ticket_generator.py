@@ -338,6 +338,7 @@ def generate_tickets_ics(transaction: Transaction, tickets: list[Ticket]) -> byt
     venue = getattr(first_ticket, "venue", "") if first_ticket else ""
     starts_at = getattr(first_ticket, "starts_at", None) if first_ticket else None
 
+    # Deserializes and parses event start time string into datetime if not already a datetime object.
     if starts_at:
         if isinstance(starts_at, str):
             parsed = parse_datetime(starts_at)
@@ -355,6 +356,7 @@ def generate_tickets_ics(transaction: Transaction, tickets: list[Ticket]) -> byt
     # Estimates default event duration as 3 hours when explicit conclusion times are unrecorded in inventory.
     dtend_utc = dtstart_utc + timedelta(hours=3)
 
+    # Compiles comma-separated list of seat labels and extracts booking reference for calendar description.
     seat_labels = ", ".join(t.seat_label for t in tickets) if tickets else "General"
     tid = getattr(transaction, "transaction_id", "UNKNOWN")
     short_ref = str(tid)[:8].upper()
