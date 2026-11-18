@@ -17,6 +17,7 @@ class Event(models.Model):
 
 class Seat(models.Model):
 
+    # Defines the finite lifecycle states of a physical seat: AVAILABLE (free), HELD (in-flight saga hold), or BOOKED (confirmed).
     class Status(models.TextChoices):
         AVAILABLE = "AVAILABLE"
         HELD = "HELD"
@@ -25,6 +26,7 @@ class Seat(models.Model):
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="seats")
     row = models.CharField(max_length=10)
     seat_number = models.CharField(max_length=10)
+    # Declares the admission price using fixed-point Decimal to prevent floating-point rounding errors during financial charge calculations.
     price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("500.00"))
     status = models.CharField(
         max_length=20,
