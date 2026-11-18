@@ -106,6 +106,7 @@ def _validate_amount(raw_amount):
     if isinstance(exponent, int) and exponent < -2:
         return None, Response({"error": "amount cannot have more than 2 decimal places"}, status=400)
 
+    # Enforces strictly positive transaction value to prevent zero or negative charges.
     if amount <= 0:
         return None, Response({"error": "amount must be greater than zero"}, status=400)
 
@@ -116,6 +117,7 @@ def _validate_amount(raw_amount):
             status=400,
         )
 
+    # Quantizes valid amounts to exactly two decimal places matching fractional currency standards.
     return amount.quantize(TWO_PLACES), None
 
 
