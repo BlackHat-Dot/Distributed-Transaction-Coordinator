@@ -169,7 +169,7 @@ def execute_compensation_sweep(
             "error": "Payment check failed or timed out; claim released for retry",
         }
 
-    # For recovery sweeper, record the COMPENSATING transition before external calls
+    # Transition the transaction to COMPENSATING status in the audit ledger before initiating external refund/release side-effects.
     if actor == SagaEvent.ACTOR_RECOVERY:
         _set_status_with_event(
             transaction_id=tid,
@@ -359,6 +359,7 @@ def execute_compensation_sweep(
 
         payment_status = "CHARGED"
 
+    # Step 2: If payment was confirmed charged, issue a refund request to Payment Service to credit funds back to the customer.
     if payment_status == "CHARGED":
         try:
             r_resp = _safe_call_http(
