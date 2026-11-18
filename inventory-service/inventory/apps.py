@@ -4,10 +4,12 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
 
+# Configures the Inventory application lifecycle, registering system security checks and enforcing startup invariants.
 class InventoryConfig(AppConfig):
     name = 'inventory'
 
     def ready(self):
+        # Explicitly imports system check registrations during application initialization to run security and integrity validations.
         import inventory.checks  # noqa: F401
 
         # Enforce startup security whenever DEBUG is False unless running the Django test runner.
