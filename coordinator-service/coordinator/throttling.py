@@ -89,6 +89,7 @@ class SafeRateThrottle(SimpleRateThrottle):
         Returns the exact remaining TTL (seconds) for the current window on Redis,
         falling back to the full window duration if TTL is unavailable.
         """
+        # Inspects cache key to query remaining TTL directly from Redis backend.
         if self.key:
             # 1. Direct ttl() support (e.g. django-redis)
             # Checks for direct django-redis ttl() support to retrieve exact remaining seconds in the rate window.
@@ -101,6 +102,7 @@ class SafeRateThrottle(SimpleRateThrottle):
                     pass
 
             # 2. Django built-in RedisCache (inspects internal _cache client; falls back to duration on changes)
+            # Direct RedisCache driver inspection: queries raw Redis client for exact key TTL in seconds.
             if hasattr(self.cache, "_cache") and hasattr(self.cache._cache, "get_client"):
                 try:
                     client = self.cache._cache.get_client()
