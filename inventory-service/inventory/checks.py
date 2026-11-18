@@ -5,6 +5,7 @@ from django.conf import settings
 from django.core.checks import Error, Tags, register
 
 
+# Parses heterogeneous environment and settings values (booleans, strings 'true'/'1'/'on') into canonical python booleans.
 def _is_flag_active(val) -> bool:
     """Safely evaluates boolean or string-serialized truthy flags."""
     if isinstance(val, str):
@@ -12,6 +13,7 @@ def _is_flag_active(val) -> bool:
     return bool(val)
 
 
+# Registers startup security check with Django system check framework to validate configuration before binding server sockets.
 @register(Tags.security)
 def check_bypass_flags(app_configs, **kwargs):
     """
