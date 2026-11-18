@@ -25,9 +25,11 @@ def _mask_email(email):
     Mask email address for privacy-safe logging (e.g. j***e@example.com).
     Returns None if email is missing or malformed.
     """
+    # Guards against non-string, empty, or unparseable email payloads to prevent unhandled exceptions during string splitting.
     if not email or not isinstance(email, str) or "@" not in email:
         return None
     user, domain = email.split("@", 1)
+    # Obfuscates the local part of the address while retaining boundary characters and full domain for diagnostics.
     if len(user) <= 1:
         masked_user = user + "***"
     else:
