@@ -2,7 +2,9 @@
 import hmac
 # Imports Python's standard logging library to log diagnostics, warnings, and error messages across ticket processing endpoints.
 import logging
+# Imports the os module to read runtime operating system environment variables such as rate limits and staff verification keys.
 import os
+# Imports the regular expression module to sanitize seat labels and format clean file names for downloadable PDF attachments.
 import re
 import uuid
 from django.conf import settings
