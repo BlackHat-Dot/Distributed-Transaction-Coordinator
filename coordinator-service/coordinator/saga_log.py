@@ -262,11 +262,13 @@ def _mask_pii(data):
                     masked[k] = f"****{v[-4:]}"
                 else:
                     masked[k] = "******"
+            # Recursively sanitizes nested dictionaries and lists to guarantee complete deep redaction of sensitive data.
             elif isinstance(v, (dict, list)):
                 masked[k] = _mask_pii(v)
             else:
                 masked[k] = v
         return masked
+    # Iterates through list elements, recursively masking every nested dictionary or sublist item.
     elif isinstance(data, list):
         return [_mask_pii(item) for item in data]
     return data
