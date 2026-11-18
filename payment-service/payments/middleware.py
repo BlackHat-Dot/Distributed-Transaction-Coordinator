@@ -31,9 +31,11 @@ class TransactionIdFilter(logging.Filter):
 
     def filter(self, record):
         tid = get_correlation_id()
+        # Falls back to inspecting Django request attributes if the thread-local context variable has not yet been populated.
         if not tid or tid == "AnonUser":
             if hasattr(record, "request"):
                 tid = getattr(record.request, "correlation_id", "AnonUser")
+        # Formats structured log tags to distinguish background workers from HTTP transaction processing in centralized logs.
         record.log_tag = "worker=bgworker" if tid == "bgworker" else f"transaction={tid}"
         return True
 
