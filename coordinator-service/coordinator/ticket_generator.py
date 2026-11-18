@@ -104,6 +104,7 @@ def format_kolkata_time(dt) -> str:
         return str(dt)
 
 
+# Assembles an A5 portrait multi-page PDF document rendering an official e-ticket pass for each reserved seat.
 def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> bytes:
     """
     Generates a clean, professional portrait A5 PDF with one page per seat ticket.
@@ -114,6 +115,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
 
     buf = io.BytesIO()
     # A5: 419.5 x 595.2 points
+    # Initializes the ReportLab PDF canvas using European A5 standard paper dimensions (419.5 x 595.2 points).
     c = canvas.Canvas(buf, pagesize=A5)
     page_w, page_h = A5
 
