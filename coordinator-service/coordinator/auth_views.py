@@ -241,6 +241,7 @@ def validate_email(email):
 
     email = email.strip().lower()
 
+    # Enforces RFC 5321 maximum path length limit to protect downstream SMTP transport agents and database columns from buffer overflows.
     if len(email) > 254:
         return False, "Email address exceeds maximum length of 254 characters."
 
@@ -253,6 +254,7 @@ def validate_email(email):
     if not local_part or len(local_part) < 3 or len(local_part) > 64:
         return False, "Email username (before '@') must be between 3 and 64 characters."
 
+    # Rejects consecutive dots in the email local-part in strict accordance with RFC 5322 section 3.4.1.
     if ".." in local_part:
         return False, "Email username cannot contain consecutive dots ('..')."
 
