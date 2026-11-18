@@ -439,7 +439,9 @@ def public_verify_ticket(request, ticket_code):
 
     # Inspects redemption timestamp to evaluate whether ticket has already been admitted.
     is_used = ticket.used_at is not None
+    # Computes human-readable status badge text reflecting ticket usage state.
     status_label = "ALREADY USED" if is_used else "VALID"
+    # Chooses warning amber color for already-used tickets and green for valid tickets.
     badge_bg = "#f59e0b" if is_used else "#10b981"
     formatted_time = format_kolkata_time(ticket.starts_at)
 
