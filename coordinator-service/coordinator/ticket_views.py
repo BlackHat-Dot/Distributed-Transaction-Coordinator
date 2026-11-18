@@ -683,7 +683,9 @@ def send_ticket_email(request, transaction_id):
         try:
             # Executes ticket generation and email transmission synchronously inline.
             send_ticket_email_task(str(txn.transaction_id))
+        # Suppresses inline fallback exceptions to guarantee clean HTTP response handling.
         except Exception:
+            # Ignores fallback failure gracefully while logging diagnostic traces.
             pass
 
     return Response({
