@@ -166,10 +166,12 @@ def _normalize_email(email_str):
 """
 GMAIL_LOCAL_REGEX = re.compile(r"^[a-z0-9][a-z0-9._%+-]{1,62}[a-z0-9]$")
 
+# Enforces immutable frozensets for permitted email domains to provide thread-safe, zero-allocation O(1) membership lookups.
 _PROD_DOMAINS = frozenset({"gmail.com"})
 _TEST_DOMAINS = frozenset({"example.com", "test.io", "local.io"})
 
 # Common gmail typos worth catching explicitly (fast O(1) path)
+# Precompiles high-frequency keyboard slip typo variants of gmail.com for instant O(1) domain suggestion dispatch.
 _KNOWN_GMAIL_TYPOS = frozenset({
     "gmial.com", "gmal.com", "gmai.com", "gnail.com", "gmail.co",
     "gmail.cm", "gmail.con", "gamil.com", "gmail.comm", "gmaill.com",
