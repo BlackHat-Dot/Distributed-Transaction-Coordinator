@@ -153,9 +153,11 @@ def authenticate_ticket_requester(request, transaction_id):
     requester_user_id = str(payload.get("user_id"))
 
     # 3. Validate UUID syntax to prevent 500 error from Postgres query
+    # Encloses UUID string conversion in a guard block to intercept malformed route parameters.
     try:
         # Validates UUID format prior to database querying to prevent raw SQL/PostgreSQL type mismatch exceptions from bubbling up as unhandled 500 errors.
         tid = uuid.UUID(str(transaction_id))
+    # Catches parsing errors when the supplied transaction_id string cannot be coerced into a valid UUID.
     except (ValueError, TypeError, AttributeError):
         return None, Response(
             {"error": "Transaction not found.", "code": "NOT_FOUND"},
