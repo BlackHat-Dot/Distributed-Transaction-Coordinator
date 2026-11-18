@@ -70,7 +70,9 @@ def check_rate_limit(key: str, limit: int, window: int = 60) -> bool:
     try:
         # Implements a fixed-window cache counter with graceful fail-open fallback so Redis outages never block legitimate customer ticket access.
         current = cache.get(key)
+        # Checks if no counter exists yet for the given cache key in the current time window.
         if current is None:
+            # Initializes the rate limit counter to 1 with an expiration TTL matching the specified time window.
             cache.set(key, 1, timeout=window)
             return True
         try:
