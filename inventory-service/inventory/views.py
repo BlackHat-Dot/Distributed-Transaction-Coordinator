@@ -437,6 +437,7 @@ def confirm_seat(request):
 
     try:
         with transaction.atomic():
+            # Acquires pessimistic row-level locks on requested seats ordered by ID to eliminate deadlock risk during confirmation.
             seats = list(Seat.objects.select_for_update().select_related("event").filter(id__in=seat_ids).order_by('id'))
 
             if len(seats) != len(seat_ids):
@@ -472,6 +473,7 @@ def confirm_seat(request):
                     )
 
                 seat_held = _ensure_aware(seat.held_until)
+                # Verifies that seat holds have not expired before confirming payment, rejecting timed-out leases with 409 HOLD_EXPIRED.
                 if seat_held and seat_held <= now and seat.status != Seat.Status.BOOKED:
                     return Response(
                         {
