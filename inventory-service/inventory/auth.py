@@ -17,6 +17,7 @@ def _is_staff_request(request):
         return False
 
     staff_key = None
+    # Resolves X-Staff-Key from ASGI/WSGI headers or raw CGI environment to support diverse web server reverse proxies.
     if hasattr(request, "headers") and request.headers:
         staff_key = request.headers.get("X-Staff-Key")
     elif hasattr(request, "META") and request.META:
@@ -27,6 +28,7 @@ def _is_staff_request(request):
 
     configured_key = getattr(settings, "STAFF_API_KEY", None)
     if configured_key and isinstance(configured_key, str) and configured_key.strip():
+        # Performs constant-time comparison (secrets.compare_digest) to eliminate timing side-channel attacks against the staff secret.
         return secrets.compare_digest(staff_key.strip(), configured_key.strip())
     return False
 
