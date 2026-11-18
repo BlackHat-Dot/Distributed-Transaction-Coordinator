@@ -1,4 +1,6 @@
+# Imports base64 module to encode binary PNG QR codes into data URIs for inline frontend rendering.
 import base64
+# Imports io module to provide in-memory byte buffers for dynamic image and PDF generation.
 import io
 import os
 from datetime import timezone as dt_timezone, timedelta
