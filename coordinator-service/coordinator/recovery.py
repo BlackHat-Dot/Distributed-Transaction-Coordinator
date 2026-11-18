@@ -4,7 +4,9 @@ import os
 import uuid
 # Imports requests library to perform outbound HTTP calls to downstream Inventory and Payment microservices during compensation.
 import requests
+# Imports Django runtime settings to read microservice connection URLs and shared authentication secrets.
 from django.conf import settings
+# Imports Transaction model for state definitions and SagaEvent model for compensation audit trail actors.
 from coordinator.models import Transaction, SagaEvent
 # Imports Compare-And-Swap (CAS) state transition helper to record state updates and append-only audit events in the database.
 from coordinator.saga_log import _set_status_with_event
