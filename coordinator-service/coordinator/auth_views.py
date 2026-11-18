@@ -547,6 +547,7 @@ def _get_caller(request):
     identity = None
 
     # Staff verification
+    # Priority 1: Evaluates administrative staff API key credentials before falling back to standard customer JWT verification.
     req_staff = request.headers.get("X-Staff-Key")
     if req_staff :
         if not _verify_staff_key(req_staff):
@@ -561,6 +562,7 @@ def _get_caller(request):
         identity = RequesterIdentity(True, user_id, True, user_email=user_email)
 
     # Normal JWT authentication, if not staff
+    # Priority 2: Resolves customer authentication identity from the verified Bearer JWT footprint and sets staff flags if using an admin domain.
     if not identity:
         user_info = get_user_from_request(request)
         if user_info and user_info.get("is_authenticated"):
