@@ -324,6 +324,7 @@ def execute_compensation_sweep(
                 "refund_response": None,
             }
 
+        # Transport fault guard: prevents erroneous refund on transient inventory errors by releasing claim for retry.
         # Transport error or 5xx server error: DO NOT refund or release! Revert claim so next sweep retries.
         if confirm_transport_error or (confirm_status_code and confirm_status_code >= 500):
             revert_status = original_status or Transaction.Status.COMPENSATION_FAILED
@@ -344,6 +345,7 @@ def execute_compensation_sweep(
 
         # Definitive 4xx error (hold expired, seats not found)
         # Check released_reason: if released by ADMIN_RESET, prohibit auto-refund and require manual review
+        # Initializes released_reason tracker to check if seats were revoked due to administrative intervention.
         released_reason = None
         if confirm_payload and isinstance(confirm_payload, dict):
             released_reason = confirm_payload.get("released_reason")
