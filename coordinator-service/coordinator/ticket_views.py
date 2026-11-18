@@ -466,8 +466,10 @@ def public_verify_ticket(request, ticket_code):
     escaped_seat = escape(ticket.seat_label or "")
     # Sanitizes status badge label to ensure safe document rendering.
     escaped_status = escape(status_label)
+    # Sanitizes formatted date string prior to HTML template interpolation.
     escaped_time = escape(formatted_time)
 
+    # Dynamically formats modern responsive HTML card displaying verified admission status.
     html = f"""<!doctype html>
 <html lang="en">
 <head>
