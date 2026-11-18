@@ -370,6 +370,7 @@ def reserve_seat(request):
                 seat.save(update_fields=["status", "held_until", "held_by_transaction_id", "user_id", "user_email"])
 
                 # update_or_create used instead of get_or_create
+                # Upserts the reservation journal record to RESERVED status, recording transaction UUID and user audit details.
                 Reservation.objects.update_or_create(
                     seat=seat,
                     transaction_id=transaction_id,
@@ -382,6 +383,7 @@ def reserve_seat(request):
                 )
 
             event_data = None
+            # Attaches an event metadata snapshot (name, venue, start time) to the response for coordinator ticket generation.
             if seats and getattr(seats[0], "event", None):
                 ev = seats[0].event
                 event_data = {
