@@ -107,6 +107,7 @@ class Transaction(models.Model):
     # Physical location or arena hosting the ticketed event, preserved on the transaction for admittance records.
     venue = models.CharField(max_length=200, null=True, blank=True)
     # Scheduled start timestamp of the ticketed event, used for admission scheduling and pre-event notifications.
+    # Event commencement date and time stamped on the ticket pass to inform attendees and entry gate scanners.
     starts_at = models.DateTimeField(null=True, blank=True)
 
     # Total monetary charge in exact two-decimal currency precision to eliminate IEEE 754 floating-point rounding errors during payment gateway processing.
@@ -194,6 +195,7 @@ class Ticket(models.Model):
     # Physical facility or arena name where the event takes place, printed on the ticket pass for attendee navigation.
     venue = models.CharField(max_length=200, blank=True, default="")
     starts_at = models.DateTimeField(null=True, blank=True)
+    # Face value or purchase price of this individual ticket in exact two-decimal monetary precision.
     amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     # Cryptographically secure random alphanumeric barcode/QR string (e.g. TKT-...) presented by attendees at entry scanning gates.
     ticket_code = models.CharField(max_length=64, unique=True, db_index=True)
