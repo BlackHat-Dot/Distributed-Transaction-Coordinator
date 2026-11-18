@@ -222,10 +222,12 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         c.setLineWidth(1)
         c.setDash(4, 3)
         divider_y = box_bottom - 26
+        # Draws a perforated dashed tear-line separating the booking details section from the gate scanning barcode.
         c.line(25, divider_y, page_w - 25, divider_y)
         c.setDash()  # reset dash
 
         # QR Code Section
+        # Generates the verification QR code for this specific ticket and streams it into ReportLab as an in-memory image reader.
         qr_img = generate_qr_code_image(ticket_code)
         qr_io = io.BytesIO()
         qr_img.save(qr_io, format="PNG")
