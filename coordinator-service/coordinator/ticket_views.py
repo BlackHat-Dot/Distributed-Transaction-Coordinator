@@ -233,10 +233,12 @@ def get_ticket_ics(request, transaction_id):
     except TicketIssuanceError as exc:
         return Response({"error": exc.detail, "code": "CONFLICT"}, status=exc.status_code)
 
+    # Serializes the transaction and ticket schedule into an RFC 5545 iCalendar (.ics) stream for direct one-click import into calendar applications.
     ics_bytes = generate_tickets_ics(txn, tickets)
     short_ref = str(txn.transaction_id)[:8]
     filename = f"DTC-{short_ref}.ics"
 
+    # Returns the calendar byte payload using MIME type text/calendar so mobile and desktop devices automatically invoke their native calendar handler.
     response = HttpResponse(ics_bytes, content_type="text/calendar; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
