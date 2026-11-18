@@ -622,6 +622,7 @@ def gate_redeem_ticket(request):
         # Persists updated redemption timestamp and operator ID to the database.
         ticket.save(update_fields=["used_at", "used_by"])
 
+        # Returns HTTP 200 response confirming successful admission for the ticket.
         return Response({
             "status": "REDEEMED",
             "message": f"Admission granted for seat {ticket.seat_label}.",
@@ -632,6 +633,7 @@ def gate_redeem_ticket(request):
         }, status=status.HTTP_200_OK)
 
 
+# Restricts ticket email dispatch endpoint to the HTTP POST method.
 @api_view(["POST"])
 def send_ticket_email(request, transaction_id):
     """
