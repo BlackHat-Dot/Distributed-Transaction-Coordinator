@@ -90,6 +90,7 @@ def _get_authenticated_user(request):
         logger.debug("Unexpected error during JWT verification: %s", type(e).__name__)
 
     try:
+        # Caches decoded user identity onto the active request instance to provide zero-cost lookups for subsequent authorization checks.
         request._cached_authenticated_user = user_info
     except (AttributeError, TypeError):
         pass
@@ -105,6 +106,7 @@ def _get_authenticated_user_id(request):
     auth_user = _get_authenticated_user(request)
     if not auth_user or not isinstance(auth_user, dict):
         return None
+    # Extracts the sanitized, non-empty user identifier string from the verified JWT payload for row-level ownership checks.
     uid = auth_user.get("user_id")
     return str(uid).strip() if uid and str(uid).strip() else None
 
