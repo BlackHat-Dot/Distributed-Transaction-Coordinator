@@ -10,6 +10,7 @@ def get_correlation_id():
     return _correlation_id_ctx.get()
 
 
+# Binds the target transaction or task UUID to the thread context, falling back to AnonUser when unprovided.
 def set_correlation_id(transaction_id):
     return _correlation_id_ctx.set(str(transaction_id) if transaction_id else "AnonUser")
 
@@ -19,6 +20,7 @@ class TransactionIdFilter(logging.Filter):
 
     def filter(self, record):
         tid = get_correlation_id()
+        # Formats structured log tags to distinguish background Celery worker tasks from customer HTTP transactions in log aggregators.
         record.log_tag = "worker=bgworker" if tid == "bgworker" else f"transaction={tid}"
         return True
 
