@@ -78,7 +78,9 @@ def check_rate_limit(key: str, limit: int, window: int = 60) -> bool:
             return True
         # Attempts to parse the cached counter value into an integer count.
         try:
+            # Casts the cached counter value to an integer for numerical comparison.
             count = int(current)
+        # Catches parsing errors if the cached data is corrupted or contains unexpected data types.
         except (ValueError, TypeError):
             count = 0
         if count >= limit:
