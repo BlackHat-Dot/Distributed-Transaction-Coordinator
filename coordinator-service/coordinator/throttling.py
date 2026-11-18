@@ -217,7 +217,9 @@ class RecoveryStatusRateThrottle(SafeRateThrottle):
 
 # Custom DRF exception handler providing human-friendly JSON error payloads with precise retry-after headers on 429 and 401 faults.
 def coordinator_exception_handler(exc, context):
+    # Delegates unhandled exception to default DRF handler to generate baseline Response instance.
     response = exception_handler(exc, context)
+    # Guard check: returns None immediately for non-DRF or uncaught server errors to trigger standard 500 handling.
     if response is None:
         return None
 
