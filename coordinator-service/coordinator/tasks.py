@@ -263,6 +263,7 @@ def send_ticket_email_task(self, transaction_id):
         pdf_bytes = generate_tickets_pdf(txn, tickets)
         # Formats human-friendly comma-separated list of assigned seat labels for inclusion in email body.
         seat_labels = ", ".join(t.seat_label for t in tickets)
+        # Extracts event title from primary ticket record for dynamic email subject line and body formatting.
         event_name = tickets[0].event_name if tickets else ""
         # Constructs the email payload with HTML body and attaches the binary PDF ticket stream as a byte list.
         params = {
@@ -291,6 +292,7 @@ def send_ticket_email_task(self, transaction_id):
             _mask_email(txn.user_email),
             res_id,
         )
+        # Returns successful dispatch outcome status string to the Celery task runner.
         return "sent"
     except Exception as exc:
         logger.error(
