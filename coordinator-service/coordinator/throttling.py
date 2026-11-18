@@ -196,11 +196,13 @@ def coordinator_exception_handler(exc, context):
         except (TypeError, ValueError, OverflowError):
             wait = 60
 
+        # Differentiates GET requests (checking status too often) from POST requests (request limit exceeded) for user-friendly UI copy.
         req = context.get("request") if isinstance(context, dict) else None
         if req and getattr(req, "method", None) == "GET":
             error_msg = f"You are checking status too often. Please wait {wait} seconds before trying again."
         else:
             error_msg = f"Request limit exceeded. Try again in {wait} seconds."
+        # Attaches standardized error response dictionary containing wait duration in seconds for frontend countdown timers.
         response.data = {
             "error": error_msg,
             "code": "THROTTLED",
