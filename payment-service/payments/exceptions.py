@@ -97,6 +97,7 @@ def custom_exception_handler(exc, context):
         if isinstance(exc, (OperationalError, DatabaseError)):
             path = getattr(request, "path", "unknown") if request else "unknown"
             method = getattr(request, "method", "unknown") if request else "unknown"
+            # Emits structured error log with endpoint path, HTTP method, and correlation ID for operational telemetry and alerting.
             logger.error(
                 "Database error caught in exception handler: %s [path=%s, method=%s, correlation_id=%s]",
                 exc,
@@ -105,6 +106,7 @@ def custom_exception_handler(exc, context):
                 get_correlation_id(),
                 exc_info=True,
             )
+            # Returns a clean 503 DATABASE_UNAVAILABLE response to downstream clients when database connection pools are exhausted or offline.
             return Response(
                 {
                     "error": "Database service unavailable",
