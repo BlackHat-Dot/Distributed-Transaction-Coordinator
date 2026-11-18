@@ -493,6 +493,7 @@ def send_ticket_email(request, transaction_id):
         return Response({"error": "No email address associated with this transaction.", "code": "NO_EMAIL"}, status=status.HTTP_400_BAD_REQUEST)
 
     # Rate limit: 3/hour per transaction
+    # Enforces a rate limit of 3 email dispatches per hour per transaction to prevent mail-bombing and outbound SMTP server reputation degradation.
     rate_key = f"dtc:ratelimit:ticket_email:{txn.transaction_id}"
     if not check_rate_limit(rate_key, limit=3, window=3600):
         return Response(
@@ -503,6 +504,7 @@ def send_ticket_email(request, transaction_id):
     # Dispatch Celery task
     from coordinator.tasks import send_ticket_email_task
     try:
+        # Offloads PDF generation and email transmission to an asynchronous Celery worker queue so the HTTP client receives an immediate response.
         send_ticket_email_task.delay(str(txn.transaction_id))
     except Exception as exc:
         logger.warning("Celery dispatch failed, running inline or logging: %s", exc)
