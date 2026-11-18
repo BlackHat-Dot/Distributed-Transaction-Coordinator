@@ -32,6 +32,7 @@ class SafeRateThrottle(SimpleRateThrottle):
     """
     # Securely resolves the client's network address using trusted socket remote_addr rather than spoofable client headers.
     def get_ident(self, request):
+        # Attempts to resolve verified client IP using trusted reverse proxy header extraction.
         try:
             ip = _get_client_ip(request)
             if ip and ip != "unknown":
@@ -40,6 +41,7 @@ class SafeRateThrottle(SimpleRateThrottle):
             logger.warning("Failed to resolve client IP in SafeRateThrottle: %s", exc)
 
         # Fallback to direct REMOTE_ADDR socket IP if application-level client IP detection returns unknown or raises exceptions.
+        # Extracts socket-level REMOTE_ADDR from WSGI/ASGI request META dictionary as fallback.
         meta = getattr(request, "META", None)
         if meta and hasattr(meta, "get"):
             remote_addr = meta.get("REMOTE_ADDR")
