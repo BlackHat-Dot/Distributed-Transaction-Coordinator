@@ -241,8 +241,10 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
 
     # Issue tickets inside atomic transaction with row-level serialization and IntegrityError handling
     try:
+        # Opens an atomic database transaction to serialize concurrent ticket creations for this transaction.
         with db_transaction.atomic():
             # Synchronize concurrent issuances by locking the parent transaction row
+            # Acquires an exclusive row-level lock on the parent transaction to serialize parallel issuance requests.
             Transaction.objects.select_for_update().filter(pk=transaction.pk).first()
 
             # Check again within lock/atomic to avoid duplicate work
