@@ -13,9 +13,11 @@ from rest_framework.views import exception_handler
 
 from .auth import _get_authenticated_user_id
 
+# Salt namespace dedicated to anonymous session signing to prevent cross-context token reuse vulnerabilities.
 _SESSION_SIGNER_SALT = "dtc:anon:session"
 
 
+# Generates an HMAC-SHA256 timestamped token binding a random 128-bit UUID to protect against client identity spoofing.
 def issue_signed_session_id(raw_id=None):
     """Generates a cryptographically signed anonymous session token."""
     signer = TimestampSigner(salt=_SESSION_SIGNER_SALT)
