@@ -97,6 +97,7 @@ class Seat(models.Model):
         return f"{self.event.name} - Row {self.row} Seat {self.seat_number} ({self.status})"
 
 
+# Provides an append-friendly audit log tracking every seat lease, confirmation, and compensation across distributed saga transactions.
 class Reservation(models.Model):
 
     class Status(models.TextChoices):
@@ -112,6 +113,7 @@ class Reservation(models.Model):
         blank=True,
         related_name="reservations",
     )
+    # Indexes the parent saga transaction UUID to accelerate saga confirmation lookups and rollback release sweeps.
     transaction_id = models.UUIDField(db_index=True)
     user_id = models.CharField(
         max_length=64,
