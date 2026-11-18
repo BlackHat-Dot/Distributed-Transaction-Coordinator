@@ -26,7 +26,10 @@ def check_service_keys_and_admin_domain(app_configs, **kwargs):
     if is_testing:
         return warnings
 
+    # Retrieves the shared internal authentication secret from Django settings, falling back to reading host environment variables.
     internal_key = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
+
+    # Checks whether the internal service key is either missing entirely or still set to the insecure placeholder default from development.
     if not internal_key or internal_key == "dtc-internal-coordinator-secret-key-2026":
         warnings.append(
             Warning(
