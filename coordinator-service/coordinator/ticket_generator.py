@@ -91,8 +91,10 @@ def generate_qr_code_base64(ticket_code: str) -> str:
     """
     Returns data:image/png;base64,... string for inline frontend display.
     """
+    # Generates barcode image and serializes into in-memory byte buffer as PNG.
     img = generate_qr_code_image(ticket_code)
 
+    # Encodes raw PNG bytes into base64 string formatted as an inline data URI.
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
