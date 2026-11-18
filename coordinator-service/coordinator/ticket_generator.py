@@ -107,8 +107,10 @@ def format_kolkata_time(dt) -> str:
     Formats a datetime (or ISO string) into Asia/Kolkata timezone representation.
     Safely handles string timestamps, naive datetimes, and None.
     """
+    # Guard clause: returns placeholder label if timestamp is missing or null.
     if not dt:
         return "Date & Time TBA"
+    # Protected block attempting string parsing and Asia/Kolkata timezone conversion.
     try:
         if isinstance(dt, str):
             parsed = parse_datetime(dt)
