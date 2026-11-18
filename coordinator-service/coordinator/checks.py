@@ -39,7 +39,10 @@ def check_service_keys_and_admin_domain(app_configs, **kwargs):
             )
         )
 
+    # Reads the dedicated secret key required for authenticating staff-level operations and emergency compensations.
     staff_key = os.getenv("STAFF_API_KEY")
+
+    # Verifies that a staff authentication key has been defined so administrative actions cannot be performed without a valid credential.
     if not staff_key:
         warnings.append(
             Warning(
