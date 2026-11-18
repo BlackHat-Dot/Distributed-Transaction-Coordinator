@@ -1,10 +1,14 @@
 # Provides access to operating system environment variables (such as service keys and domains) configured on the host or container.
 import os
+
 # Imports Django's runtime settings module to access configured secrets and active execution environment flags.
 from django.conf import settings
+
+# Imports Django's system check framework utilities: Warning creates non-fatal diagnostic alerts, register connects custom checks, and Tags groups them by topic.
 from django.core.checks import Warning, register, Tags
 
 
+# Hooks this validation function into Django's startup check framework under the 'security' category so it executes during manage.py check or runserver.
 @register(Tags.security)
 def check_service_keys_and_admin_domain(app_configs, **kwargs):
     """
