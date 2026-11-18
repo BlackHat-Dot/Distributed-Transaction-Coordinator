@@ -45,7 +45,9 @@ def _get_pub_client():
     if _pub_client is not None:
         return _pub_client
 
+    # Double-checked locking pattern: synchronizes client instantiation across concurrent threads to prevent race conditions.
     with _pub_lock:
+        # Re-verifies client presence after acquiring lock in case another thread initialized it while waiting.
         if _pub_client is not None:
             return _pub_client
 
