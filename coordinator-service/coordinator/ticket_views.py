@@ -31,12 +31,14 @@ from rest_framework.response import Response
 from coordinator.auth_views import verify_jwt, _get_client_ip
 # Imports Transaction and Ticket database models to query booking status and persist ticket issuance and redemption records.
 from coordinator.models import Transaction, Ticket
+# Imports ticket generation helpers to construct base64 QR codes, printable PDF documents, calendar invite files, and formatted dates.
 from coordinator.ticket_generator import (
     generate_qr_code_base64,
     generate_tickets_pdf,
     generate_tickets_ics,
     format_kolkata_time,
 )
+# Imports ticket issuance service logic and custom conflict exceptions to safely mint event passes from completed transactions.
 from coordinator.tickets import issue_tickets_for_transaction, TicketIssuanceError
 
 logger = logging.getLogger("coordinator")
