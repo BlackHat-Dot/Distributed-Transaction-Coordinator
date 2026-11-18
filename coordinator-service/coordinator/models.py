@@ -37,7 +37,9 @@ class Transaction(models.Model):
         COMPENSATED = "COMPENSATED"
         # Failure state recorded when automated compensation could not complete, requiring manual retry or escalation.
         COMPENSATION_FAILED = "COMPENSATION_FAILED"
+        # Terminal resolution state indicating successful compensation achieved via subsequent automated or staff retry.
         COMPENSATED_ON_RETRY = "COMPENSATED_ON_RETRY"
+        # Escalation state indicating repeated compensation retry attempts failed, demanding operator investigation.
         RETRY_COMPENSATION_FAILED = "RETRY_COMPENSATION_FAILED"
         RECOVERY_IN_PROGRESS = "RECOVERY_IN_PROGRESS"
         COMPLETED = "COMPLETED"
