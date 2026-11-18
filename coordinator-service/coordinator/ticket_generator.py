@@ -255,11 +255,13 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         holder_display = holder_email if len(holder_email) <= 40 else holder_email[:37] + "..."
         c.drawString(25, box_bottom - 16, f"Holder: {holder_display}")
 
+        # Extracts ticket admission security code and renders right-aligned reference string.
         ticket_code = str(getattr(ticket, "ticket_code", "") or "")
         code_display = ticket_code[:16] if ticket_code else "N/A"
         c.drawRightString(page_w - 25, box_bottom - 16, f"Ticket Code: {code_display}")
 
         # Divider line
+        # Configures dashed stroke styling for horizontal tear-off separator line.
         c.setStrokeColor(colors.HexColor("#e2e8f0"))
         c.setLineWidth(1)
         c.setDash(4, 3)
