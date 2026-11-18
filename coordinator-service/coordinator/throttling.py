@@ -53,9 +53,11 @@ class SafeRateThrottle(SimpleRateThrottle):
 
     # Evaluates request allowance using an atomic fixed-window rate limiting algorithm backed by Redis cache operations.
     def allow_request(self, request, view):
+        # Bypass check: allows all traffic immediately if rate limit string is not configured on throttle instance.
         if self.rate is None:
             return True
 
+        # Resolves unique cache key for current request; returns True to allow traffic if key is None (e.g. staff or unthrottled methods).
         self.key = self.get_cache_key(request, view)
         if self.key is None:
             return True
