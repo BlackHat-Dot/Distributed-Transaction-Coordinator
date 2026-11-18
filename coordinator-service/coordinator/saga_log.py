@@ -203,9 +203,11 @@ def _publish_transaction_update(transaction_id, to_status, from_status=None):
     # References module singleton Redis client to reuse connection for event publishing.
     global _pub_client
     try:
+        # Resolves healthy Redis client from connection factory, exiting silently if Redis broker is currently unavailable.
         client = _get_pub_client()
         if not client:
             return
+        # Assembles event dictionary containing transaction UUID, lifecycle states, terminal flag, and recovery necessity.
         payload = json.dumps({
             "transaction_id": str(transaction_id),
             "status": to_status,
