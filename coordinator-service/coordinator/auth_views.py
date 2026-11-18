@@ -313,6 +313,7 @@ def _get_client_ip(request):
         trusted_proxies = {"127.0.0.1", "::1"}
 
     # If the direct peer is not a trusted proxy, it might be an untrusted client attempting to spoof headers; ignore XFF
+    # Anti-spoofing firewall: ignores X-Forwarded-For headers entirely unless the direct upstream TCP peer is explicitly verified as a trusted reverse proxy.
     if remote_addr not in trusted_proxies:
         return remote_addr
 
@@ -334,6 +335,7 @@ def _get_client_ip(request):
 
     # Iterate backwards (right-to-left) from the most recent proxy toward the original caller.
     # The first IP from the right that is NOT in our trusted proxy list is the authentic client IP.
+    # Traverses the proxy chain from right to left (most recent to oldest) to extract the first untrusted public IP address as the authentic client origin.
     for ip in reversed(clean_ips):
         if ip not in trusted_proxies:
             return ip
