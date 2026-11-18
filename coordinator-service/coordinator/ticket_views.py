@@ -139,7 +139,9 @@ def authenticate_ticket_requester(request, transaction_id):
 
     # Extracts the raw JWT token string by separating the Bearer prefix and stripping surrounding whitespace.
     token = auth_header.split(" ", 1)[1].strip()
+    # Validates token cryptographic signature, expiration time, and claims payload.
     payload, err = verify_jwt(token)
+    # Checks whether token verification succeeded and contains a valid user identifier claim.
     if not payload or not payload.get("user_id"):
         return None, Response(
             {"error": f"Invalid or expired authentication token: {err or 'Missing identity'}.", "code": "UNAUTHORIZED"},
