@@ -38,8 +38,10 @@ def _safe_call_http(func, method, url, **kwargs):
     1. (url, **kwargs)          -- e.g. requests.get, requests.post
     2. (method, url, **kwargs)  -- e.g. coordinator.views._http
     """
+    # Fast-path optimization: directly calls standard requests functions that follow the (url, **kwargs) signature.
     if func is requests.get or func is requests.post:
         return func(url, **kwargs)
+    # Introspects custom HTTP callable parameters using inspect module to match signature automatically.
     try:
         import inspect
         sig = inspect.signature(func)
