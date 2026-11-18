@@ -272,7 +272,9 @@ def get_ticket_pdf(request, transaction_id):
     try:
         # Idempotently materializes ticket records from the completed transaction's saga reservation log if not already generated.
         tickets = issue_tickets_for_transaction(txn)
+    # Catches issuance errors when generating tickets for PDF rendering.
     except TicketIssuanceError as exc:
+        # Returns conflict response if transaction is not in a valid state for PDF generation.
         return Response({"error": exc.detail, "code": "CONFLICT"}, status=exc.status_code)
 
     # Triggers ReportLab vector PDF compilation to produce a print-ready multi-page A5 pass containing security barcodes and venue details.
