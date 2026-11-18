@@ -64,6 +64,7 @@ def ready_check(request):
     db_ok = False
     redis_ok = False
     try:
+        # Actively executes a lightweight SELECT 1 SQL query to confirm database pool availability before accepting traffic.
         connection.ensure_connection()
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
@@ -72,6 +73,7 @@ def ready_check(request):
         logger.warning("Database readiness check failed: %s", e)
 
     try:
+        # Sends a heartbeat ping to Redis to verify distributed lock and session cache availability.
         r = get_redis_client()
         if r is not None and r.ping():
             redis_ok = True
