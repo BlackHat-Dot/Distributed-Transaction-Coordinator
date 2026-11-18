@@ -61,6 +61,7 @@ def _get_authenticated_user(request):
                 token = parts[1].strip()
                 key = getattr(settings, "JWT_SIGNING_KEY", None) or getattr(settings, "SECRET_KEY", None)
                 if key and token:
+                    # Verifies the HMAC-SHA256 signature using the shared secret key and strictly requires the presence of an exp expiration timestamp.
                     payload = jwt.decode(
                         token,
                         key,
@@ -76,6 +77,7 @@ def _get_authenticated_user(request):
                         clean_uid = uid_str if uid_str else None
                         clean_uemail = uemail_str if uemail_str else None
 
+                        # Assembles normalized user identity dictionary containing user_id, user_email, and session ID (sid) for audit tracing.
                         if clean_uid or clean_uemail:
                             user_info = {
                                 "user_id": clean_uid,
