@@ -57,9 +57,12 @@ class CorrelationIdMiddleware:
         else:
             initial_id = "AnonUser"
 
+        # Attaches the correlation ID directly onto the HttpRequest instance so downstream view handlers and error loggers can read it.
         request.correlation_id = initial_id
 
+        # Seeds the execution context with initial_id and receives a unique reset token to prevent context leakage across requests.
         token = set_correlation_id(initial_id)
+        # Guaranteed cleanup: executes the downstream view, ensuring the context token is always reset even if exceptions occur.
         try:
             return self.get_response(request)
         finally:
