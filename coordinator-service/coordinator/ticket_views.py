@@ -409,6 +409,7 @@ def gate_redeem_ticket(request):
         )
 
     # Verify GATE_API_KEY (supports X-Staff-Key, X-Gate-Api-Key, gate_key in body, or Bearer auth)
+    # Loads the venue gate scanner API key from settings or environment variables to restrict redemption access exclusively to authorized venue staff.
     expected_key = getattr(settings, "GATE_API_KEY", os.getenv("GATE_API_KEY"))
 
     if not expected_key:
@@ -421,6 +422,7 @@ def gate_redeem_ticket(request):
     
     provided_key = request.headers.get("X-Gate-Api-Key","")
     
+    # Employs constant-time string comparison (hmac.compare_digest) to prevent timing side-channel attacks against the venue staff gate secret.
     if not provided_key or not hmac.compare_digest(str(provided_key), str(expected_key)):
         return Response({"error": "Invalid or missing gate API key.", "code": "UNAUTHORIZED"}, status=status.HTTP_401_UNAUTHORIZED)
 
