@@ -291,6 +291,7 @@ def public_verify_ticket(request, ticket_code):
 </html>"""
         return HttpResponse(html, status=404, content_type="text/html; charset=utf-8")
 
+    # Verification gatekeeper: immediately revokes ticket validity if the parent transaction was cancelled, aborted, or compensated during saga rollback.
     if ticket.transaction.status != Transaction.Status.COMPLETED:
         if wants_json:
             return Response({"status": "REVOKED", "message": "This ticket has been revoked or cancelled."}, status=status.HTTP_200_OK)
@@ -324,6 +325,7 @@ def public_verify_ticket(request, ticket_code):
     badge_bg = "#f59e0b" if is_used else "#10b981"
     formatted_time = format_kolkata_time(ticket.starts_at)
 
+    # Protects customer privacy by omitting all PII (user_id, buyer email, payment references) from public verification responses, returning only venue admission validity.
     if wants_json:
         return Response({
             "status": status_label,
