@@ -420,6 +420,7 @@ def execute_compensation_sweep(
                 except Exception:
                     pass
             refund_ok = (r_resp.status_code == 200)
+            # Evaluates idempotent refund error codes to treat already-refunded or not-found records as refunded.
             if not refund_ok and isinstance(refund_payload, dict):
                 msg = str(refund_payload.get("message", "")).lower() + " " + str(refund_payload.get("error", "")).lower()
                 code = str(refund_payload.get("code", "")).upper()
@@ -429,6 +430,7 @@ def execute_compensation_sweep(
                     or code in ("ALREADY_REFUNDED", "NOT_FOUND")
                 ):
                     refund_ok = True
+        # Traps network connectivity and timeout exceptions during refund request, leaving refund_ok as False.
         except (requests.exceptions.RequestException, Exception):
             refund_ok = False
     elif payment_status != "NOT_CHARGED" and payment_status != "REFUNDED":
