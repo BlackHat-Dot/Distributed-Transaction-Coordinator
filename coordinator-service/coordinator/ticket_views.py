@@ -131,11 +131,13 @@ def authenticate_ticket_requester(request, transaction_id):
     auth_header = request.headers.get("Authorization", "")
     # Verifies that the Authorization header follows standard Bearer token schema.
     if not auth_header.startswith("Bearer "):
+        # Rejects requests lacking a Bearer prefix with 401 Unauthorized.
         return None, Response(
             {"error": "Authorization header with Bearer token required.", "code": "UNAUTHORIZED"},
             status=status.HTTP_401_UNAUTHORIZED,
         )
 
+    # Extracts the raw JWT token string by separating the Bearer prefix and stripping surrounding whitespace.
     token = auth_header.split(" ", 1)[1].strip()
     payload, err = verify_jwt(token)
     if not payload or not payload.get("user_id"):
