@@ -131,11 +131,11 @@ class SagaEvent(models.Model):
     class Meta:
         # Inner configuration class that provides database-level options and metadata for this Django model.
 
+        # Enforces a composite database UNIQUE constraint: guarantees no duplicate sequence numbers exist for the same transaction, preventing race conditions.
         unique_together = [("transaction", "seq")]
-        # Enforces a composite UNIQUE database constraint: within a single transaction, no two events can have the same sequence number ('seq').
 
+        # Ensures all ORM queries return events in strict chronological sequence (ORDER BY transaction_id ASC, seq ASC) for faithful saga replay.
         ordering = ["transaction", "seq"]
-        # Sets the default query sort order (SQL: ORDER BY transaction_id ASC, seq ASC), ensuring events are always retrieved in chronological sequence.
 
     def __str__(self):
         return (
