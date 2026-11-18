@@ -1818,6 +1818,7 @@ def _finish_payment(transaction_id, payment_data, payment_status_code=200, seat_
             )
 
     if payment_data.get("status") == "CHARGED":
+        # Calls Inventory service confirm endpoint to permanently finalize reserved seats following successful payment charge.
         confirm_resp, confirm_err = _confirm(transaction_id, seat_ids=seat_ids)
 
         # Retry confirm once on transport failure or 5xx before giving up
@@ -1827,6 +1828,7 @@ def _finish_payment(transaction_id, payment_data, payment_status_code=200, seat_
                 transaction_id,
                 confirm_err or getattr(confirm_resp, "status_code", None),
             )
+            # Automatically retries seat confirmation once on 5xx or gateway errors before falling back to background recovery sweeper delegation.
             confirm_resp, confirm_err = _confirm(transaction_id, seat_ids=seat_ids)
 
         if confirm_resp and confirm_resp.status_code == 200:
