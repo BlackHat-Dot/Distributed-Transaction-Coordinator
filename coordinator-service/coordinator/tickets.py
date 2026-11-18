@@ -215,12 +215,14 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
                     pass
 
     # STRICT RULE: Validate all requested seats upfront before touching database
+    # Validates that every requested seat ID was explicitly confirmed and priced by Inventory Service before mutating the database.
     for sid in seat_ids:
         try:
             norm_sid = int(sid)
         except (ValueError, TypeError):
             norm_sid = sid
 
+        # Aborts issuance if any requested seat is missing from the inventory confirmation response.
         if norm_sid not in inventory_seat_ids:
             raise TicketIssuanceError(
                 f"Cannot issue ticket: Seat ID {sid} was not found in inventory confirmation.",
