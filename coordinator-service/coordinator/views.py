@@ -646,6 +646,7 @@ def _get_prices(seat_ids=None, transaction_id=None):
 
     seats_list = None
     try:
+        # Queries downstream Inventory service to fetch authoritative seat prices and row/seat labels before creating the transaction.
         resp = _http(
             "POST",
             INVENTORY_PRICING_URL,
@@ -667,6 +668,7 @@ def _get_prices(seat_ids=None, transaction_id=None):
 
     if seats_list and isinstance(seats_list, list):
         if len(seats_list) == len(seat_ids):
+            # Aggregates exact Decimal prices returned by Inventory to avoid floating-point rounding discrepancies during payment.
             total_amount = sum(Decimal(str(seat.get("price"))) for seat in seats_list)
             resolved_seat_ids = [seat["id"] for seat in seats_list]
             resolved_seat_numbers = ", ".join(f"{seat.get('row', '')}{seat.get('seat_number', '')}" for seat in seats_list)
