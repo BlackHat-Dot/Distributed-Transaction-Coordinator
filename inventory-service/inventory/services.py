@@ -172,10 +172,12 @@ def reclaim_expired_holds():
         active_sessions = set()
         active_checkouts = set()
         try:
+            # Uses a Redis pipeline to batch EXISTS queries across all session and checkout keys in a single network round-trip.
             pipe = redis_client.pipeline()
             for key in unique_session_keys:
                 pipe.exists(key)
             for tid in unique_tids:
+                # Checks dtc:checkout presence keys set by the Coordinator during active payment processing to protect seats from abandonment reclaim.
                 pipe.exists(f"dtc:checkout:{tid}")
             results = pipe.execute()
             expected_len = len(unique_session_keys) + len(unique_tids)
