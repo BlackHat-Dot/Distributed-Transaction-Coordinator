@@ -111,6 +111,7 @@ class IsBookingAuthenticated(BasePermission):
         raise NotAuthenticated(detail=AUTH_MSG)
 
 
+# Enforces transaction creation rate limit (4/min) per authenticated user to prevent ticket hoarding and booking bot spam.
 class BookingRateThrottle(SafeRateThrottle):
     """
     Rate limits POST requests per authenticated user.
@@ -124,6 +125,7 @@ class BookingRateThrottle(SafeRateThrottle):
         if request.method != "POST":  # only limit writes
             return None
 
+        # Resolves requester identity: exempts authorized staff operators while rate limiting standard users and unauthenticated IPs.
         caller = _get_caller(request)
         if caller and caller.is_staff:  # staff skip throttling
             return None
@@ -149,6 +151,7 @@ class TransactionReadRateThrottle(SafeRateThrottle):
         if request.method != "GET":
             return None
 
+        # Resolves requester identity: exempts authorized staff operators while rate limiting standard users and unauthenticated IPs.
         caller = _get_caller(request)
         if caller and caller.is_staff:  # staff skip throttling
             return None
