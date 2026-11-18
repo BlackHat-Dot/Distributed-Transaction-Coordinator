@@ -387,6 +387,7 @@ def void_payment(request):
     set_correlation_id(str(transaction_uuid))
 
     with transaction.atomic():
+        # Acquires an exclusive row-level lock on any existing payment record to prevent race conditions during voiding.
         p = Payment.objects.select_for_update().filter(transaction_id=transaction_uuid).first()
         if p:
             logger.info(
@@ -407,6 +408,7 @@ def void_payment(request):
 
         try:
             with transaction.atomic():
+                # Persists a void tombstone record preventing this transaction from ever being charged downstream.
                 p = Payment.objects.create(
                     transaction_id=transaction_uuid,
                     amount=None,
