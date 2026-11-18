@@ -178,11 +178,13 @@ def authenticate_ticket_requester(request, transaction_id):
 
     # Enforces strict ownership access control by returning 404 NOT_FOUND instead of 403 FORBIDDEN, preventing unauthorized users from enumerating valid transaction IDs.
     if not txn.user_id or str(txn.user_id) != requester_user_id:
+        # Returns 404 Not Found when the requester does not own the transaction, obfuscating its existence.
         return None, Response(
             {"error": "Transaction not found.", "code": "NOT_FOUND"},
             status=status.HTTP_404_NOT_FOUND,
         )
 
+    # Imports correlation ID setter to link transaction context with request logging.
     from coordinator.middleware import set_correlation_id
     # Binds the authenticated transaction UUID to the current thread's logging context so all subsequent downstream log records correlate directly to this booking.
     set_correlation_id(str(txn.transaction_id))
