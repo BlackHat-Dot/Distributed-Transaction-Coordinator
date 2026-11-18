@@ -853,6 +853,7 @@ def _create_txn(request):
             return price_error
 
         quantity = len(seat_ids)
+        # Atomically creates initial transaction record with status STARTED and requested seat identifiers before contacting downstream services.
         created, dup_response = _create_transaction(
             transaction_id=tx_id,
             seat_ids=seat_ids,
@@ -936,6 +937,7 @@ def _create_txn(request):
             if ev_starts:
                 update_fields["starts_at"] = ev_starts
 
+        # Records HOLDING status in the saga log along with the temporary reservation expiry timestamp returned by Inventory.
         transitioned = _set_status_with_event(
             tx_id,
             Transaction.Status.HOLDING,
