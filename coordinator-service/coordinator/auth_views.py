@@ -1203,6 +1203,7 @@ def verify_otp(request):
         )
 
     # OTP matched: clean slate on success (single-use)
+    # Enforces single-use semantics: immediately evicts the verified OTP from Redis and fallback cache upon successful authentication.
     if client:
         try:
             client.delete(cache_key)
@@ -1218,6 +1219,7 @@ def verify_otp(request):
     except Exception:
         pass
 
+    # Generates a unique 128-bit session token bound to both email and user ID in Redis with a rolling 30-second TTL.
     session_id = uuid.uuid4().hex
     user_id = _generate_user_id(email)
     session_keys = [session_key, f"dtc:session:{user_id}"]
