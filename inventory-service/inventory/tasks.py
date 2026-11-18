@@ -55,6 +55,7 @@ def sweep_expired_holds_task():
 
     logger.info("Starting inventory sweep_expired_holds_task run.")
     try:
+        # Executes the seat hold sweep management command to identify expired leases and return abandoned seats to the available inventory pool.
         call_command("sweep_expired_holds")
         logger.info("inventory sweep_expired_holds_task run completed.")
         return "completed"
@@ -64,6 +65,7 @@ def sweep_expired_holds_task():
     finally:
         if client and acquired:
             try:
+                # Evaluates the Lua release script to atomically verify ownership and delete the mutex lock without race conditions.
                 client.eval(RELEASE_LOCK_SCRIPT, 1, LOCK_KEY, lock_token)
             except Exception as exc:
                 logger.error("Failed to release lock '%s': %s", LOCK_KEY, exc)
