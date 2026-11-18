@@ -267,10 +267,12 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         # Flushes the current seat pass to the document and begins a clean page for the next seat in the booking.
         c.showPage()
 
+    # Finalizes all PDF drawing operations and writes the complete byte stream into the in-memory buffer.
     c.save()
     return buf.getvalue()
 
 
+# Generates an RFC-5545 standard iCalendar (.ics) file allowing buyers to add the event directly to Google Calendar or Apple iCal.
 def generate_tickets_ics(transaction: Transaction, tickets: list[Ticket]) -> bytes:
     """
     Generates a standard iCalendar (.ics) event for the booking with UTC DTSTART.
