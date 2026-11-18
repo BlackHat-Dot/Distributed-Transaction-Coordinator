@@ -252,11 +252,13 @@ def public_verify_ticket(request, ticket_code):
     Rate limited. NO PII (no email, user ID, transaction UUID).
     """
     ip = _get_client_ip(request)
+    # Applies aggressive IP-based rate limiting on the public verification endpoint to protect venue gate scanners from denial-of-service and brute-force ticket code attacks.
     rate_key = f"dtc:ratelimit:verify:{ip}"
     verify_limit = int(os.getenv("VERIFY_RATE_LIMIT", 5))
     if not check_rate_limit(rate_key, limit=verify_limit, window=60):
         return HttpResponse("Too Many Requests", status=429, content_type="text/plain")
 
+    # Fetches ticket along with its parent transaction in a single SQL JOIN to evaluate transaction status without secondary database lookups.
     ticket = Ticket.objects.select_related("transaction").filter(ticket_code=ticket_code).first()
     accept_header = request.headers.get("Accept", "")
     wants_json = "application/json" in accept_header or request.query_params.get("format") == "json"
