@@ -148,11 +148,13 @@ ALLOWED_TRANSITIONS = {
         Transaction.Status.RECOVERY_IN_PROGRESS,
         Transaction.Status.TIMEOUT,
     },
+    # Inventory connection fault transitions: allows transition to reservation failure, timeout, or sweeper claiming.
     Transaction.Status.INVENTORY_CONNECTION_ERROR: {
         Transaction.Status.INVENTORY_RESERVE_FAILED,
         Transaction.Status.RECOVERY_IN_PROGRESS,
         Transaction.Status.TIMEOUT,
     },
+    # Active rollback transitions: leads to fully compensated state, compensation failure, retry resolution, or sweeper claim.
     Transaction.Status.COMPENSATING: {
         Transaction.Status.COMPLETED,
         Transaction.Status.COMPENSATED,
