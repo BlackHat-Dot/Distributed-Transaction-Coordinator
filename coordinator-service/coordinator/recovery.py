@@ -133,6 +133,7 @@ def execute_compensation_sweep(
 
     # Fetches the transaction database entity to retrieve reserved seat identifiers for inventory release.
     txn = Transaction.objects.filter(transaction_id=tid).first()
+    # Retrieves reserved seat identifiers associated with this transaction for downstream release.
     seat_ids = txn.seat_ids if txn else []
 
     # 1. Payment Check in EVERY status
@@ -392,6 +393,7 @@ def execute_compensation_sweep(
                     "payment_status": "CHARGED",
                 },
             )
+            # Returns 409 Conflict indicating manual review is required due to administrative inventory reset.
             return {
                 "success": False,
                 "status_code": 409,
