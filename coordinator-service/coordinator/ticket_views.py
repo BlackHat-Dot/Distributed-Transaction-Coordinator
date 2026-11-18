@@ -120,6 +120,7 @@ def authenticate_ticket_requester(request, transaction_id):
     # 1. Prohibit ?token= query parameter
     # Explicitly rejects authentication tokens in query parameters to prevent token leakage in web server access logs, browser history, and HTTP Referer headers.
     if request.GET.get("token") or "token" in request.query_params:
+        # Returns 401 Unauthorized rejecting query string authentication to protect token confidentiality.
         return None, Response(
             {"error": "Query parameter token authentication is not permitted. Use Authorization header.", "code": "UNAUTHORIZED"},
             status=status.HTTP_401_UNAUTHORIZED,
@@ -128,6 +129,7 @@ def authenticate_ticket_requester(request, transaction_id):
     # 2. Extract Bearer token from Authorization header
     # Extracts and validates the standard RFC 6750 Bearer authentication header containing the client's cryptographically signed JWT.
     auth_header = request.headers.get("Authorization", "")
+    # Verifies that the Authorization header follows standard Bearer token schema.
     if not auth_header.startswith("Bearer "):
         return None, Response(
             {"error": "Authorization header with Bearer token required.", "code": "UNAUTHORIZED"},
