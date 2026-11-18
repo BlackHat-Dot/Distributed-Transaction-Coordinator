@@ -135,12 +135,14 @@ ALLOWED_TRANSITIONS = {
         Transaction.Status.RECOVERY_IN_PROGRESS,
         Transaction.Status.TIMEOUT,
     },
+    # Payment network error transitions: enables status verification sweep, completion if charged, or rollback compensation.
     Transaction.Status.PAYMENT_CONNECTION_ERROR: {
         Transaction.Status.COMPENSATING,
         Transaction.Status.COMPLETED,
         Transaction.Status.RECOVERY_IN_PROGRESS,
         Transaction.Status.TIMEOUT,
     },
+    # Inventory timeout transitions: permits moving to reservation failure, timeout, or recovery in progress.
     Transaction.Status.INVENTORY_TIMEOUT: {
         Transaction.Status.INVENTORY_RESERVE_FAILED,
         Transaction.Status.RECOVERY_IN_PROGRESS,
