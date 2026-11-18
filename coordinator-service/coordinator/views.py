@@ -1278,6 +1278,7 @@ def _list_txns(request):
     queryset = Transaction.objects.all().order_by("-created_at")
 
     if not is_staff:
+        # Filters transaction queryset strictly by authenticated caller's user_id to prevent Insecure Direct Object Reference (IDOR) data leaks.
         if auth_user_id:
             queryset = queryset.filter(user_id=auth_user_id)
         else:
@@ -1297,6 +1298,7 @@ def _list_txns(request):
             )
 
     total_count = queryset.count()
+    # Applies SQL LIMIT and OFFSET slices to paginate transaction results efficiently without loading whole tables into memory.
     txs = queryset[offset:offset + limit]
     data = [_txn_json(t) for t in txs]
 
