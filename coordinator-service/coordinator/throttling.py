@@ -121,6 +121,7 @@ class SafeRateThrottle(SimpleRateThrottle):
 class IsBookingAuthenticated(BasePermission):
     # Validates request authentication status while ensuring unauthenticated callers still consume rate limit tokens.
     def has_permission(self, request, view):
+        # Resolves caller credentials from session or bearer tokens to permit authenticated users.
         caller = _get_caller(request)
         if caller and caller.is_authenticated:
             return True
@@ -128,6 +129,7 @@ class IsBookingAuthenticated(BasePermission):
         # Security Guard: enforces view throttle check before raising 401 to ensure unauthenticated spam still triggers 429 rate limiting.
         if hasattr(view, "check_throttles"):
             view.check_throttles(request)
+        # Rejects unauthenticated access with 401 NotAuthenticated after completing rate limit checks.
         raise NotAuthenticated(detail=AUTH_MSG)
 
 
