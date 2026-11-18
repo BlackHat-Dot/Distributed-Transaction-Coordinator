@@ -179,10 +179,12 @@ class UserActionRateThrottle(BaseInventoryThrottle):
 
     def get_cache_key(self, request, view):
         # STRICT: Only verified JWTs get user throttling
+        # Extracts cryptographically verified JWT user identity, passing through unauthenticated callers to IP-based rate limiting.
         uid = _get_authenticated_user_id(request)
         if not uid:
             return None  # Pass through to AnonIpRateThrottle
 
+        # Formats namespaced cache keys binding the specific throttle scope and buyer user ID for per-account rate limits.
         return self.cache_format % {
             "scope": self.scope,
             "ident": str(uid).strip(),
