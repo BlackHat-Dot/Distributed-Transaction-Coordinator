@@ -50,6 +50,7 @@ class PublicSeatSerializer(serializers.ModelSerializer):
         if not request:
             return False
 
+        # Reuses cached authenticated user identity from request context to eliminate redundant JWT verification per serialized seat.
         auth_user = getattr(request, "_auth_user", None) or getattr(request, "_cached_authenticated_user", None)
         if auth_user is None:
             from .auth import _get_authenticated_user
@@ -66,6 +67,7 @@ class PublicSeatSerializer(serializers.ModelSerializer):
         if not user_id or not str(user_id).strip():
             return False
 
+        # Verifies that the seat is currently held, the user IDs match, and the hold expiration window has not yet passed.
         if obj.status == Seat.Status.HELD and obj.user_id and str(obj.user_id).strip() == str(user_id).strip():
             if obj.held_until and not _is_hold_expired(obj.held_until):
                 return True
