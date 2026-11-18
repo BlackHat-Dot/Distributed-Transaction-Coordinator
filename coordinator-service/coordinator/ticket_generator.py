@@ -6,7 +6,9 @@ import io
 import os
 # Imports standard datetime UTC timezone and timedelta classes for calendar duration arithmetic.
 from datetime import timezone as dt_timezone, timedelta
+# Imports Decimal class to format financial ticket admission amounts with precise two-decimal currency display.
 from decimal import Decimal
+# Imports Django runtime settings module to resolve configured public domains and debug flags.
 from django.conf import settings
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
