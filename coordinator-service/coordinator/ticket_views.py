@@ -214,8 +214,10 @@ def get_transaction_tickets(request, transaction_id):
         tickets = issue_tickets_for_transaction(txn)
     # Intercepts ticket issuance business errors such as pending or aborted transaction status.
     except TicketIssuanceError as exc:
+        # Returns structured conflict response detailing why tickets cannot be issued.
         return Response({"error": exc.detail, "code": "CONFLICT"}, status=exc.status_code)
 
+    # Extracts the first ticket from the collection to derive shared event-level venue and timing metadata.
     first_ticket = tickets[0] if tickets else None
     event_data = {
         "name": first_ticket.event_name if first_ticket else "",
