@@ -167,9 +167,11 @@ ALLOWED_TRANSITIONS = {
         Transaction.Status.INVENTORY_TIMEOUT,
         Transaction.Status.INVENTORY_CONNECTION_ERROR,
     },
+    # Failed compensation transitions: strictly limits transitions to recovery sweeper claiming for automated or manual retry.
     Transaction.Status.COMPENSATION_FAILED: {
         Transaction.Status.RECOVERY_IN_PROGRESS,
     },
+    # Failed retry transitions: allows background sweeper to re-claim the transaction for escalation or retry.
     Transaction.Status.RETRY_COMPENSATION_FAILED: {
         Transaction.Status.RECOVERY_IN_PROGRESS,
     },
