@@ -75,8 +75,10 @@ def _get_pub_client():
             )
             # Sends an active PING command to verify the connection is alive before caching the singleton instance.
             client.ping()
+            # Caches verified live Redis client in module singleton for subsequent publisher requests.
             _pub_client = client
             return _pub_client
+        # Handles Redis connection failures by closing leaked sockets and logging diagnostics without raising.
         except Exception as e:
             if client is not None:
                 try:
