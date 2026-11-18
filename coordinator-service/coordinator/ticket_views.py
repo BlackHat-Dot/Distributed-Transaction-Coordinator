@@ -434,8 +434,10 @@ def public_verify_ticket(request, ticket_code):
   </div>
 </body>
 </html>"""
+        # Returns rendered HTML page displaying revoked ticket status notice.
         return HttpResponse(html, status=200, content_type="text/html; charset=utf-8")
 
+    # Inspects redemption timestamp to evaluate whether ticket has already been admitted.
     is_used = ticket.used_at is not None
     status_label = "ALREADY USED" if is_used else "VALID"
     badge_bg = "#f59e0b" if is_used else "#10b981"
