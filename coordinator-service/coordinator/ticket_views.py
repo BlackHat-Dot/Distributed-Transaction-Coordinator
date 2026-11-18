@@ -167,6 +167,7 @@ def get_transaction_tickets(request, transaction_id):
             "issued_at": _to_iso(t.issued_at),
             "used_at": _to_iso(t.used_at),
             "is_used": t.used_at is not None,
+            # Embeds base64-encoded QR PNG data URIs directly into the JSON response for zero-latency inline image rendering on frontend client apps.
             "qr_code_base64": generate_qr_code_base64(t.ticket_code),
         }
         for t in tickets
@@ -196,6 +197,7 @@ def get_ticket_pdf(request, transaction_id):
     except TicketIssuanceError as exc:
         return Response({"error": exc.detail, "code": "CONFLICT"}, status=exc.status_code)
 
+    # Triggers ReportLab vector PDF compilation to produce a print-ready multi-page A5 pass containing security barcodes and venue details.
     pdf_bytes = generate_tickets_pdf(txn, tickets)
 
     # For group bookings (>3 seats), use total count to avoid filename bloat
