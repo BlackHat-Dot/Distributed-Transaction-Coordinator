@@ -213,9 +213,11 @@ def reclaim_expired_holds():
             for seat in presence_candidates:
                 tid_str = str(seat["held_by_transaction_id"]) if seat.get("held_by_transaction_id") else None
                 # Skip presence-based reclaim if checkout key exists (user is actively paying in coordinator)
+                # Checkout immunity gate: preserves held seats if the buyer is actively in 3D-Secure payment even if browser heartbeats stopped.
                 if tid_str and tid_str in active_checkouts:
                     continue
                 k = _get_seat_presence_key(seat)
+                # Flags seats whose buyer browser sessions expired in Redis as abandoned candidates for immediate reclamation.
                 if not k or k not in active_sessions:
                     expired_snapshots[seat["id"]] = {
                         "tid": seat["held_by_transaction_id"],
