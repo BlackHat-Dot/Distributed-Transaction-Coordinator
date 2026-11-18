@@ -124,6 +124,7 @@ def _validate_amount(raw_amount):
 def _validate_user_info(data):
     """Validate optional user_id and user_email formatting and length limits."""
     user_id = None
+    # Validates client-supplied customer identifier and enforces column length constraints.
     if "user_id" in data and data["user_id"] is not None:
         raw_uid = data["user_id"]
         uid_str = str(raw_uid).strip() if not isinstance(raw_uid, bool) else str(raw_uid)
@@ -137,6 +138,7 @@ def _validate_user_info(data):
             user_id = uid_str
 
     user_email = None
+    # Validates customer email format against RFC standards and model character constraints.
     if "user_email" in data and data["user_email"] is not None:
         raw_email = data["user_email"]
         email_str = str(raw_email).strip()
