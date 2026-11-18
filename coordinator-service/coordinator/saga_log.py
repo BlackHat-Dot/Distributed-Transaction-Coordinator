@@ -103,12 +103,14 @@ ALLOWED_TRANSITIONS = {
         Transaction.Status.COMPENSATING,
         Transaction.Status.RECOVERY_IN_PROGRESS,
     },
+    # Temporary hold transitions: allows proceeding to confirmed reservation, timing out, or rolling back via compensation.
     Transaction.Status.HOLDING: {
         Transaction.Status.INVENTORY_RESERVED,
         Transaction.Status.TIMEOUT,
         Transaction.Status.COMPENSATING,
         Transaction.Status.RECOVERY_IN_PROGRESS,
     },
+    # Confirmed inventory transitions: allows proceeding to payment processing, holding, compensation, or timeout.
     Transaction.Status.INVENTORY_RESERVED: {
         Transaction.Status.PAYMENT_PROCESSING,
         Transaction.Status.HOLDING,
