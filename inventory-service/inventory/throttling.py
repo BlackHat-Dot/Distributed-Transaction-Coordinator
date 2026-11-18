@@ -134,6 +134,7 @@ def _is_exempt_from_throttling(request):
         staff_key = request.META.get("HTTP_X_STAFF_KEY")
 
     configured_staff_key = getattr(settings, "STAFF_API_KEY", None)
+    # Evaluates privileged staff API keys using constant-time comparison to prevent timing leak exploits from untrusted callers.
     if staff_key and configured_staff_key and isinstance(configured_staff_key, str) and configured_staff_key.strip():
         if secrets.compare_digest(str(staff_key).strip(), str(configured_staff_key).strip()):
             return True
@@ -145,6 +146,7 @@ def _is_exempt_from_throttling(request):
         internal_key = request.META.get("HTTP_X_INTERNAL_SERVICE_KEY")
 
     configured_internal_key = getattr(settings, "INTERNAL_SERVICE_KEY", None)
+    # Exempts inter-service Coordinator RPCs from throttling using timing-safe comparison against the configured shared secret.
     if internal_key and configured_internal_key and isinstance(configured_internal_key, str) and configured_internal_key.strip():
         if secrets.compare_digest(str(internal_key).strip(), str(configured_internal_key).strip()):
             return True
