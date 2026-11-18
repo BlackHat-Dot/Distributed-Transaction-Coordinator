@@ -24,6 +24,7 @@ def _get_inventory_base_url() -> str:
     ) or os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000")).rstrip("/")
 
 
+# Custom domain exception raised when ticket issuance preconditions or inventory ground-truth validations fail.
 class TicketIssuanceError(Exception):
     def __init__(self, detail, status_code=409):
         """
@@ -37,6 +38,7 @@ class TicketIssuanceError(Exception):
         self.status_code = status_code
 
 
+# Idempotently generates digital ticket records for a settled COMPLETED transaction after verifying ground truth against Inventory.
 def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
     """
     Lazily and idempotently issues tickets for a COMPLETED transaction after
