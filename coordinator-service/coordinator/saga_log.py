@@ -280,8 +280,8 @@ def _set_status_with_event(
         from_status = rows[0]["status"]
 
         if to_status == from_status:
-            # Successfully transitioned state, recorded audit event, and registered SSE notification.
-    return True
+            # Idempotency fast-path: if the transaction is already in the target status, exit immediately without duplicate writes.
+            return True
 
         # Validate CAS transition against ALLOWED_TRANSITIONS
         if expected_status is not None and to_status != from_status:
