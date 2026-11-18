@@ -58,6 +58,7 @@ def verify_internal_service_key(request):
         )
 
     try:
+        # Normalizes incoming secret strings to UTF-8 byte arrays to prevent unicode character encoding discrepancies during comparison.
         key_bytes = key.encode("utf-8")
     except Exception:
         return Response(
@@ -69,6 +70,7 @@ def verify_internal_service_key(request):
     for expected in valid_keys:
         try:
             expected_bytes = expected.encode("utf-8")
+            # Compares provided bytes against configured keys using secrets.compare_digest to eliminate timing side-channel attacks.
             if secrets.compare_digest(key_bytes, expected_bytes):
                 matched = True
         except Exception:
