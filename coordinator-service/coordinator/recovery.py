@@ -317,6 +317,7 @@ def execute_compensation_sweep(
                 http_status_code=200,
                 http_payload={"payment": {"status": "CHARGED"}, "inventory": confirm_payload},
             )
+            # Returns 200 OK indicating successful forward recovery and completion of the transaction.
             return {
                 "success": True,
                 "status_code": 200,
@@ -338,6 +339,7 @@ def execute_compensation_sweep(
                 http_status_code=confirm_status_code,
                 http_payload={"error": "Inventory confirm transport error/5xx; leaving recoverable for retry."},
             )
+            # Returns 503 Service Unavailable indicating downstream inventory transport failure for sweeper retry.
             return {
                 "success": False,
                 "status_code": 503,
