@@ -35,11 +35,13 @@ class CorrelationIdMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        # Ingests the incoming X-Correlation-ID HTTP header propagated from the Coordinator service to link all inventory log events.
         tid = request.META.get("HTTP_X_CORRELATION_ID") or "AnonUser"
         token = set_correlation_id(tid)
         try:
             return self.get_response(request)
         finally:
+            # Resets the context variable to its previous token state in a finally block to prevent context leakage across reused WSGI threads.
             _correlation_id_ctx.reset(token)
 
 
