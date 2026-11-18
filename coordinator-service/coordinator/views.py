@@ -1095,6 +1095,7 @@ def _create_txn(request):
         if not is_sync:
             try:
                 from .tasks import execute_saga_task
+                # Dispatches payment execution to Celery background workers for asynchronous HTTP processing, returning 202 ACCEPTED with poll URLs.
                 execute_saga_task.delay(
                     str(tx_id),
                     seat_ids=seat_ids,
@@ -1126,6 +1127,7 @@ def _create_txn(request):
                     http_payload={"error": "Celery dispatch failed; marked TIMEOUT"},
                 )
                 if transitioned:
+                    # Gracefully rolls back transaction status to TIMEOUT and releases held inventory if Celery broker queue submission fails.
                     _release_inventory(tx_id, reason="celery dispatch failed")
                 return Response(
                     {
