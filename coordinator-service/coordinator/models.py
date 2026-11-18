@@ -185,7 +185,9 @@ class Ticket(models.Model):
         on_delete=models.CASCADE,
         related_name="tickets",
     )
+    # Indexed identifier referencing the specific physical seat reserved in Inventory Service for this ticket.
     seat_id = models.IntegerField(db_index=True)
+    # Human-readable seat location code (e.g. 'Section A, Row 1, Seat 12') printed on physical and digital tickets.
     seat_label = models.CharField(max_length=64)
     event_name = models.CharField(max_length=200)
     venue = models.CharField(max_length=200, blank=True, default="")
