@@ -34,11 +34,13 @@ class Seat(models.Model):
         default=Status.AVAILABLE,
         db_index=True,
     )
+    # Records the precise UTC instant when an in-flight hold expires, enabling background sweepers and queries to evict stale locks.
     held_until = models.DateTimeField(
         null=True,
         blank=True,
         help_text="Timestamp when the ephemeral 10-minute hold expires.",
     )
+    # Binds the physical seat to the holding or booking saga transaction UUID to enforce mutual exclusion across distributed buyers.
     held_by_transaction_id = models.UUIDField(
         null=True,
         blank=True,
