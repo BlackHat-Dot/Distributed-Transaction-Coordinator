@@ -261,7 +261,9 @@ def get_ticket_pdf(request, transaction_id):
     GET /tickets/<transaction_id>/pdf/
     Downloads single or multi-page A5 PDF for the transaction.
     """
+    # Verifies client authorization token and validates caller ownership of the booking.
     txn, err_resp = authenticate_ticket_requester(request, transaction_id)
+    # Halts execution if requester authentication or authorization checks failed.
     if err_resp:
         return err_resp
 
