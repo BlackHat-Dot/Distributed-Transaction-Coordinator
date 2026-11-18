@@ -159,12 +159,14 @@ def authenticate_ticket_requester(request, transaction_id):
         tid = uuid.UUID(str(transaction_id))
     # Catches parsing errors when the supplied transaction_id string cannot be coerced into a valid UUID.
     except (ValueError, TypeError, AttributeError):
+        # Returns 404 Not Found for syntactically invalid transaction identifiers to prevent enumeration and database type errors.
         return None, Response(
             {"error": "Transaction not found.", "code": "NOT_FOUND"},
             status=status.HTTP_404_NOT_FOUND,
         )
 
     # 4. Ownership check: Return 404 for non-existent OR non-owner transaction
+    # Fetches the transaction record corresponding to the verified UUID from the database.
     txn = Transaction.objects.filter(transaction_id=tid).first()
     if not txn:
         return None, Response(
