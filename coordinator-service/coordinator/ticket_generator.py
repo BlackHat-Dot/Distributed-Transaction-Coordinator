@@ -154,12 +154,14 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
     tid = getattr(transaction, "transaction_id", "UNKNOWN")
     short_ref = str(tid)[:8].upper()
 
+    # Iterates over each ticket entity to render an independent pass on a new document page.
     for ticket in tickets:
         # Header banner
         # Draws a dark slate header banner across the top of the ticket page to anchor the branding header.
         c.setFillColor(colors.HexColor("#0f172a"))  # Slate 900
         c.rect(0, page_h - 70, page_w, 70, fill=1, stroke=0)
 
+        # Renders system brand title and official pass category in header banner.
         c.setFillColor(colors.HexColor("#38bdf8"))  # Sky 400
         c.setFont("Helvetica-Bold", 10)
         c.drawString(25, page_h - 26, "DISTRIBUTED TRANSACTION COORDINATOR")
