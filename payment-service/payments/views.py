@@ -243,6 +243,7 @@ def charge_payment(request):
     except IntegrityError:
         # F10: Catch DoesNotExist in case integrity error was triggered by a non-PK constraint
         try:
+            # Queries the database for the conflicting record that won the concurrent creation race.
             existing = Payment.objects.get(transaction_id=transaction_uuid)
         except Payment.DoesNotExist:
             return Response(
@@ -258,6 +259,7 @@ def charge_payment(request):
         user_id,
         _mask_email(user_email),
     )
+    # Returns 201 Created containing the persisted charge details for successful first-time payment processing.
     return _payment_response(payment, status=201)
 
 
