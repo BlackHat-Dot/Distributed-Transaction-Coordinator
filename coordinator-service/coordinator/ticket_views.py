@@ -16,9 +16,11 @@ from django.core.cache import cache
 from django.db import transaction as db_transaction
 # Imports HttpResponse to return raw byte streams such as downloadable PDF tickets, iCalendar files, and standalone HTML verification pages.
 from django.http import HttpResponse
+# Imports Django's timezone utility to record accurate, timezone-aware UTC timestamps when redeeming event tickets.
 from django.utils import timezone
 # Imports HTML escaping utility to sanitize untrusted database strings before injecting into public verification HTML pages, preventing XSS attacks.
 from django.utils.html import escape
+# Imports HTTP status codes from Django REST Framework for expressive and standardized API response status handling.
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
