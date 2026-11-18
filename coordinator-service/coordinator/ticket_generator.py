@@ -239,6 +239,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
             qr_size = max(130, int(divider_y - 70))
         qr_x = (page_w - qr_size) / 2
         qr_y = divider_y - qr_size - 12
+        # Centers and stamps the square QR code onto the canvas above the gate check-in instructions.
         c.drawImage(qr_reader, qr_x, qr_y, width=qr_size, height=qr_size)
 
         # Scan at gate instruction
@@ -263,6 +264,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
             "Powered by DTC • Single-use electronic pass • Unique cryptographic serial"
         )
 
+        # Flushes the current seat pass to the document and begins a clean page for the next seat in the booking.
         c.showPage()
 
     c.save()
