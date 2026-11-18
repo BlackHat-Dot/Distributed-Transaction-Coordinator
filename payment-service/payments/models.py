@@ -11,9 +11,11 @@ class Payment(models.Model):
         REFUNDED = "REFUNDED"
         VOIDED = "VOIDED"
 
+    # Enforces strict global uniqueness on saga transaction UUIDs to guarantee payment idempotency at the database engine level.
     transaction_id = models.UUIDField(unique=True)
     user_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
     user_email = models.CharField(max_length=255, null=True, blank=True, db_index=True)
+    # Stores financial transaction amounts with fixed two-decimal precision to prevent floating-point rounding discrepancies.
     amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     status = models.CharField(
         max_length=20,
