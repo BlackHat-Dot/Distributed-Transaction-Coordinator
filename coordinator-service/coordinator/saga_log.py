@@ -265,6 +265,7 @@ def _set_status_with_event(
         qs = Transaction.objects.select_for_update().filter(
             transaction_id=transaction_id
         )
+        # CAS Guard: verifies that the current database status matches expected_status; fails safely if another worker already transitioned it.
         if expected_status is not None:
             if isinstance(expected_status, (list, tuple, set)):
                 qs = qs.filter(status__in=[s for s in expected_status if s is not None])
@@ -284,6 +285,7 @@ def _set_status_with_event(
         # Validate CAS transition against ALLOWED_TRANSITIONS
         if expected_status is not None and to_status != from_status:
             allowed = ALLOWED_TRANSITIONS.get(from_status, set())
+            # Validates that the requested state jump is legally declared in ALLOWED_TRANSITIONS to protect state machine integrity.
             if to_status not in allowed:
                 logger.warning(
                     "Illegal CAS state transition rejected for tx %s: %s -> %s (allowed: %s)",
