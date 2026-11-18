@@ -192,6 +192,7 @@ def execute_compensation_sweep(
 
     if payment_status == "REFUNDED" or (payment_status == "NOT_CHARGED" and payment_voided):
         refund_ok = True
+    # Defensive void fence: if not charged, actively void payment authorization so a delayed inflight charge cannot land later.
     elif payment_status == "NOT_CHARGED":
         # Fence against in-flight charge landing after release
         void_ok = False
@@ -392,6 +393,7 @@ def execute_compensation_sweep(
         refund_ok = False
 
     # 2. Inventory Release
+    # Step 3: Issues seat release request to Inventory Service to restore physical seats back to AVAILABLE for other buyers.
     release_ok = False
     release_status_code = None
     release_payload = None
