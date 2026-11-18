@@ -443,10 +443,12 @@ def public_verify_ticket(request, ticket_code):
     status_label = "ALREADY USED" if is_used else "VALID"
     # Chooses warning amber color for already-used tickets and green for valid tickets.
     badge_bg = "#f59e0b" if is_used else "#10b981"
+    # Formats event start time in Asia/Kolkata timezone for ticket display.
     formatted_time = format_kolkata_time(ticket.starts_at)
 
     # Protects customer privacy by omitting all PII (user_id, buyer email, payment references) from public verification responses, returning only venue admission validity.
     if wants_json:
+        # Returns JSON response containing sanitized event and ticket status details without sensitive PII.
         return Response({
             "status": status_label,
             "event_name": ticket.event_name,
