@@ -547,6 +547,7 @@ def confirm_seat(request):
 @throttle_classes([ReleaseRateThrottle, ReleaseAnonRateThrottle])
 def release_seat(request):
     # 1. Staff key check (Full admin override)
+    # Evaluates tripartite authorization (staff override, coordinator internal key, or authenticated buyer JWT) to permit release.
     is_staff = _is_staff_request(request)
 
     # 2. Internal service key check (Coordinator Saga rollback)
@@ -577,6 +578,7 @@ def release_seat(request):
     try:
         eligible_statuses = (Reservation.Status.RESERVED, Reservation.Status.BOOKED)
 
+        # Identifies active reservation rows for the transaction before acquiring database locks to minimize lock contention duration.
         candidate_res = list(Reservation.objects.filter(transaction_id=transaction_id, status__in=eligible_statuses))
         if not candidate_res:
             return Response(
