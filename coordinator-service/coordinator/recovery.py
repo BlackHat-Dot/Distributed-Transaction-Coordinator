@@ -350,6 +350,7 @@ def execute_compensation_sweep(
         if confirm_payload and isinstance(confirm_payload, dict):
             released_reason = confirm_payload.get("released_reason")
 
+        # Secondary probe: checks Inventory reservation status directly if confirmation response omitted released_reason.
         if not released_reason:
             try:
                 chk_resp = _safe_call_http(
@@ -370,6 +371,7 @@ def execute_compensation_sweep(
             except Exception:
                 pass
 
+        # Fraud/safety guard: prohibits automated refund if seats were manually reset by admin, escalating to staff review.
         if released_reason == "ADMIN_RESET":
             revert_status = original_status or Transaction.Status.COMPENSATION_FAILED
             _set_status_with_event(
