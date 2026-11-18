@@ -2,7 +2,9 @@
 import base64
 # Imports io module to provide in-memory byte buffers for dynamic image and PDF generation.
 import io
+# Imports standard OS module to inspect runtime environment variables for base domain URLs.
 import os
+# Imports standard datetime UTC timezone and timedelta classes for calendar duration arithmetic.
 from datetime import timezone as dt_timezone, timedelta
 from decimal import Decimal
 from django.conf import settings
