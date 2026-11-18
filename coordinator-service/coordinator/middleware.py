@@ -49,7 +49,9 @@ class CorrelationIdMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
+    # Processes each incoming HTTP request, seeding default tracking labels based on HTTP method before views or auth run.
     def __call__(self, request):
+        # Tags read-only GET requests as DataFetch, while mutating operations (POST/PUT/DELETE) default to AnonUser pending authentication.
         if request.method in ("GET") :
             initial_id = "DataFetch"
         else:
