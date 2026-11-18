@@ -458,7 +458,9 @@ def public_verify_ticket(request, ticket_code):
             "used_at": _to_iso(ticket.used_at),
         }, status=status.HTTP_200_OK)
 
+    # Sanitizes event title text to prevent cross-site scripting vulnerabilities in rendered HTML.
     escaped_event = escape(ticket.event_name or "")
+    # Sanitizes venue location string with fallback text to guarantee secure HTML embedding.
     escaped_venue = escape(ticket.venue or "TBA")
     escaped_seat = escape(ticket.seat_label or "")
     escaped_status = escape(status_label)
