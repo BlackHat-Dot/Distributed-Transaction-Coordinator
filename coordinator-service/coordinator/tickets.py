@@ -301,11 +301,13 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
                     norm_sid = sid
 
                 # Check if already exists for this seat
+                # Checks if a ticket for this specific seat was already minted in a previous batch iteration.
                 existing_for_seat = Ticket.objects.filter(transaction=transaction, seat_id=norm_sid).first()
                 if existing_for_seat:
                     created_tickets.append(existing_for_seat)
                     continue
 
+                # Resolves the pre-validated seat label and pricing amount for the new ticket record.
                 label = seat_label_map[norm_sid]
                 amount = seat_amount_map[norm_sid]
                 # Generates a cryptographically random, URL-safe 128-bit entropy admission code for entry turnstile scanners.
