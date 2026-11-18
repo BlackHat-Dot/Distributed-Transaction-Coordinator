@@ -173,8 +173,10 @@ class TransactionReadRateThrottle(SafeRateThrottle):
     The rate comes from DEFAULT_THROTTLE_RATES["coordinator_transaction_reads"] (60/min).
     Attach to transaction views together with IsBookingAuthenticated.
     """
+    # Cache scope key matching DEFAULT_THROTTLE_RATES configuration for transaction status queries.
     scope = "coordinator_transaction_reads"
 
+    # Generates a rate-limiting cache key for transaction polling requests based on caller identity.
     def get_cache_key(self, request, view):
         if request.method != "GET":
             return None
