@@ -139,11 +139,13 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, user_id=None, u
     """
     # Imports saga orchestration coordinator lazily to prevent circular imports between tasks and views.
     from coordinator.views import _run_saga
+    # Imports correlation ID context setter to propagate request-level tracing into the background Celery task.
     from coordinator.middleware import set_correlation_id
 
     # Extracts or defaults the correlation identifier to propagate distributed tracing across worker threads.
     cid = kwargs.get("correlation_id") or str(transaction_id)
     set_correlation_id(str(cid))
+    # Logs asynchronous saga dispatch parameters with masked user email for privacy compliance.
     logger.info(
         "Executing async saga task for transaction_id=%s [user_id=%s, email=%s, skip_reserve=%s]",
         transaction_id,
