@@ -28,6 +28,7 @@ from coordinator.tickets import issue_tickets_for_transaction, TicketIssuanceErr
 logger = logging.getLogger("coordinator")
 
 
+# Normalizes datetime objects or timestamp strings into standard ISO 8601 representation for consistent API client serialization.
 def _to_iso(dt):
     """Safely converts a datetime (or string) to ISO format string."""
     if not dt:
@@ -43,6 +44,7 @@ def check_rate_limit(key: str, limit: int, window: int = 60) -> bool:
     Fails open gracefully on cache communication failures.
     """
     try:
+        # Implements a fixed-window cache counter with graceful fail-open fallback so Redis outages never block legitimate customer ticket access.
         current = cache.get(key)
         if current is None:
             cache.set(key, 1, timeout=window)
