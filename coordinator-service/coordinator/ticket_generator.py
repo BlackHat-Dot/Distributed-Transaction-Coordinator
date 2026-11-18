@@ -65,11 +65,13 @@ def generate_qr_code_image(ticket_code: str) -> Image.Image:
     Generates a high-contrast, scannable QR code image encoding the public verify URL.
     Uses Error Correction Level M, box size >= 6, and quiet zone border >= 4.
     """
+    # Resolves canonical base URL and sanitizes ticket verification code for QR generation.
     base_url = get_public_base_url()
     safe_code = str(ticket_code or "").strip()
     # Target URL encoded into the QR matrix pointing to the coordinator's public gate verification endpoint.
     verify_url = f"{base_url}/verify/{safe_code}/"
 
+    # Configures QRCode matrix generator with medium error correction and 4-unit quiet-zone margins.
     qr = qrcode.QRCode(
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
