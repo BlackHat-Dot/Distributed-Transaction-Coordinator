@@ -479,6 +479,7 @@ def execute_compensation_sweep(
     # 3. Final State Resolution
     # Both compensation legs succeeded: funds returned (or voided) and held seats returned to available pool.
     if release_ok and refund_ok:
+        # Resolves terminal success status to COMPENSATED_ON_RETRY for operator retries or COMPENSATED for sweeper.
         success_status = (
             Transaction.Status.COMPENSATED_ON_RETRY
             if actor == SagaEvent.ACTOR_RETRY
@@ -493,6 +494,7 @@ def execute_compensation_sweep(
             http_status_code=release_status_code or 200,
             http_payload=release_payload,
         )
+        # Returns structured 200 OK payload indicating complete compensation to caller.
         return {
             "success": True,
             "status_code": 200,
