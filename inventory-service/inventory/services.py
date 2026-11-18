@@ -96,6 +96,7 @@ def _get_active_redis_client():
 
 def get_hold_duration() -> timedelta:
     """Return configured hold duration as a timedelta, defaulting to 10 minutes."""
+    # Retrieves the ephemeral hold lease window from settings (defaulting to 10 minutes) for temporary seat locks.
     return timedelta(minutes=getattr(settings, "HOLD_DURATION_MINUTES", 10))
 
 
@@ -116,6 +117,7 @@ def reclaim_expired_holds():
     """
     now = timezone.now()
 
+    # Extracts currently held seats from database into an in-memory snapshot before evaluating time and presence expiry rules.
     held_seats = list(
         Seat.objects.filter(status=Seat.Status.HELD).values(
             "id", "held_until", "user_email", "user_id", "held_by_transaction_id"
