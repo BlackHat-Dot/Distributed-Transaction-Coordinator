@@ -41,6 +41,7 @@ def get_public_base_url() -> str:
     return str(url).strip().rstrip("/")
 
 
+# Generates a PIL Image barcode with Error Correction Level M and quiet-zone borders for reliable physical scanning.
 def generate_qr_code_image(ticket_code: str) -> Image.Image:
     """
     Generates a high-contrast, scannable QR code image encoding the public verify URL.
@@ -48,6 +49,7 @@ def generate_qr_code_image(ticket_code: str) -> Image.Image:
     """
     base_url = get_public_base_url()
     safe_code = str(ticket_code or "").strip()
+    # Target URL encoded into the QR matrix pointing to the coordinator's public gate verification endpoint.
     verify_url = f"{base_url}/verify/{safe_code}/"
 
     qr = qrcode.QRCode(
