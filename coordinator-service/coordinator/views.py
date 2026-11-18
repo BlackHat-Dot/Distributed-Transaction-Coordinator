@@ -246,6 +246,7 @@ def transaction_stream(request, transaction_id):
 
     terminal_statuses = Transaction.TERMINAL_STATUSES
 
+    # Immediately streams final state and closes the connection if the transaction has already reached an immutable terminal status.
     if txn.status in terminal_statuses:
         def terminal_generator():
             try:
@@ -282,6 +283,7 @@ def transaction_stream(request, transaction_id):
                 socket_connect_timeout=2.0,
             )
             pubsub = redis_client.pubsub()
+            # Subscribes to transaction-specific Redis Pub/Sub channel (dtc:tx_stream:<id>) to push live state updates to connected frontend clients.
             pubsub.subscribe(channel_name)
 
             # Emit current state immediately to connected client
