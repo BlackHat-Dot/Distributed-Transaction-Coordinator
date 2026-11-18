@@ -140,12 +140,14 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
         )
 
     # 1. Prefer the immutable event snapshot captured on the transaction
+    # Prefers the immutable event snapshot captured on the transaction row at checkout time to prevent display discrepancies.
     raw_event_name = getattr(transaction, "event_name", None)
     event_name = str(raw_event_name).strip() if raw_event_name and str(raw_event_name).strip() else None
     venue = getattr(transaction, "venue", None) or ""
     starts_at = getattr(transaction, "starts_at", None)
 
     # 2. If not stored on transaction, extract directly from ground-truth check
+    # Fallback: extracts event metadata (name, venue, start time) from the inventory check payload if omitted from transaction.
     if not event_name:
         event_info = data.get("event")
         if isinstance(event_info, dict):
