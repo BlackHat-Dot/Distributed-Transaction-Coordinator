@@ -60,10 +60,12 @@ def _mask_email(email):
     # Splits email into username and domain portions to mask sensitive local identifiers.
     try:
         name, domain = str(email).strip().split("@", 1)
+        # Masks short usernames (<=2 chars) with single trailing asterisk, or longer usernames with asterisks between first and last chars.
         if len(name) <= 2:
             masked_name = name[0] + "*"
         else:
             masked_name = name[0] + "***" + name[-1]
+        # Reassembles masked local username with pristine domain name for privacy-compliant logging.
         return f"{masked_name}@{domain}"
     except Exception:
         return "***"
