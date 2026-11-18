@@ -60,10 +60,12 @@ def _get_pub_client():
         _pub_last_check = now
         # Resolves Redis connection URL from Celery broker configuration with local default fallback.
         broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+        # Determines whether unit test suite is executing to enforce aggressively short connection timeouts.
         testing_mode = bool(getattr(settings, "IS_TESTING", False))
         timeout = getattr(settings, "REDIS_SOCKET_TIMEOUT", 0.05 if testing_mode else 1.0)
 
         client = None
+        # Attempts socket connection to Redis instance, wrapping network calls to catch unreachable hosts safely.
         try:
             client = redis.Redis.from_url(
                 broker_url,
