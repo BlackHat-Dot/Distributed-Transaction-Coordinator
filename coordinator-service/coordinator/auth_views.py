@@ -138,6 +138,7 @@ import difflib
 # verified
 def _is_dev_auth_mode():
     """Return True only if in local development mode (DEBUG=True and not in test suite)."""
+    # Distinguishes automated unit test execution from interactive development to ensure test fixtures always enforce strict production security gates.
     if getattr(settings, "IS_TESTING", False):
         return False
     return bool(getattr(settings, "DEBUG", False))
@@ -148,6 +149,7 @@ def _normalize_email(email_str):
     if not email_str or not isinstance(email_str, str):
         return ""
     # Strip invisible zero-width unicode characters (\u200b, \u200c, \u200d, \ufeff)
+    # Strips invisible zero-width unicode characters to prevent homograph obfuscation and cache key bypass attacks.
     cleaned = re.sub(r"[\u200b\u200c\u200d\ufeff]", "", email_str)
     return cleaned.strip().lower()
 
