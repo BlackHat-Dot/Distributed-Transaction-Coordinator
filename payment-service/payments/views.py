@@ -298,6 +298,7 @@ def _handle_existing_charge(existing, amount, user_id, transaction_uuid, user_em
 
     # F3: On replay, compare normalized amount and user_id; mismatch => 409
     # A3 contract: Must NOT contain top-level status or payment dict
+    # Compares incoming payload against recorded transaction data to catch and reject conflicting idempotency replays.
     user_mismatch = (existing.user_id or None) != (user_id or None)
     amount_mismatch = (existing.amount != amount)
 
@@ -330,6 +331,7 @@ def _handle_existing_charge(existing, amount, user_id, transaction_uuid, user_em
         existing.status,
         existing.amount,
     )
+    # Returns 200 OK with original payment details for matching, idempotent replay requests.
     return _payment_response(existing, status=200)
 
 
