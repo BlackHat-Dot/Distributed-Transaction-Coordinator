@@ -63,6 +63,7 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
        The network call to inventory is made BEFORE any database transaction is opened.
     3. Handles IntegrityError from concurrent requests idempotently by re-fetching.
     """
+    # Guard clause: verifies that a non-null Transaction instance is provided before proceeding with ticket issuance.
     if not transaction:
         raise TicketIssuanceError(
             "Cannot issue ticket: Transaction is required.",
@@ -78,6 +79,7 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
         )
 
     # Validate seat IDs presence
+    # Extracts the reserved seat identifiers from the transaction, defaulting to empty list if unset.
     seat_ids = transaction.seat_ids or []
     if not seat_ids:
         raise TicketIssuanceError(
