@@ -129,10 +129,12 @@ def execute_compensation_sweep(
         "X-Internal-Service-Key": internal_key,
     }
 
+    # Fetches the transaction database entity to retrieve reserved seat identifiers for inventory release.
     txn = Transaction.objects.filter(transaction_id=tid).first()
     seat_ids = txn.seat_ids if txn else []
 
     # 1. Payment Check in EVERY status
+    # Initializes tracking variables for payment state inspection outcome and ground-truth charge status.
     payment_check_failed = False
     payment_status = None
     payment_voided = False
