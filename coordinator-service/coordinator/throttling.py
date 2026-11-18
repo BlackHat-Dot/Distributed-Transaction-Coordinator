@@ -141,8 +141,10 @@ class BookingRateThrottle(SafeRateThrottle):
     The rate comes from DEFAULT_THROTTLE_RATES["coordinator_transactions"].
     Attach to transaction views together with IsBookingAuthenticated.
     """
+    # Cache scope key matching DEFAULT_THROTTLE_RATES configuration for transaction creation.
     scope = "coordinator_transactions"
 
+    # Generates a distinct rate-limiting cache key for write operations based on caller identity.
     def get_cache_key(self, request, view):
         if request.method != "POST":  # only limit writes
             return None
