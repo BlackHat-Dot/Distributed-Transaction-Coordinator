@@ -144,6 +144,7 @@ class SagaEvent(models.Model):
         )
 
 
+# Digital admittance ticket issued upon COMPLETED saga transactions, verified at venue gates via unique cryptographic codes.
 class Ticket(models.Model):
     transaction = models.ForeignKey(
         Transaction,
@@ -156,6 +157,7 @@ class Ticket(models.Model):
     venue = models.CharField(max_length=200, blank=True, default="")
     starts_at = models.DateTimeField(null=True, blank=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    # Cryptographically secure random alphanumeric barcode/QR string (e.g. TKT-...) presented by attendees at entry scanning gates.
     ticket_code = models.CharField(max_length=64, unique=True, db_index=True)
     issued_at = models.DateTimeField(auto_now_add=True)
     used_at = models.DateTimeField(null=True, blank=True, db_index=True)
