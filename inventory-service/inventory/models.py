@@ -63,9 +63,11 @@ class Seat(models.Model):
     )
 
     class Meta:
+        # Prevents duplicate physical seat records at the database engine level, guaranteeing coordinate integrity within each venue event.
         unique_together = [("event", "row", "seat_number")]
         ordering = ["event", "row", "seat_number"]
         indexes = [
+            # Optimizes transactional lookups during saga confirmations and compensations by indexing transaction UUID and seat status together.
             models.Index(fields=["held_by_transaction_id", "status"], name="idx_seat_tx_status"),
             models.Index(fields=["user_id", "status", "held_until"], name="idx_seat_user_status_until"),
         ]
