@@ -313,7 +313,9 @@ def get_ticket_ics(request, transaction_id):
     GET /tickets/<transaction_id>/calendar.ics
     Downloads iCalendar event file with UTC DTSTART.
     """
+    # Authenticates the requester and verifies transaction ownership before generating calendar invites.
     txn, err_resp = authenticate_ticket_requester(request, transaction_id)
+    # Checks if authentication failed or if the transaction does not belong to the caller.
     if err_resp:
         return err_resp
 
