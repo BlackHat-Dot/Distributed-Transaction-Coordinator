@@ -517,6 +517,7 @@ def public_verify_ticket(request, ticket_code):
 
 # Restricts gate ticket redemption endpoint to the HTTP POST method.
 @api_view(["POST"])
+# Atomically verifies gate API credentials and marks an admission ticket as redeemed.
 def gate_redeem_ticket(request):
     """
     POST /gate/redeem/
@@ -526,6 +527,7 @@ def gate_redeem_ticket(request):
     Refuses (409) if transaction is not COMPLETED.
     """
     # Rate limit gate check: 10 attempts per minute (relaxed on loopback in dev/debug mode)
+    # Resolves client IP address to apply gate redemption rate limiting per scanner device.
     ip = _get_client_ip(request)
     gate_limit = int(os.getenv("GATE_RATE_LIMIT", 1000 if (ip in ("127.0.0.1", "::1", "localhost") and getattr(settings, "DEBUG", False)) else 10))
     rate_key = f"dtc:ratelimit:gate:{ip}"
