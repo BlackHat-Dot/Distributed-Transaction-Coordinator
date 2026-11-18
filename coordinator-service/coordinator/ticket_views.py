@@ -366,7 +366,9 @@ def public_verify_ticket(request, ticket_code):
 
     # Fetches ticket along with its parent transaction in a single SQL JOIN to evaluate transaction status without secondary database lookups.
     ticket = Ticket.objects.select_related("transaction").filter(ticket_code=ticket_code).first()
+    # Inspects HTTP Accept request header to determine client rendering preference.
     accept_header = request.headers.get("Accept", "")
+    # Determines whether to return machine-readable JSON or visual HTML based on headers and query parameters.
     wants_json = "application/json" in accept_header or request.query_params.get("format") == "json"
 
     if not ticket:
