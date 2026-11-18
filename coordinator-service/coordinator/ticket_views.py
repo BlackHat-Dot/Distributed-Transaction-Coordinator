@@ -74,7 +74,9 @@ def check_rate_limit(key: str, limit: int, window: int = 60) -> bool:
         if current is None:
             # Initializes the rate limit counter to 1 with an expiration TTL matching the specified time window.
             cache.set(key, 1, timeout=window)
+            # Grants immediate request permission upon successful counter initialization.
             return True
+        # Attempts to parse the cached counter value into an integer count.
         try:
             count = int(current)
         except (ValueError, TypeError):
