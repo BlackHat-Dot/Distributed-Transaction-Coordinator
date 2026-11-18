@@ -60,11 +60,13 @@ def _to_iso(dt):
     return str(dt)
 
 
+# Evaluates request thresholds against a cached sliding or fixed window counter to prevent API abuse.
 def check_rate_limit(key: str, limit: int, window: int = 60) -> bool:
     """
     Returns True if request is allowed within the limit, False if rate limited.
     Fails open gracefully on cache communication failures.
     """
+    # Wraps cache queries in an exception block to guarantee that cache connectivity hiccups fail open rather than dropping requests.
     try:
         # Implements a fixed-window cache counter with graceful fail-open fallback so Redis outages never block legitimate customer ticket access.
         current = cache.get(key)
