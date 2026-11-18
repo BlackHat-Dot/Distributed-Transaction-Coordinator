@@ -668,7 +668,9 @@ def send_ticket_email(request, transaction_id):
         )
 
     # Dispatch Celery task
+    # Imports the asynchronous Celery background task for ticket email composition and dispatch.
     from coordinator.tasks import send_ticket_email_task
+    # Wraps worker queue dispatch in a fallback block in case Celery brokers are unreachable.
     try:
         # Offloads PDF generation and email transmission to an asynchronous Celery worker queue so the HTTP client receives an immediate response.
         send_ticket_email_task.delay(str(txn.transaction_id))
