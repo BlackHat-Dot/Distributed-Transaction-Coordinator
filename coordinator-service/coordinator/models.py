@@ -102,6 +102,7 @@ class Transaction(models.Model):
 # Append-only audit log recording every discrete state transition, initiating actor, and HTTP outcome throughout the saga execution.
 class SagaEvent(models.Model):
 
+    # Identifies which subsystem executed the transition: normal HTTP user flow ('request'), automated sweeper ('recovery'), or staff manual intervention ('retry').
     ACTOR_REQUEST = "request"
     ACTOR_RECOVERY = "recovery"
     ACTOR_RETRY = "retry"
@@ -111,6 +112,7 @@ class SagaEvent(models.Model):
         on_delete=models.CASCADE,
         related_name="events",
     )
+    # Monotonically increasing sequence number (1, 2, 3...) per transaction, strictly enforcing causal event ordering in the distributed log.
     seq = models.PositiveIntegerField(
         help_text="1-based sequence number, monotonically increasing per transaction.",
     )
