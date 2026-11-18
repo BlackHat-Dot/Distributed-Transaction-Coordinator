@@ -583,12 +583,14 @@ def gate_redeem_ticket(request):
     ticket_code = str(raw_ticket_code or "").strip()
     # Checks whether the ticket code payload was omitted from the redemption request.
     if not ticket_code:
+        # Rejects redemption attempts lacking a ticket code with HTTP 400 Bad Request.
         return Response({"error": "ticket_code is required.", "code": "BAD_REQUEST"}, status=status.HTTP_400_BAD_REQUEST)
 
     # Wraps redemption in an atomic database transaction to guarantee that ticket status verification and timestamp updates occur as an isolated, indivisible unit.
     with db_transaction.atomic():
         # Acquires a pessimistic SELECT FOR UPDATE row-level lock on the ticket to prevent concurrent double-entry race conditions at multi-turnstile venue gates.
         ticket = Ticket.objects.select_for_update().select_related("transaction").filter(ticket_code=ticket_code).first()
+        # Checks whether the scanned ticket code exists in the database records.
         if not ticket:
             return Response({"error": "Ticket code not found.", "code": "NOT_FOUND"}, status=status.HTTP_404_NOT_FOUND)
 
