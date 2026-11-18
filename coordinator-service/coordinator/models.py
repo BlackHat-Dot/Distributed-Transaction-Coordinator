@@ -13,7 +13,9 @@ class Transaction(models.Model):
         HOLDING = "HOLDING"
         # Confirms that requested seats were successfully locked in Inventory Service with an active hold expiration deadline.
         INVENTORY_RESERVED = "INVENTORY_RESERVED"
+        # Indicates compensation completed successfully in Inventory Service, releasing previously held seats back into the available pool.
         INVENTORY_RELEASED = "INVENTORY_RELEASED"
+        # Terminal failure state recorded when Inventory Service explicitly rejects the reservation request (e.g. seats already sold).
         INVENTORY_RESERVE_FAILED = "INVENTORY_RESERVE_FAILED"
         INVENTORY_TIMEOUT = "INVENTORY_TIMEOUT"
         NOT_RESERVED = "NOT_RESERVED"
