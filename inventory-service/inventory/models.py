@@ -156,8 +156,10 @@ class Reservation(models.Model):
             ),
         ]
         indexes = [
+            # Compound index enabling O(1) query performance when resolving all active or released reservations associated with a transaction.
             models.Index(fields=["transaction_id", "status"], name="idx_res_tid_status"),
         ]
 
+    # Generates structured diagnostic representation linking the transaction UUID, seat ID, and final reservation status.
     def __str__(self):
         return f"Reservation({self.transaction_id}, seat={self.seat_id}, {self.status})"
