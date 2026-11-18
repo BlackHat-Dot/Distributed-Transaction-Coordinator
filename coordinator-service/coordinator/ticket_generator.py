@@ -325,12 +325,14 @@ def generate_tickets_ics(transaction: Transaction, tickets: list[Ticket]) -> byt
     """
     Generates a standard iCalendar (.ics) event for the booking with UTC DTSTART.
     """
+    # Initializes RFC-5545 calendar instance with DTC generator metadata and Gregorian scale.
     cal = icalendar.Calendar()
     cal.add("prodid", "-//DTC Ticket Service//EN")
     cal.add("version", "2.0")
     cal.add("calscale", "GREGORIAN")
     cal.add("method", "PUBLISH")
 
+    # Extracts representative ticket to retrieve event title, venue name, and scheduled start time.
     first_ticket = tickets[0] if tickets else None
     event_name = getattr(first_ticket, "event_name", "") if first_ticket else ""
     venue = getattr(first_ticket, "venue", "") if first_ticket else ""
