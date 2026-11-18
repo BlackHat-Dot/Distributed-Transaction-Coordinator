@@ -494,6 +494,7 @@ def confirm_seat(request):
                     seat_id__in=[s.id for s in already_booked_seats],
                     status=Reservation.Status.BOOKED,
                 ).count()
+                # Validates reservation journal consistency: forces transaction rollback if reservation rows do not match physical seat states.
                 if booked_res_count != len(already_booked_seats):
                     transaction.set_rollback(True)
                     return Response(
@@ -525,6 +526,7 @@ def confirm_seat(request):
                         status=409,
                     )
 
+                # Permanently transitions seats to BOOKED and clears the ephemeral held_until timestamp upon verified payment confirmation.
                 Seat.objects.filter(id__in=[s.id for s in expected_to_book_seats]).update(
                     status=Seat.Status.BOOKED,
                     held_until=None,
