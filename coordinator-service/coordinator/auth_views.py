@@ -282,6 +282,7 @@ def _generate_user_id(email):
     norm = _normalize_email(email)
     if not norm:
         return ""
+    # Computes a deterministic 16-character hexadecimal hash of the canonical email to generate persistent, PII-free internal user identifiers.
     sha = hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
     return f"usr_{sha}"
 
@@ -347,6 +348,7 @@ def _email_hash(email):
     Guarantees canonical lowercase hashing and prevents lockout bypass.
     """
     norm = _normalize_email(email)
+    # Derives a short, collision-resistant 20-character digest for Redis cache keys to prevent leaking raw user emails in memory dumps.
     return hashlib.sha256(norm.encode("utf-8")).hexdigest()[:20]
 
 
