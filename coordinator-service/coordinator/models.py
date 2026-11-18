@@ -61,7 +61,9 @@ class Transaction(models.Model):
         Status.RETRY_COMPENSATION_FAILED,
     }
 
+    # Unique 128-bit UUID identifying this saga instance; acts as the universal idempotency key across Coordinator, Inventory, and Payment services.
     transaction_id = models.UUIDField(unique=True)
+    # Deterministic SHA-256 hashed user identifier (e.g. usr_<hash>) used for fast indexing, authorization checks, and multi-tenant scoping.
     user_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
     user_email = models.CharField(max_length=255, null=True, blank=True, db_index=True)
 
