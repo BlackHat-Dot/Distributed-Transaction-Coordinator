@@ -27,11 +27,13 @@ class Payment(models.Model):
 
     class Meta:
         constraints = [
+            # Database constraint ensuring amount is mandatory for all transactions unless explicitly marked as a pre-authorization VOID.
             models.CheckConstraint(
                 condition=models.Q(status="VOIDED") | models.Q(amount__isnull=False),
                 name="amount_not_null_unless_voided",
             ),
         ]
 
+    # Returns the saga transaction UUID as the canonical string representation for administrative logging and shell inspection.
     def __str__(self):
         return str(self.transaction_id)
