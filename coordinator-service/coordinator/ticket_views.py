@@ -6,7 +6,9 @@ import logging
 import os
 # Imports the regular expression module to sanitize seat labels and format clean file names for downloadable PDF attachments.
 import re
+# Imports the uuid module to parse, validate, and manipulate universally unique identifiers for transaction lookups.
 import uuid
+# Imports Django's application settings module to access project-wide configuration parameters and secrets.
 from django.conf import settings
 # Imports Django's cache abstraction (backed by Redis or in-memory cache) to provide low-latency rate limiting across ticket and verification endpoints.
 from django.core.cache import cache
