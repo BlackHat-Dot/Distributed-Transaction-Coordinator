@@ -67,6 +67,7 @@ class SafeRateThrottle(SimpleRateThrottle):
             return False
         return True
 
+    # Computes remaining lockout seconds by querying the live Redis key TTL, falling back to full window duration on error.
     def wait(self):
         """
         Returns the exact remaining TTL (seconds) for the current window on Redis,
@@ -74,6 +75,7 @@ class SafeRateThrottle(SimpleRateThrottle):
         """
         if self.key:
             # 1. Direct ttl() support (e.g. django-redis)
+            # Checks for direct django-redis ttl() support to retrieve exact remaining seconds in the rate window.
             if hasattr(self.cache, "ttl"):
                 try:
                     ttl = self.cache.ttl(self.key)
