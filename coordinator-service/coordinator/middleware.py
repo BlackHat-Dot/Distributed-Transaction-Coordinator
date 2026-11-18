@@ -29,9 +29,11 @@ class TransactionIdFilter(logging.Filter):
     def filter(self, record):
         tid = get_correlation_id()
 
+        # Fallback: if ContextVar still says AnonUser, inspect the underlying HttpRequest object directly in case it holds a tagged ID.
         if tid == "AnonUser" and hasattr(record, "request"):
             tid = getattr(record.request, "correlation_id", "AnonUser")
 
+        # Formats the tag as worker=bgworker for Celery/background tasks, or transaction=<tid> for HTTP requests, and returns True to allow logging.
         record.log_tag = "worker=bgworker" if tid == "bgworker" else f"transaction={tid}"
         return True
 
