@@ -168,8 +168,10 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
 
     # 1. Prefer the immutable event snapshot captured on the transaction
     # Prefers the immutable event snapshot captured on the transaction row at checkout time to prevent display discrepancies.
+    # Retrieves event name snapshot captured at booking creation, stripping whitespace if present.
     raw_event_name = getattr(transaction, "event_name", None)
     event_name = str(raw_event_name).strip() if raw_event_name and str(raw_event_name).strip() else None
+    # Resolves immutable venue name and start timestamp attributes from the transaction entity.
     venue = getattr(transaction, "venue", None) or ""
     starts_at = getattr(transaction, "starts_at", None)
 
