@@ -234,7 +234,7 @@ def _mask_pii(data):
     return data
 
 
-# verified
+# Core Compare-And-Swap (CAS) orchestrator: atomically updates transaction state under row lock and records immutable SagaEvent audit log.
 def _set_status_with_event(
     transaction_id,
     to_status,
@@ -250,6 +250,7 @@ def _set_status_with_event(
     if not transaction_id:
         return False
 
+    # Defensive guard verifying the requested destination status exists within the official Transaction.Status enum.
     if to_status not in Transaction.Status.values:
         logger.warning(
             "Transition aborted for tx %s: %r is invalid; caller must use a valid Transaction.Status enum constant",
