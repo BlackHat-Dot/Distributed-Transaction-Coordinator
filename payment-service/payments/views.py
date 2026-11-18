@@ -353,6 +353,7 @@ def payment_check(request):
     # Fetches existing payment state without acquiring row locks or triggering side effects.
     payment = Payment.objects.filter(transaction_id=transaction_uuid).first()
     if payment:
+        # Translates internal VOIDED tombstone status into client-facing NOT_CHARGED with explicit void flag.
         if payment.status == Payment.Status.VOIDED:
             return Response(
                 {
@@ -364,6 +365,7 @@ def payment_check(request):
             )
         return _payment_response(payment, status=200)
 
+    # Returns default NOT_CHARGED status for valid transaction identifiers that have never been presented for payment.
     return Response({"transaction_id": str(transaction_uuid), "status": Payment.Status.NOT_CHARGED})
 
 
