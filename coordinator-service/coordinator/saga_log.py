@@ -16,8 +16,10 @@ from django.conf import settings
 from django.db import transaction as db_transaction
 # Imports Django ORM Max aggregate function to determine the highest existing event sequence number.
 from django.db.models import Max
+# Imports Django timezone utilities to timestamp transaction updates in UTC database format.
 from django.utils import timezone
 
+# Imports Transaction and SagaEvent ORM models representing parent transactions and immutable audit steps.
 from .models import Transaction, SagaEvent
 
 logger = logging.getLogger(__name__)
