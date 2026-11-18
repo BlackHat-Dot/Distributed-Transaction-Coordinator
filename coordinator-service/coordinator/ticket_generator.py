@@ -30,8 +30,10 @@ from reportlab.lib.utils import ImageReader
 import icalendar
 # Imports textwrap module to split long event and artist names across multiple PDF lines without clipping.
 import textwrap
+# Imports IANA zoneinfo database to localize event start times into the Indian Standard Time timezone.
 import zoneinfo
 
+# Imports Transaction and Ticket models to extract booking metadata, seat labels, and admission codes.
 from coordinator.models import Transaction, Ticket
 
 
