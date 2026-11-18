@@ -283,7 +283,9 @@ def get_ticket_pdf(request, transaction_id):
     # For group bookings (>3 seats), use total count to avoid filename bloat
     # Calculates concise filename slugs for large group bookings (>3 seats) to prevent filesystem filename length errors and browser download truncation.
     if len(tickets) > 3:
+        # Formats a concise filename slug representing the total number of booked seats.
         seat_slug = f"{len(tickets)}seats"
+    # Uses individual seat identifiers for smaller bookings of up to three seats.
     else:
         raw_slug = "-".join(str(t.seat_label).replace(" ", "") for t in tickets)
         seat_slug = re.sub(r"[^a-zA-Z0-9_-]", "", raw_slug) or "seats"
