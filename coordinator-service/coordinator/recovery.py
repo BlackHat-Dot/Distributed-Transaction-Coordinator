@@ -280,6 +280,7 @@ def execute_compensation_sweep(
         confirm_status_code = None
         confirm_transport_error = False
         try:
+            # Dispatches seat confirmation call to Inventory Service with transaction ID and reserved seat IDs.
             c_resp = _safe_call_http(
                 post_http,
                 "POST",
@@ -304,6 +305,7 @@ def execute_compensation_sweep(
             confirm_transport_error = True
             confirm_ok = False
 
+        # Forward-completion success branch: transitions state to COMPLETED and exits without undoing charge.
         if confirm_ok:
             _set_status_with_event(
                 transaction_id=tid,
