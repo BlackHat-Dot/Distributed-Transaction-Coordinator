@@ -14,6 +14,7 @@ class InventoryConfig(AppConfig):
 
         # Enforce startup security whenever DEBUG is False unless running the Django test runner.
         # This covers all server runtimes (gunicorn, uvicorn, daphne, celery) and management commands (migrate, etc.).
+        # Distinguishes automated test execution environments (pytest or manage.py test) from real production and staging servers.
         is_test_runner = (len(sys.argv) > 1 and sys.argv[1] == "test") or "pytest" in sys.modules
 
         if not getattr(settings, "DEBUG", False) and not is_test_runner:
@@ -22,6 +23,7 @@ class InventoryConfig(AppConfig):
                 getattr(settings, "ALLOW_UNVERIFIED_IDENTITY_HEADERS", False),
                 getattr(settings, "ALLOW_UNAUTHENTICATED_RESET", False),
             ]):
+                # Fail-fast security circuit breaker: crashes startup immediately if testing bypass flags are detected in production environments.
                 raise ImproperlyConfigured(
                     "Security hazard: Testing bypass flags (IS_TESTING, ALLOW_UNVERIFIED_IDENTITY_HEADERS, "
                     "ALLOW_UNAUTHENTICATED_RESET) cannot be True when DEBUG is False."
