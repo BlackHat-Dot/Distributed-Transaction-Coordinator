@@ -18,7 +18,11 @@ def check_service_keys_and_admin_domain(app_configs, **kwargs):
     """
     # Initializes an empty list to collect any security configuration warnings encountered during inspection.
     warnings = []
+
+    # Checks if the server is currently executing inside automated test runner mode where mock or dummy secrets are intentionally permitted.
     is_testing = getattr(settings, "IS_TESTING", False)
+
+    # Immediately exits without raising security warnings when running tests to prevent test suites and CI pipelines from failing on absent production keys.
     if is_testing:
         return warnings
 
