@@ -31,6 +31,7 @@ class Transaction(models.Model):
         CHARGED = "CHARGED"
         TIMEOUT = "TIMEOUT"
 
+    # Set of irreversible final states; transactions in these states are settled and can never be claimed or modified by background recovery workers.
     TERMINAL_STATUSES = {
         Status.COMPLETED,
         Status.COMPENSATED,
@@ -46,7 +47,7 @@ class Transaction(models.Model):
         Status.INVENTORY_CONNECTION_ERROR,
     }
 
-    # Non-terminal states that qualify for automated saga recovery and compensation sweeps
+    # Non-terminal or ambiguous states that qualify for automated background compensation sweeps to resolve orphaned holds or unverified charges.
     RECOVERABLE_STATUSES = {
         Status.PAYMENT_PROCESSING,
         Status.INVENTORY_RESERVED,
