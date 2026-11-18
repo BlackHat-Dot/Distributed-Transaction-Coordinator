@@ -85,6 +85,7 @@ class PublicSeatSerializer(serializers.ModelSerializer):
         return rep
 
 
+# Exposes comprehensive seat state and distributed transaction audit metadata for consumption by the Coordinator service.
 class InternalSeatSerializer(serializers.ModelSerializer):
     """
     Internal seat representation. Includes all audit/tracking fields
