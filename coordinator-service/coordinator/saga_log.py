@@ -166,6 +166,7 @@ ALLOWED_TRANSITIONS = {
 }
 
 
+# Dispatches real-time JSON state events over Redis pub/sub channel dtc:tx_stream:<id> to push live updates to the browser frontend via SSE.
 def _publish_transaction_update(transaction_id, to_status, from_status=None):
     """Publish real-time transaction state update to Redis pub/sub channel for SSE streaming."""
     global _pub_client
@@ -180,6 +181,7 @@ def _publish_transaction_update(transaction_id, to_status, from_status=None):
             "is_terminal": to_status in Transaction.TERMINAL_STATUSES,
             "needs_recovery": to_status in Transaction.RECOVERABLE_STATUSES,
         })
+        # Publishes the serialized JSON event to the per-transaction Redis channel subscribed to by EventSource SSE clients.
         client.publish(f"dtc:tx_stream:{transaction_id}", payload)
     except Exception as exc:
         logger.warning("Failed to publish SSE event for tx %s: %s", transaction_id, exc)
