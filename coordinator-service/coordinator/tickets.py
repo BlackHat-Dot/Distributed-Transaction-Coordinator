@@ -125,12 +125,14 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
     if not isinstance(data, dict):
         raise TicketIssuanceError("Invalid JSON received from inventory service.", status_code=409)
 
+    # Ground-truth validation: ensures the seats are confirmed BOOKED in Inventory Service rather than released or held.
     if data.get("status") != "BOOKED":
         raise TicketIssuanceError(
             f"Ground truth check failed: seat is not BOOKED (inventory status: {data.get('status')}).",
             status_code=409,
         )
 
+    # Anti-spoofing guard: verifies that Inventory Service attributes the booking to this exact transaction ID.
     if str(data.get("transaction_id")) != str(transaction.transaction_id):
         raise TicketIssuanceError(
             f"Ground truth check failed: seat is booked by different transaction ({data.get('transaction_id')}).",
