@@ -92,10 +92,12 @@ def _get_session_id(request):
     return _get_verified_session_id(request)
 
 
+# Formats uniform JSON error responses for throttling (429) and permission failures across all inventory endpoints.
 def inventory_exception_handler(exc, context):
     response = exception_handler(exc, context)
     if isinstance(exc, Throttled) and response is not None:
         try:
+            # Ceils fractional wait seconds to whole integer values so clients receive clear, actionable retry-after durations.
             wait = max(1, math.ceil(float(exc.wait))) if getattr(exc, "wait", None) is not None else 60
         except (TypeError, ValueError, OverflowError):
             wait = 60
