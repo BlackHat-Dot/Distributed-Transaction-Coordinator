@@ -17,8 +17,10 @@ from rest_framework.views import exception_handler
 # Imports authentication identity and client IP extraction utilities from auth views.
 from coordinator.auth_views import _get_caller, _get_client_ip
 
+# Initializes module-scoped logger tagged with coordinator throttling namespace for telemetry.
 logger = logging.getLogger(__name__)
 
+# Standardized client-facing message returned when unauthenticated callers attempt ticket bookings.
 AUTH_MSG = "Authentication required. Please sign in to book seats."
 
 
