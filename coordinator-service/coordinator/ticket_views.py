@@ -201,6 +201,7 @@ def get_ticket_pdf(request, transaction_id):
     pdf_bytes = generate_tickets_pdf(txn, tickets)
 
     # For group bookings (>3 seats), use total count to avoid filename bloat
+    # Calculates concise filename slugs for large group bookings (>3 seats) to prevent filesystem filename length errors and browser download truncation.
     if len(tickets) > 3:
         seat_slug = f"{len(tickets)}seats"
     else:
@@ -211,6 +212,7 @@ def get_ticket_pdf(request, transaction_id):
     filename = f"DTC-{seat_slug}-{short_ref}.pdf"
 
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    # Sets Content-Disposition header with sanitized filename to force direct file download in the user's browser rather than in-tab rendering.
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
 
