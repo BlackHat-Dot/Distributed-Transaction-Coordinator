@@ -646,7 +646,9 @@ def send_ticket_email(request, transaction_id):
     """
     # Authenticates requester and asserts ownership of the target transaction.
     txn, err_resp = authenticate_ticket_requester(request, transaction_id)
+    # Checks if authentication failed or transaction ownership is invalid.
     if err_resp:
+        # Returns error HTTP response immediately if authentication or authorization failed.
         return err_resp
 
     if not txn.user_email:
