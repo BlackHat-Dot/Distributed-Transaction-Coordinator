@@ -104,6 +104,7 @@ def authenticate_ticket_requester(request, transaction_id):
 
     # 3. Validate UUID syntax to prevent 500 error from Postgres query
     try:
+        # Validates UUID format prior to database querying to prevent raw SQL/PostgreSQL type mismatch exceptions from bubbling up as unhandled 500 errors.
         tid = uuid.UUID(str(transaction_id))
     except (ValueError, TypeError, AttributeError):
         return None, Response(
@@ -119,6 +120,7 @@ def authenticate_ticket_requester(request, transaction_id):
             status=status.HTTP_404_NOT_FOUND,
         )
 
+    # Enforces strict ownership access control by returning 404 NOT_FOUND instead of 403 FORBIDDEN, preventing unauthorized users from enumerating valid transaction IDs.
     if not txn.user_id or str(txn.user_id) != requester_user_id:
         return None, Response(
             {"error": "Transaction not found.", "code": "NOT_FOUND"},
