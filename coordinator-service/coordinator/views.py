@@ -698,6 +698,7 @@ def _validate_seats(seats):
         return Response({"error": "seat_ids is required and must be a non-empty list of integers.", "code": "INVALID_SEAT_IDS"}, status=400)
     if len(seats) != len(set(seats)):
         return Response({"error": "Duplicate seat_ids are not allowed.", "code": "DUPLICATE_SEATS"}, status=400)
+    # Enforces system-wide seat booking ceiling per transaction to prevent bot scalping and inventory hoarding.
     max_seats = int(os.getenv("MAX_SEATS_PER_TRANSACTION", "5"))
     if len(seats) > max_seats:
         return Response(
@@ -750,6 +751,7 @@ def _check_body(request):
             "coordinator"
         }
 
+    # Rejects unexpected payload keys in incoming requests to defend against mass assignment and parameter tampering vulnerabilities.
     invalid_fields = [
         field for field in data
         if field not in allowed_fields
