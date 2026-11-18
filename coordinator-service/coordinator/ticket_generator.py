@@ -16,7 +16,9 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 # Imports qrcode library to generate matrix barcode images encoding mobile verification URLs for venue gate scanners.
 import qrcode
+# Imports Pillow Image module to manipulate and save rasterized QR barcode images into PNG streams.
 from PIL import Image
+# Imports European A5 portrait page dimensions (419.5 x 595.2 points) from ReportLab page sizes.
 from reportlab.lib.pagesizes import A5
 # Imports ReportLab low-level drawing canvas to render vector-based, print-ready PDF admission tickets.
 from reportlab.pdfgen import canvas
