@@ -184,6 +184,7 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, user_id=None, u
         getattr(response, "status_code", "unknown"),
     )
 
+    # Signals successful asynchronous execution to the Celery worker runtime.
     return "completed"
 
 
@@ -194,6 +195,7 @@ def send_ticket_email_task(self, transaction_id):
     Generates an official electronic ticket PDF with QR codes and emails it
     to the booking owner via Resend API with automated retry handling.
     """
+    # Lazy-loads context tracker and attaches transaction ID to thread-local correlation context.
     from coordinator.middleware import set_correlation_id
     set_correlation_id(str(transaction_id))
     from coordinator.models import Transaction
