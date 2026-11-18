@@ -10,11 +10,13 @@ from django.core.checks import Warning, register, Tags
 
 # Hooks this validation function into Django's startup check framework under the 'security' category so it executes during manage.py check or runserver.
 @register(Tags.security)
+# Defines a custom security diagnostic check to ensure all vital service authentication secrets and domains are safely configured before booting.
 def check_service_keys_and_admin_domain(app_configs, **kwargs):
     """
     H14: System check to validate that INTERNAL_SERVICE_KEY, STAFF_API_KEY,
     and ADMIN_DOMAIN are properly configured in non-testing environments.
     """
+    # Initializes an empty list to collect any security configuration warnings encountered during inspection.
     warnings = []
     is_testing = getattr(settings, "IS_TESTING", False)
     if is_testing:
