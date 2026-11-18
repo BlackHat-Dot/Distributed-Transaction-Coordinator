@@ -46,6 +46,7 @@ TWO_PLACES = Decimal("0.01")
 
 def _get_max_amount():
     """Derive upper payment bound dynamically from Payment model field definition."""
+    # Introspects model metadata to dynamically calculate the maximum allowable numeric value supported by the database column schema.
     field = Payment._meta.get_field("amount")
     max_int_digits = field.max_digits - field.decimal_places
     return Decimal("9" * max_int_digits + "." + "9" * field.decimal_places)
@@ -57,6 +58,7 @@ MAX_PAYMENT_AMOUNT = _get_max_amount()
 @api_view(["GET"])
 def health_check(request):
     """Public health probe for service liveness."""
+    # Returns immediate 200 OK probe for container orchestrators and ingress load balancers to monitor service availability.
     return Response({"status": "healthy", "service": "payment"})
 
 
