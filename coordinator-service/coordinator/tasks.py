@@ -247,6 +247,7 @@ def send_ticket_email_task(self, transaction_id):
         )
         return "simulated"
 
+    # Resolves sender email address prioritizing Resend settings, default Django settings, or fallback identity.
     from_email = (
         getattr(settings, "RESEND_FROM_EMAIL", None)
         or getattr(settings, "DEFAULT_FROM_EMAIL", None)
@@ -254,6 +255,7 @@ def send_ticket_email_task(self, transaction_id):
         or "DTC Tickets <tickets@resend.dev>"
     )
 
+    # Configures Resend API key on the global SDK module prior to executing outbound email dispatch.
     resend.api_key = api_key
     try:
         # Renders the high-resolution printable PDF ticket containing QR admission codes, seat metadata, and security references.
