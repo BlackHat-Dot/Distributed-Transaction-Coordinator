@@ -54,8 +54,10 @@ def get_redis_client():
 # Privacy utility that masks email usernames (e.g., u***r@example.com) to comply with data privacy regulations in application logs.
 def _mask_email(email):
     """Mask email for privacy compliance (e.g. user@example.com -> u***r@example.com)."""
+    # Validates email string presence and @ delimiter, returning empty string for missing or invalid inputs.
     if not email or "@" not in str(email):
         return ""
+    # Splits email into username and domain portions to mask sensitive local identifiers.
     try:
         name, domain = str(email).strip().split("@", 1)
         if len(name) <= 2:
