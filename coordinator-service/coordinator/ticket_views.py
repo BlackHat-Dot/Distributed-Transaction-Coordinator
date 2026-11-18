@@ -305,7 +305,9 @@ def get_ticket_pdf(request, transaction_id):
     return response
 
 
+# Restricts incoming calendar invite downloads to the HTTP GET method.
 @api_view(["GET"])
+# Generates and serves RFC 5545 standard iCalendar (.ics) schedule files for an authenticated booking.
 def get_ticket_ics(request, transaction_id):
     """
     GET /tickets/<transaction_id>/calendar.ics
