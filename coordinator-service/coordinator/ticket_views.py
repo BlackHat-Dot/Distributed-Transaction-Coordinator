@@ -371,7 +371,9 @@ def public_verify_ticket(request, ticket_code):
     # Determines whether to return machine-readable JSON or visual HTML based on headers and query parameters.
     wants_json = "application/json" in accept_header or request.query_params.get("format") == "json"
 
+    # Evaluates whether the requested ticket code exists in the database.
     if not ticket:
+        # Checks if client requested JSON output for missing ticket response.
         if wants_json:
             return Response({"status": "INVALID", "message": "Ticket not found."}, status=status.HTTP_404_NOT_FOUND)
         
