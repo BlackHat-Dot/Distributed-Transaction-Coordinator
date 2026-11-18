@@ -504,6 +504,7 @@ def execute_compensation_sweep(
         }
     # Partial failure branch: either refund or seat release failed; routes to compensation failure.
     else:
+        # Resolves terminal failure status to RETRY_COMPENSATION_FAILED for operator retries or COMPENSATION_FAILED for sweeper.
         failed_status = (
             Transaction.Status.RETRY_COMPENSATION_FAILED
             if actor == SagaEvent.ACTOR_RETRY
@@ -518,6 +519,7 @@ def execute_compensation_sweep(
             http_status_code=refund_status_code if not refund_ok else (release_status_code or 500),
             http_payload=refund_payload if not refund_ok else release_payload,
         )
+        # Returns structured 500 error payload indicating compensation leg failure to caller.
         return {
             "success": False,
             "status_code": 500,
