@@ -82,15 +82,16 @@ class Transaction(models.Model):
     venue = models.CharField(max_length=200, null=True, blank=True)
     starts_at = models.DateTimeField(null=True, blank=True)
 
+    # Total monetary charge in exact two-decimal currency precision to eliminate IEEE 754 floating-point rounding errors during payment gateway processing.
     amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         default=0,
     )
 
-    # auto_now_add : Value inserted at record creation and persist without a change
-    # auto_now : Value inserted at record creation and changed if record is updated
+    # Immutable audit timestamp set automatically when the transaction row is first inserted, used to calculate holding timeouts and sweep eligibility.
     created_at = models.DateTimeField(auto_now_add=True)
+    # Mutable audit timestamp updated automatically on every row modification, used by optimistic locking and recovery sweepers.
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
