@@ -162,6 +162,7 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, user_id=None, u
         logger.error("Invalid transaction_id UUID passed to execute_saga_task: %s", transaction_id)
         return "invalid_uuid"
 
+    # Extracts initiating actor label (defaulting to request) for audit event logging across saga state transitions.
     actor = kwargs.pop("actor", "request")
 
     # Executes the multi-step saga state machine (seat reservation, payment charge, and seat confirmation).
@@ -176,6 +177,7 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, user_id=None, u
         **kwargs,
     )
 
+    # Logs saga execution outcome status code and returns completed task string.
     logger.info(
         "Async saga task completed for transaction_id=%s with status=%s",
         transaction_id,
