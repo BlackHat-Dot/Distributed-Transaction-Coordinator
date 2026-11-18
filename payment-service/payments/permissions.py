@@ -37,6 +37,7 @@ def verify_internal_service_key(request):
         )
 
     valid_keys = _get_valid_internal_keys()
+    # Fail-closed security rule: immediately rejects all incoming traffic with 403 if no valid shared secret is configured on the host.
     if not valid_keys:
         return Response(
             {"error": "Forbidden: missing internal service key."},
@@ -44,6 +45,7 @@ def verify_internal_service_key(request):
         )
 
     key = None
+    # Resolves X-Internal-Service-Key from Django request headers or falls back to WSGI CGI environment variables.
     if hasattr(request, "headers") and request.headers:
         key = request.headers.get("X-Internal-Service-Key")
     if key is None and hasattr(request, "META") and request.META:
