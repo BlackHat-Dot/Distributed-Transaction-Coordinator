@@ -67,11 +67,13 @@ class Transaction(models.Model):
     user_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
     user_email = models.CharField(max_length=255, null=True, blank=True, db_index=True)
 
+    # Persisted current state of the transaction; validated against Status.choices and updated atomically via Compare-And-Swap (CAS) in saga_log.py.
     status = models.CharField(
         max_length=40,
         choices=Status.choices,
     )
 
+    # JSON array containing the numeric primary keys of physical seats reserved in Inventory Service for this transaction.
     seat_ids = models.JSONField(null=True, blank=True)
     seat_numbers = models.CharField(max_length=255, null=True, blank=True)
     quantity = models.IntegerField(null=True, default=1)
