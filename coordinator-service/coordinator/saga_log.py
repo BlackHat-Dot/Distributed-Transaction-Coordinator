@@ -246,10 +246,12 @@ def _mask_pii(data):
     # Short-circuit check returning non-collection or empty payloads unmodified.
     if not data:
         return data
+    # Traverses dictionary key-value pairs, normalizing keys to lowercase to identify sensitive attributes.
     if isinstance(data, dict):
         masked = {}
         for k, v in data.items():
             clean_k = str(k).strip().lower()
+            # Detects PII and credential keys to apply appropriate email partial masking or token redaction.
             if clean_k in SENSITIVE_KEYS:
                 if isinstance(v, str) and "@" in v:
                     parts = v.split("@", 1)
