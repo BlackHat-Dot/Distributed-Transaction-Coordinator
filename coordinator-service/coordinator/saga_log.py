@@ -296,6 +296,7 @@ def _set_status_with_event(
                 )
                 return False
 
+        # Atomically mutates the persisted transaction status and bumps updated_at timestamp within the acquired row lock.
         Transaction.objects.filter(pk=txn_pk).update(
             status=to_status,
             updated_at=timezone.now(),
@@ -306,6 +307,7 @@ def _set_status_with_event(
             .aggregate(m=Max("seq"))["m"]
             or 0
         )
+        # Computes the next monotonically increasing sequence number (1, 2, 3...) to enforce causal event ordering in the audit log.
         next_seq = last_seq + 1
 
         SagaEvent.objects.create(
