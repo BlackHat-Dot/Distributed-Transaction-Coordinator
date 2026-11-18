@@ -77,6 +77,7 @@ def recover_stuck_transactions():
         logger.warning("Could not acquire recovery lock due to Redis connection error: %s", exc)
         return "skipped"
 
+    # If the lock is held by another worker instance or a previous run is still active, safely skip this scheduled cycle.
     if not acquired:
         logger.info(
             "Skipping recovery_stuck_transactions: previous run is still in progress "
@@ -87,6 +88,7 @@ def recover_stuck_transactions():
 
     logger.info("Starting recovery_stuck_transactions task run.")
     try:
+        # Invokes the Django management command to scan database records and trigger compensation on expired or stuck transactions.
         call_command("recovery_stuck_transactions")
         try:
             client.set("dtc:recovery:last_run_timestamp", str(time.time()))
