@@ -338,7 +338,9 @@ def get_ticket_ics(request, transaction_id):
 
     # Returns the calendar byte payload using MIME type text/calendar so mobile and desktop devices automatically invoke their native calendar handler.
     response = HttpResponse(ics_bytes, content_type="text/calendar; charset=utf-8")
+    # Sets Content-Disposition header with filename to prompt calendar file download.
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    # Dispatches the iCalendar response payload to the requesting client.
     return response
 
 
