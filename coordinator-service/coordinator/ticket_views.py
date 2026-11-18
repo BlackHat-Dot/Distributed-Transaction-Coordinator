@@ -408,8 +408,10 @@ def public_verify_ticket(request, ticket_code):
     if ticket.transaction.status != Transaction.Status.COMPLETED:
         # Checks if client requested JSON output for revoked or cancelled tickets.
         if wants_json:
+            # Returns structured JSON payload indicating the ticket has been revoked due to incomplete transaction.
             return Response({"status": "REVOKED", "message": "This ticket has been revoked or cancelled."}, status=status.HTTP_200_OK)
 
+        # Builds user-facing HTML template indicating that admission pass has been revoked.
         html = """<!doctype html>
 <html lang="en">
 <head>
