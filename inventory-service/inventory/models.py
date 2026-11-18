@@ -3,9 +3,11 @@ from django.db import models
 from django.utils import timezone
 
 
+# Represents an entertainment event, concert, or theatrical performance hosted at a physical venue.
 class Event(models.Model):
     name = models.CharField(max_length=200)
     venue = models.CharField(max_length=200, blank=True, default="")
+    # Stores the event commencement timestamp in UTC to coordinate localized ticket display and schedule reminders.
     starts_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
