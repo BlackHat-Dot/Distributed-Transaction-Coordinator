@@ -910,6 +910,7 @@ def send_otp(request):
                 if abandon_count == 1 or client.ttl(abandon_key) == -1:
                     client.expire(abandon_key, 7200)  # 2-hour rolling window
 
+                # Abandonment detector: flags and locks networks that repeatedly request OTPs without completing verification, defending against email quota exhaustion.
                 if abandon_count > 5:
                     client.setex(block_key, 86400, "abandon")
                     client.delete(abandon_key)
@@ -961,6 +962,7 @@ def send_otp(request):
                 pass
 
     # Generate cryptographically secure 6-digit numeric OTP [100000, 999999]
+    # Generates a cryptographically strong 6-digit integer in range [100000, 999999] using OS entropy (secrets module) rather than pseudo-random numbers.
     otp_code = f"{secrets.randbelow(900000) + 100000}"
     cache_key = f"dtc:otp:{email}"
 
