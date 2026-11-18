@@ -1,3 +1,4 @@
+# Coordinates customer ticket inspection, PDF and calendar rendering, public QR verification, and gate turnstile admission.
 # Imports the hmac cryptographic module to perform constant-time signature and key comparisons, preventing timing attack vulnerabilities.
 import hmac
 # Imports Python's standard logging library to log diagnostics, warnings, and error messages across ticket processing endpoints.
@@ -688,6 +689,7 @@ def send_ticket_email(request, transaction_id):
             # Ignores fallback failure gracefully while logging diagnostic traces.
             pass
 
+    # Returns HTTP 200 response indicating ticket email has been queued for delivery.
     return Response({
         "status": "QUEUED",
         "message": f"Ticket email has been queued for dispatch to {txn.user_email}.",
