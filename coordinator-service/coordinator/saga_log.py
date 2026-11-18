@@ -4,7 +4,9 @@
 import json
 # Imports standard logging library to log saga state transitions, warnings, and Redis connection diagnostics.
 import logging
+# Imports threading primitives to synchronize shared client connection pools across concurrent threads.
 import threading
+# Imports standard time library for monotonic timestamps powering the Redis circuit-breaker cooldown window.
 import time
 # Imports redis-py client library to publish transaction lifecycle events to Redis Pub/Sub channels for Server-Sent Events (SSE) streaming.
 import redis
