@@ -84,6 +84,7 @@ class Seat(models.Model):
     def is_booked(self):
         return self.status == self.Status.BOOKED
 
+    # Compares the seat's held_until timestamp against current UTC time to evaluate whether an unconfirmed hold has elapsed.
     def is_expired(self, now=None):
         if not self.held_until:
             return False
@@ -91,6 +92,7 @@ class Seat(models.Model):
             now = timezone.now()
         return self.held_until < now
 
+    # Formats readable seat coordinate descriptor (e.g. "Concert - Row A Seat 12 (HELD)") for admin and debug logging.
     def __str__(self):
         return f"{self.event.name} - Row {self.row} Seat {self.seat_number} ({self.status})"
 
