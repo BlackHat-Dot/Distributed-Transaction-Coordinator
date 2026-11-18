@@ -5,9 +5,11 @@ import logging
 import re
 import uuid
 
+# Declares an asynchronous ContextVar to propagate correlation IDs across coroutines, threads, and logging filters.
 _correlation_id_ctx = contextvars.ContextVar("correlation_id", default="AnonUser")
 
 # Restrict to safe characters and reasonable length to prevent HTTP header injection (CRLF) and log poisoning
+# Precompiles strict regex pattern restricting correlation IDs to alphanumeric tokens to prevent CRLF header injection.
 _SAFE_CORRELATION_ID_RE = re.compile(r"^[a-zA-Z0-9_.:-]{1,128}$")
 
 
