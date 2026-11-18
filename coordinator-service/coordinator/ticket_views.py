@@ -533,7 +533,9 @@ def gate_redeem_ticket(request):
     gate_limit = int(os.getenv("GATE_RATE_LIMIT", 1000 if (ip in ("127.0.0.1", "::1", "localhost") and getattr(settings, "DEBUG", False)) else 10))
     # Constructs namespaced Redis cache key for client IP rate limit tracking.
     rate_key = f"dtc:ratelimit:gate:{ip}"
+    # Verifies that current redemption request frequency is within allowable threshold.
     if not check_rate_limit(rate_key, limit=gate_limit, window=60):
+        # Returns HTTP 429 Too Many Requests when gate redemption rate limit is breached.
         return Response({"error": "Rate limit exceeded on gate redemption.", "code": "RATE_LIMITED"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
     if not isinstance(request.data, dict):
