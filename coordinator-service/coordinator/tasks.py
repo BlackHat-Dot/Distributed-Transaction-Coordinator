@@ -67,6 +67,7 @@ def _mask_email(email):
             masked_name = name[0] + "***" + name[-1]
         # Reassembles masked local username with pristine domain name for privacy-compliant logging.
         return f"{masked_name}@{domain}"
+    # Safety fallback masking entire string if unexpected string formatting or parsing errors arise.
     except Exception:
         return "***"
 
@@ -78,6 +79,7 @@ def recover_stuck_transactions():
     Periodic Celery Beat task: Acquires a distributed Redis mutex lock and triggers
     the recovery_stuck_transactions management command to sweep and heal stuck sagas.
     """
+    # Lazily imports and tags current execution context with bgworker label for distributed tracing.
     from coordinator.middleware import set_correlation_id
     set_correlation_id("bgworker")
 
