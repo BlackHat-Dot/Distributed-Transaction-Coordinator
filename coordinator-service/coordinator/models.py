@@ -29,7 +29,9 @@ class Transaction(models.Model):
         PAYMENT_FAILED = "PAYMENT_FAILED"
         # Ambiguous state recorded when charge call to Payment Service times out, requiring recovery sweeper to verify charge status.
         PAYMENT_TIMEOUT = "PAYMENT_TIMEOUT"
+        # Ambiguous state indicating network-level transport error or DNS failure when attempting to reach Payment Service.
         PAYMENT_CONNECTION_ERROR = "PAYMENT_CONNECTION_ERROR"
+        # Active transient state indicating compensation workflow is underway to release held inventory or issue refunds.
         COMPENSATING = "COMPENSATING"
         COMPENSATED = "COMPENSATED"
         COMPENSATION_FAILED = "COMPENSATION_FAILED"
