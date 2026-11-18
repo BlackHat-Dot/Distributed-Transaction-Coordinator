@@ -32,6 +32,7 @@ def sweep_expired_holds_task():
     stampedes and database lock contention on Seat.objects.select_for_update().
     """
     from inventory.middleware import set_correlation_id
+    # Binds the static correlation tag 'bgworker' to the thread context so all sweeper log statements are identifiable in centralized logging.
     set_correlation_id("bgworker")
 
     client = get_redis_client()
@@ -40,6 +41,7 @@ def sweep_expired_holds_task():
 
     if client:
         try:
+            # Acquires a distributed Redis mutex with atomic set-if-not-exists (NX) and 60-second expiration (EX) to prevent concurrent sweep stampedes.
             acquired = client.set(LOCK_KEY, lock_token, nx=True, ex=LOCK_TIMEOUT)
             if not acquired:
                 logger.info(
