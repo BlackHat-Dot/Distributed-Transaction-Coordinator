@@ -239,6 +239,7 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
             if label and str(label).strip():
                 seat_label_map[sid] = str(label).strip()[:64]
 
+            # Extracts pricing amount or price field from inventory seat dictionary for financial validation.
             raw_amt = s.get("amount") if "amount" in s else s.get("price")
             if raw_amt is not None:
                 try:
@@ -251,6 +252,7 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
 
     # STRICT RULE: Validate all requested seats upfront before touching database
     # Validates that every requested seat ID was explicitly confirmed and priced by Inventory Service before mutating the database.
+    # Iterates over each requested seat ID, normalizing string or integer values for dictionary lookups.
     for sid in seat_ids:
         try:
             norm_sid = int(sid)
