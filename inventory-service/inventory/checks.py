@@ -35,6 +35,7 @@ def check_bypass_flags(app_configs, **kwargs):
 
     # Production gate: enforces that non-DEBUG production deployments never execute with insecure development bypass flags.
     if not _is_flag_active(getattr(settings, "DEBUG", False)):
+        # inventory.E001: prevents test execution flags from leaking into production where they could bypass authorization boundaries.
         if _is_flag_active(getattr(settings, "IS_TESTING", False)):
             errors.append(
                 Error(
@@ -51,6 +52,7 @@ def check_bypass_flags(app_configs, **kwargs):
                     id="inventory.E002",
                 )
             )
+        # inventory.E003: blocks unauthenticated state reset endpoints from being exposed in production, preventing catastrophic data wipeouts.
         if _is_flag_active(getattr(settings, "ALLOW_UNAUTHENTICATED_RESET", False)):
             errors.append(
                 Error(
