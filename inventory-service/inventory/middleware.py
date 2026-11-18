@@ -62,6 +62,7 @@ class AnonymousSessionMiddleware:
 
         # If client provided a valid session ID, ensure it's echoed in the response
         raw_token = None
+        # Checks incoming request headers for client-provided X-Session-ID tokens to maintain stable client identity.
         if hasattr(request, "headers") and request.headers:
             raw_token = request.headers.get("X-Session-ID")
         elif hasattr(request, "META") and request.META:
@@ -72,6 +73,7 @@ class AnonymousSessionMiddleware:
             from .throttling import _SESSION_SIGNER_SALT
             signer = TimestampSigner(salt=_SESSION_SIGNER_SALT)
             try:
+                # Cryptographically verifies the timestamped signature using Django TimestampSigner to reject forged or expired anonymous session tokens.
                 signer.unsign(raw_token.strip(), max_age=86400 * 30)
                 response["X-Session-ID"] = raw_token.strip()
                 return response
