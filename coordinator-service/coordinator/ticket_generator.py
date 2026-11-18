@@ -237,6 +237,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         c.setFont("Helvetica-Bold", seat_font_size)
         c.drawString(40, box_top - 44, seat_text[:28])
 
+        # Formats and renders formatted ticket admission monetary price with two decimal places.
         c.setFont("Helvetica-Bold", 16)
         raw_amount = getattr(ticket, "amount", None)
         amount_val = raw_amount if raw_amount is not None else Decimal("0.00")
@@ -247,6 +248,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         c.drawString(220, box_top - 44, f"${amount_val:.2f}")
 
         # Attendee & Order details
+        # Renders buyer email address or ticket holder identifier in secondary slate typography.
         c.setFillColor(colors.HexColor("#334155"))
         c.setFont("Helvetica", 8.5)
         holder_email = getattr(transaction, "user_email", "") or "Ticket Holder"
