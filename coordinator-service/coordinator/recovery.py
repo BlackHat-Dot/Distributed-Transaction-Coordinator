@@ -272,7 +272,9 @@ def execute_compensation_sweep(
             }
 
     # Before refunding, re-check inventory: if payment is charged, attempt to confirm first
+    # Forward-recovery gate: if payment charged, tries to confirm seats first before considering costly refunds.
     if payment_status == "CHARGED" or void_revealed_charge:
+        # Initializes tracking variables for inventory confirmation outcome, HTTP payload, and transport errors.
         confirm_ok = False
         confirm_payload = None
         confirm_status_code = None
