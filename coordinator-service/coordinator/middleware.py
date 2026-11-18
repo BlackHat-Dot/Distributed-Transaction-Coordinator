@@ -21,9 +21,11 @@ def get_correlation_id():
     return _correlation_id_ctx.get()
 
 
+# Custom logging filter that enriches every emitted log record with the current transaction context for log aggregation and debugging.
 class TransactionIdFilter(logging.Filter):
     """Injects current transaction/worker context into log records."""
 
+    # Intercepts each log record before output to extract the correlation ID and attach a formatted log_tag attribute.
     def filter(self, record):
         tid = get_correlation_id()
 
