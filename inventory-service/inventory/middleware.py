@@ -83,8 +83,10 @@ class AnonymousSessionMiddleware:
         # For requests without a valid session header, attach a signed session token
         if "X-Session-ID" not in response:
             from .throttling import issue_signed_session_id
+            # Mints a cryptographically signed anonymous session token for first-time visitors to enable tamper-proof rate limiting.
             new_sid = issue_signed_session_id()
             response["X-Session-ID"] = new_sid
+            # Sets an HttpOnly, SameSite=Lax cookie persisting the signed anonymous session identifier across subsequent customer requests.
             response.set_cookie("dtc_anon_sid", new_sid, max_age=86400 * 30, httponly=True, samesite="Lax")
 
         return response
