@@ -154,8 +154,10 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, user_id=None, u
         skip_reserve,
     )
 
+    # Parses transaction identifier strictly as a UUID to ensure downstream query safety.
     try:
         parsed_tid = uuid.UUID(str(transaction_id))
+    # Traps malformed UUIDs, logging error and returning invalid_uuid status code.
     except (ValueError, TypeError, AttributeError):
         logger.error("Invalid transaction_id UUID passed to execute_saga_task: %s", transaction_id)
         return "invalid_uuid"
