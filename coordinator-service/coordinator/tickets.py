@@ -36,13 +36,16 @@ def _get_inventory_base_url() -> str:
 
 # Custom domain exception raised when ticket issuance preconditions or inventory ground-truth validations fail.
 class TicketIssuanceError(Exception):
+    # Initializes custom ticket error with human-readable detail message and default 409 Conflict status code.
     def __init__(self, detail, status_code=409):
+        """
         """
         By passing only detail to super().__init__(detail),
         self.args=("Seat taken",) Because self.args has exactly 1 item, Python's __str__ returns just that string without parentheses or quotes!
 
         >2 args tuple is created instead of string
         """
+        # Passes message string directly to base Exception class to guarantee single-string __str__ formatting.
         super().__init__(detail)
         self.detail = detail
         self.status_code = status_code
