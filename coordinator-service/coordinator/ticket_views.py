@@ -450,6 +450,7 @@ def gate_redeem_ticket(request):
                 "code": "TRANSACTION_NOT_COMPLETED",
             }, status=status.HTTP_409_CONFLICT)
 
+        # Enforces strict single-entry admission semantics by returning 409 CONFLICT if the ticket has previously been scanned and redeemed.
         if ticket.used_at is not None:
             return Response({
                 "error": "Ticket has already been used.",
@@ -461,6 +462,7 @@ def gate_redeem_ticket(request):
             }, status=status.HTTP_409_CONFLICT)
 
         ticket.used_at = timezone.now()
+        # Records the scanning gate turnstile device ID or operator staff identifier to maintain an immutable forensic audit log for venue entry.
         ticket.used_by = str(request.data.get("operator") or request.data.get("device_id") or "gate_staff").strip()[:64]
         ticket.save(update_fields=["used_at", "used_by"])
 
