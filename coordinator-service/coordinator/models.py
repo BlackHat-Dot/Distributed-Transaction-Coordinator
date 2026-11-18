@@ -206,9 +206,11 @@ class Ticket(models.Model):
     # Identity or staff scanner ID of the venue operator who validated and redeemed this ticket barcode at entry.
     used_by = models.CharField(max_length=64, null=True, blank=True)
 
+    # Metadata options configuring uniqueness constraints and default sorting order for Ticket records.
     class Meta:
         # Prevents double-issuance: guarantees a single physical seat within a transaction can only have one corresponding ticket issued.
         unique_together = [("transaction", "seat_id")]
+        # Default query ordering ensuring tickets are sorted sequentially by seat ID for tidy roster displays.
         ordering = ["seat_id"]
 
     def __str__(self):
