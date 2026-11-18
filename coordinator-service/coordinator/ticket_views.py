@@ -27,7 +27,9 @@ from rest_framework.decorators import api_view
 # Imports Response class to render serialized Python data dictionaries into content-negotiated JSON HTTP responses.
 from rest_framework.response import Response
 
+# Imports JWT verification and client IP resolution helpers to authenticate ticket requests and track request rates per caller.
 from coordinator.auth_views import verify_jwt, _get_client_ip
+# Imports Transaction and Ticket database models to query booking status and persist ticket issuance and redemption records.
 from coordinator.models import Transaction, Ticket
 from coordinator.ticket_generator import (
     generate_qr_code_base64,
