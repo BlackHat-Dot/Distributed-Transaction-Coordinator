@@ -172,6 +172,7 @@ def execute_compensation_sweep(
     if payment_check_failed:
         # Preserves original non-terminal status for future sweeper retry rather than permanently marking transaction as failed.
         revert_status = original_status or Transaction.Status.COMPENSATION_FAILED
+        # Atomically reverts the transaction state in the saga log to release the claim for future sweepers.
         _set_status_with_event(
             transaction_id=tid,
             to_status=revert_status,
@@ -180,6 +181,7 @@ def execute_compensation_sweep(
             http_status_code=None,
             http_payload={"error": "Payment check failed/timed out. Claim released."},
         )
+        # Returns 503 Service Unavailable indicating downstream payment probe failure to caller.
         return {
             "success": False,
             "status_code": 503,
