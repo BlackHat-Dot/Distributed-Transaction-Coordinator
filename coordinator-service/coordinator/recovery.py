@@ -12,10 +12,12 @@ INVENTORY_BASE_URL = getattr(settings, "INVENTORY_SERVICE_URL", None) or os.gete
 # Base URL for Payment Service, resolving dynamically from Django settings, environment variables, or localhost default.
 PAYMENT_BASE_URL = getattr(settings, "PAYMENT_SERVICE_URL", None) or os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8001").rstrip("/")
 
+# Separate socket connect timeout (default 2.0s) and read timeout (default 5.0s) to prevent thread hangs during TCP SYN packet drops.
 REQUEST_CONNECT_TIMEOUT = float(os.getenv("REQUEST_CONNECT_TIMEOUT", "2.0"))
 REQUEST_READ_TIMEOUT = float(os.getenv("REQUEST_READ_TIMEOUT", os.getenv("REQUEST_TIMEOUT", "5.0")))
 # Separate connect and read timeouts prevent indefinite socket hanging during network partitions
 REQUEST_TIMEOUT = (REQUEST_CONNECT_TIMEOUT, REQUEST_READ_TIMEOUT)
+# Shared secret token transmitted in HTTP headers (X-Internal-Service-Key) to authenticate coordinator requests with downstream services.
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 
 # Single source of truth from Transaction model
