@@ -162,11 +162,13 @@ class BaseInventoryThrottle(SimpleRateThrottle):
         rates = rf_settings.get("DEFAULT_THROTTLE_RATES", {}) or {}
         if self.scope in rates:
             return rates[self.scope]
+        # Gracefully falls back to broader rate limit tiers if a granular operational throttle scope is undefined in settings.
         if self.fallback_scope and self.fallback_scope in rates:
             return rates[self.fallback_scope]
         return super().get_rate()
 
     def allow_request(self, request, view):
+        # Bypasses rate limiting entirely for authenticated internal services and staff to ensure critical recovery workflows never stall.
         if _is_exempt_from_throttling(request):
             return True
         return super().allow_request(request, view)
