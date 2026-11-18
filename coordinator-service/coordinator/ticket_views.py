@@ -579,7 +579,9 @@ def gate_redeem_ticket(request):
 
     # Extracts the raw scanned barcode or QR code payload from request parameters.
     raw_ticket_code = request.data.get("ticket_code")
+    # Sanitizes ticket code string by removing whitespace to ensure exact database lookup.
     ticket_code = str(raw_ticket_code or "").strip()
+    # Checks whether the ticket code payload was omitted from the redemption request.
     if not ticket_code:
         return Response({"error": "ticket_code is required.", "code": "BAD_REQUEST"}, status=status.HTTP_400_BAD_REQUEST)
 
