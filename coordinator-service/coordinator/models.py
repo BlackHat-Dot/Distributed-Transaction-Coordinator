@@ -49,6 +49,7 @@ class Transaction(models.Model):
         CONNECTION_FAILED = "CONNECTION_FAILED"
         # Intermediate confirmation state verifying payment deduction succeeded before final ticket issuance.
         CHARGED = "CHARGED"
+        # Terminal failure state recorded when the transaction's overall end-to-end lifetime exceeds the maximum allowed duration.
         TIMEOUT = "TIMEOUT"
 
     # Set of irreversible final states; transactions in these states are settled and can never be claimed or modified by background recovery workers.
@@ -85,6 +86,7 @@ class Transaction(models.Model):
     transaction_id = models.UUIDField(unique=True)
     # Deterministic SHA-256 hashed user identifier (e.g. usr_<hash>) used for fast indexing, authorization checks, and multi-tenant scoping.
     user_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
+    # Customer email address associated with the transaction, indexed for customer receipts, notifications, and administrative search.
     user_email = models.CharField(max_length=255, null=True, blank=True, db_index=True)
 
     # Persisted current state of the transaction; validated against Status.choices and updated atomically via Compare-And-Swap (CAS) in saga_log.py.
