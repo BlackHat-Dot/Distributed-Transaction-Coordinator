@@ -175,6 +175,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         c.drawRightString(page_w - 25, page_h - 48, f"REF: #{short_ref}")
 
         # Event Title: wrap across multiple lines without truncating
+        # Resolves event title from ticket entity, defaulting to empty string if missing.
         raw_event_name = getattr(ticket, "event_name", None) or ""
         # Dynamically word-wraps long event titles across multiple lines to prevent horizontal clipping off the page edge.
         title_lines = textwrap.wrap(raw_event_name, width=36)
@@ -185,6 +186,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         c.setFillColor(colors.HexColor("#0f172a"))
         c.setFont("Helvetica-Bold", font_size)
 
+        # Positions vertical coordinate and draws each wrapped title line onto the canvas.
         cur_y = page_h - 92
         for line in title_lines:
             c.drawString(25, cur_y, line)
