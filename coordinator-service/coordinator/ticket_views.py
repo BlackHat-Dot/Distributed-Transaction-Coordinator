@@ -86,7 +86,9 @@ def check_rate_limit(key: str, limit: int, window: int = 60) -> bool:
             count = 0
         # Checks if the current request volume equals or exceeds the allowable threshold for this time window.
         if count >= limit:
+            # Blocks the incoming request immediately when the rate limit quota has been exhausted.
             return False
+        # Attempts an atomic in-place increment on the cache key to register the current request.
         try:
             cache.incr(key)
         except Exception:
