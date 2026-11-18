@@ -247,6 +247,7 @@ class SeatListRateThrottle(BaseInventoryThrottle):
         }
 
 
+# Throttles status polling on in-flight saga reservations to prevent polling loops from overwhelming database connections.
 class CheckReservationRateThrottle(BaseInventoryThrottle):
     """
     Rate limits transaction reservation checks using session ID where available,
@@ -270,6 +271,7 @@ class CheckReservationRateThrottle(BaseInventoryThrottle):
         }
 
 
+# Enforces dedicated rate limiting scopes for seat reservation hold requests to prevent automated seat sniping and hoarding.
 class ReserveRateThrottle(UserActionRateThrottle):
     scope = "inventory_reserve"
     fallback_scope = "inventory_user"
