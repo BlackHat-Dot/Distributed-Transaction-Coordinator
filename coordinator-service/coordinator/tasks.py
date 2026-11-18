@@ -118,9 +118,11 @@ def recover_stuck_transactions():
             client.set("dtc:recovery:last_run_timestamp", str(time.time()))
         except Exception:
             pass
+        # Logs normal completion message and returns task completion status to Celery broker.
         logger.info("recovery_stuck_transactions task run completed normally.")
         return "completed"
     finally:
+        # Encloses atomic lock release in try block to guarantee worker continuity even if Redis times out during cleanup.
         try:
             # Atomically releases the distributed mutex lock only if the key still holds this worker's specific lock_token.
             client.eval(RELEASE_LOCK_SCRIPT, 1, LOCK_KEY, lock_token)
