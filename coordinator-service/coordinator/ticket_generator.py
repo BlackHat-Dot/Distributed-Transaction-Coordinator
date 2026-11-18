@@ -43,6 +43,7 @@ def get_public_base_url() -> str:
     Resolves the base URL for public QR verification links.
     In production (DEBUG=False, IS_TESTING=False), requires explicit PUBLIC_BASE_URL.
     """
+    # Resolves public base domain from settings or environment variables for mobile scanner routing.
     url = getattr(settings, "PUBLIC_BASE_URL", None) or os.getenv("PUBLIC_BASE_URL", "")
     # Production guard: strictly enforces that PUBLIC_BASE_URL is configured in production to prevent emitting unroutable localhost QR codes.
     if not url:
@@ -54,6 +55,7 @@ def get_public_base_url() -> str:
                 "CRITICAL CONFIGURATION ERROR: PUBLIC_BASE_URL environment variable must be set in production when DEBUG=False! "
                 "It must be configured with a public URL reachable from client devices (e.g. mobile phones for QR scanning)."
             )
+    # Strips whitespace and trailing slashes to guarantee clean base URL concatenation.
     return str(url).strip().rstrip("/")
 
 
