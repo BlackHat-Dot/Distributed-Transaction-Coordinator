@@ -401,10 +401,12 @@ def public_verify_ticket(request, ticket_code):
   </div>
 </body>
 </html>"""
+        # Returns rendered 404 HTML response displaying an invalid ticket error card.
         return HttpResponse(html, status=404, content_type="text/html; charset=utf-8")
 
     # Verification gatekeeper: immediately revokes ticket validity if the parent transaction was cancelled, aborted, or compensated during saga rollback.
     if ticket.transaction.status != Transaction.Status.COMPLETED:
+        # Checks if client requested JSON output for revoked or cancelled tickets.
         if wants_json:
             return Response({"status": "REVOKED", "message": "This ticket has been revoked or cancelled."}, status=status.HTTP_200_OK)
 
