@@ -231,7 +231,9 @@ def send_ticket_email_task(self, transaction_id):
             # Automatically retries the task with exponential delay if network dropouts or Resend API rate limits occur.
         raise self.retry(exc=exc)
 
+    # Derives 8-character human-readable booking reference from the leading characters of the transaction UUID.
     short_ref = str(txn.transaction_id)[:8]
+    # Formats standardized attachment filename incorporating the short booking reference for the customer.
     filename = f"DTC-Ticket-{short_ref}.pdf"
 
     # Resolves the Resend email service API key, gracefully falling back to simulation mode in development or staging.
