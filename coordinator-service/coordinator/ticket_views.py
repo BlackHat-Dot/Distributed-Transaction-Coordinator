@@ -12,7 +12,9 @@ import uuid
 from django.conf import settings
 # Imports Django's cache abstraction (backed by Redis or in-memory cache) to provide low-latency rate limiting across ticket and verification endpoints.
 from django.core.cache import cache
+# Imports Django's database transaction module under an alias to manage atomic blocks and prevent naming collisions with the Transaction model.
 from django.db import transaction as db_transaction
+# Imports HttpResponse to return raw byte streams such as downloadable PDF tickets, iCalendar files, and standalone HTML verification pages.
 from django.http import HttpResponse
 from django.utils import timezone
 # Imports HTML escaping utility to sanitize untrusted database strings before injecting into public verification HTML pages, preventing XSS attacks.
