@@ -820,6 +820,7 @@ def reset_seats(request):
         rows_affected = updated_seats + updated_booked
 
         who = "staff" if _is_staff_request(request) else "unauthenticated"
+        # Emits structured security audit log recording who executed the administrative venue seat reset and how many rows were affected.
         logger.info(
             "AUDIT: reset_seats executed by who=%s, event_id=%s, rows_affected=%s, before_counts=%s",
             who,
@@ -859,5 +860,6 @@ def get_session_token(request):
     token = issue_signed_session_id()
     resp = Response({"session_id": token}, status=200)
     resp["X-Session-ID"] = token
+    # Sets an HttpOnly, SameSite=Lax cookie containing the signed session token to preserve client identity across page refreshes.
     resp.set_cookie("dtc_anon_sid", token, max_age=86400 * 30, httponly=True, samesite="Lax")
     return resp
