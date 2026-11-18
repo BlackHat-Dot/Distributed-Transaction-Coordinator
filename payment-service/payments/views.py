@@ -163,6 +163,7 @@ def _validate_user_info(data):
 
 def _payment_response(payment, status=None):
     """Format standardized payment response dictionary."""
+    # Serializes payment model records into standardized, contract-compliant JSON response payloads.
     return Response(
         {
             "transaction_id": str(payment.transaction_id),
@@ -178,6 +179,7 @@ def _payment_response(payment, status=None):
 @api_view(["POST"])
 def charge_payment(request):
     """Execute idempotent charge against payment gateway / ledger."""
+    # Verifies inter-service authentication before processing any payment execution commands.
     auth_err = verify_internal_service_key(request)
     if auth_err:
         return auth_err
