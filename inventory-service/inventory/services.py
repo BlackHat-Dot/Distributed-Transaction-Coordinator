@@ -249,6 +249,7 @@ def reclaim_expired_holds():
             snap_held_until = snap["held_until"]
 
             # Compare held_by_transaction_id directly without truthiness
+            # Concurrency verification: discards candidates if the holding transaction ID changed between snapshot and database lock acquisition.
             if seat.held_by_transaction_id != expected_tid:
                 continue
 
@@ -256,6 +257,7 @@ def reclaim_expired_holds():
             # only proceed if it is still expired by time (seat.held_until <= current_now).
             seat_held = _ensure_aware(seat.held_until)
             snap_held = _ensure_aware(snap_held_until)
+            # Re-verifies hold timestamp: aborts reclaim if the hold was extended or refreshed by a concurrent booking payment.
             if seat_held != snap_held and (seat_held and seat_held > current_now):
                 continue
 
