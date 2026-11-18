@@ -1,9 +1,11 @@
 from django.contrib import admin
 from django.db.models import IntegerField
+# Imports Django database Cast function to convert char-based seat numbers to integers for natural numerical sorting in the admin dashboard.
 from django.db.models.functions import Cast
 from .models import Event, Seat, Reservation
 
 
+# Registers Event model with administrative interface to manage venue bookings, event start schedules, and seating layouts.
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
     list_display = ("name", "venue", "starts_at", "created_at")
