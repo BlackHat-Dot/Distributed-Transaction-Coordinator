@@ -37,7 +37,9 @@ end
 # Constructs a Redis client configured with strict connection timeouts and Celery broker URL from settings.
 def get_redis_client():
     """Return a Redis client instance configured from Django Celery settings."""
+    # Resolves Celery message broker Redis connection URL from Django settings with local fallback.
     broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+    # Detects whether test suite execution is active to apply aggressive connection timeout policies.
     testing_mode = bool(getattr(settings, "IS_TESTING", False))
     timeout = getattr(settings, "REDIS_SOCKET_TIMEOUT", 0.05 if testing_mode else 1.0)
     return redis.Redis.from_url(
