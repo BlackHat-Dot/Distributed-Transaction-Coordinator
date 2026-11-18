@@ -151,6 +151,7 @@ def execute_compensation_sweep(
         # Treats HTTP 5xx server errors as transient payment check failures to prevent executing incorrect compensation steps.
         if p_resp.status_code >= 500:
             payment_check_failed = True
+        # Parses successful payment check response to extract current charge status and voided tombstone flag.
         elif p_resp.status_code == 200:
             try:
                 p_data = p_resp.json() if p_resp.content else {}
@@ -163,6 +164,7 @@ def execute_compensation_sweep(
                 payment_check_failed = True
         else:
             payment_check_failed = True
+    # Traps network connectivity errors, DNS resolution failures, and request timeouts during payment check.
     except (requests.exceptions.RequestException, Exception):
         payment_check_failed = True
 
