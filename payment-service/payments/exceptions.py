@@ -40,6 +40,7 @@ def _extract_transaction_id(request):
         pass
 
     try:
+        # Safely reads memoized request payload data without re-reading the raw HTTP input stream to prevent stream corruption.
         if hasattr(request, "_full_data") and isinstance(request._full_data, Mapping):
             tid = request._full_data.get("transaction_id")
             if tid and str(tid).strip():
@@ -61,6 +62,7 @@ def custom_exception_handler(exc, context):
     request = context.get("request") if isinstance(context, dict) else None
     if request:
         cid = _extract_transaction_id(request)
+        # Binds the resolved transaction ID to the thread execution context so error log records carry the correct correlation identifier.
         if cid and get_correlation_id() == "AnonUser":
             set_correlation_id(cid)
 
