@@ -1,8 +1,10 @@
 from django.db import models
 
 
+# Represents an immutable financial transaction ledger tracking charges, refunds, and saga compensation voids.
 class Payment(models.Model):
 
+    # Defines the state machine lifecycle for payment records: CHARGED (captured), NOT_CHARGED, REFUNDED, or VOIDED.
     class Status(models.TextChoices):
         CHARGED = "CHARGED"
         NOT_CHARGED = "NOT_CHARGED"
