@@ -61,8 +61,10 @@ def _safe_call_http(func, method, url, **kwargs):
 # Dynamically constructs target endpoint URLs at runtime to guarantee latest environment/settings overrides are immediately respected.
 def _get_urls():
     """Dynamically resolves downstream URLs with runtime settings/env overrides."""
+    # Resolves current Inventory Service base URL dynamically with runtime settings and environment fallback.
     inv_base = (getattr(settings, "INVENTORY_SERVICE_URL", None) or os.getenv("INVENTORY_SERVICE_URL", INVENTORY_BASE_URL)).rstrip("/")
     pay_base = (getattr(settings, "PAYMENT_SERVICE_URL", None) or os.getenv("PAYMENT_SERVICE_URL", PAYMENT_BASE_URL)).rstrip("/")
+    # Returns dictionary mapping operational downstream action keys to their fully-qualified HTTP endpoint URLs.
     return {
         "payment_check": f"{pay_base}/payments/check/",
         "payment_refund": f"{pay_base}/payments/refund/",
