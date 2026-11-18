@@ -52,7 +52,10 @@ def check_service_keys_and_admin_domain(app_configs, **kwargs):
             )
         )
 
+    # Fetches the authorized corporate email domain (e.g., 'dtc.internal') used to verify internal staff email identities during OTP authentication.
     admin_domain = os.getenv("ADMIN_DOMAIN")
+
+    # Ensures an administrative email domain is set so employee authentication cannot accidentally permit public email addresses.
     if not admin_domain:
         warnings.append(
             Warning(
