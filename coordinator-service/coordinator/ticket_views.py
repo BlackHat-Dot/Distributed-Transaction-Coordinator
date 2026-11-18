@@ -287,7 +287,9 @@ def get_ticket_pdf(request, transaction_id):
         seat_slug = f"{len(tickets)}seats"
     # Uses individual seat identifiers for smaller bookings of up to three seats.
     else:
+        # Concatenates whitespace-stripped seat labels into a single hyphen-separated string.
         raw_slug = "-".join(str(t.seat_label).replace(" ", "") for t in tickets)
+        # Strips special characters from the seat slug to guarantee filesystem and header compatibility.
         seat_slug = re.sub(r"[^a-zA-Z0-9_-]", "", raw_slug) or "seats"
 
     short_ref = str(txn.transaction_id)[:8]
