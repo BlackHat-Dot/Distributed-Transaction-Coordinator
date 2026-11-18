@@ -331,7 +331,9 @@ def get_ticket_ics(request, transaction_id):
 
     # Serializes the transaction and ticket schedule into an RFC 5545 iCalendar (.ics) stream for direct one-click import into calendar applications.
     ics_bytes = generate_tickets_ics(txn, tickets)
+    # Derives a short eight-character transaction identifier for calendar filename formatting.
     short_ref = str(txn.transaction_id)[:8]
+    # Constructs standardized .ics attachment filename incorporating the short booking reference.
     filename = f"DTC-{short_ref}.ics"
 
     # Returns the calendar byte payload using MIME type text/calendar so mobile and desktop devices automatically invoke their native calendar handler.
