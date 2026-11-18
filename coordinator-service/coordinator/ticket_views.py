@@ -208,9 +208,11 @@ def get_transaction_tickets(request, transaction_id):
         # Returns error HTTP response immediately if authentication or authorization failed.
         return err_resp
 
+    # Wraps ticket issuance in exception handling to catch conflict errors on incomplete transactions.
     try:
         # Idempotently materializes ticket records from the completed transaction's saga reservation log if not already generated.
         tickets = issue_tickets_for_transaction(txn)
+    # Intercepts ticket issuance business errors such as pending or aborted transaction status.
     except TicketIssuanceError as exc:
         return Response({"error": exc.detail, "code": "CONFLICT"}, status=exc.status_code)
 
