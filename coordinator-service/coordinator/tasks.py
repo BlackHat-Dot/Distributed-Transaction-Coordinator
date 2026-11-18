@@ -113,6 +113,7 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, user_id=None, u
     from coordinator.views import _run_saga
     from coordinator.middleware import set_correlation_id
 
+    # Extracts or defaults the correlation identifier to propagate distributed tracing across worker threads.
     cid = kwargs.get("correlation_id") or str(transaction_id)
     set_correlation_id(str(cid))
     logger.info(
@@ -131,6 +132,7 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, user_id=None, u
 
     actor = kwargs.pop("actor", "request")
 
+    # Executes the multi-step saga state machine (seat reservation, payment charge, and seat confirmation).
     response = _run_saga(
         transaction_id=parsed_tid,
         seat_ids=seat_ids,
