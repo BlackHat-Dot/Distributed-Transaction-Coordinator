@@ -22,7 +22,9 @@ from django.utils import timezone
 from django.utils.html import escape
 # Imports HTTP status codes from Django REST Framework for expressive and standardized API response status handling.
 from rest_framework import status
+# Imports api_view decorator to enforce supported HTTP methods and equip views with Django REST Framework request parsing.
 from rest_framework.decorators import api_view
+# Imports Response class to render serialized Python data dictionaries into content-negotiated JSON HTTP responses.
 from rest_framework.response import Response
 
 from coordinator.auth_views import verify_jwt, _get_client_ip
