@@ -310,6 +310,7 @@ def _set_status_with_event(
         # Computes the next monotonically increasing sequence number (1, 2, 3...) to enforce causal event ordering in the audit log.
         next_seq = last_seq + 1
 
+        # Appends an immutable audit event to the historical ledger, recording the state transition, actor, and sanitized HTTP payload.
         SagaEvent.objects.create(
             transaction_id=txn_pk,
             seq=next_seq,
@@ -317,6 +318,7 @@ def _set_status_with_event(
             to_status=to_status,
             actor=actor,
             http_status_code=http_status_code,
+            # Sanitizes downstream request/response payloads before committing them to the persistent audit database.
             http_payload=_mask_pii(http_payload),
         )
 
