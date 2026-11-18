@@ -64,6 +64,7 @@ def health_check(request):
 
 def _validate_uuid(value):
     """Safely validate UUID string or object."""
+    # Safely parses string representations into native UUID objects, catching conversion failures without crashing.
     try:
         return uuid.UUID(str(value).strip())
     except (ValueError, TypeError, AttributeError):
@@ -72,6 +73,7 @@ def _validate_uuid(value):
 
 def _require_transaction_id(raw_value):
     """Validate presence and UUID format of transaction_id."""
+    # Enforces mandatory transaction identifier presence before delegating to format validation.
     if raw_value is None or (isinstance(raw_value, str) and not raw_value.strip()):
         return None, Response({"error": "transaction_id is required"}, status=400)
 
