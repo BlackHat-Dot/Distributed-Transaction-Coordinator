@@ -146,6 +146,7 @@ class BookingRateThrottle(SafeRateThrottle):
 
     # Generates a distinct rate-limiting cache key for write operations based on caller identity.
     def get_cache_key(self, request, view):
+        # Restricts throttling exclusively to write requests (POST) while exempting read requests.
         if request.method != "POST":  # only limit writes
             return None
 
@@ -160,6 +161,7 @@ class BookingRateThrottle(SafeRateThrottle):
         else:
             ident = f"ip_{self.get_ident(request)}"
 
+        # Returns the formatted Redis cache key string scoping the rate limit to this transaction action.
         return self.cache_format % {"scope": self.scope, "ident": ident}
 
 
