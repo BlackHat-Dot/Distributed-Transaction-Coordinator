@@ -203,7 +203,9 @@ def get_transaction_tickets(request, transaction_id):
     """
     # Authenticates the requester identity and validates ownership of the requested transaction ID.
     txn, err_resp = authenticate_ticket_requester(request, transaction_id)
+    # Checks whether requester authentication or transaction verification failed.
     if err_resp:
+        # Returns error HTTP response immediately if authentication or authorization failed.
         return err_resp
 
     try:
