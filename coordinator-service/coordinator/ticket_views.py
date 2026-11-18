@@ -317,8 +317,10 @@ def get_ticket_ics(request, transaction_id):
     txn, err_resp = authenticate_ticket_requester(request, transaction_id)
     # Checks if authentication failed or if the transaction does not belong to the caller.
     if err_resp:
+        # Returns the authentication or ownership error response immediately.
         return err_resp
 
+    # Encloses ticket issuance in exception handling to intercept business conflict exceptions.
     try:
         # Idempotently materializes ticket records from the completed transaction's saga reservation log if not already generated.
         tickets = issue_tickets_for_transaction(txn)
