@@ -679,7 +679,9 @@ def send_ticket_email(request, transaction_id):
         # Logs warning detailing Celery dispatch failure and initiates inline fallback execution.
         logger.warning("Celery dispatch failed, running inline or logging: %s", exc)
         # In testing or when Celery isn't running daemon:
+        # Attempts synchronous inline task execution as fallback during local testing or broker downtime.
         try:
+            # Executes ticket generation and email transmission synchronously inline.
             send_ticket_email_task(str(txn.transaction_id))
         except Exception:
             pass
