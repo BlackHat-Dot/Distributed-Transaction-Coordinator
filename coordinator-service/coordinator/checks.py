@@ -1,4 +1,6 @@
+# Provides access to operating system environment variables (such as service keys and domains) configured on the host or container.
 import os
+# Imports Django's runtime settings module to access configured secrets and active execution environment flags.
 from django.conf import settings
 from django.core.checks import Warning, register, Tags
 
