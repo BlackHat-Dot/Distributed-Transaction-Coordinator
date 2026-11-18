@@ -292,7 +292,9 @@ def get_ticket_pdf(request, transaction_id):
         # Strips special characters from the seat slug to guarantee filesystem and header compatibility.
         seat_slug = re.sub(r"[^a-zA-Z0-9_-]", "", raw_slug) or "seats"
 
+    # Extracts an eight-character prefix from the transaction UUID as a short reference code.
     short_ref = str(txn.transaction_id)[:8]
+    # Formats the complete attachment filename combining DTC prefix, seat slug, and transaction ref.
     filename = f"DTC-{seat_slug}-{short_ref}.pdf"
 
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
