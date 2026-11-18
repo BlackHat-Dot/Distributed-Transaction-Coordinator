@@ -121,6 +121,7 @@ def seat_list(request):
 
     # PERF-02: Seed demo seats once per process in DEBUG mode if table is empty
     if getattr(settings, "DEBUG", False) and not getattr(settings, "_SEATS_SEEDED", False):
+        # Seeds initial stadium tiers (Rows A, B, C) during local development to provide instant catalog data for manual testing.
         if Seat.objects.count() == 0:
             event = Event.objects.first()
 
@@ -164,6 +165,7 @@ def seat_pricing(request):
     Returns: JSON array of matching Seat objects.
     Called exclusively by Coordinator to resolve server-side pricing before booking.
     """
+    # Restricts pricing queries exclusively to the Coordinator service to guarantee server-side pricing integrity.
     auth_err, _ = _verify_internal_service_key(request)
     if auth_err:
         return auth_err
