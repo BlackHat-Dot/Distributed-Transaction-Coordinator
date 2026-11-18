@@ -265,8 +265,10 @@ def get_ticket_pdf(request, transaction_id):
     txn, err_resp = authenticate_ticket_requester(request, transaction_id)
     # Halts execution if requester authentication or authorization checks failed.
     if err_resp:
+        # Returns authentication or permission error response immediately.
         return err_resp
 
+    # Wraps ticket issuance in exception handling to catch conflict errors on incomplete transactions.
     try:
         # Idempotently materializes ticket records from the completed transaction's saga reservation log if not already generated.
         tickets = issue_tickets_for_transaction(txn)
