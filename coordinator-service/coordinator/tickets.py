@@ -188,6 +188,7 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
     inventory_seat_ids = set()
     seat_label_map = {}
     seat_amount_map = {}
+    # Parses confirmed seat records from inventory into normalized seat ID, seat label, and amount lookup maps.
     for s in seats_info:
         if not isinstance(s, dict):
             continue
@@ -206,6 +207,7 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
             raw_amt = s.get("amount") if "amount" in s else s.get("price")
             if raw_amt is not None:
                 try:
+                    # Enforces exact decimal financial precision for individual seat prices to avoid floating-point inaccuracies.
                     dec_amt = Decimal(str(raw_amt))
                     if not dec_amt.is_nan() and not dec_amt.is_infinite() and dec_amt >= Decimal("0.00"):
                         seat_amount_map[sid] = dec_amt
