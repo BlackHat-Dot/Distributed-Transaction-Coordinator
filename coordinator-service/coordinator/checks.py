@@ -31,6 +31,7 @@ def check_service_keys_and_admin_domain(app_configs, **kwargs):
 
     # Checks whether the internal service key is either missing entirely or still set to the insecure placeholder default from development.
     if not internal_key or internal_key == "dtc-internal-coordinator-secret-key-2026":
+        # Warning -> A Django system check object describing a potential vulnerability or misconfiguration along with a resolution hint and error ID.
         warnings.append(
             Warning(
                 "INTERNAL_SERVICE_KEY is unset or using insecure default.",
@@ -65,4 +66,5 @@ def check_service_keys_and_admin_domain(app_configs, **kwargs):
             )
         )
 
+    # Returns the compiled list of security warnings back to Django's diagnostic engine to display in console logs or exit startup if errors were fatal.
     return warnings
