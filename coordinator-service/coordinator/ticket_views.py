@@ -189,9 +189,11 @@ def authenticate_ticket_requester(request, transaction_id):
     # Binds the authenticated transaction UUID to the current thread's logging context so all subsequent downstream log records correlate directly to this booking.
     set_correlation_id(str(txn.transaction_id))
 
+    # Returns the verified transaction model instance and None indicating error-free authentication.
     return txn, None
 
 
+# Restricts incoming HTTP requests for ticket listing to the GET method.
 @api_view(["GET"])
 def get_transaction_tickets(request, transaction_id):
     """
