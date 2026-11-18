@@ -461,6 +461,7 @@ def execute_compensation_sweep(
             except Exception:
                 pass
         release_ok = (rel_resp.status_code == 200)
+        # Evaluates idempotent release error codes treating previously released seats or expired holds as released.
         if not release_ok and isinstance(release_payload, dict):
             msg = str(release_payload.get("message", "")).lower() + " " + str(release_payload.get("error", "")).lower()
             code = str(release_payload.get("code", "")).upper()
@@ -471,6 +472,7 @@ def execute_compensation_sweep(
                 or code in ("ALREADY_RELEASED", "NOTHING_TO_RELEASE", "NOT_FOUND")
             ):
                 release_ok = True
+    # Traps transport errors and timeouts during seat release, treating release operation as failed.
     except (requests.exceptions.RequestException, Exception):
         release_ok = False
 
