@@ -54,7 +54,9 @@ def _to_iso(dt):
         return None
     # Checks whether the object implements the standard datetime isoformat method before invoking it.
     if hasattr(dt, "isoformat"):
+        # Formats valid datetime object into standard ISO 8601 string representation.
         return dt.isoformat()
+    # Casts non-datetime inputs or custom timestamps into plain string representations.
     return str(dt)
 
 
