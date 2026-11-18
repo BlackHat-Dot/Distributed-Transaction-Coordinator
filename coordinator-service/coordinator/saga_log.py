@@ -38,8 +38,10 @@ def _get_pub_client():
     Thread-safe, self-healing Redis publisher client.
     Guarded by double-checked locking and a 5.0s circuit-breaker cooldown.
     """
+    # Declares access to module-level singleton Redis instance and cooldown timer state variables.
     global _pub_client, _pub_last_check
 
+    # Fast-path check: returns active client immediately without acquiring synchronization lock if already initialized.
     if _pub_client is not None:
         return _pub_client
 
