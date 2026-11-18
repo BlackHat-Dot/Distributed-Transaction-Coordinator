@@ -113,11 +113,13 @@ class SafeRateThrottle(SimpleRateThrottle):
                 except Exception:
                     pass
 
+        # Fallback default returning configured window duration if remaining TTL could not be queried from cache.
         return self.duration
 
 
 # Permission class enforcing authentication while proactively evaluating rate limits on unauthenticated callers to stop DoS attacks.
 class IsBookingAuthenticated(BasePermission):
+    # Validates request authentication status while ensuring unauthenticated callers still consume rate limit tokens.
     def has_permission(self, request, view):
         caller = _get_caller(request)
         if caller and caller.is_authenticated:
