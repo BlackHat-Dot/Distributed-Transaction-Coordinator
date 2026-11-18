@@ -344,7 +344,9 @@ def get_ticket_ics(request, transaction_id):
     return response
 
 
+# Restricts public ticket verification queries to the HTTP GET method.
 @api_view(["GET"])
+# Serves public verification details and rendered HTML status badges for a ticket code.
 def public_verify_ticket(request, ticket_code):
     """
     GET /verify/<ticket_code>/
