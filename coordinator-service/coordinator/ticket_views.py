@@ -195,11 +195,13 @@ def authenticate_ticket_requester(request, transaction_id):
 
 # Restricts incoming HTTP requests for ticket listing to the GET method.
 @api_view(["GET"])
+# Handles HTTP GET requests to fetch tickets, event metadata, and base64 QR codes for a booking.
 def get_transaction_tickets(request, transaction_id):
     """
     GET /tickets/<transaction_id>/
     Returns JSON containing ticket list with base64 PNG QR code and event snapshot.
     """
+    # Authenticates the requester identity and validates ownership of the requested transaction ID.
     txn, err_resp = authenticate_ticket_requester(request, transaction_id)
     if err_resp:
         return err_resp
