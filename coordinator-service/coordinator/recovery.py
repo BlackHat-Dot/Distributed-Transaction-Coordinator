@@ -63,6 +63,7 @@ def _get_urls():
     """Dynamically resolves downstream URLs with runtime settings/env overrides."""
     # Resolves current Inventory Service base URL dynamically with runtime settings and environment fallback.
     inv_base = (getattr(settings, "INVENTORY_SERVICE_URL", None) or os.getenv("INVENTORY_SERVICE_URL", INVENTORY_BASE_URL)).rstrip("/")
+    # Resolves current Payment Service base URL dynamically with runtime settings and environment fallback.
     pay_base = (getattr(settings, "PAYMENT_SERVICE_URL", None) or os.getenv("PAYMENT_SERVICE_URL", PAYMENT_BASE_URL)).rstrip("/")
     # Returns dictionary mapping operational downstream action keys to their fully-qualified HTTP endpoint URLs.
     return {
@@ -116,6 +117,7 @@ def execute_compensation_sweep(
 
     # Selects HTTP GET dispatch callable, allowing test fixtures to supply mock implementations.
     get_http = get_func or requests.get
+    # Selects HTTP POST dispatch callable, allowing test fixtures to supply mock implementations.
     post_http = post_func or requests.post
 
     # Resolves current operational URLs for downstream payment and inventory endpoints.
