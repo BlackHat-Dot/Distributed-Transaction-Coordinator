@@ -1135,6 +1135,7 @@ def verify_otp(request):
 
     # Constant-time comparison to prevent timing attacks
     stored_str = stored_otp.decode("utf-8") if isinstance(stored_otp, bytes) else str(stored_otp or "")
+    # Performs constant-time comparison (hmac.compare_digest) between submitted OTP and cached secret to eliminate timing attack vectors.
     otp_matches = bool(stored_otp) and hmac.compare_digest(stored_str.strip(), submitted_otp)
 
     if not otp_matches:
@@ -1166,6 +1167,7 @@ def verify_otp(request):
             except Exception:
                 fail_count = 1
 
+        # Brute-force shield: locks the IP and email combination for 24 hours upon 5 consecutive incorrect OTP submissions.
         if fail_count >= 5:
             if client:
                 try:
