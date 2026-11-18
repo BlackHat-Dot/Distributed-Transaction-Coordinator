@@ -68,6 +68,7 @@ def _get_verified_session_id(request):
 
     try:
         # Maximum session lifetime: 30 days
+        # Validates token signature and enforces a strict 30-day maximum lifetime, raising PermissionDenied on tampering or expiration.
         verified_raw = signer.unsign(token_str, max_age=86400 * 30)
     except (BadSignature, SignatureExpired):
         # The user provided a tampered, forged, or expired session ID.
@@ -76,6 +77,7 @@ def _get_verified_session_id(request):
             {"error": "Invalid or tampered session ID.", "code": "INVALID_SESSION"}
         )
 
+    # Strips special characters from the verified session token to defend against cache key injection attacks in Redis/Memcached.
     cleaned = re.sub(r"[^a-zA-Z0-9_:-]", "", str(verified_raw))[:128]
     if not cleaned:
         raise PermissionDenied(
