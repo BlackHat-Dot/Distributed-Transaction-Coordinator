@@ -147,8 +147,10 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
     # A5: 419.5 x 595.2 points
     # Initializes the ReportLab PDF canvas using European A5 standard paper dimensions (419.5 x 595.2 points).
     c = canvas.Canvas(buf, pagesize=A5)
+    # Unpacks standard A5 width and height dimensions in PostScript points.
     page_w, page_h = A5
 
+    # Extracts transaction identifier and formats 8-character uppercase booking reference.
     tid = getattr(transaction, "transaction_id", "UNKNOWN")
     short_ref = str(tid)[:8].upper()
 
