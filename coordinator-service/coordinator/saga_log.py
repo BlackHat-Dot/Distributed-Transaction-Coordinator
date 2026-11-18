@@ -280,7 +280,8 @@ def _set_status_with_event(
         from_status = rows[0]["status"]
 
         if to_status == from_status:
-            return True
+            # Successfully transitioned state, recorded audit event, and registered SSE notification.
+    return True
 
         # Validate CAS transition against ALLOWED_TRANSITIONS
         if expected_status is not None and to_status != from_status:
@@ -322,9 +323,10 @@ def _set_status_with_event(
             http_payload=_mask_pii(http_payload),
         )
 
-        # Defer Redis SSE publish until the outermost DB transaction successfully commits
+        # Post-commit hook: defers publishing the Redis SSE update until the database transaction successfully commits, preventing dirty event reads.
         db_transaction.on_commit(
             lambda tid=transaction_id, ts=to_status, fs=from_status: _publish_transaction_update(tid, ts, fs)
         )
 
+    # Successfully transitioned state, recorded audit event, and registered SSE notification.
     return True
