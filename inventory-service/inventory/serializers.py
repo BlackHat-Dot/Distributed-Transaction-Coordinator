@@ -114,6 +114,7 @@ class InternalSeatSerializer(serializers.ModelSerializer):
             # Lazy read-time eviction: projects expired holds as AVAILABLE to buyers immediately without waiting for Celery background sweepers.
             rep["status"] = Seat.Status.AVAILABLE
             rep["held_until"] = None
+            # Sanitizes internal tracking and transaction references when an unconfirmed hold has lapsed past its lease deadline.
             rep["held_by_transaction_id"] = None
             rep["user_id"] = None
             rep["user_email"] = None
@@ -196,6 +197,7 @@ class EventSerializer(serializers.ModelSerializer):
 
 
 # Not currently in use
+# Serializes immutable saga reservation journal entries for internal audit inspection and operational troubleshooting.
 class ReservationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Reservation
