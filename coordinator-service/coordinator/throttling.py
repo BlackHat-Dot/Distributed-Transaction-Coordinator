@@ -183,11 +183,13 @@ class RecoveryStatusRateThrottle(SafeRateThrottle):
         }
 
 
+# Custom DRF exception handler providing human-friendly JSON error payloads with precise retry-after headers on 429 and 401 faults.
 def coordinator_exception_handler(exc, context):
     response = exception_handler(exc, context)
     if response is None:
         return None
 
+    # Intercepts Throttled exceptions to extract exact lockout delay and build specialized polling vs write rate limit messages.
     if isinstance(exc, Throttled):
         try:
             wait = max(1, math.ceil(float(exc.wait))) if exc.wait is not None else 60
