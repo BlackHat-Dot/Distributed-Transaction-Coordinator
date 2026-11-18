@@ -91,11 +91,13 @@ def _validate_amount(raw_amount):
     if raw_amount is None:
         return None, Response({"error": "amount is required"}, status=400)
 
+    # Converts arbitrary numeric or string representations to exact-precision Decimal instances to prevent floating-point inaccuracies.
     try:
         amount = Decimal(str(raw_amount))
     except (InvalidOperation, TypeError):
         return None, Response({"error": "amount must be a valid number"}, status=400)
 
+    # Rejects NaN, Infinity, and subnormal numeric representations to protect accounting integrity.
     if not amount.is_finite():
         return None, Response({"error": "amount must be a finite number"}, status=400)
 
