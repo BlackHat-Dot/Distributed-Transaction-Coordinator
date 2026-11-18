@@ -17,8 +17,10 @@ from django.utils import timezone
 # Imports ISO-8601 date-time string parser to deserialize event scheduling timestamps from inventory payloads.
 from django.utils.dateparse import parse_datetime
 
+# Imports Transaction and Ticket database models to query booking status and persist minted tickets.
 from coordinator.models import Transaction, Ticket
 
+# Configures module logger scoped to coordinator logging namespace for structured audit tracing.
 logger = logging.getLogger("coordinator")
 
 
