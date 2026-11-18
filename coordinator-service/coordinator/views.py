@@ -1639,6 +1639,7 @@ def _do_charge(
     }
 
     try:
+        # Dispatches payment deduction request to downstream Payment service with strict connect and read timeouts.
         payment_response = _http(
             "POST",
             PAYMENT_CHARGE_URL,
@@ -1673,6 +1674,7 @@ def _do_charge(
             )
 
         try:
+            # Probes Payment service check endpoint upon timeout or connection drop to resolve ambiguous transaction outcomes before initiating compensation.
             payment_check = _http(
                 "GET",
                 PAYMENT_CHECK_URL,
@@ -1728,6 +1730,7 @@ def _do_charge(
             )
 
         try:
+            # Probes Payment service check endpoint upon timeout or connection drop to resolve ambiguous transaction outcomes before initiating compensation.
             payment_check = _http(
                 "GET",
                 PAYMENT_CHECK_URL,
