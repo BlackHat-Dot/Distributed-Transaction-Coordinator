@@ -138,9 +138,11 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
     Generates a clean, professional portrait A5 PDF with one page per seat ticket.
     Pure Python via ReportLab and QRCode.
     """
+    # Guard clause: rejects empty ticket lists with ValueError before initiating PDF canvas.
     if not tickets:
         raise ValueError("Cannot generate tickets PDF: tickets list is empty.")
 
+    # Allocates in-memory byte buffer to accumulate generated binary PDF data.
     buf = io.BytesIO()
     # A5: 419.5 x 595.2 points
     # Initializes the ReportLab PDF canvas using European A5 standard paper dimensions (419.5 x 595.2 points).
