@@ -327,9 +327,11 @@ def transaction_stream(request, transaction_id):
                     except Exception:
                         pass
                 else:
+                    # Emits SSE comment pings every second to keep intermediate reverse proxies and NAT firewalls from closing idle TCP sockets.
                     yield ": ping\n\n"
 
                     # Periodic DB check in case Redis message was dropped
+                    # Periodically polls PostgreSQL as a fallback safety net to detect state completions if a Redis pub/sub packet was dropped.
                     if now - last_db_check >= 3.0:
                         last_db_check = now
                         db_txn = Transaction.objects.filter(transaction_id=transaction_id).first()
