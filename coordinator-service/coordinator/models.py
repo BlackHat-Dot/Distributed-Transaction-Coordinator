@@ -97,7 +97,9 @@ class Transaction(models.Model):
 
     # JSON array containing the numeric primary keys of physical seats reserved in Inventory Service for this transaction.
     seat_ids = models.JSONField(null=True, blank=True)
+    # Human-readable seat labels (e.g. 'A1, A2') cached on the transaction for display in customer confirmation emails and UI views.
     seat_numbers = models.CharField(max_length=255, null=True, blank=True)
+    # Total count of seats booked in this transaction, defaulting to 1 for single-seat reservations.
     quantity = models.IntegerField(null=True, default=1)
 
     event_name = models.CharField(max_length=200, null=True, blank=True)
