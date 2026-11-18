@@ -247,8 +247,10 @@ def execute_compensation_sweep(
         except (requests.exceptions.RequestException, Exception):
             void_ok = False
 
+        # Advances refund tracking flag when defensive voiding successfully completes without errors.
         if void_ok:
             refund_ok = True
+        # Traps void failures where payment state remains uncertain to abort compensation safely.
         elif payment_status != "CHARGED":
             # Void failed and payment not confirmed charged -> state uncertain, abort compensation
             revert_status = original_status or Transaction.Status.COMPENSATION_FAILED
