@@ -433,11 +433,13 @@ def execute_compensation_sweep(
         # Traps network connectivity and timeout exceptions during refund request, leaving refund_ok as False.
         except (requests.exceptions.RequestException, Exception):
             refund_ok = False
+    # Fails refund status if payment state is neither uncharged nor successfully refunded.
     elif payment_status != "NOT_CHARGED" and payment_status != "REFUNDED":
         refund_ok = False
 
     # 2. Inventory Release
     # Step 3: Issues seat release request to Inventory Service to restore physical seats back to AVAILABLE for other buyers.
+    # Initializes tracking variables for seat release success flag, status code, and response payload.
     release_ok = False
     release_status_code = None
     release_payload = None
