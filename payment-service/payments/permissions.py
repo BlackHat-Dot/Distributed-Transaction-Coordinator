@@ -76,6 +76,7 @@ def verify_internal_service_key(request):
         except Exception:
             continue
 
+    # Rejects unauthorized callers with an explicit 403 Forbidden payload when no configured internal service key matches.
     if not matched:
         return Response(
             {"error": "Forbidden: invalid internal service key."},
@@ -85,6 +86,7 @@ def verify_internal_service_key(request):
     return None
 
 
+# Custom DRF permission class enforcing inter-service authentication across sensitive financial payment endpoints.
 class InternalServicePermission(BasePermission):
     """
     DRF permission class for internal microservice communication.
