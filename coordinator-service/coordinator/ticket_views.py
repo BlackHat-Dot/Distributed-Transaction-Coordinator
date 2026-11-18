@@ -240,9 +240,11 @@ def get_transaction_tickets(request, transaction_id):
             # Embeds base64-encoded QR PNG data URIs directly into the JSON response for zero-latency inline image rendering on frontend client apps.
             "qr_code_base64": generate_qr_code_base64(t.ticket_code),
         }
+        # Iterates through each issued ticket model to format individual ticket response objects.
         for t in tickets
     ]
 
+    # Returns HTTP 200 response with full booking details, event snapshot, and individual ticket passes.
     return Response({
         "transaction_id": str(txn.transaction_id),
         "status": txn.status,
