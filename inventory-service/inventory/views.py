@@ -228,6 +228,7 @@ def reserve_seat(request):
     transaction_id = supplied_tid
 
     from inventory.middleware import set_correlation_id
+    # Binds the incoming saga transaction UUID to thread context to trace the reservation across all downstream log events.
     set_correlation_id(str(transaction_id))
 
     # Authentication isn't required, coordinator already verified.
@@ -247,6 +248,7 @@ def reserve_seat(request):
     try:
         with transaction.atomic():
             # CONC-01: Acquire transaction-scoped advisory lock on user_id to serialize hold checks per user
+            # Acquires a PostgreSQL transaction-scoped advisory lock on the buyer's user ID to serialize concurrent hold quota checks.
             if connection.vendor == "postgresql":
                 with connection.cursor() as cursor:
                     cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", [f"user_hold:{user_id}"])
@@ -424,6 +426,7 @@ def confirm_seat(request):
     if not transaction_id:
         return Response({"error": "transaction_id is required"}, status=400)
     from inventory.middleware import set_correlation_id
+    # Binds the incoming saga transaction UUID to thread context to trace the reservation across all downstream log events.
     set_correlation_id(str(transaction_id))
 
     try:
