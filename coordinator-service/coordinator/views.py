@@ -984,6 +984,7 @@ def _create_txn(request):
 
         expired_tid = None
         with transaction.atomic():
+            # Acquires pessimistic database row lock (SELECT FOR UPDATE) to serialize concurrent payment attempts for the same transaction.
             txn = Transaction.objects.select_for_update().filter(transaction_id=pay_tid).first()
             if not txn:
                 return Response(
@@ -1026,6 +1027,7 @@ def _create_txn(request):
             if hasattr(held_until_dt, "tzinfo") and timezone.is_naive(held_until_dt):
                 held_until_dt = timezone.make_aware(held_until_dt)
 
+            # Validates hold expiration against current UTC time: transitions to TIMEOUT and aborts payment if the reservation window has elapsed.
             if not hasattr(held_until_dt, "tzinfo") or held_until_dt < timezone.now():
                 transitioned = _set_status_with_event(
                     txn.transaction_id,
