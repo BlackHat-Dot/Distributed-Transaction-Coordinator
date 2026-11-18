@@ -99,7 +99,9 @@ class InternalServicePermission(BasePermission):
         # Delegates authentication to verify_internal_service_key to perform timing-safe secret verification before granting view execution.
         err = verify_internal_service_key(request)
         if err is not None:
+            # Propagates the specific security rejection message from the verification response onto DRF's permission failure attribute.
             if isinstance(err.data, dict) and "error" in err.data:
                 self.message = err.data["error"]
             return False
+        # Grants request execution when inter-service shared secret verification succeeds.
         return True
