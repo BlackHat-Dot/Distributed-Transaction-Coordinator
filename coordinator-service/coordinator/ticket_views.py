@@ -571,11 +571,13 @@ def gate_redeem_ticket(request):
 
     # Checks if gate scanner client is performing a diagnostic key verification ping.
     if request.data.get("action") == "verify_key":
+        # Returns HTTP 200 response confirming the gate scanner API key is active and authorized.
         return Response({
             "status": "KEY_VALID",
             "message": "Gate API key verified successfully.",
         }, status=status.HTTP_200_OK)
 
+    # Extracts the raw scanned barcode or QR code payload from request parameters.
     raw_ticket_code = request.data.get("ticket_code")
     ticket_code = str(raw_ticket_code or "").strip()
     if not ticket_code:
