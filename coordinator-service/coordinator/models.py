@@ -160,10 +160,12 @@ class Ticket(models.Model):
     # Cryptographically secure random alphanumeric barcode/QR string (e.g. TKT-...) presented by attendees at entry scanning gates.
     ticket_code = models.CharField(max_length=64, unique=True, db_index=True)
     issued_at = models.DateTimeField(auto_now_add=True)
+    # Gate redemption timestamp; indexed for rapid entry validation and set to NULL until the ticket barcode is successfully scanned at the gate.
     used_at = models.DateTimeField(null=True, blank=True, db_index=True)
     used_by = models.CharField(max_length=64, null=True, blank=True)
 
     class Meta:
+        # Prevents double-issuance: guarantees a single physical seat within a transaction can only have one corresponding ticket issued.
         unique_together = [("transaction", "seat_id")]
         ordering = ["seat_id"]
 
