@@ -86,6 +86,7 @@ def _get_sess():
     if _sess is None:
         with _lock:
             if _sess is None:
+                # Configures a thread-safe HTTP connection pool with keep-alive reuse to eliminate TCP/TLS handshake latency on inter-service RPCs.
                 _sess = requests.Session()
                 ad = HTTPAdapter(pool_connections=25, pool_maxsize=25)
                 _sess.mount("http://", ad)
@@ -106,6 +107,7 @@ def _release_inventory(tx_id, reason=""):
         "X-Internal-Service-Key": INTERNAL_SERVICE_KEY,
     }
     try:
+        # Dispatches best-effort hold cancellation to Inventory so uncommitted seats are immediately returned to the available pool.
         _http("POST", INVENTORY_RELEASE_URL, json={"transaction_id": str(tx_id)}, headers=headers).raise_for_status()
         return True
     except RequestException as exc:
