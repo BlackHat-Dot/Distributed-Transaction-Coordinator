@@ -508,8 +508,10 @@ def refund_payment(request):
                 status=400,
             )
 
+        # Transitions payment lifecycle status to REFUNDED and timestamps the operation.
         p.status = Payment.Status.REFUNDED
         p.refunded_at = timezone.now()
+        # Persists updated status and timestamp using explicit column targeting for minimal database write overhead.
         p.save(update_fields=["status", "refunded_at", "updated_at"])
         logger.info(
             "Payment refund succeeded: transaction_id=%s amount=%s",
