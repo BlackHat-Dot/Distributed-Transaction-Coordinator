@@ -22,6 +22,7 @@ class SafeRateThrottle(SimpleRateThrottle):
     Base throttle that safely identifies clients using verified IP
     instead of spoofable raw X-Forwarded-For headers.
     """
+    # Securely resolves the client's network address using trusted socket remote_addr rather than spoofable client headers.
     def get_ident(self, request):
         try:
             ip = _get_client_ip(request)
@@ -30,6 +31,7 @@ class SafeRateThrottle(SimpleRateThrottle):
         except Exception as exc:
             logger.warning("Failed to resolve client IP in SafeRateThrottle: %s", exc)
 
+        # Fallback to direct REMOTE_ADDR socket IP if application-level client IP detection returns unknown or raises exceptions.
         meta = getattr(request, "META", None)
         if meta and hasattr(meta, "get"):
             remote_addr = meta.get("REMOTE_ADDR")
