@@ -715,6 +715,7 @@ def check_reservation(request):
 
     # Double-booking prevention
     if any(r.status == Reservation.Status.BOOKED for r in reservations):
+        # Detects seat reallocation: returns FORFEITED if a physical seat was re-held by a different transaction following an expired lease.
         if any(r.seat and r.seat.held_by_transaction_id and str(r.seat.held_by_transaction_id) != str(transaction_id) for r in reservations):
             return Response({
                 "status": "FORFEITED",
@@ -749,6 +750,7 @@ def check_reservation(request):
 
     # If any seat hold in this transaction was released, find the first released record
     # and return RELEASED status along with its specific reason (or UNKNOWN_LEGACY for old rows).
+    # Returns ground-truth RELEASED status and specific forensic release reason to the Coordinator for saga compensation decisions.
     if any(r.status == Reservation.Status.RELEASED for r in reservations):
         rel_r = next(r for r in reservations if r.status == Reservation.Status.RELEASED)
         resp_data = {
