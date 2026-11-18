@@ -50,7 +50,9 @@ def _to_iso(dt):
     """Safely converts a datetime (or string) to ISO format string."""
     # Returns None immediately if input datetime value is empty, falsy, or unassigned.
     if not dt:
+        # Resolves null input to None for clean JSON serialization without raising attribute errors.
         return None
+    # Checks whether the object implements the standard datetime isoformat method before invoking it.
     if hasattr(dt, "isoformat"):
         return dt.isoformat()
     return str(dt)
