@@ -26,7 +26,9 @@ from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 # Imports ReportLab ImageReader utility to consume in-memory raster images within the PDF document canvas.
 from reportlab.lib.utils import ImageReader
+# Imports icalendar package to construct RFC-5545 compliant calendar invites for customer bookings.
 import icalendar
+# Imports textwrap module to split long event and artist names across multiple PDF lines without clipping.
 import textwrap
 import zoneinfo
 
