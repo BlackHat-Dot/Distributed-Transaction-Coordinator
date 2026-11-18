@@ -33,7 +33,9 @@ class Transaction(models.Model):
         PAYMENT_CONNECTION_ERROR = "PAYMENT_CONNECTION_ERROR"
         # Active transient state indicating compensation workflow is underway to release held inventory or issue refunds.
         COMPENSATING = "COMPENSATING"
+        # Terminal state confirming all compensation actions succeeded and any held seats or charges were fully reversed.
         COMPENSATED = "COMPENSATED"
+        # Failure state recorded when automated compensation could not complete, requiring manual retry or escalation.
         COMPENSATION_FAILED = "COMPENSATION_FAILED"
         COMPENSATED_ON_RETRY = "COMPENSATED_ON_RETRY"
         RETRY_COMPENSATION_FAILED = "RETRY_COMPENSATION_FAILED"
