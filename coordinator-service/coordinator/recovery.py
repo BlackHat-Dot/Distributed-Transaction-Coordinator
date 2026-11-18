@@ -212,11 +212,13 @@ def execute_compensation_sweep(
     # Sentinel: void revealed a late charge → forward-complete instead of compensating
     void_revealed_charge = False
 
+    # Fast-path check: marks refund successful if payment is already refunded or previously voided by a tombstone.
     if payment_status == "REFUNDED" or (payment_status == "NOT_CHARGED" and payment_voided):
         refund_ok = True
     # Defensive void fence: if not charged, actively void payment authorization so a delayed inflight charge cannot land later.
     elif payment_status == "NOT_CHARGED":
         # Fence against in-flight charge landing after release
+        # Initializes void fencing flag to ensure payment gateway voids inflight authorizations.
         void_ok = False
         try:
             v_resp = _safe_call_http(
