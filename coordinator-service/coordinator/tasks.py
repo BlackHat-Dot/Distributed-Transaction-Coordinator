@@ -205,8 +205,10 @@ def send_ticket_email_task(self, transaction_id):
     # Imports third-party Resend SDK client to dispatch transactional emails with attachments.
     import resend
 
+    # Safely parses string transaction ID into a valid UUID object for database lookups.
     try:
         tid = uuid.UUID(str(transaction_id))
+    # Guards against invalid UUID values, logging failure and exiting early to avoid database exceptions.
     except (ValueError, TypeError, AttributeError):
         logger.error("Invalid transaction_id for ticket email task: %s", transaction_id)
         return "invalid_uuid"
