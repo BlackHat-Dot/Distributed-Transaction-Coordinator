@@ -78,9 +78,11 @@ def generate_qr_code_image(ticket_code: str) -> Image.Image:
         box_size=6,
         border=4,
     )
+    # Feeds verification URL into QRCode generator and compiles matrix structure.
     qr.add_data(verify_url)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
+    # Converts barcode object to standard PIL Image instance and returns it.
     return img.get_image() if hasattr(img, "get_image") else img
 
 
