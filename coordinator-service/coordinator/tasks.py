@@ -215,10 +215,12 @@ def send_ticket_email_task(self, transaction_id):
 
     # Loads the transaction record from PostgreSQL to verify completion and retrieve buyer email address.
     txn = Transaction.objects.filter(transaction_id=tid).first()
+    # Verifies transaction existence and buyer email presence before attempting PDF generation or dispatch.
     if not txn or not txn.user_email:
         logger.warning("Transaction %s not found or has no email.", tid)
         return "no_email"
 
+    # Retrieves all issued ticket records for this transaction ordered deterministically by seat identifier.
     tickets = list(txn.tickets.all().order_by("seat_id"))
     # Idempotent issuance: if tickets have not yet been generated in the database, lazily issues them now before emailing.
     if not tickets:
