@@ -52,12 +52,14 @@ class SafeRateThrottle(SimpleRateThrottle):
         # Atomic key initialization: sets counter to 0 with window TTL only if key does not already exist (SET NX equivalent).
         self.cache.add(self.key, 0, timeout=self.duration)
         try:
+            # Atomically increments the request counter; raises ValueError if key expired between add and incr calls.
             count = self.cache.incr(self.key)
         except ValueError:
             self.cache.set(self.key, 1, timeout=self.duration)
             count = 1
 
         # Guarantee TTL if key was recreated by incr without expiry
+        # TOCTOU safety guarantee: ensures key always has a valid TTL if recreated by incr without expiry during high concurrency.
         if count == 1:
             self.cache.touch(self.key, self.duration)
 
