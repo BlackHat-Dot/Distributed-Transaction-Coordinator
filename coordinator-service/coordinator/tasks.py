@@ -98,11 +98,13 @@ def recover_stuck_transactions():
         return "completed"
     finally:
         try:
+            # Atomically releases the distributed mutex lock only if the key still holds this worker's specific lock_token.
             client.eval(RELEASE_LOCK_SCRIPT, 1, LOCK_KEY, lock_token)
         except Exception as exc:
             logger.error("Failed to release lock '%s': %s", LOCK_KEY, exc)
 
 
+# Asynchronous Celery task that executes the complete booking saga pipeline off the web request path.
 @shared_task(name="coordinator.tasks.execute_saga_task")
 def execute_saga_task(transaction_id, seat_ids=None, amount=500, user_id=None, user_email=None, skip_reserve=False, **kwargs):
     """
