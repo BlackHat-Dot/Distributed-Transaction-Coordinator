@@ -144,9 +144,11 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
     # Parses JSON response payload from inventory service containing ground-truth reservation status.
     try:
         data = resp.json()
+    # Handles JSON decoding errors by raising a formatted 409 Conflict domain error.
     except Exception as exc:
         raise TicketIssuanceError("Invalid JSON received from inventory service.", status_code=409) from exc
 
+    # Schema validation: confirms the parsed inventory payload is a valid JSON dictionary.
     if not isinstance(data, dict):
         raise TicketIssuanceError("Invalid JSON received from inventory service.", status_code=409)
 
