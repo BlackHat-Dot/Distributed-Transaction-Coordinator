@@ -1,4 +1,6 @@
+# Imports the hmac cryptographic module to perform constant-time signature and key comparisons, preventing timing attack vulnerabilities.
 import hmac
+# Imports Python's standard logging library to log diagnostics, warnings, and error messages across ticket processing endpoints.
 import logging
 import os
 import re
