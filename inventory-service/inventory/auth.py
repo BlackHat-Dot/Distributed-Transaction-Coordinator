@@ -143,6 +143,7 @@ def _verify_internal_service_key(request, allow_client=False):
                 status=503,
             ), False
 
+        # Validates the inter-service shared secret using constant-time comparison to prevent timing leak exploits from untrusted networks.
         if not secrets.compare_digest(str(key).strip(), str(configured_key).strip()):
             return Response(
                 {
@@ -157,6 +158,7 @@ def _verify_internal_service_key(request, allow_client=False):
     if getattr(settings, "IS_TESTING", False):
         return None, True
 
+    # Grants access for customer-facing hold operations when allow_client=True, otherwise strictly requires valid internal credentials.
     if allow_client:
         return None, False
 
