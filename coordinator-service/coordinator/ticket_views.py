@@ -554,12 +554,14 @@ def gate_redeem_ticket(request):
     if not expected_key:
         # Logs critical error alert indicating server misconfiguration due to missing GATE_API_KEY.
         logging.critical("Redeem ticket service is unavailable due to unset GATE_API_KEY, Rejecting incoming traffic.")
+        # Aborts request with HTTP 500 error due to missing security credentials.
         raise Response(
             "The service is currently unavailable and undergoing maintenance. "
             "Operations are expected to resume shortly.",
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     
+    # Extracts the gate staff API key from the incoming X-Gate-Api-Key HTTP header.
     provided_key = request.headers.get("X-Gate-Api-Key","")
     
     # Employs constant-time string comparison (hmac.compare_digest) to prevent timing side-channel attacks against the venue staff gate secret.
