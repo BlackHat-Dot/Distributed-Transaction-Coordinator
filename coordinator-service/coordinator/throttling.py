@@ -178,6 +178,7 @@ class TransactionReadRateThrottle(SafeRateThrottle):
 
     # Generates a rate-limiting cache key for transaction polling requests based on caller identity.
     def get_cache_key(self, request, view):
+        # Applies read throttling strictly to GET operations, bypassing non-GET requests.
         if request.method != "GET":
             return None
 
@@ -192,6 +193,7 @@ class TransactionReadRateThrottle(SafeRateThrottle):
         else:
             ident = f"ip_{self.get_ident(request)}"
 
+        # Formats and returns the final cache key string for transaction status polling.
         return self.cache_format % {"scope": self.scope, "ident": ident}
 
 
