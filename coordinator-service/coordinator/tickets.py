@@ -12,7 +12,9 @@ import requests
 from django.conf import settings
 # Imports database transaction control and IntegrityError exception to handle atomic serializable blocks.
 from django.db import transaction as db_transaction, IntegrityError
+# Imports Django timezone utilities to normalize event start timestamps into timezone-aware datetime instances.
 from django.utils import timezone
+# Imports ISO-8601 date-time string parser to deserialize event scheduling timestamps from inventory payloads.
 from django.utils.dateparse import parse_datetime
 
 from coordinator.models import Transaction, Ticket
