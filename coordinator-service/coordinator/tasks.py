@@ -5,12 +5,14 @@ import os
 import time
 import uuid
 import redis
+# Imports Celery's shared_task decorator to define reusable asynchronous background tasks without hardcoding the Celery app instance.
 from celery import shared_task
 from django.conf import settings
 from django.core.management import call_command
 
 logger = logging.getLogger(__name__)
 
+# Redis mutex key and 2-hour timeout used to prevent concurrent recovery sweeper worker runs across distributed server nodes.
 LOCK_KEY = "locks:recovery_stuck_transactions"
 LOCK_TIMEOUT = 7200
 
