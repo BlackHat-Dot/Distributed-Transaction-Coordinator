@@ -1376,6 +1376,7 @@ def _run_saga(
                 status=409,
             )
 
+        # Advances saga state machine from INVENTORY_RESERVED to PAYMENT_PROCESSING before dispatching external financial payment requests.
         transitioned_pay = _set_status_with_event(
             transaction_id,
             Transaction.Status.PAYMENT_PROCESSING,
@@ -1525,6 +1526,7 @@ def _reserve(transaction_id, seat_ids, user_id=None, user_email=None):
     }
 
     try:
+        # Calls Inventory service endpoint to place an exclusive temporary hold on requested seats with correlation ID tracking.
         response = _http(
             "POST",
             INVENTORY_RESERVE_URL,
