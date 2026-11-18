@@ -162,6 +162,7 @@ def _can_access(txn, user_id, is_staff=False):
 @throttle_classes([TransactionReadRateThrottle])
 def get_transaction(request, transaction_id):
     """Retrieve single transaction details with ownership check."""
+    # Injects target transaction ID into thread-local logging context to correlate all downstream SQL and HTTP operations.
     set_correlation_id(str(transaction_id))
 
     is_authenticated, auth_user_id, is_staff = _get_caller(request)
@@ -214,6 +215,7 @@ def list_transaction_events(request, transaction_id):
             status=403,
         )
 
+    # Queries chronological saga journal events by sequence number to render an immutable audit timeline of state transitions.
     events = txn.events.order_by("seq")
     return Response({
         "transaction_id": str(txn.transaction_id),
