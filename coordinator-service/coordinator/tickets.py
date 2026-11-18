@@ -201,8 +201,10 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
             status_code=409,
         )
 
+    # Truncates event title and venue string attributes to 200 characters to prevent database overflow.
     event_name = str(event_name).strip()[:200]
     venue = str(venue or "").strip()[:200]
+    # Converts naive datetime objects into UTC-aware datetime timestamps to comply with Django ORM standards.
     if starts_at and timezone.is_naive(starts_at):
         starts_at = timezone.make_aware(starts_at)
 
