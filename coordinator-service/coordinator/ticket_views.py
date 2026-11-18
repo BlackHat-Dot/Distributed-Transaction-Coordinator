@@ -674,7 +674,9 @@ def send_ticket_email(request, transaction_id):
     try:
         # Offloads PDF generation and email transmission to an asynchronous Celery worker queue so the HTTP client receives an immediate response.
         send_ticket_email_task.delay(str(txn.transaction_id))
+    # Catches Celery broker connection errors or queue unavailable exceptions.
     except Exception as exc:
+        # Logs warning detailing Celery dispatch failure and initiates inline fallback execution.
         logger.warning("Celery dispatch failed, running inline or logging: %s", exc)
         # In testing or when Celery isn't running daemon:
         try:
