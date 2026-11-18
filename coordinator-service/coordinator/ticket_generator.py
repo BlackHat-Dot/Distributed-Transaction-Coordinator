@@ -10,7 +10,9 @@ from datetime import timezone as dt_timezone, timedelta
 from decimal import Decimal
 # Imports Django runtime settings module to resolve configured public domains and debug flags.
 from django.conf import settings
+# Imports Django timezone utilities to inspect timezone awareness and retrieve current system timestamps.
 from django.utils import timezone
+# Imports ISO-8601 date-time string parser to parse raw string timestamps into datetime instances.
 from django.utils.dateparse import parse_datetime
 # Imports qrcode library to generate matrix barcode images encoding mobile verification URLs for venue gate scanners.
 import qrcode
