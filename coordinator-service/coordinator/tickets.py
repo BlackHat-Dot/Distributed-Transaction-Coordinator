@@ -1,4 +1,6 @@
+# Imports Python standard logging library to log ticket issuance lifecycles and ground-truth verification errors.
 import logging
+# Imports standard OS library to inspect operating system environment variables for inventory endpoint resolution.
 import os
 # Imports Python's cryptographically secure random number generator to create unguessable admission ticket codes.
 import secrets
