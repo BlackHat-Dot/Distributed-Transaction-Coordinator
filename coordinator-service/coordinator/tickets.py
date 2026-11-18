@@ -1,5 +1,6 @@
 import logging
 import os
+# Imports Python's cryptographically secure random number generator to create unguessable admission ticket codes.
 import secrets
 from decimal import Decimal
 import requests
@@ -13,6 +14,7 @@ from coordinator.models import Transaction, Ticket
 logger = logging.getLogger("coordinator")
 
 
+# Dynamically resolves the base URL for Inventory Service, prioritizing Django settings over environment variables.
 def _get_inventory_base_url() -> str:
     """Dynamically resolve inventory service URL with settings/env fallback."""
     return (getattr(
