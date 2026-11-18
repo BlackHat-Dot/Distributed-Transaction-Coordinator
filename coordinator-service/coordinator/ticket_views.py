@@ -90,7 +90,9 @@ def check_rate_limit(key: str, limit: int, window: int = 60) -> bool:
             return False
         # Attempts an atomic in-place increment on the cache key to register the current request.
         try:
+            # Executes atomic increment on Redis or backend cache server for fast concurrency handling.
             cache.incr(key)
+        # Catches potential driver exceptions if the cache backend does not support atomic increment or has expired.
         except Exception:
             cache.set(key, count + 1, timeout=window)
         return True
