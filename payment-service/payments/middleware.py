@@ -15,11 +15,13 @@ _SAFE_CORRELATION_ID_RE = re.compile(r"^[a-zA-Z0-9_.:-]{1,128}$")
 
 def get_correlation_id():
     """Get correlation ID from the current execution context."""
+    # Resolves the active distributed transaction identifier or returns 'AnonUser' if unassigned in the current context.
     return _correlation_id_ctx.get()
 
 
 def set_correlation_id(transaction_id):
     """Set correlation ID for current execution context."""
+    # Normalizes and binds the transaction UUID string to the active execution context, returning the reset token.
     cid_str = str(transaction_id).strip() if transaction_id is not None else ""
     return _correlation_id_ctx.set(cid_str if cid_str else "AnonUser")
 
