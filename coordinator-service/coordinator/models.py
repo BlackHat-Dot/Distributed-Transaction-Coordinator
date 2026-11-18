@@ -41,7 +41,9 @@ class Transaction(models.Model):
         COMPENSATED_ON_RETRY = "COMPENSATED_ON_RETRY"
         # Escalation state indicating repeated compensation retry attempts failed, demanding operator investigation.
         RETRY_COMPENSATION_FAILED = "RETRY_COMPENSATION_FAILED"
+        # Mutex flag state claimed by recovery sweepers via Compare-And-Swap to prevent concurrent worker collisions.
         RECOVERY_IN_PROGRESS = "RECOVERY_IN_PROGRESS"
+        # Successful terminal state confirming seats confirmed in Inventory, payment charged, and tickets generated.
         COMPLETED = "COMPLETED"
         CONNECTION_FAILED = "CONNECTION_FAILED"
         CHARGED = "CHARGED"
