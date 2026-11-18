@@ -22,7 +22,9 @@ from PIL import Image
 from reportlab.lib.pagesizes import A5
 # Imports ReportLab low-level drawing canvas to render vector-based, print-ready PDF admission tickets.
 from reportlab.pdfgen import canvas
+# Imports ReportLab color palette and hexadecimal color constructor for styling PDF vector elements.
 from reportlab.lib import colors
+# Imports ReportLab ImageReader utility to consume in-memory raster images within the PDF document canvas.
 from reportlab.lib.utils import ImageReader
 import icalendar
 import textwrap
