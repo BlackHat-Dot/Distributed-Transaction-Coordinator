@@ -418,6 +418,7 @@ def void_payment(request):
                     "Payment void tombstone created: transaction_id=%s",
                     transaction_uuid,
                 )
+        # Catches concurrent race condition where a conflicting transaction was committed between select and insert.
         except IntegrityError:
             p = Payment.objects.select_for_update().filter(transaction_id=transaction_uuid).first()
             if not p:
@@ -466,6 +467,7 @@ def refund_payment(request):
     set_correlation_id(str(transaction_uuid))
 
     # F20: Single lookup under select_for_update inside one atomic block
+    # Enforces database transaction atomicity with row-level locking while processing refund requests.
     with transaction.atomic():
         p = Payment.objects.select_for_update().filter(transaction_id=transaction_uuid).first()
 
