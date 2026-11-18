@@ -102,7 +102,9 @@ class Transaction(models.Model):
     # Total count of seats booked in this transaction, defaulting to 1 for single-seat reservations.
     quantity = models.IntegerField(null=True, default=1)
 
+    # Title of the ticketed event (e.g. concert, sports match) denormalized onto the transaction for reporting and tickets.
     event_name = models.CharField(max_length=200, null=True, blank=True)
+    # Physical location or arena hosting the ticketed event, preserved on the transaction for admittance records.
     venue = models.CharField(max_length=200, null=True, blank=True)
     starts_at = models.DateTimeField(null=True, blank=True)
 
