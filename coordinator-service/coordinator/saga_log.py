@@ -318,9 +318,11 @@ def _set_status_with_event(
         if not rows:
             return False
 
+        # Unpacks the locked record's database primary key and current status to prepare CAS evaluation.
         txn_pk = rows[0]["id"]
         from_status = rows[0]["status"]
 
+        # Evaluates whether the requested target status is already identical to the current status.
         if to_status == from_status:
             # Idempotency fast-path: if the transaction is already in the target status, exit immediately without duplicate writes.
             return True
