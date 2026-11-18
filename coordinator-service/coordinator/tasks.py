@@ -108,10 +108,12 @@ def recover_stuck_transactions():
         )
         return "skipped"
 
+    # Logs sweeper task kickoff message indicating distributed lock was successfully secured.
     logger.info("Starting recovery_stuck_transactions task run.")
     try:
         # Invokes the Django management command to scan database records and trigger compensation on expired or stuck transactions.
         call_command("recovery_stuck_transactions")
+        # Updates last successful execution timestamp in Redis for observability and cluster heartbeat monitoring.
         try:
             client.set("dtc:recovery:last_run_timestamp", str(time.time()))
         except Exception:
