@@ -123,6 +123,7 @@ def execute_compensation_sweep(
     payment_status = None
     payment_voided = False
     try:
+        # Step 1: Queries Payment Service to inspect ground-truth charge status before deciding whether to refund or void.
         p_resp = _safe_call_http(
             get_http,
             "GET",
@@ -131,6 +132,7 @@ def execute_compensation_sweep(
             headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
+        # Treats HTTP 5xx server errors as transient payment check failures to prevent executing incorrect compensation steps.
         if p_resp.status_code >= 500:
             payment_check_failed = True
         elif p_resp.status_code == 200:
