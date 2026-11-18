@@ -18,9 +18,11 @@ logger = logging.getLogger(__name__)
 
 _pub_client = None
 _pub_last_check = 0.0
+# Mutex lock protecting the singleton Redis publisher client from race conditions during concurrent worker thread reconnection.
 _pub_lock = threading.Lock()
 
 
+# Thread-safe factory returning a healthy cached Redis client with circuit-breaker protection against connection storming during Redis downtime.
 def _get_pub_client():
     """
     Thread-safe, self-healing Redis publisher client.
