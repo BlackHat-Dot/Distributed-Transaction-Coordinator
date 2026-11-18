@@ -180,6 +180,7 @@ def send_ticket_email_task(self, transaction_id):
         return "no_email"
 
     tickets = list(txn.tickets.all().order_by("seat_id"))
+    # Idempotent issuance: if tickets have not yet been generated in the database, lazily issues them now before emailing.
     if not tickets:
         try:
             tickets = issue_tickets_for_transaction(txn)
@@ -190,6 +191,7 @@ def send_ticket_email_task(self, transaction_id):
     short_ref = str(txn.transaction_id)[:8]
     filename = f"DTC-Ticket-{short_ref}.pdf"
 
+    # Resolves the Resend email service API key, gracefully falling back to simulation mode in development or staging.
     api_key = getattr(settings, "RESEND_API_KEY", None) or os.getenv("RESEND_API_KEY", "")
     if not api_key:
         logger.info(
