@@ -225,6 +225,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         c.drawString(220, box_top - 18, "PRICE / ADMISSION")
 
         c.setFillColor(colors.HexColor("#0f172a"))
+        # Resolves assigned seat label string from ticket model instance for text rendering.
         seat_text = str(getattr(ticket, "seat_label", "") or "")
         seat_font_size = 18
         # Dynamically scales font size down for long seat identifiers (e.g. Balcony-Row-A-Seat-12) so text never overflows the box.
@@ -376,6 +377,7 @@ def generate_tickets_ics(transaction: Transaction, tickets: list[Ticket]) -> byt
     event.add("uid", f"dtc-txn-{tid}@dtc.internal")
     event.add("status", "CONFIRMED")
 
+    # Appends the fully populated VEVENT component into the parent calendar document.
     cal.add_component(event)
     # Serializes the calendar object into compliant vCalendar 2.0 text bytes for email attachments or direct downloads.
     return cal.to_ical()
