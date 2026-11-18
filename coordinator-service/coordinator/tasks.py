@@ -93,10 +93,12 @@ def recover_stuck_transactions():
     try:
         # SET ... NX EX attempts atomic lock acquisition; returns True only if the key does not already exist.
         acquired = client.set(LOCK_KEY, lock_token, nx=True, ex=LOCK_TIMEOUT)
+    # Intercepts Redis socket drops and connection timeouts, gracefully skipping run to avoid hung worker threads.
     except Exception as exc:
         logger.warning("Could not acquire recovery lock due to Redis connection error: %s", exc)
         return "skipped"
 
+    # Guard clause: skips task execution if another sweeper instance is already running or holding mutex lock.
     # If the lock is held by another worker instance or a previous run is still active, safely skip this scheduled cycle.
     if not acquired:
         logger.info(
