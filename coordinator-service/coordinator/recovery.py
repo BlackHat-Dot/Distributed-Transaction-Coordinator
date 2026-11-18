@@ -65,6 +65,7 @@ def _get_urls():
     }
 
 
+# Unified compensation workflow orchestrating downstream payment refund/void and seat release when transactions abort or get stuck.
 def execute_compensation_sweep(
     transaction_id,
     actor=SagaEvent.ACTOR_RECOVERY,
@@ -86,6 +87,7 @@ def execute_compensation_sweep(
        - Else -> COMPENSATION_FAILED (or RETRY_COMPENSATION_FAILED)
     """
     try:
+        # Parses the transaction ID strictly as a 128-bit UUID to prevent URL injection and fail-fast on malformed parameters.
         tid = uuid.UUID(str(transaction_id))
     except (ValueError, TypeError, AttributeError):
         return {
