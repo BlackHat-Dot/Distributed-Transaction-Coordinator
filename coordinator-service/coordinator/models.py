@@ -189,7 +189,9 @@ class Ticket(models.Model):
     seat_id = models.IntegerField(db_index=True)
     # Human-readable seat location code (e.g. 'Section A, Row 1, Seat 12') printed on physical and digital tickets.
     seat_label = models.CharField(max_length=64)
+    # Title of the ticketed performance or sporting event displayed on the issued ticket pass.
     event_name = models.CharField(max_length=200)
+    # Physical facility or arena name where the event takes place, printed on the ticket pass for attendee navigation.
     venue = models.CharField(max_length=200, blank=True, default="")
     starts_at = models.DateTimeField(null=True, blank=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
