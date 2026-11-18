@@ -419,6 +419,7 @@ def retry_compensation(request, transaction_id):
             "message": "Transaction is already compensated",
         }, status=200)
 
+    # Verifies that only stuck, uncompleted transactions in recoverable error states can undergo compensation retries.
     if txn.status not in ALLOWED_RETRY_STATUSES:
         return Response(
             {
@@ -430,6 +431,7 @@ def retry_compensation(request, transaction_id):
         )
 
     # CAS-claim to RECOVERY_IN_PROGRESS before invoking sweep
+    # Performs optimistic compare-and-swap (CAS) to claim RECOVERY_IN_PROGRESS, preventing concurrent manual and automated recovery sweeps.
     claimed = _set_status_with_event(
         transaction_id,
         to_status=Transaction.Status.RECOVERY_IN_PROGRESS,
