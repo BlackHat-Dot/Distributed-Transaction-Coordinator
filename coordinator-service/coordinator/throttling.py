@@ -5,6 +5,7 @@ import math
 
 from rest_framework.exceptions import NotAuthenticated, PermissionDenied, Throttled
 from rest_framework.permissions import BasePermission
+# Imports DRF's base throttle class which calculates window durations and formats Redis cache keys for rate limiting.
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import exception_handler
 
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 AUTH_MSG = "Authentication required. Please sign in to book seats."
 
 
+# Hardened rate throttle enforcing client identity using trusted IP extraction and atomic Redis counter increments.
 class SafeRateThrottle(SimpleRateThrottle):
     """
     Base throttle that safely identifies clients using verified IP
