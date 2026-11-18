@@ -1952,6 +1952,7 @@ def _compensate(
     if not was_charged:
         void_ok = False
         try:
+            # Fences payment by issuing void request before releasing inventory to prevent phantom charges if the payment request arrives late.
             void_resp = _http(
                 "POST",
                 PAYMENT_VOID_URL,
@@ -2012,6 +2013,7 @@ def _compensate(
     refund_ok, refund_data, refund_status_code, refund_transport_error = not was_charged, None, None, None
     if was_charged:
         try:
+            # Issues refund request to Payment service for captured funds when downstream confirmation fails, guaranteeing saga atomicity.
             refund_response = _http(
                 "POST",
                 PAYMENT_REFUND_URL,
