@@ -168,7 +168,9 @@ def authenticate_ticket_requester(request, transaction_id):
     # 4. Ownership check: Return 404 for non-existent OR non-owner transaction
     # Fetches the transaction record corresponding to the verified UUID from the database.
     txn = Transaction.objects.filter(transaction_id=tid).first()
+    # Checks whether a transaction record was located in the database.
     if not txn:
+        # Returns 404 Not Found if no transaction matches the requested UUID.
         return None, Response(
             {"error": "Transaction not found.", "code": "NOT_FOUND"},
             status=status.HTTP_404_NOT_FOUND,
