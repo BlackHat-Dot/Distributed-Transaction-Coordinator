@@ -1,4 +1,6 @@
+# Imports standard OS library to access process environment variables for service endpoints and timeouts.
 import os
+# Imports standard UUID library to parse and validate 128-bit transaction identifier strings.
 import uuid
 # Imports requests library to perform outbound HTTP calls to downstream Inventory and Payment microservices during compensation.
 import requests
