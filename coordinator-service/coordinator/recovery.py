@@ -443,6 +443,7 @@ def execute_compensation_sweep(
     release_ok = False
     release_status_code = None
     release_payload = None
+    # Dispatches seat release request to Inventory Service to restore held seats to available inventory pool.
     try:
         rel_resp = _safe_call_http(
             post_http,
@@ -452,6 +453,7 @@ def execute_compensation_sweep(
             headers=headers,
             timeout=REQUEST_TIMEOUT,
         )
+        # Captures seat release HTTP status code and evaluates whether release completed with 200 OK.
         release_status_code = rel_resp.status_code
         if rel_resp.content:
             try:
