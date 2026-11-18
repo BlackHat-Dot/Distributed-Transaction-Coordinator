@@ -209,6 +209,7 @@ def coordinator_exception_handler(exc, context):
             "wait": wait,
             "available_in_seconds": wait,
         }
+    # Normalizes authentication and permission rejection errors into uniform 401 AUTHENTICATION_REQUIRED JSON responses.
     elif isinstance(exc, (NotAuthenticated, PermissionDenied)):
         req = context.get("request") if isinstance(context, dict) else None
         if req:
@@ -220,4 +221,5 @@ def coordinator_exception_handler(exc, context):
             if isinstance(exc, NotAuthenticated):
                 response.status_code = 401
                 response.data = {"error": AUTH_MSG, "code": "AUTHENTICATION_REQUIRED"}
+    # Returns the formatted DRF Response object containing status code and structured JSON error payload.
     return response
