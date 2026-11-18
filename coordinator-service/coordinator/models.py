@@ -5,7 +5,9 @@ from django.db import models
 # Primary database entity tracking the distributed lifecycle, saga state, booking details, and compensation history of each checkout transaction.
 class Transaction(models.Model):
 
+    # Defines the complete enumerated state machine controlling every phase, transient step, and terminal failure mode of a saga transaction.
     class Status(models.TextChoices):
+        # Initial starting state indicating that the transaction has been recorded but downstream service calls have not yet completed.
         STARTED = "STARTED"
         HOLDING = "HOLDING"
         INVENTORY_RESERVED = "INVENTORY_RESERVED"
