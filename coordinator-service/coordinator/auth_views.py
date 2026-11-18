@@ -372,6 +372,7 @@ def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
     if session_id:
         payload["sid"] = session_id
 
+    # Signs the authentication payload using HMAC-SHA256 with the coordinator's secret key, embedding session ID and expiry claims.
     return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
 # verified
@@ -388,6 +389,7 @@ def verify_jwt(token):
         })
 
     try:
+        # Enforces mandatory token expiration validation during decode to reject tokens lacking an exp timestamp claim.
         payload = jwt.decode(
             token,
             settings.SECRET_KEY,
