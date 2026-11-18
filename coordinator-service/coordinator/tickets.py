@@ -163,6 +163,7 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
             event_name = event_info.strip()
 
     # 3. STRICT RULE: Fail fast if event metadata is missing. Never fabricate dummy event names.
+    # Strict fail-fast rule: aborts issuance if event metadata is completely absent; never fabricates dummy placeholder event names.
     if not event_name or not str(event_name).strip():
         raise TicketIssuanceError(
             "Cannot issue ticket: Event metadata is missing from transaction and inventory records.",
@@ -175,6 +176,7 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
         starts_at = timezone.make_aware(starts_at)
 
     # 4. STRICT RULE: Inventory ground truth must contain confirmed seat records
+    # Extracts the confirmed seats array returned by Inventory Service containing seat labels, row identifiers, and pricing.
     seats_info = data.get("seats")
     if not seats_info or not isinstance(seats_info, list):
         raise TicketIssuanceError(
