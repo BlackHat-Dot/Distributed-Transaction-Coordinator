@@ -45,7 +45,9 @@ class Transaction(models.Model):
         RECOVERY_IN_PROGRESS = "RECOVERY_IN_PROGRESS"
         # Successful terminal state confirming seats confirmed in Inventory, payment charged, and tickets generated.
         COMPLETED = "COMPLETED"
+        # Ambiguous failure state when generic network disconnection prevents saga progression across multiple services.
         CONNECTION_FAILED = "CONNECTION_FAILED"
+        # Intermediate confirmation state verifying payment deduction succeeded before final ticket issuance.
         CHARGED = "CHARGED"
         TIMEOUT = "TIMEOUT"
 
