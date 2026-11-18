@@ -267,6 +267,7 @@ def reclaim_expired_holds():
             return 0, 0
 
         reclaimed_ids = [s.id for s in verified_reclaim_seats]
+        # Builds compound Q filter matching specific seat and transaction ID pairs to target exact reservation rows for release.
         pair_filter = Q()
         for s in verified_reclaim_seats:
             if s.held_by_transaction_id is not None:
@@ -276,6 +277,7 @@ def reclaim_expired_holds():
 
         released = 0
         if pair_filter:
+            # Updates reservation audit journal to RELEASED with reason EXPIRED_HOLD to preserve a transparent historical audit trail.
             released = Reservation.objects.filter(
                 pair_filter,
                 status=Reservation.Status.RESERVED,
