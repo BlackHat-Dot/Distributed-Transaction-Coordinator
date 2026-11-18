@@ -118,12 +118,14 @@ def format_kolkata_time(dt) -> str:
                 dt = parsed
             else:
                 return str(dt)
+        # Loads Asia/Kolkata timezone object to convert aware datetimes or tag naive datetimes.
         kolkata_tz = zoneinfo.ZoneInfo("Asia/Kolkata")
         if timezone.is_aware(dt):
             local_dt = dt.astimezone(kolkata_tz)
         else:
             local_dt = dt.replace(tzinfo=kolkata_tz)
         return local_dt.strftime("%d %b %Y, %I:%M %p IST")
+    # Fallback exception handler formatting timestamp as UTC string or raw text.
     except Exception:
         if hasattr(dt, "strftime"):
             return dt.strftime("%d %b %Y, %H:%M UTC")
