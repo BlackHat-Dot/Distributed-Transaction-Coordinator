@@ -201,6 +201,7 @@ def _suggest_domain(domain_part):
     d = domain_part.strip().lower()
 
     # Guard: legitimate third-party services and malformed non-TLDs must never suggest gmail.com
+    # Explicitly blacklists legitimate independent mail providers (Yahoo, Outlook, Proton) from ever triggering a Gmail typo recommendation.
     if d in _NON_TYPO_REAL_DOMAINS:
         return None
     if "." not in d and d != "gmail":
@@ -211,6 +212,7 @@ def _suggest_domain(domain_part):
         return "gmail.com"
 
     # Dynamic path: smart similarity check for keyboard slips (ratio >= 0.85)
+    # Computes Gestalt pattern matching similarity ratio to catch non-standard keyboard misspellings while discarding unrelated domains.
     matcher = difflib.SequenceMatcher(None, d, "gmail.com")
     if matcher.ratio() >= 0.85:
         return "gmail.com"
