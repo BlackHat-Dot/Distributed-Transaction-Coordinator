@@ -66,10 +66,12 @@ def recover_stuck_transactions():
     set_correlation_id("bgworker")
 
     client = get_redis_client()
+    # Generates a unique UUID lock token so this worker process can safely verify ownership when releasing the Redis mutex.
     lock_token = str(uuid.uuid4())
 
     acquired = False
     try:
+        # SET ... NX EX attempts atomic lock acquisition; returns True only if the key does not already exist.
         acquired = client.set(LOCK_KEY, lock_token, nx=True, ex=LOCK_TIMEOUT)
     except Exception as exc:
         logger.warning("Could not acquire recovery lock due to Redis connection error: %s", exc)
