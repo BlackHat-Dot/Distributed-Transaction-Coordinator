@@ -24,6 +24,7 @@ _REDIS_NEGATIVE_CACHE_TTL = 5.0
 
 def _ensure_aware(dt):
     """Safely normalizes naive datetimes to timezone-aware datetimes."""
+    # Converts naive datetime instances to timezone-aware UTC timestamps to avoid invalid comparison exceptions.
     if dt and timezone.is_naive(dt):
         return timezone.make_aware(dt, timezone.get_current_timezone())
     return dt
@@ -32,6 +33,7 @@ def _ensure_aware(dt):
 def _sync_with_views():
     import sys
     views_mod = sys.modules.get("inventory.views")
+    # Synchronizes Redis client singletons across inventory view and service modules to maintain unified connection pooling.
     if views_mod:
         global _redis_client_instance, _redis_last_failure
         if hasattr(views_mod, "_redis_client_instance") and views_mod._redis_client_instance != _redis_client_instance:
