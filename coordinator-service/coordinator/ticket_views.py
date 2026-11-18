@@ -94,7 +94,9 @@ def check_rate_limit(key: str, limit: int, window: int = 60) -> bool:
             cache.incr(key)
         # Catches potential driver exceptions if the cache backend does not support atomic increment or has expired.
         except Exception:
+            # Fallback: sets the incremented count with the window expiration timeout if atomic incr fails.
             cache.set(key, count + 1, timeout=window)
+        # Grants request permission as the count is within the permitted rate limit.
         return True
     except Exception as exc:
         logger.warning("Rate limiting cache error for %s: %s", key, exc)
