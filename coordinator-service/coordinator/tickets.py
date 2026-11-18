@@ -4,7 +4,9 @@ import logging
 import os
 # Imports Python's cryptographically secure random number generator to create unguessable admission ticket codes.
 import secrets
+# Imports Decimal class to ensure fixed-point financial precision when calculating seat admission pricing.
 from decimal import Decimal
+# Imports requests library to execute synchronous HTTP ground-truth probes against Inventory Service.
 import requests
 from django.conf import settings
 from django.db import transaction as db_transaction, IntegrityError
