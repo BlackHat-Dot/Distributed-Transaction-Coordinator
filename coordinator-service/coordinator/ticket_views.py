@@ -128,6 +128,7 @@ def authenticate_ticket_requester(request, transaction_id):
         )
 
     from coordinator.middleware import set_correlation_id
+    # Binds the authenticated transaction UUID to the current thread's logging context so all subsequent downstream log records correlate directly to this booking.
     set_correlation_id(str(txn.transaction_id))
 
     return txn, None
@@ -144,6 +145,7 @@ def get_transaction_tickets(request, transaction_id):
         return err_resp
 
     try:
+        # Idempotently materializes ticket records from the completed transaction's saga reservation log if not already generated.
         tickets = issue_tickets_for_transaction(txn)
     except TicketIssuanceError as exc:
         return Response({"error": exc.detail, "code": "CONFLICT"}, status=exc.status_code)
@@ -189,6 +191,7 @@ def get_ticket_pdf(request, transaction_id):
         return err_resp
 
     try:
+        # Idempotently materializes ticket records from the completed transaction's saga reservation log if not already generated.
         tickets = issue_tickets_for_transaction(txn)
     except TicketIssuanceError as exc:
         return Response({"error": exc.detail, "code": "CONFLICT"}, status=exc.status_code)
@@ -221,6 +224,7 @@ def get_ticket_ics(request, transaction_id):
         return err_resp
 
     try:
+        # Idempotently materializes ticket records from the completed transaction's saga reservation log if not already generated.
         tickets = issue_tickets_for_transaction(txn)
     except TicketIssuanceError as exc:
         return Response({"error": exc.detail, "code": "CONFLICT"}, status=exc.status_code)
