@@ -328,6 +328,7 @@ def _set_status_with_event(
             return True
 
         # Validate CAS transition against ALLOWED_TRANSITIONS
+        # Verifies whether transition rules apply and retrieves permitted destination states for the current status.
         if expected_status is not None and to_status != from_status:
             allowed = ALLOWED_TRANSITIONS.get(from_status, set())
             # Validates that the requested state jump is legally declared in ALLOWED_TRANSITIONS to protect state machine integrity.
@@ -347,6 +348,7 @@ def _set_status_with_event(
             updated_at=timezone.now(),
         )
 
+        # Queries the audit log for the current highest sequence number recorded for this transaction.
         last_seq = (
             SagaEvent.objects.filter(transaction_id=txn_pk)
             .aggregate(m=Max("seq"))["m"]
