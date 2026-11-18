@@ -134,12 +134,14 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
             status_code=409,
         ) from exc
 
+    # Validates HTTP 200 OK response from Inventory Service before attempting to parse response body.
     if resp.status_code != 200:
         raise TicketIssuanceError(
             f"Inventory ground-truth check returned status {resp.status_code}.",
             status_code=409,
         )
 
+    # Parses JSON response payload from inventory service containing ground-truth reservation status.
     try:
         data = resp.json()
     except Exception as exc:
