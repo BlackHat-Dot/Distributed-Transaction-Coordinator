@@ -215,6 +215,7 @@ def send_ticket_email_task(self, transaction_id):
         pdf_bytes = generate_tickets_pdf(txn, tickets)
         seat_labels = ", ".join(t.seat_label for t in tickets)
         event_name = tickets[0].event_name if tickets else ""
+        # Constructs the email payload with HTML body and attaches the binary PDF ticket stream as a byte list.
         params = {
             "from": from_email,
             "to": [txn.user_email],
@@ -232,6 +233,7 @@ def send_ticket_email_task(self, transaction_id):
                 }
             ],
         }
+        # Dispatches the outbound email with PDF attachment via Resend's REST API.
         res = resend.Emails.send(params)
         res_id = res.get("id") if isinstance(res, dict) else str(res)
         logger.info(
