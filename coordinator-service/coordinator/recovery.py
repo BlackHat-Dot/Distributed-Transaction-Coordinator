@@ -427,12 +427,14 @@ def execute_compensation_sweep(
         release_ok = False
 
     # 3. Final State Resolution
+    # Both compensation legs succeeded: funds returned (or voided) and held seats returned to available pool.
     if release_ok and refund_ok:
         success_status = (
             Transaction.Status.COMPENSATED_ON_RETRY
             if actor == SagaEvent.ACTOR_RETRY
             else Transaction.Status.COMPENSATED
         )
+        # Atomically records settled COMPENSATED state in saga log with release outcome payload.
         _set_status_with_event(
             transaction_id=tid,
             to_status=success_status,
