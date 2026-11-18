@@ -190,6 +190,7 @@ def execute_compensation_sweep(
         }
 
     # Transition the transaction to COMPENSATING status in the audit ledger before initiating external refund/release side-effects.
+    # Evaluates recovery actor: transitions state to COMPENSATING for sweeper runs while preserving RECOVERY_IN_PROGRESS for manual retries.
     if actor == SagaEvent.ACTOR_RECOVERY:
         _set_status_with_event(
             transaction_id=tid,
@@ -204,6 +205,7 @@ def execute_compensation_sweep(
         expected_final_status = (Transaction.Status.RECOVERY_IN_PROGRESS,)
 
     # Payment status evaluation / refund
+    # Initializes tracking variables for refund completion, HTTP status codes, and late-charge discovery flags.
     refund_ok = False
     refund_status_code = None
     refund_payload = None
