@@ -230,6 +230,7 @@ def charge_payment(request):
         return _handle_existing_charge(existing, amount, user_id, transaction_uuid, user_email=user_email)
 
     try:
+        # Encloses payment record creation in an atomic database transaction to prevent partial state persistence.
         with transaction.atomic():
             payment = Payment.objects.create(
                 transaction_id=transaction_uuid,
@@ -238,6 +239,7 @@ def charge_payment(request):
                 amount=amount,
                 status=Payment.Status.CHARGED,
             )
+    # Catches database unique constraint collisions caused by concurrent charge requests with the same transaction ID.
     except IntegrityError:
         # F10: Catch DoesNotExist in case integrity error was triggered by a non-PK constraint
         try:
