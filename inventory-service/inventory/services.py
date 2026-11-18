@@ -230,7 +230,9 @@ def reclaim_expired_holds():
 
     if not expired_snapshots:
         return 0, 0
+    # Wraps seat reclamation in an isolated database transaction to ensure seats and reservation audit logs mutate atomically.
     with transaction.atomic():
+        # Acquires pessimistic SELECT FOR UPDATE row locks ordered deterministically by primary key to eliminate database deadlocks.
         locked_seats = list(
             Seat.objects.select_for_update()
             .filter(id__in=list(expired_snapshots.keys()), status=Seat.Status.HELD)
