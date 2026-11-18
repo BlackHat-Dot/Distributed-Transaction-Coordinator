@@ -43,10 +43,12 @@ class SafeRateThrottle(SimpleRateThrottle):
         # Fallback to direct REMOTE_ADDR socket IP if application-level client IP detection returns unknown or raises exceptions.
         # Extracts socket-level REMOTE_ADDR from WSGI/ASGI request META dictionary as fallback.
         meta = getattr(request, "META", None)
+        # Validates socket metadata dictionary and extracts non-empty REMOTE_ADDR string if present.
         if meta and hasattr(meta, "get"):
             remote_addr = meta.get("REMOTE_ADDR")
             if isinstance(remote_addr, str) and remote_addr.strip():
                 return remote_addr.strip()
+        # Returns unknown sentinel if neither trusted reverse proxy headers nor socket address could be identified.
         return "unknown"
 
     # Evaluates request allowance using an atomic fixed-window rate limiting algorithm backed by Redis cache operations.
