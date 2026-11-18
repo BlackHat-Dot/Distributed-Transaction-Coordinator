@@ -38,12 +38,14 @@ class TransactionIdFilter(logging.Filter):
         return True
 
 
+# Django middleware that seeds execution context and request attributes with correlation identifiers for every inbound HTTP call.
 class CorrelationIdMiddleware:
     """
     Assigns transaction tracking to execution context.
     Defaults to 'AnonUser' until overridden by an authenticated transaction.
     """
 
+    # Stores the next middleware or view handler in the Django request-response processing chain.
     def __init__(self, get_response):
         self.get_response = get_response
 
