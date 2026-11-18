@@ -8,7 +8,9 @@ import secrets
 from decimal import Decimal
 # Imports requests library to execute synchronous HTTP ground-truth probes against Inventory Service.
 import requests
+# Imports Django runtime settings module to access configured microservice base URLs and timeouts.
 from django.conf import settings
+# Imports database transaction control and IntegrityError exception to handle atomic serializable blocks.
 from django.db import transaction as db_transaction, IntegrityError
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
