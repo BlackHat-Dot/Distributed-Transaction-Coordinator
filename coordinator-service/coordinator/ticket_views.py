@@ -324,7 +324,9 @@ def get_ticket_ics(request, transaction_id):
     try:
         # Idempotently materializes ticket records from the completed transaction's saga reservation log if not already generated.
         tickets = issue_tickets_for_transaction(txn)
+    # Catches issuance failures such as pending or incomplete transaction states.
     except TicketIssuanceError as exc:
+        # Returns conflict response explaining why calendar invite generation was refused.
         return Response({"error": exc.detail, "code": "CONFLICT"}, status=exc.status_code)
 
     # Serializes the transaction and ticket schedule into an RFC 5545 iCalendar (.ics) stream for direct one-click import into calendar applications.
