@@ -1,6 +1,8 @@
 # verified
 
+# Imports Python logging module to capture diagnostic telemetry and rate limit warnings.
 import logging
+# Imports standard math module for ceiling calculations when formatting retry-after delay durations.
 import math
 
 from rest_framework.exceptions import NotAuthenticated, PermissionDenied, Throttled
