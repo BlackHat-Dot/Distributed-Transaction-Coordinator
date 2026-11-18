@@ -184,12 +184,14 @@ def charge_payment(request):
     if auth_err:
         return auth_err
 
+    # Enforces that incoming HTTP payload is a well-formed JSON object mapping rather than primitive data.
     if not isinstance(request.data, Mapping):
         return Response({"error": "Request body must be a valid JSON object"}, status=400)
 
     transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response
+    # Binds the validated transaction UUID to the thread-local correlation context for distributed tracing.
     set_correlation_id(str(transaction_uuid))
 
     amount, error_response = _validate_amount(request.data.get("amount"))
@@ -336,6 +338,7 @@ def payment_check(request):
     transaction_uuid, error_response = _require_transaction_id(raw_tid)
     if error_response:
         return error_response
+    # Binds the validated transaction UUID to the thread-local correlation context for distributed tracing.
     set_correlation_id(str(transaction_uuid))
 
     payment = Payment.objects.filter(transaction_id=transaction_uuid).first()
@@ -361,12 +364,14 @@ def void_payment(request):
     if auth_err:
         return auth_err
 
+    # Enforces that incoming HTTP payload is a well-formed JSON object mapping rather than primitive data.
     if not isinstance(request.data, Mapping):
         return Response({"error": "Request body must be a valid JSON object"}, status=400)
 
     transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response
+    # Binds the validated transaction UUID to the thread-local correlation context for distributed tracing.
     set_correlation_id(str(transaction_uuid))
 
     with transaction.atomic():
@@ -436,12 +441,14 @@ def refund_payment(request):
     if auth_err:
         return auth_err
 
+    # Enforces that incoming HTTP payload is a well-formed JSON object mapping rather than primitive data.
     if not isinstance(request.data, Mapping):
         return Response({"error": "Request body must be a valid JSON object"}, status=400)
 
     transaction_uuid, error_response = _require_transaction_id(request.data.get("transaction_id"))
     if error_response:
         return error_response
+    # Binds the validated transaction UUID to the thread-local correlation context for distributed tracing.
     set_correlation_id(str(transaction_uuid))
 
     # F20: Single lookup under select_for_update inside one atomic block
