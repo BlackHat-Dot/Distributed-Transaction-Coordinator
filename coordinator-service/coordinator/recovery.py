@@ -25,6 +25,7 @@ TERMINAL_STATUSES = Transaction.TERMINAL_STATUSES
 RECOVERABLE_STATUSES = Transaction.RECOVERABLE_STATUSES
 
 
+# Flexible HTTP invocation adapter supporting both requests signatures (url, **kw) and custom coordinator wrapper signatures (method, url, **kw).
 def _safe_call_http(func, method, url, **kwargs):
     """
     Invokes an HTTP helper function regardless of whether it expects:
@@ -49,6 +50,7 @@ def _safe_call_http(func, method, url, **kwargs):
         return func(method, url, **kwargs)
 
 
+# Dynamically constructs target endpoint URLs at runtime to guarantee latest environment/settings overrides are immediately respected.
 def _get_urls():
     """Dynamically resolves downstream URLs with runtime settings/env overrides."""
     inv_base = (getattr(settings, "INVENTORY_SERVICE_URL", None) or os.getenv("INVENTORY_SERVICE_URL", INVENTORY_BASE_URL)).rstrip("/")
