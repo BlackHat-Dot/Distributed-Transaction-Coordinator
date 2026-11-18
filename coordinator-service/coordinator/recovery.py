@@ -98,6 +98,7 @@ def execute_compensation_sweep(
         }
 
     from coordinator.middleware import get_correlation_id, set_correlation_id
+    # Binds transaction ID into contextvars correlation context unless executing inside Celery worker thread where bgworker is preserved.
     if get_correlation_id() != "bgworker":
         set_correlation_id(str(tid))
 
@@ -107,6 +108,7 @@ def execute_compensation_sweep(
     urls = _get_urls()
     cid = str(tid)
     internal_key = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY", INTERNAL_SERVICE_KEY)
+    # Standard distributed tracing and authentication headers forwarded to downstream microservices.
     headers = {
         "X-Correlation-ID": cid,
         "X-Transaction-ID": cid,
