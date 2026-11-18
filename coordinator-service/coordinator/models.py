@@ -213,5 +213,7 @@ class Ticket(models.Model):
         # Default query ordering ensuring tickets are sorted sequentially by seat ID for tidy roster displays.
         ordering = ["seat_id"]
 
+    # Generates concise diagnostic string representation displaying the unique ticket code, transaction ID, and seat label.
     def __str__(self):
+        # Formats ticket code, parent transaction identifier, and physical seat description into human-readable label.
         return f"Ticket({self.ticket_code}, txn={self.transaction_id}, seat={self.seat_label})"
