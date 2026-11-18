@@ -200,10 +200,12 @@ class AnonIpRateThrottle(BaseInventoryThrottle):
 
     def get_cache_key(self, request, view):
         uid = _get_authenticated_user_id(request)
+        # Skips anonymous rate limiting if the caller is already authenticated via JWT to prevent double-penalizing registered users.
         if uid:
             return None  # Authenticated; already handled by UserActionRateThrottle
 
         session_id = _get_session_id(request)
+        # Prefers cryptographic anonymous session tokens over raw IP addresses to avoid penalizing multiple users behind shared NAT gateways.
         if session_id:
             ident = f"session_{session_id}"
         else:
@@ -230,6 +232,7 @@ class SeatListRateThrottle(BaseInventoryThrottle):
 
         # Check for persistent anonymous session ID
         session_id = _get_session_id(request)
+        # Prefers cryptographic anonymous session tokens over raw IP addresses to avoid penalizing multiple users behind shared NAT gateways.
         if session_id:
             ident = f"session_{session_id}"
         else:
@@ -251,6 +254,7 @@ class CheckReservationRateThrottle(BaseInventoryThrottle):
 
     def get_cache_key(self, request, view):
         session_id = _get_session_id(request)
+        # Prefers cryptographic anonymous session tokens over raw IP addresses to avoid penalizing multiple users behind shared NAT gateways.
         if session_id:
             ident = f"session_{session_id}"
         else:
