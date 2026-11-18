@@ -1,6 +1,8 @@
 # verified
 
+# Imports standard JSON library to serialize real-time event payloads and deserialize audit log data.
 import json
+# Imports standard logging library to log saga state transitions, warnings, and Redis connection diagnostics.
 import logging
 import threading
 import time
