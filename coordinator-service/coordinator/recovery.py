@@ -25,7 +25,9 @@ REQUEST_TIMEOUT = (REQUEST_CONNECT_TIMEOUT, REQUEST_READ_TIMEOUT)
 INTERNAL_SERVICE_KEY = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
 
 # Single source of truth from Transaction model
+# Exposes immutable terminal states from Transaction model to guide sweeper eligibility decisions.
 TERMINAL_STATUSES = Transaction.TERMINAL_STATUSES
+# Exposes non-terminal ambiguous states from Transaction model that require active background recovery.
 RECOVERABLE_STATUSES = Transaction.RECOVERABLE_STATUSES
 
 
