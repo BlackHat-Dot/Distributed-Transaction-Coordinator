@@ -94,10 +94,12 @@ class Transaction(models.Model):
     # Mutable audit timestamp updated automatically on every row modification, used by optimistic locking and recovery sweepers.
     updated_at = models.DateTimeField(auto_now=True)
 
+    # Returns the stringified UUID for clean representation in Django admin panels, Celery logs, and exception tracebacks.
     def __str__(self):
         return str(self.transaction_id)
 
 
+# Append-only audit log recording every discrete state transition, initiating actor, and HTTP outcome throughout the saga execution.
 class SagaEvent(models.Model):
 
     ACTOR_REQUEST = "request"
