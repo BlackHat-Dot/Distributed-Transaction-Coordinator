@@ -6,9 +6,11 @@ from decimal import Decimal
 from django.conf import settings
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+# Imports qrcode library to generate matrix barcode images encoding mobile verification URLs for venue gate scanners.
 import qrcode
 from PIL import Image
 from reportlab.lib.pagesizes import A5
+# Imports ReportLab low-level drawing canvas to render vector-based, print-ready PDF admission tickets.
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 from reportlab.lib.utils import ImageReader
