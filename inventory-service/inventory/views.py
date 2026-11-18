@@ -614,6 +614,7 @@ def release_seat(request):
                         )
 
                 # Fail fast 2: Regular user attempting to release confirmed/booked ticket
+                # Prevents regular buyers from cancelling confirmed tickets; refunds and post-booking cancellations strictly require staff authorization.
                 if not (is_staff or is_internal) and r.status == Reservation.Status.BOOKED:
                     return Response(
                         {
@@ -646,6 +647,7 @@ def release_seat(request):
             seat_ids = [r.seat_id for r in active_res if r.seat_id]
 
             rel_reason = "COORDINATOR_COMPENSATED" if (is_staff or is_internal) else "USER_CANCELLED"
+            # Updates reservation audit journal to RELEASED with reason COORDINATOR_COMPENSATED or USER_CANCELLED for immutable audit trails.
             Reservation.objects.filter(id__in=[r.id for r in active_res]).update(
                 status=Reservation.Status.RELEASED,
                 released_reason=rel_reason,
