@@ -89,7 +89,9 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
 
     # Fast-path check: Return immediately if tickets are already fully issued
     # Fast-path check: Returns immediately if all tickets for this transaction have already been minted, bypassing network calls.
+    # Queries database for existing tickets belonging to this transaction ordered deterministically by seat ID.
     existing = list(Ticket.objects.filter(transaction=transaction).order_by("seat_id"))
+    # Evaluates fast-path return: if all tickets already exist in the database, returns them immediately.
     if existing and len(existing) == len(seat_ids):
         return existing
 
