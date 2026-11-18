@@ -8,9 +8,11 @@ import os
 import time
 # Imports standard UUID library to generate unique distributed lock tokens and validate transaction IDs.
 import uuid
+# Imports Redis client library to coordinate distributed mutex locks and atomic Lua scripts across worker nodes.
 import redis
 # Imports Celery's shared_task decorator to define reusable asynchronous background tasks without hardcoding the Celery app instance.
 from celery import shared_task
+# Imports Django runtime settings module to access configured broker connection URLs and socket timeouts.
 from django.conf import settings
 from django.core.management import call_command
 
