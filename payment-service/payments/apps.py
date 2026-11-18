@@ -5,11 +5,13 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
 
+# Configures the Payments application lifecycle, setting default primary key types and enforcing startup invariants.
 class PaymentsConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "payments"
 
     def ready(self):
+        # Bypasses strict credential requirements during automated test execution to support isolated test runners.
         is_testing = getattr(settings, "IS_TESTING", False)
         if is_testing:
             return
