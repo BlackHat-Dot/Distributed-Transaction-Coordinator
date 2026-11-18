@@ -538,7 +538,9 @@ def gate_redeem_ticket(request):
         # Returns HTTP 429 Too Many Requests when gate redemption rate limit is breached.
         return Response({"error": "Rate limit exceeded on gate redemption.", "code": "RATE_LIMITED"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
+    # Validates that incoming request payload is formatted as a valid JSON object dictionary.
     if not isinstance(request.data, dict):
+        # Rejects non-dictionary payloads with HTTP 400 Bad Request error.
         return Response(
             {"error": "Invalid request payload, expected JSON object.", "code": "INVALID_PAYLOAD"},
             status=status.HTTP_400_BAD_REQUEST,
