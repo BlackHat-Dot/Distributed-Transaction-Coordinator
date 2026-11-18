@@ -329,7 +329,9 @@ def _validate_reserve_input(data):
             return None, None, Response({"error": "seat_ids must be a list of integers"}, status=400)
 
     # Finding 18: Dedupe seat_ids while preserving order, and cap at 50 per batch request
+    # Deduplicates seat IDs in O(n) time while preserving client insertion order to prevent duplicate hold locks on the same seat.
     seat_ids = list(dict.fromkeys(seat_ids))
+    # Enforces a hard ceiling of 50 seats per reservation batch to prevent database lock exhaustion and denial-of-service abuse.
     if len(seat_ids) > 50:
         return None, None, Response({"error": "Cannot reserve more than 50 seats at once", "code": "MAX_SEATS_EXCEEDED"}, status=400)
 
