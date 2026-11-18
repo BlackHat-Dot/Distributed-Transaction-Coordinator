@@ -14,8 +14,10 @@ import redis
 from celery import shared_task
 # Imports Django runtime settings module to access configured broker connection URLs and socket timeouts.
 from django.conf import settings
+# Imports Django management command runner to trigger programmatic recovery sweeper command execution.
 from django.core.management import call_command
 
+# Configures module-level logger instance tagged with current module name for task output tracing.
 logger = logging.getLogger(__name__)
 
 # Redis mutex key and 2-hour timeout used to prevent concurrent recovery sweeper worker runs across distributed server nodes.
