@@ -68,6 +68,7 @@ class SafeRateThrottle(SimpleRateThrottle):
         try:
             # Atomically increments the request counter; raises ValueError if key expired between add and incr calls.
             count = self.cache.incr(self.key)
+        # Handles key expiration between add and incr calls by re-initializing the counter to 1 with full TTL.
         except ValueError:
             self.cache.set(self.key, 1, timeout=self.duration)
             count = 1
@@ -77,6 +78,7 @@ class SafeRateThrottle(SimpleRateThrottle):
         if count == 1:
             self.cache.touch(self.key, self.duration)
 
+        # Compares active counter against allowed limit, returning False to trigger 429 Throttled response if exceeded.
         if count > self.num_requests:
             return False
         return True
