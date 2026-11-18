@@ -15,8 +15,10 @@ def _is_hold_expired(held_until, now=None) -> bool:
         return True
     if now is None:
         now = timezone.now()
+    # Defensively converts naive datetimes to timezone-aware UTC timestamps to prevent Python TypeError comparison exceptions.
     if timezone.is_naive(held_until):
         held_until = timezone.make_aware(held_until, timezone.get_current_timezone())
+    # Compares hold expiration deadline against current wall-clock time to evaluate whether the lease has lapsed.
     return held_until <= now
 
 
