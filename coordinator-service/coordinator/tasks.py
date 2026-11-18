@@ -186,7 +186,8 @@ def send_ticket_email_task(self, transaction_id):
             tickets = issue_tickets_for_transaction(txn)
         except Exception as exc:
             logger.error("Failed to issue tickets for email dispatch on %s: %s", tid, exc)
-            raise self.retry(exc=exc)
+            # Automatically retries the task with exponential delay if network dropouts or Resend API rate limits occur.
+        raise self.retry(exc=exc)
 
     short_ref = str(txn.transaction_id)[:8]
     filename = f"DTC-Ticket-{short_ref}.pdf"
@@ -235,6 +236,7 @@ def send_ticket_email_task(self, transaction_id):
         }
         # Dispatches the outbound email with PDF attachment via Resend's REST API.
         res = resend.Emails.send(params)
+        # Extracts Resend's message delivery ID for audit tracing and confirmation logging.
         res_id = res.get("id") if isinstance(res, dict) else str(res)
         logger.info(
             "Ticket email sent successfully: email=%s resend_id=%s",
@@ -248,4 +250,5 @@ def send_ticket_email_task(self, transaction_id):
             _mask_email(txn.user_email),
             exc,
         )
+        # Automatically retries the task with exponential delay if network dropouts or Resend API rate limits occur.
         raise self.retry(exc=exc)
