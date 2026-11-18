@@ -176,6 +176,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
 
         c.setFillColor(colors.HexColor("#f8fafc"))  # Slate 50
         c.setStrokeColor(colors.HexColor("#cbd5e1"))  # Slate 300
+        # Renders an enclosed rectangular summary card highlighting the assigned physical seat identifier and admission price.
         c.rect(25, box_bottom, page_w - 50, box_h, fill=1, stroke=1)
 
         c.setFillColor(colors.HexColor("#64748b"))
@@ -186,6 +187,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         c.setFillColor(colors.HexColor("#0f172a"))
         seat_text = str(getattr(ticket, "seat_label", "") or "")
         seat_font_size = 18
+        # Dynamically scales font size down for long seat identifiers (e.g. Balcony-Row-A-Seat-12) so text never overflows the box.
         if len(seat_text) > 16:
             seat_font_size = 11
         elif len(seat_text) > 12:
