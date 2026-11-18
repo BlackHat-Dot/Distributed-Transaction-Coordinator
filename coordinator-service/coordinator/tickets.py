@@ -177,7 +177,9 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
 
     # 2. If not stored on transaction, extract directly from ground-truth check
     # Fallback: extracts event metadata (name, venue, start time) from the inventory check payload if omitted from transaction.
+    # Evaluates whether event metadata needs to be recovered from inventory payload if missing on transaction.
     if not event_name:
+        # Extracts event metadata block from inventory ground-truth response dictionary.
         event_info = data.get("event")
         if isinstance(event_info, dict):
             event_name = event_info.get("name")
