@@ -16,6 +16,7 @@ class PaymentsConfig(AppConfig):
         if is_testing:
             return
 
+        # Whitelists administrative management commands (migrate, check, collectstatic) that run offline without serving HTTP traffic.
         non_serving_commands = {
             "migrate",
             "makemigrations",
@@ -38,6 +39,7 @@ class PaymentsConfig(AppConfig):
 
         key = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY")
         if not key or not str(key).strip():
+            # Fail-fast security circuit breaker: halts startup immediately if INTERNAL_SERVICE_KEY is unset in live HTTP serving environments.
             raise ImproperlyConfigured(
                 "CRITICAL SECURITY ERROR: INTERNAL_SERVICE_KEY environment variable is not set or empty in non-test environment."
             )
