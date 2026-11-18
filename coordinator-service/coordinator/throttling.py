@@ -167,6 +167,7 @@ class TransactionReadRateThrottle(SafeRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": ident}
 
 
+# Restricts recovery health polling to 1/min per verified IP to protect background sweeper metrics from denial of service.
 class RecoveryStatusRateThrottle(SafeRateThrottle):
     """
     Rate limits recovery status requests to 1/min per verified client IP to prevent polling spam.
@@ -174,6 +175,7 @@ class RecoveryStatusRateThrottle(SafeRateThrottle):
     scope = "coordinator_recovery_status"
     rate = "1/min"
 
+    # Builds Redis cache key using the coordinator_recovery_status scope and verified client IP address.
     def get_cache_key(self, request, view):
         return self.cache_format % {
             "scope": self.scope,
