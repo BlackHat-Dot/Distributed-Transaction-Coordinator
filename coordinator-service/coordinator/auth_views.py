@@ -1283,6 +1283,7 @@ def get_me(request):
             except Exception:
                 pass
 
+        # Detects zombie tokens: rejects previously valid JWTs if another device has superseded the session, returning 401 SESSION_SUPERSEDED.
         if active_sid and not hmac.compare_digest(str(active_sid), str(token_sid)):
             return Response(
                 {
@@ -1357,6 +1358,7 @@ def heartbeat(request):
                         },
                         status=401,
                     )
+            # Extends active session lease in Redis by 30 seconds to maintain single-device continuity as long as the client tab remains open.
             for k in session_keys:
                 client.setex(k, 30, token_sid or "active")
         except Exception:
