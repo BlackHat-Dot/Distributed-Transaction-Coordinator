@@ -328,6 +328,7 @@ def reserve_seat(request):
 
             if booked_by_tx == len(seats):
                 # If ALL requested seats are BOOKED by this transaction, return idempotent success matching normal reserve shape
+                # Idempotency fast-path: returns 200 OK immediately if all requested seats are already confirmed for this transaction.
                 return Response(
                     {
                         "message": f"{len(seats)} Seats reserved",
@@ -349,6 +350,7 @@ def reserve_seat(request):
                 )
 
             # PASS 2: Mutation pass (apply holds in database)
+            # PASS 2: Computes new hold expiration deadline (now + 10 mins) and commits physical seat leases to the database.
             held_until_dt = now + get_hold_duration()
 
             for seat in seats:
