@@ -202,6 +202,7 @@ def charge_payment(request):
     if error_response:
         return error_response
 
+    # Feature flag protecting synthetic payment failure injection during testing and integration runs.
     # Payment decline flag (F2: gated behind ENABLE_TEST_PAYMENT_FAILURE setting)
     enable_test_failure = getattr(settings, "ENABLE_TEST_PAYMENT_FAILURE", False) or getattr(settings, "IS_TESTING", False)
     if enable_test_failure and amount == TESTING_FAILURE_AMOUNT:
@@ -223,6 +224,7 @@ def charge_payment(request):
             response_data["_testing"] = "Intentional failure for compensation testing"
         return Response(response_data, status=422)
 
+    # Queries database for existing transaction record to support safe, idempotent charge replays.
     existing = Payment.objects.filter(transaction_id=transaction_uuid).first()
     if existing:
         return _handle_existing_charge(existing, amount, user_id, transaction_uuid, user_email=user_email)
