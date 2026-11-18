@@ -198,9 +198,11 @@ def send_ticket_email_task(self, transaction_id):
     # Lazy-loads context tracker and attaches transaction ID to thread-local correlation context.
     from coordinator.middleware import set_correlation_id
     set_correlation_id(str(transaction_id))
+    # Lazy-imports Transaction model, PDF generator, and ticket issuer to break circular dependencies.
     from coordinator.models import Transaction
     from coordinator.ticket_generator import generate_tickets_pdf
     from coordinator.tickets import issue_tickets_for_transaction
+    # Imports third-party Resend SDK client to dispatch transactional emails with attachments.
     import resend
 
     try:
