@@ -21,12 +21,14 @@ import zoneinfo
 from coordinator.models import Transaction, Ticket
 
 
+# Resolves the externally reachable HTTPS domain used inside QR codes so smartphone cameras can resolve verification links.
 def get_public_base_url() -> str:
     """
     Resolves the base URL for public QR verification links.
     In production (DEBUG=False, IS_TESTING=False), requires explicit PUBLIC_BASE_URL.
     """
     url = getattr(settings, "PUBLIC_BASE_URL", None) or os.getenv("PUBLIC_BASE_URL", "")
+    # Production guard: strictly enforces that PUBLIC_BASE_URL is configured in production to prevent emitting unroutable localhost QR codes.
     if not url:
         if getattr(settings, "DEBUG", False) or getattr(settings, "IS_TESTING", False):
             url = "http://localhost:8002"
