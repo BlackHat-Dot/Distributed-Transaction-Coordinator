@@ -126,6 +126,7 @@ def recover_stuck_transactions():
         try:
             # Atomically releases the distributed mutex lock only if the key still holds this worker's specific lock_token.
             client.eval(RELEASE_LOCK_SCRIPT, 1, LOCK_KEY, lock_token)
+        # Captures lock release exceptions to prevent worker unhandled crashes while warning operator via logs.
         except Exception as exc:
             logger.error("Failed to release lock '%s': %s", LOCK_KEY, exc)
 
@@ -136,6 +137,7 @@ def execute_saga_task(transaction_id, seat_ids=None, amount=500, user_id=None, u
     """
     Asynchronous Celery worker task that executes the booking saga state machine.
     """
+    # Imports saga orchestration coordinator lazily to prevent circular imports between tasks and views.
     from coordinator.views import _run_saga
     from coordinator.middleware import set_correlation_id
 
