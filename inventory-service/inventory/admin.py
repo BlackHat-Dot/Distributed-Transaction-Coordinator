@@ -12,6 +12,7 @@ class EventAdmin(admin.ModelAdmin):
     search_fields = ("name", "venue")
 
 
+# Registers Seat model to inspect real-time seat availability, hold statuses, pricing, and active transaction leases.
 @admin.register(Seat)
 class SeatAdmin(admin.ModelAdmin):
     list_display = ("id", "event", "row", "seat_number", "price", "status", "held_by_transaction_id", "held_until")
@@ -19,6 +20,7 @@ class SeatAdmin(admin.ModelAdmin):
     search_fields = ("row", "seat_number", "held_by_transaction_id")
 
     def get_queryset(self, request):
+        # Annotates querysets with integer-cast seat numbers so seats sort naturally (1, 2, 10) instead of alphabetically (1, 10, 2).
         qs = self.model._default_manager.get_queryset().annotate(
             seat_num_int=Cast("seat_number", IntegerField())
         )
