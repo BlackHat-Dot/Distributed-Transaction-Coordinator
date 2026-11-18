@@ -13,6 +13,7 @@ def _get_valid_internal_keys():
     Returns stripped, non-empty secret keys. Fails closed if none configured.
     """
     keys = []
+    # Loads both primary and fallback service keys to enable seamless, zero-downtime secret rotation across the microservice cluster.
     for attr in ("INTERNAL_SERVICE_KEY", "INTERNAL_SERVICE_KEY_FALLBACK"):
         val = getattr(settings, attr, None)
         if val is None:
@@ -95,6 +96,7 @@ class InternalServicePermission(BasePermission):
     message = "Forbidden: invalid internal service key."
 
     def has_permission(self, request, view):
+        # Delegates authentication to verify_internal_service_key to perform timing-safe secret verification before granting view execution.
         err = verify_internal_service_key(request)
         if err is not None:
             if isinstance(err.data, dict) and "error" in err.data:
