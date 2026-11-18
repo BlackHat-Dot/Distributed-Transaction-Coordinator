@@ -17,7 +17,9 @@ class Transaction(models.Model):
         INVENTORY_RELEASED = "INVENTORY_RELEASED"
         # Terminal failure state recorded when Inventory Service explicitly rejects the reservation request (e.g. seats already sold).
         INVENTORY_RESERVE_FAILED = "INVENTORY_RESERVE_FAILED"
+        # Ambiguous state recorded when an HTTP request to reserve seats in Inventory times out, qualifying for background recovery sweep.
         INVENTORY_TIMEOUT = "INVENTORY_TIMEOUT"
+        # Confirms through status probe that Inventory Service has no active seat reservation record for this transaction ID.
         NOT_RESERVED = "NOT_RESERVED"
         INVENTORY_CONNECTION_ERROR = "INVENTORY_CONNECTION_ERROR"
         PAYMENT_PROCESSING = "PAYMENT_PROCESSING"
