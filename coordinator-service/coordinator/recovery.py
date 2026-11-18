@@ -114,9 +114,11 @@ def execute_compensation_sweep(
     if get_correlation_id() != "bgworker":
         set_correlation_id(str(tid))
 
+    # Selects HTTP GET dispatch callable, allowing test fixtures to supply mock implementations.
     get_http = get_func or requests.get
     post_http = post_func or requests.post
 
+    # Resolves current operational URLs for downstream payment and inventory endpoints.
     urls = _get_urls()
     cid = str(tid)
     internal_key = getattr(settings, "INTERNAL_SERVICE_KEY", None) or os.getenv("INTERNAL_SERVICE_KEY", INTERNAL_SERVICE_KEY)
