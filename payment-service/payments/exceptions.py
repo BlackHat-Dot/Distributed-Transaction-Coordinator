@@ -66,11 +66,13 @@ def custom_exception_handler(exc, context):
         if cid and get_correlation_id() == "AnonUser":
             set_correlation_id(cid)
 
+    # Invokes Django REST Framework standard exception handler to generate initial HTTP response envelopes for known API exceptions.
     response = exception_handler(exc, context)
 
     # Standardize Throttled response to DTC error contract
     if isinstance(exc, Throttled) and response is not None:
         try:
+            # Calculates integer retry cooldown ceiling so rate-limited clients receive unambiguous wait and available_in_seconds values.
             wait = max(1, math.ceil(float(exc.wait))) if exc.wait is not None else 60
         except (TypeError, ValueError, OverflowError):
             wait = 60
