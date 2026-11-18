@@ -287,6 +287,7 @@ def _set_status_with_event(
     Execute compare-and-swap (CAS) status update within an exclusive database transaction lock.
     Records an append-only SagaEvent audit log entry and registers an on_commit SSE broadcast.
     """
+    # Guards against missing or falsy transaction identifiers before opening a database transaction.
     if not transaction_id:
         return False
 
@@ -312,6 +313,7 @@ def _set_status_with_event(
             else:
                 qs = qs.filter(status=expected_status)
 
+        # Executes query to extract primary key and current status while holding the row-level lock.
         rows = list(qs.values("id", "status"))
         if not rows:
             return False
