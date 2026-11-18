@@ -1,6 +1,8 @@
+# Imports Django's Object-Relational Mapping (ORM) models package to define database tables, column types, and constraints as Python classes.
 from django.db import models
 
 
+# Primary database entity tracking the distributed lifecycle, saga state, booking details, and compensation history of each checkout transaction.
 class Transaction(models.Model):
 
     class Status(models.TextChoices):
