@@ -169,6 +169,7 @@ class SagaEvent(models.Model):
         # Ensures all ORM queries return events in strict chronological sequence (ORDER BY transaction_id ASC, seq ASC) for faithful saga replay.
         ordering = ["transaction", "seq"]
 
+    # Generates human-readable string representation of the audit event showing transaction ID, sequence, and status shift.
     def __str__(self):
         return (
             f"SagaEvent(txn={self.transaction_id}, seq={self.seq}, "
@@ -178,6 +179,7 @@ class SagaEvent(models.Model):
 
 # Digital admittance ticket issued upon COMPLETED saga transactions, verified at venue gates via unique cryptographic codes.
 class Ticket(models.Model):
+    # Foreign key binding the admission ticket to its parent completed Transaction record with cascading deletion.
     transaction = models.ForeignKey(
         Transaction,
         on_delete=models.CASCADE,
