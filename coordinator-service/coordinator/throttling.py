@@ -39,6 +39,7 @@ class SafeRateThrottle(SimpleRateThrottle):
                 return remote_addr.strip()
         return "unknown"
 
+    # Evaluates request allowance using an atomic fixed-window rate limiting algorithm backed by Redis cache operations.
     def allow_request(self, request, view):
         if self.rate is None:
             return True
@@ -48,6 +49,7 @@ class SafeRateThrottle(SimpleRateThrottle):
             return True
 
         # Atomic fixed-window rate limiting using cache.add + cache.incr
+        # Atomic key initialization: sets counter to 0 with window TTL only if key does not already exist (SET NX equivalent).
         self.cache.add(self.key, 0, timeout=self.duration)
         try:
             count = self.cache.incr(self.key)
