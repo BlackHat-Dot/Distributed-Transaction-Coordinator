@@ -124,6 +124,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
 
     for ticket in tickets:
         # Header banner
+        # Draws a dark slate header banner across the top of the ticket page to anchor the branding header.
         c.setFillColor(colors.HexColor("#0f172a"))  # Slate 900
         c.rect(0, page_h - 70, page_w, 70, fill=1, stroke=0)
 
@@ -141,6 +142,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
 
         # Event Title: wrap across multiple lines without truncating
         raw_event_name = getattr(ticket, "event_name", None) or ""
+        # Dynamically word-wraps long event titles across multiple lines to prevent horizontal clipping off the page edge.
         title_lines = textwrap.wrap(raw_event_name, width=36)
         if not title_lines:
             title_lines = [raw_event_name]
