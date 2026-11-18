@@ -287,10 +287,12 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
             Transaction.objects.select_for_update().filter(pk=transaction.pk).first()
 
             # Check again within lock/atomic to avoid duplicate work
+            # Re-verifies existing ticket count under the transaction row lock to avoid duplicate work from races.
             existing = list(Ticket.objects.select_for_update().filter(transaction=transaction).order_by("seat_id"))
             if existing and len(existing) == len(seat_ids):
                 return existing
 
+            # Accumulator list collecting existing and newly minted ticket records for this transaction.
             created_tickets = []
             for sid in seat_ids:
                 try:
