@@ -134,6 +134,7 @@ class Reservation(models.Model):
         choices=Status.choices,
         default=Status.RESERVED,
     )
+    # Records a forensic audit reason code (EXPIRED_HOLD, USER_CANCELLED, COORDINATOR_COMPENSATED) explaining why a seat reservation was released.
     released_reason = models.CharField(
         max_length=64,
         blank=True,
@@ -147,6 +148,7 @@ class Reservation(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(fields=["seat", "transaction_id"], name="unique_seat_transaction"),
+            # Critical concurrency guard: uses a PostgreSQL partial unique index to enforce that no physical seat can ever have more than ONE active reservation.
             models.UniqueConstraint(
                 fields=["seat"],
                 condition=models.Q(status__in=["INVENTORY_RESERVED", "BOOKED"]),
