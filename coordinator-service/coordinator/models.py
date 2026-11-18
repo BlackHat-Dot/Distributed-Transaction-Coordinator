@@ -9,7 +9,9 @@ class Transaction(models.Model):
     class Status(models.TextChoices):
         # Initial starting state indicating that the transaction has been recorded but downstream service calls have not yet completed.
         STARTED = "STARTED"
+        # Transient reservation state indicating seats are temporarily locked in Inventory while awaiting downstream payment processing.
         HOLDING = "HOLDING"
+        # Confirms that requested seats were successfully locked in Inventory Service with an active hold expiration deadline.
         INVENTORY_RESERVED = "INVENTORY_RESERVED"
         INVENTORY_RELEASED = "INVENTORY_RELEASED"
         INVENTORY_RESERVE_FAILED = "INVENTORY_RESERVE_FAILED"
