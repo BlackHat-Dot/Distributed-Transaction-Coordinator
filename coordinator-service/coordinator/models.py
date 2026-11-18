@@ -21,7 +21,9 @@ class Transaction(models.Model):
         INVENTORY_TIMEOUT = "INVENTORY_TIMEOUT"
         # Confirms through status probe that Inventory Service has no active seat reservation record for this transaction ID.
         NOT_RESERVED = "NOT_RESERVED"
+        # Ambiguous state indicating network connectivity failure or DNS resolution issue when reaching Inventory Service.
         INVENTORY_CONNECTION_ERROR = "INVENTORY_CONNECTION_ERROR"
+        # Active in-flight state indicating payment charge request has been dispatched to Payment Service and awaits gateway confirmation.
         PAYMENT_PROCESSING = "PAYMENT_PROCESSING"
         PAYMENT_FAILED = "PAYMENT_FAILED"
         PAYMENT_TIMEOUT = "PAYMENT_TIMEOUT"
