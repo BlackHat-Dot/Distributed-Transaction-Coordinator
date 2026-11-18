@@ -283,6 +283,7 @@ def reclaim_expired_holds():
                 status=Reservation.Status.RESERVED,
             ).update(status=Reservation.Status.RELEASED, released_reason="EXPIRED_HOLD")
 
+        # Atomically resets physical seat statuses to AVAILABLE and clears all transaction IDs, user IDs, and hold expiration timestamps.
         reclaimed = Seat.objects.filter(
             id__in=reclaimed_ids,
             status=Seat.Status.HELD,
@@ -294,6 +295,7 @@ def reclaim_expired_holds():
             user_email=None,
         )
 
+    # Returns the count of reclaimed seats and updated reservation audit records for sweeper logging and metrics reporting.
     return reclaimed, released
 
 
