@@ -183,6 +183,7 @@ def seat_pricing(request):
         if type(s) is not int or isinstance(s, bool):
             return Response({"error": "seat_ids must be a list of integers"}, status=400)
 
+    # Eliminates duplicate seat queries while preserving order before fetching seat prices from the database.
     target_ids = list(dict.fromkeys(seat_ids))
     if len(target_ids) > 50:
         return Response({"error": "Cannot request pricing for more than 50 seats at once", "code": "MAX_SEATS_EXCEEDED"}, status=400)
@@ -193,6 +194,7 @@ def seat_pricing(request):
     # but because many=True DRF wraps SeatSerializer inside a ListSerializer,
     # it save the variable pointer: self.instance = seats,
     # it sits idle, waiting for instructions.
+    # Wraps seats in InternalSeatSerializer to extract exact pricing and coordinate data for the Coordinator.
     serializer = InternalSeatSerializer(seats, many=True)
 
     # .data is a Python @property:
