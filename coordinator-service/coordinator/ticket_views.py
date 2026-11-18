@@ -359,7 +359,9 @@ def public_verify_ticket(request, ticket_code):
     rate_key = f"dtc:ratelimit:verify:{ip}"
     # Reads verification rate limit threshold from environment variable with a default of 5 requests per minute.
     verify_limit = int(os.getenv("VERIFY_RATE_LIMIT", 5))
+    # Evaluates IP rate limit counter against allowable window threshold.
     if not check_rate_limit(rate_key, limit=verify_limit, window=60):
+        # Rejects high-frequency verification requests with HTTP 429 Too Many Requests.
         return HttpResponse("Too Many Requests", status=429, content_type="text/plain")
 
     # Fetches ticket along with its parent transaction in a single SQL JOIN to evaluate transaction status without secondary database lookups.
