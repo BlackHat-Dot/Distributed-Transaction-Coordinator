@@ -218,6 +218,7 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
         )
 
     # Build lookup maps and track inventory seats
+    # Initializes lookup containers to track confirmed seat IDs, assigned labels, and price amounts.
     inventory_seat_ids = set()
     seat_label_map = {}
     seat_amount_map = {}
@@ -233,6 +234,7 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
                 sid = raw_sid
             inventory_seat_ids.add(sid)
 
+            # Resolves human-readable seat label (e.g., 'Row A Seat 12') and stores in label mapping dictionary.
             label = s.get("seat_label") or s.get("label")
             if label and str(label).strip():
                 seat_label_map[sid] = str(label).strip()[:64]
