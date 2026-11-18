@@ -130,6 +130,7 @@ class BookingRateThrottle(SafeRateThrottle):
         if caller and caller.is_staff:  # staff skip throttling
             return None
 
+        # Scopes throttle key to authenticated user ID (user_<id>) or client IP (ip_<ip>) to prevent key collisions between callers.
         if caller and caller.is_authenticated and caller.user_id:
             ident = f"user_{caller.user_id}"
         else:
@@ -138,6 +139,7 @@ class BookingRateThrottle(SafeRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": ident}
 
 
+# Enforces transaction fetch rate limit (60/min) per user/IP to prevent frontend polling loops from overwhelming coordinator database.
 class TransactionReadRateThrottle(SafeRateThrottle):
     """
     Rate limits GET (fetch) requests per authenticated user to prevent DB DoS/polling spam.
@@ -156,6 +158,7 @@ class TransactionReadRateThrottle(SafeRateThrottle):
         if caller and caller.is_staff:  # staff skip throttling
             return None
 
+        # Scopes throttle key to authenticated user ID (user_<id>) or client IP (ip_<ip>) to prevent key collisions between callers.
         if caller and caller.is_authenticated and caller.user_id:
             ident = f"user_{caller.user_id}"
         else:
