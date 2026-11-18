@@ -11,9 +11,11 @@ _correlation_id_ctx = contextvars.ContextVar("correlation_id", default="AnonUser
 # Helper function to explicitly bind a transaction ID or worker identifier to the current thread's execution context.
 def set_correlation_id(transaction_id):
     """Set transaction ID for current execution context."""
+    # Sets the correlation ID in the context var, falling back to 'AnonUser' if None/empty, and returns a reset token for cleanup.
     return _correlation_id_ctx.set(str(transaction_id) if transaction_id else "AnonUser")
 
 
+# Helper function to retrieve the active transaction ID or caller label from anywhere in the call stack without passing request objects.
 def get_correlation_id():
     """Get transaction ID from current execution context."""
     return _correlation_id_ctx.get()
