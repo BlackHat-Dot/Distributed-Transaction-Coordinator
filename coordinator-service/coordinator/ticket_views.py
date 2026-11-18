@@ -102,9 +102,11 @@ def check_rate_limit(key: str, limit: int, window: int = 60) -> bool:
     except Exception as exc:
         # Logs the cache failure diagnostic details for operational alerting without breaking the user request flow.
         logger.warning("Rate limiting cache error for %s: %s", key, exc)
+        # Fails open on cache communication errors to ensure critical ticket flows remain available during transient outages.
         return True  # Fail open on cache communication error
 
 
+# Authenticates ticket access requests, validating caller identity and enforcing strict transaction ownership.
 def authenticate_ticket_requester(request, transaction_id):
     """
     Authenticates ticket requests.
