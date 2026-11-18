@@ -98,7 +98,9 @@ def check_rate_limit(key: str, limit: int, window: int = 60) -> bool:
             cache.set(key, count + 1, timeout=window)
         # Grants request permission as the count is within the permitted rate limit.
         return True
+    # Catches any unexpected cache backend errors or network timeouts to maintain fault-tolerant behavior.
     except Exception as exc:
+        # Logs the cache failure diagnostic details for operational alerting without breaking the user request flow.
         logger.warning("Rate limiting cache error for %s: %s", key, exc)
         return True  # Fail open on cache communication error
 
