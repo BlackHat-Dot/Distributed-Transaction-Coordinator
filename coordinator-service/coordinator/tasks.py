@@ -83,10 +83,12 @@ def recover_stuck_transactions():
     from coordinator.middleware import set_correlation_id
     set_correlation_id("bgworker")
 
+    # Obtains Redis connection pool client to execute atomic lock acquisition and release scripts.
     client = get_redis_client()
     # Generates a unique UUID lock token so this worker process can safely verify ownership when releasing the Redis mutex.
     lock_token = str(uuid.uuid4())
 
+    # Initializes distributed lock acquisition state flag prior to executing atomic SET NX command.
     acquired = False
     try:
         # SET ... NX EX attempts atomic lock acquisition; returns True only if the key does not already exist.
