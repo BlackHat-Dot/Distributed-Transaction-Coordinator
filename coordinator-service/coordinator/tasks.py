@@ -39,6 +39,7 @@ def get_redis_client():
     )
 
 
+# Privacy utility that masks email usernames (e.g., u***r@example.com) to comply with data privacy regulations in application logs.
 def _mask_email(email):
     """Mask email for privacy compliance (e.g. user@example.com -> u***r@example.com)."""
     if not email or "@" not in str(email):
@@ -54,6 +55,7 @@ def _mask_email(email):
         return "***"
 
 
+# Periodic background worker scheduled by Celery Beat to find and heal orphaned or stuck saga transactions.
 @shared_task(name="coordinator.tasks.recover_stuck_transactions")
 def recover_stuck_transactions():
     """
