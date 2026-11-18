@@ -86,11 +86,13 @@ def custom_exception_handler(exc, context):
         return response
 
     # Normalize 'detail' -> 'error' if missing
+    # Normalizes DRF's default 'detail' attribute into 'error' to preserve the project-wide standardized JSON error contract.
     if response is not None and isinstance(response.data, dict):
         if "detail" in response.data and "error" not in response.data:
             response.data["error"] = str(response.data["detail"])
 
     # Map unhandled database connection & operational errors to 503
+    # Catches low-level database socket disconnects and operational errors that bypass DRF to prevent leaking raw tracebacks.
     if response is None:
         if isinstance(exc, (OperationalError, DatabaseError)):
             path = getattr(request, "path", "unknown") if request else "unknown"
