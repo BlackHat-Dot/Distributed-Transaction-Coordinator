@@ -259,7 +259,9 @@ def _set_status_with_event(
         )
         return False
 
+    # Wraps status verification, update, and event creation inside an isolated atomic database transaction block.
     with db_transaction.atomic():
+        # SELECT ... FOR UPDATE acquires a pessimistic row-level database lock, preventing concurrent workers from updating the same transaction simultaneously.
         qs = Transaction.objects.select_for_update().filter(
             transaction_id=transaction_id
         )
