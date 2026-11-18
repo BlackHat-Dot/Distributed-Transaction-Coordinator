@@ -1608,6 +1608,7 @@ def _charge(
     user_email=None,
 ):
     """Charge payment with presence lock protection."""
+    # Registers active payment checkout presence in Redis so background recovery sweepers do not prematurely release holds during network latency.
     _set_checkout_presence(transaction_id)
     try:
         return _do_charge(
@@ -1618,6 +1619,7 @@ def _charge(
             user_email=user_email,
         )
     except Exception:
+        # Ensures checkout presence key is reliably cleared from Redis upon saga completion or unexpected exception handling.
         _clear_checkout_presence(transaction_id)
         raise
 
