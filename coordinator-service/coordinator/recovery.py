@@ -1,8 +1,10 @@
 import os
 import uuid
+# Imports requests library to perform outbound HTTP calls to downstream Inventory and Payment microservices during compensation.
 import requests
 from django.conf import settings
 from coordinator.models import Transaction, SagaEvent
+# Imports Compare-And-Swap (CAS) state transition helper to record state updates and append-only audit events in the database.
 from coordinator.saga_log import _set_status_with_event
 
 INVENTORY_BASE_URL = getattr(settings, "INVENTORY_SERVICE_URL", None) or os.getenv("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000").rstrip("/")
