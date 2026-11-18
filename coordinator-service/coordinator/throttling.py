@@ -202,7 +202,9 @@ class RecoveryStatusRateThrottle(SafeRateThrottle):
     """
     Rate limits recovery status requests to 1/min per verified client IP to prevent polling spam.
     """
+    # Dedicated throttle scope identifying recovery health check endpoint traffic.
     scope = "coordinator_recovery_status"
+    # Strict rate limit threshold permitting at most one status probe per minute.
     rate = "1/min"
 
     # Builds Redis cache key using the coordinator_recovery_status scope and verified client IP address.
