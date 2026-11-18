@@ -175,6 +175,7 @@ ALLOWED_TRANSITIONS = {
     Transaction.Status.RETRY_COMPENSATION_FAILED: {
         Transaction.Status.RECOVERY_IN_PROGRESS,
     },
+    # Sweeper active lock transitions: permits recovery progression or rollback reversion on transient error.
     Transaction.Status.RECOVERY_IN_PROGRESS: {
         Transaction.Status.COMPENSATING,
         Transaction.Status.COMPLETED,
@@ -199,6 +200,7 @@ ALLOWED_TRANSITIONS = {
 # Dispatches real-time JSON state events over Redis pub/sub channel dtc:tx_stream:<id> to push live updates to the browser frontend via SSE.
 def _publish_transaction_update(transaction_id, to_status, from_status=None):
     """Publish real-time transaction state update to Redis pub/sub channel for SSE streaming."""
+    # References module singleton Redis client to reuse connection for event publishing.
     global _pub_client
     try:
         client = _get_pub_client()
