@@ -1,9 +1,11 @@
 import contextvars
 import logging
 
+# Declares an asynchronous context variable (ContextVar) to propagate distributed correlation IDs across coroutines and threads.
 _correlation_id_ctx = contextvars.ContextVar("correlation_id", default="AnonUser")
 
 
+# Retrieves the active transaction ID or caller identifier from the current execution context for logging and downstream RPCs.
 def get_correlation_id():
     return _correlation_id_ctx.get()
 
