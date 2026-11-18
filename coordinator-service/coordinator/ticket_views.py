@@ -143,11 +143,13 @@ def authenticate_ticket_requester(request, transaction_id):
     payload, err = verify_jwt(token)
     # Checks whether token verification succeeded and contains a valid user identifier claim.
     if not payload or not payload.get("user_id"):
+        # Rejects tokens with invalid signatures, expired timestamps, or missing user identities.
         return None, Response(
             {"error": f"Invalid or expired authentication token: {err or 'Missing identity'}.", "code": "UNAUTHORIZED"},
             status=status.HTTP_401_UNAUTHORIZED,
         )
 
+    # Normalizes user identifier from JWT claims into a string for ownership matching.
     requester_user_id = str(payload.get("user_id"))
 
     # 3. Validate UUID syntax to prevent 500 error from Postgres query
