@@ -412,6 +412,7 @@ def get_user_from_request(request):
     Extracts authenticated user identity from Authorization header or request payload.
     Memoizes the result on the request object for zero-overhead repeated lookups.
     """
+    # Memoizes the decoded user identity on the Django request object to eliminate redundant cryptographic decoding across multiple middleware and view checks.
     if hasattr(request, "_cached_user_info"):
         return request._cached_user_info
 
@@ -455,6 +456,7 @@ def _verify_staff_key(header_val):
         })
 
     staff_key = os.getenv("STAFF_API_KEY")
+    # Validates the privileged staff API key using constant-time string comparison to prevent timing side-channel attacks.
     if not staff_key:
         logger.error("Staff verification failed: STAFF_API_KEY environment variable is not configured on the server.")
         raise ServiceUnavailable({
