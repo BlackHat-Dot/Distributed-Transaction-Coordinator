@@ -342,6 +342,7 @@ def payment_check(request):
     if auth_err:
         return auth_err
 
+    # Extracts transaction identifier from GET query parameters for idempotent, read-only status checks.
     raw_tid = getattr(request, "query_params", {}).get("transaction_id")
     transaction_uuid, error_response = _require_transaction_id(raw_tid)
     if error_response:
@@ -349,6 +350,7 @@ def payment_check(request):
     # Binds the validated transaction UUID to the thread-local correlation context for distributed tracing.
     set_correlation_id(str(transaction_uuid))
 
+    # Fetches existing payment state without acquiring row locks or triggering side effects.
     payment = Payment.objects.filter(transaction_id=transaction_uuid).first()
     if payment:
         if payment.status == Payment.Status.VOIDED:
