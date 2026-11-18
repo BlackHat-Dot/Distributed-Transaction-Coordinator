@@ -42,6 +42,7 @@ def _get_authenticated_user(request):
     if not request:
         return None
 
+    # Memoizes the authenticated user payload on the request object to avoid repeated cryptographic JWT decoding across middleware and view guards.
     if hasattr(request, "_cached_authenticated_user"):
         return request._cached_authenticated_user
 
@@ -54,6 +55,7 @@ def _get_authenticated_user(request):
             auth_header = request.META.get("HTTP_AUTHORIZATION", "")
 
         if auth_header and isinstance(auth_header, str):
+            # Splits the Authorization header to extract the Bearer token string while safely ignoring malformed single-word headers.
             parts = auth_header.strip().split(None, 1)
             if len(parts) == 2 and parts[0].lower() == "bearer":
                 token = parts[1].strip()
