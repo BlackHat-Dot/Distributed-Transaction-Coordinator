@@ -481,6 +481,7 @@ def _is_admin_email(email):
         return False
 
     # Normalize comma-separated domains into a clean set
+    # Parses configured internal admin email domains into a normalized set for instantaneous role escalation lookups.
     admin_domains = {
         d.strip().removeprefix("@").lower()
         for d in raw_domain.split(",")
@@ -520,6 +521,7 @@ class RequesterIdentity(tuple):
         instance.user_email = user_email
         return instance
 
+    # Defines custom pickle protocol reduction logic so RequesterIdentity retains user_email and custom attributes across Redis cache serialization.
     def __reduce__(self):
         """Preserve all tuple elements and user_email across pickle / cache round-trips."""
         return (self.__class__, (self.is_authenticated, self.user_id, self.is_staff, self.user_email))
