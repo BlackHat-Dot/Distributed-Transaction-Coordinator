@@ -22,6 +22,7 @@ def _extract_transaction_id(request):
         return None
 
     try:
+        # Inspects HTTP headers for distributed correlation or transaction IDs to link unhandled exceptions to their parent saga.
         header_cid = request.headers.get("X-Correlation-ID") or request.headers.get("X-Transaction-ID")
         if header_cid and str(header_cid).strip():
             return str(header_cid).strip()
@@ -29,6 +30,7 @@ def _extract_transaction_id(request):
         pass
 
     try:
+        # Extracts transaction_id from query parameters for GET polling endpoints without triggering body stream consumption.
         qp = getattr(request, "query_params", None)
         if isinstance(qp, Mapping):
             tid = qp.get("transaction_id")
