@@ -254,6 +254,7 @@ def execute_compensation_sweep(
         elif payment_status != "CHARGED":
             # Void failed and payment not confirmed charged -> state uncertain, abort compensation
             revert_status = original_status or Transaction.Status.COMPENSATION_FAILED
+            # Reverts transaction status in saga log so subsequent recovery sweepers can re-attempt voiding.
             _set_status_with_event(
                 transaction_id=tid,
                 to_status=revert_status,
@@ -262,6 +263,7 @@ def execute_compensation_sweep(
                 http_status_code=None,
                 http_payload={"error": "Payment void failed/timed out. Claim released."},
             )
+            # Returns 503 Service Unavailable when defensive voiding cannot be verified, aborting inventory release.
             return {
                 "success": False,
                 "status_code": 503,
