@@ -83,6 +83,7 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
     set_correlation_id(str(transaction.transaction_id))
 
     inventory_base = _get_inventory_base_url()
+    # Constructs the inventory verification endpoint URL to confirm physical seat booking state before opening a database write transaction.
     check_url = f"{inventory_base}/seats/check/?transaction_id={transaction.transaction_id}"
     cid = str(transaction.transaction_id)
     headers = {
@@ -97,6 +98,7 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
 
     timeout = getattr(settings, "REQUEST_TIMEOUT", getattr(settings, "INVENTORY_TIMEOUT", 5))
     try:
+        # Outbound HTTP check: queries Inventory Service outside any database lock to prevent holding PostgreSQL transaction locks during network I/O.
         resp = requests.get(check_url, headers=headers, timeout=timeout)
     except Exception as exc:
         logger.error(
