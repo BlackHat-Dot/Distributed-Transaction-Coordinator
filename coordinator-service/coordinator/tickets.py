@@ -57,6 +57,7 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
         )
 
     # Guard 1: Verify transaction status is COMPLETED before any DB or network work
+    # Guard 1: Enforces that tickets are only ever minted for settled COMPLETED transactions to prevent tickets on failed orders.
     if transaction.status != Transaction.Status.COMPLETED:
         raise TicketIssuanceError(
             f"Cannot issue ticket: transaction status is {transaction.status}, expected COMPLETED.",
@@ -72,6 +73,7 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
         )
 
     # Fast-path check: Return immediately if tickets are already fully issued
+    # Fast-path check: Returns immediately if all tickets for this transaction have already been minted, bypassing network calls.
     existing = list(Ticket.objects.filter(transaction=transaction).order_by("seat_id"))
     if existing and len(existing) == len(seat_ids):
         return existing
