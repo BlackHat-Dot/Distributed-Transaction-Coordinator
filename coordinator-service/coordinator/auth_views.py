@@ -596,6 +596,7 @@ def _dispatch_otp_email(to_email, otp_code):
         return False
 
     # Defensively enforce strictly 6 numeric digits to prevent template injection
+    # Defensively strips non-numeric characters to ensure exactly 6 digits are injected into the transactional email template, preventing injection attacks.
     clean_otp = re.sub(r"[^0-9]", "", str(otp_code or ""))
     if len(clean_otp) != 6:
         logger.error("Failed to dispatch OTP email to %s: Invalid OTP code format.", clean_to)
@@ -730,6 +731,7 @@ def _dispatch_otp_email(to_email, otp_code):
             "html": html_content,
             "text": text_content,
         }
+        # Dispatches transactional verification email via Resend's REST API with preheader preview text and branded HTML layout.
         result = resend.Emails.send(params)
         msg_id = result.get("id") if isinstance(result, dict) else None
         logger.info("Verification code delivered to %s via Resend (id=%s).", clean_to, msg_id)
