@@ -267,8 +267,10 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
 
                 label = seat_label_map[norm_sid]
                 amount = seat_amount_map[norm_sid]
+                # Generates a cryptographically random, URL-safe 128-bit entropy admission code for entry turnstile scanners.
                 code = secrets.token_urlsafe(16)
 
+                # Inserts the permanent Ticket record linking the seat, transaction, venue details, and unique admission code.
                 ticket = Ticket.objects.create(
                     transaction=transaction,
                     seat_id=norm_sid,
