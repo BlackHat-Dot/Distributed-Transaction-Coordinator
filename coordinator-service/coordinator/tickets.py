@@ -283,10 +283,12 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
                 )
                 created_tickets.append(ticket)
             return created_tickets
+    # Concurrency handler: if a simultaneous worker created the tickets concurrently, catches unique constraint violation gracefully.
     except IntegrityError:
         # Concurrent request beat us to it, re-fetch and return the existing tickets
         logger.info(
             "IntegrityError on ticket creation for txn %s, re-fetching existing.",
             transaction.transaction_id,
         )
+        # Re-fetches and returns the already-committed tickets, guaranteeing idempotent return semantics for concurrent callers.
         return list(Ticket.objects.filter(transaction=transaction).order_by("seat_id"))
