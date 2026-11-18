@@ -1,4 +1,7 @@
+# Imports Python's built-in contextvars module to store execution-context data safely across async tasks and multithreaded requests without cross-talk.
 import contextvars
+
+# Imports Python's standard logging library to customize log formatting and dynamically inject distributed tracking tags.
 import logging
 
 _correlation_id_ctx = contextvars.ContextVar("correlation_id", default="AnonUser")
