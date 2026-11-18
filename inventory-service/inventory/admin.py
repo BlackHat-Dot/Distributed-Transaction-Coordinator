@@ -29,10 +29,12 @@ class SeatAdmin(admin.ModelAdmin):
             qs = qs.order_by(*ordering)
         return qs
 
+    # Enforces consistent primary ordering across venue events, seating rows, and natural numeric seat positions.
     def get_ordering(self, request):
         return ["event", "row", "seat_num_int"]
 
 
+# Registers Reservation journal to provide operators an immutable audit trail of seat hold leases and saga confirmation states.
 @admin.register(Reservation)
 class ReservationAdmin(admin.ModelAdmin):
     list_display = ("transaction_id", "seat", "status", "created_at")
