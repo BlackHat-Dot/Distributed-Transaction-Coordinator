@@ -72,9 +72,11 @@ class CorrelationIdMiddleware:
         try:
             response = self.get_response(request)
             if response is not None and hasattr(response, "__setitem__"):
+                # Propagates the validated correlation ID back to the caller in HTTP response headers for end-to-end tracing.
                 response["X-Correlation-ID"] = cid
             return response
         finally:
+            # Guarantees context variable restoration in a finally block to prevent context contamination across reused WSGI threads.
             _correlation_id_ctx.reset(token)
 
 
