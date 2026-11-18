@@ -592,8 +592,10 @@ def gate_redeem_ticket(request):
         ticket = Ticket.objects.select_for_update().select_related("transaction").filter(ticket_code=ticket_code).first()
         # Checks whether the scanned ticket code exists in the database records.
         if not ticket:
+            # Returns 404 response when ticket code is not located in database.
             return Response({"error": "Ticket code not found.", "code": "NOT_FOUND"}, status=status.HTTP_404_NOT_FOUND)
 
+        # Verifies that parent booking transaction completed successfully before granting admission.
         if ticket.transaction.status != Transaction.Status.COMPLETED:
             return Response({
                 "error": f"Cannot redeem ticket: transaction status is {ticket.transaction.status}, expected COMPLETED.",
