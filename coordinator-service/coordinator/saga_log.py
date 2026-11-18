@@ -194,6 +194,7 @@ def _publish_transaction_update(transaction_id, to_status, from_status=None):
                 _pub_client = None
 
 
+# Blacklist of case-insensitive sensitive keys and PII tokens that must be sanitized before persisting into audit payloads.
 SENSITIVE_KEYS = {
     "user_email", "email", "card_number", "credit_card", "pan", "cvv", "cvc",
     "password", "token", "otp", "secret", "authorization",
@@ -202,6 +203,7 @@ SENSITIVE_KEYS = {
 }
 
 
+# Recursively traverses arbitrary nested dictionaries and lists to partially mask emails and redact authentication tokens/passwords.
 def _mask_pii(data):
     """
     Recursively masks sensitive fields (email, credentials, tokens) in audit payloads.
