@@ -106,6 +106,7 @@ class Transaction(models.Model):
     event_name = models.CharField(max_length=200, null=True, blank=True)
     # Physical location or arena hosting the ticketed event, preserved on the transaction for admittance records.
     venue = models.CharField(max_length=200, null=True, blank=True)
+    # Scheduled start timestamp of the ticketed event, used for admission scheduling and pre-event notifications.
     starts_at = models.DateTimeField(null=True, blank=True)
 
     # Total monetary charge in exact two-decimal currency precision to eliminate IEEE 754 floating-point rounding errors during payment gateway processing.
@@ -133,6 +134,7 @@ class SagaEvent(models.Model):
     ACTOR_RECOVERY = "recovery"
     ACTOR_RETRY = "retry"
 
+    # Foreign key linking the audit log event directly to its parent Transaction row with cascading deletion.
     transaction = models.ForeignKey(
         Transaction,
         on_delete=models.CASCADE,
