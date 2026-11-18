@@ -374,6 +374,7 @@ def execute_compensation_sweep(
         # Fraud/safety guard: prohibits automated refund if seats were manually reset by admin, escalating to staff review.
         if released_reason == "ADMIN_RESET":
             revert_status = original_status or Transaction.Status.COMPENSATION_FAILED
+            # Records admin intervention flag in saga audit log and reverts claim status for operator inspection.
             _set_status_with_event(
                 transaction_id=tid,
                 to_status=revert_status,
@@ -396,6 +397,7 @@ def execute_compensation_sweep(
                 "released_reason": "ADMIN_RESET",
             }
 
+        # Re-asserts confirmed CHARGED status to guarantee downstream execution proceeds into refund sequence.
         payment_status = "CHARGED"
 
     # Step 2: If payment was confirmed charged, issue a refund request to Payment Service to credit funds back to the customer.
