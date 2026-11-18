@@ -38,6 +38,7 @@ def _get_pub_client():
             return _pub_client
 
         now = time.monotonic()
+        # Circuit-breaker cooldown: if Redis failed within the last 5 seconds, immediately abort to prevent stalling active transactions.
         if now - _pub_last_check < 5.0:
             return None
 
@@ -54,6 +55,7 @@ def _get_pub_client():
                 socket_connect_timeout=timeout,
                 socket_timeout=timeout,
             )
+            # Sends an active PING command to verify the connection is alive before caching the singleton instance.
             client.ping()
             _pub_client = client
             return _pub_client
