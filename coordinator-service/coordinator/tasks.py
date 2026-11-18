@@ -193,6 +193,7 @@ def send_ticket_email_task(self, transaction_id):
 
     # Resolves the Resend email service API key, gracefully falling back to simulation mode in development or staging.
     api_key = getattr(settings, "RESEND_API_KEY", None) or os.getenv("RESEND_API_KEY", "")
+    # Simulation mode: logs email parameters without making external network calls if RESEND_API_KEY is not configured.
     if not api_key:
         logger.info(
             "RESEND_API_KEY not configured. Simulated ticket email to %s with PDF attachment %s.",
@@ -210,6 +211,7 @@ def send_ticket_email_task(self, transaction_id):
 
     resend.api_key = api_key
     try:
+        # Renders the high-resolution printable PDF ticket containing QR admission codes, seat metadata, and security references.
         pdf_bytes = generate_tickets_pdf(txn, tickets)
         seat_labels = ", ".join(t.seat_label for t in tickets)
         event_name = tickets[0].event_name if tickets else ""
