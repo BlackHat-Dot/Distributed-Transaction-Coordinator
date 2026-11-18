@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 LOCK_KEY = "locks:recovery_stuck_transactions"
 LOCK_TIMEOUT = 7200
 
-# Lua script for atomic compare-and-delete lock release (Redlock standard)
+# Redlock standard Lua script executed atomically in Redis: only deletes the lock key if its stored value matches the caller's unique lock token.
 RELEASE_LOCK_SCRIPT = """
 if redis.call("get", KEYS[1]) == ARGV[1] then
     return redis.call("del", KEYS[1])
@@ -26,6 +26,7 @@ end
 """
 
 
+# Constructs a Redis client configured with strict connection timeouts and Celery broker URL from settings.
 def get_redis_client():
     """Return a Redis client instance configured from Django Celery settings."""
     broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
