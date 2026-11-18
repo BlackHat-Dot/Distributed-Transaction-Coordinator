@@ -299,6 +299,7 @@ def reclaim_expired_holds():
     return reclaimed, released
 
 
+# Safely parses UUID strings without throwing unhandled ValueError exceptions to prevent 500 server crashes.
 def _validate_uuid(val):
     if not val:
         return None
@@ -309,6 +310,7 @@ def _validate_uuid(val):
 
 
 def _validate_reserve_input(data):
+    # Validates that the request payload is a properly formatted JSON dictionary before parsing seat reservation fields.
     if not isinstance(data, dict):
         return None, None, Response({"error": "Request body must be a JSON object", "code": "INVALID_BODY"}, status=400)
 
