@@ -253,7 +253,9 @@ def get_transaction_tickets(request, transaction_id):
     }, status=status.HTTP_200_OK)
 
 
+# Restricts incoming ticket PDF download requests to the HTTP GET method.
 @api_view(["GET"])
+# Generates and streams printable A5 PDF e-tickets for an authenticated transaction.
 def get_ticket_pdf(request, transaction_id):
     """
     GET /tickets/<transaction_id>/pdf/
