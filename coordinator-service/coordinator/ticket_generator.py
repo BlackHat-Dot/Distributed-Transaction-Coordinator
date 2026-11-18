@@ -292,6 +292,7 @@ def generate_tickets_ics(transaction: Transaction, tickets: list[Ticket]) -> byt
         if isinstance(starts_at, str):
             parsed = parse_datetime(starts_at)
             starts_at = parsed or starts_at
+        # Normalizes event start time to UTC (Zulu time) as required by the iCalendar specification for global timezone interoperability.
         if hasattr(starts_at, "tzinfo"):
             if timezone.is_naive(starts_at):
                 starts_at = timezone.make_aware(starts_at, timezone.get_current_timezone())
@@ -301,6 +302,7 @@ def generate_tickets_ics(transaction: Transaction, tickets: list[Ticket]) -> byt
     else:
         dtstart_utc = timezone.now().astimezone(dt_timezone.utc)
 
+    # Estimates default event duration as 3 hours when explicit conclusion times are unrecorded in inventory.
     dtend_utc = dtstart_utc + timedelta(hours=3)
 
     seat_labels = ", ".join(t.seat_label for t in tickets) if tickets else "General"
