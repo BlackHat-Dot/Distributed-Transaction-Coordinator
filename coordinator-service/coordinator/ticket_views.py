@@ -615,9 +615,11 @@ def gate_redeem_ticket(request):
                 "event_name": ticket.event_name,
             }, status=status.HTTP_409_CONFLICT)
 
+        # Stamps the ticket with the exact UTC timestamp of admission scan.
         ticket.used_at = timezone.now()
         # Records the scanning gate turnstile device ID or operator staff identifier to maintain an immutable forensic audit log for venue entry.
         ticket.used_by = str(request.data.get("operator") or request.data.get("device_id") or "gate_staff").strip()[:64]
+        # Persists updated redemption timestamp and operator ID to the database.
         ticket.save(update_fields=["used_at", "used_by"])
 
         return Response({
