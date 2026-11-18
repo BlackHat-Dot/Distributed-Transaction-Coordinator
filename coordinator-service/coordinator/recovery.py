@@ -450,12 +450,14 @@ def execute_compensation_sweep(
             "compensation_response": release_payload,
             "refund_response": refund_payload,
         }
+    # Partial failure branch: either refund or seat release failed; routes to compensation failure.
     else:
         failed_status = (
             Transaction.Status.RETRY_COMPENSATION_FAILED
             if actor == SagaEvent.ACTOR_RETRY
             else Transaction.Status.COMPENSATION_FAILED
         )
+        # Records COMPENSATION_FAILED in saga log so operators can inspect or retry compensation via staff endpoint.
         _set_status_with_event(
             transaction_id=tid,
             to_status=failed_status,
