@@ -4,10 +4,12 @@ import os
 import re
 import uuid
 from django.conf import settings
+# Imports Django's cache abstraction (backed by Redis or in-memory cache) to provide low-latency rate limiting across ticket and verification endpoints.
 from django.core.cache import cache
 from django.db import transaction as db_transaction
 from django.http import HttpResponse
 from django.utils import timezone
+# Imports HTML escaping utility to sanitize untrusted database strings before injecting into public verification HTML pages, preventing XSS attacks.
 from django.utils.html import escape
 from rest_framework import status
 from rest_framework.decorators import api_view
