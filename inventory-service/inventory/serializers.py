@@ -22,12 +22,14 @@ def _is_hold_expired(held_until, now=None) -> bool:
     return held_until <= now
 
 
+# Serializes seat objects for public customer browsers, strictly stripping PII and internal transaction identifiers.
 class PublicSeatSerializer(serializers.ModelSerializer):
     """
     Public seat representation. Does NOT leak sensitive fields
     (held_by_transaction_id, user_id, user_email).
     Includes computed is_mine boolean based on the caller's JWT identity.
     """
+    # Dynamically computes whether the requesting authenticated customer owns the active hold on this specific seat.
     is_mine = serializers.SerializerMethodField()
 
     class Meta:
