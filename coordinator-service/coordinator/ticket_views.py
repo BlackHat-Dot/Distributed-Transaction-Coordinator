@@ -635,6 +635,7 @@ def gate_redeem_ticket(request):
 
 # Restricts ticket email dispatch endpoint to the HTTP POST method.
 @api_view(["POST"])
+# Dispatches asynchronous background task to email PDF e-tickets to verified booking owner.
 def send_ticket_email(request, transaction_id):
     """
     POST /tickets/<transaction_id>/email/
@@ -643,6 +644,7 @@ def send_ticket_email(request, transaction_id):
     Rate limited to 3 per hour per transaction.
     Dispatches Celery background task.
     """
+    # Authenticates requester and asserts ownership of the target transaction.
     txn, err_resp = authenticate_ticket_requester(request, transaction_id)
     if err_resp:
         return err_resp
