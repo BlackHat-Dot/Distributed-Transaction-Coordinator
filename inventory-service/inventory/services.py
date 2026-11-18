@@ -63,11 +63,13 @@ def get_redis_client():
         return _redis_client_instance
 
     now = time.monotonic()
+    # Circuit breaker cooldown: fails fast during the 5-second backoff window after a connection failure to avoid connection storms.
     if now - _redis_last_failure < _REDIS_NEGATIVE_CACHE_TTL:
         return None
 
     redis_url = getattr(settings, "REDIS_URL", None) or getattr(settings, "CELERY_BROKER_URL", "redis://localhost:6379/0")
     try:
+        # Configures Redis client with tight 200ms socket connect and read timeouts to prevent blocking web request worker threads.
         client = redis.Redis.from_url(
             redis_url, socket_connect_timeout=0.2, socket_timeout=0.2, decode_responses=True
         )
