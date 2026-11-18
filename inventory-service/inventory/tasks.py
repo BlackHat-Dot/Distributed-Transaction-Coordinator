@@ -9,10 +9,12 @@ from inventory.services import get_redis_client
 
 logger = logging.getLogger(__name__)
 
+# Defines the global Redis distributed mutex key and 60-second lease to serialize hold reclaim sweeps across cluster workers.
 LOCK_KEY = "locks:sweep_expired_holds"
 LOCK_TIMEOUT = 60
 
 # Lua script for atomic compare-and-delete lock release (Redlock standard)
+# Implements an atomic Lua compare-and-delete script (Redlock standard) so workers only release locks they legitimately own.
 RELEASE_LOCK_SCRIPT = """
 if redis.call("get", KEYS[1]) == ARGV[1] then
     return redis.call("del", KEYS[1])
