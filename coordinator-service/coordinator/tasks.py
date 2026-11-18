@@ -1,6 +1,8 @@
 # verified
 
+# Imports Python standard logging library to log background execution, warnings, and error diagnostics.
 import logging
+# Imports standard OS module to inspect runtime environment variables and process settings.
 import os
 import time
 import uuid
