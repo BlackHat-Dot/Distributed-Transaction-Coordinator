@@ -375,8 +375,10 @@ def public_verify_ticket(request, ticket_code):
     if not ticket:
         # Checks if client requested JSON output for missing ticket response.
         if wants_json:
+            # Returns 404 response for invalid or non-existent ticket code in JSON format.
             return Response({"status": "INVALID", "message": "Ticket not found."}, status=status.HTTP_404_NOT_FOUND)
         
+        # Assembles user-friendly HTML error template displayed when ticket code cannot be located.
         html = """<!doctype html>
 <html lang="en">
 <head>
