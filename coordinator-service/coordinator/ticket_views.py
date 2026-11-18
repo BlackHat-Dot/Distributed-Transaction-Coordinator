@@ -511,9 +511,11 @@ def public_verify_ticket(request, ticket_code):
   </div>
 </body>
 </html>"""
+    # Returns rendered HTML verification pass to client web browser.
     return HttpResponse(html, status=200, content_type="text/html; charset=utf-8")
 
 
+# Restricts gate ticket redemption endpoint to the HTTP POST method.
 @api_view(["POST"])
 def gate_redeem_ticket(request):
     """
