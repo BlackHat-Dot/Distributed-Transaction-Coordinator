@@ -220,6 +220,7 @@ def execute_compensation_sweep(
         # Fence against in-flight charge landing after release
         # Initializes void fencing flag to ensure payment gateway voids inflight authorizations.
         void_ok = False
+        # Dispatches void request to Payment Service to permanently close the transaction window against late charges.
         try:
             v_resp = _safe_call_http(
                 post_http,
@@ -229,6 +230,7 @@ def execute_compensation_sweep(
                 headers=headers,
                 timeout=REQUEST_TIMEOUT,
             )
+            # Inspects void response: verifies successful voiding or detects if an in-flight charge completed during transit.
             if v_resp.status_code == 200:
                 try:
                     v_data = v_resp.json() if v_resp.content else {}
