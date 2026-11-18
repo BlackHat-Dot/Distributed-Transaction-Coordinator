@@ -41,12 +41,14 @@ from coordinator.ticket_generator import (
 # Imports ticket issuance service logic and custom conflict exceptions to safely mint event passes from completed transactions.
 from coordinator.tickets import issue_tickets_for_transaction, TicketIssuanceError
 
+# Initializes a dedicated coordinator logger instance to record audit trails and diagnostic output for ticket transactions.
 logger = logging.getLogger("coordinator")
 
 
 # Normalizes datetime objects or timestamp strings into standard ISO 8601 representation for consistent API client serialization.
 def _to_iso(dt):
     """Safely converts a datetime (or string) to ISO format string."""
+    # Returns None immediately if input datetime value is empty, falsy, or unassigned.
     if not dt:
         return None
     if hasattr(dt, "isoformat"):
