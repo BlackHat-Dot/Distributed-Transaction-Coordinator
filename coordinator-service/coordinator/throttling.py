@@ -225,8 +225,10 @@ def coordinator_exception_handler(exc, context):
 
     # Intercepts Throttled exceptions to extract exact lockout delay and build specialized polling vs write rate limit messages.
     if isinstance(exc, Throttled):
+        # Computes rounded ceiling integer seconds for lockout delay, defaulting to 60s if unset.
         try:
             wait = max(1, math.ceil(float(exc.wait))) if exc.wait is not None else 60
+        # Safety fallback assigning standard 60-second lockout delay if duration math raises numerical errors.
         except (TypeError, ValueError, OverflowError):
             wait = 60
 
