@@ -64,6 +64,7 @@ def generate_qr_code_image(ticket_code: str) -> Image.Image:
     return img.get_image() if hasattr(img, "get_image") else img
 
 
+# Encodes the QR code PNG into a base64 data URI string (data:image/png;base64,...) for direct inline rendering in HTML templates.
 def generate_qr_code_base64(ticket_code: str) -> str:
     """
     Returns data:image/png;base64,... string for inline frontend display.
@@ -76,6 +77,7 @@ def generate_qr_code_base64(ticket_code: str) -> str:
     return f"data:image/png;base64,{b64}"
 
 
+# Converts UTC database timestamps into localized Indian Standard Time (Asia/Kolkata) for venue ticket printouts.
 def format_kolkata_time(dt) -> str:
     """
     Formats a datetime (or ISO string) into Asia/Kolkata timezone representation.
