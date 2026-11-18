@@ -233,6 +233,7 @@ def coordinator_exception_handler(exc, context):
             wait = 60
 
         # Differentiates GET requests (checking status too often) from POST requests (request limit exceeded) for user-friendly UI copy.
+        # Extracts the active HttpRequest from the DRF exception context dictionary to inspect HTTP method.
         req = context.get("request") if isinstance(context, dict) else None
         if req and getattr(req, "method", None) == "GET":
             error_msg = f"You are checking status too often. Please wait {wait} seconds before trying again."
@@ -247,6 +248,7 @@ def coordinator_exception_handler(exc, context):
         }
     # Normalizes authentication and permission rejection errors into uniform 401 AUTHENTICATION_REQUIRED JSON responses.
     elif isinstance(exc, (NotAuthenticated, PermissionDenied)):
+        # Extracts active HttpRequest from context to inspect caller authentication state.
         req = context.get("request") if isinstance(context, dict) else None
         if req:
             caller = _get_caller(req)
