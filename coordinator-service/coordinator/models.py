@@ -146,7 +146,9 @@ class SagaEvent(models.Model):
     )
     # Records the previous state and target state to form an immutable directed graph edge of the saga state machine transition.
     from_status = models.CharField(max_length=40)
+    # Destination saga state reached upon completion of this discrete step in the distributed transaction workflow.
     to_status = models.CharField(max_length=40)
+    # Specifies the execution subsystem responsible for triggering this state transition ('request', 'recovery', or 'retry').
     actor = models.CharField(
         max_length=20,
         help_text="Which code path wrote this transition: 'request', 'recovery', or 'retry'.",
