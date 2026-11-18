@@ -39,7 +39,6 @@ class TicketIssuanceError(Exception):
     # Initializes custom ticket error with human-readable detail message and default 409 Conflict status code.
     def __init__(self, detail, status_code=409):
         """
-        """
         By passing only detail to super().__init__(detail),
         self.args=("Seat taken",) Because self.args has exactly 1 item, Python's __str__ returns just that string without parentheses or quotes!
 
@@ -47,7 +46,9 @@ class TicketIssuanceError(Exception):
         """
         # Passes message string directly to base Exception class to guarantee single-string __str__ formatting.
         super().__init__(detail)
+        # Stores the error detail message on the exception instance for custom JSON response formatting.
         self.detail = detail
+        # Stores the HTTP status code representing the error category (defaults to 409 Conflict).
         self.status_code = status_code
 
 
