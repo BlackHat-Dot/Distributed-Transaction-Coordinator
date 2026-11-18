@@ -43,6 +43,7 @@ def _get_verified_session_id(request):
     elif hasattr(request, "META") and request.META:
         raw_token = request.META.get("HTTP_X_SESSION_ID")
 
+    # Checks HTTP cookies (dtc_anon_sid) as a secondary transport for browser clients unable to attach custom request headers.
     if not raw_token and hasattr(request, "COOKIES") and request.COOKIES:
         raw_token = request.COOKIES.get("dtc_anon_sid")
 
@@ -55,6 +56,7 @@ def _get_verified_session_id(request):
                 return session_key.strip()
         return None
 
+    # Strict security policy: immediately halts requests providing blank or whitespace session headers with PermissionDenied.
     if not isinstance(raw_token, str) or not raw_token.strip():
         # User explicitly provided an empty/whitespace session ID -> stop them!
         raise PermissionDenied(
