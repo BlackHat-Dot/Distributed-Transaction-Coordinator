@@ -265,11 +265,13 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
                 f"Cannot issue ticket: Seat ID {sid} was not found in inventory confirmation.",
                 status_code=409,
             )
+        # Validates that a non-empty human-readable seat label exists in inventory metadata for this seat.
         if norm_sid not in seat_label_map:
             raise TicketIssuanceError(
                 f"Cannot issue ticket: Seat label is missing or blank for seat ID {sid}.",
                 status_code=409,
             )
+        # Validates that a valid decimal monetary price exists in inventory confirmation for this seat.
         if norm_sid not in seat_amount_map:
             raise TicketIssuanceError(
                 f"Cannot issue ticket: Pricing details could not be resolved for seat ID {sid}.",
