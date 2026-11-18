@@ -11,8 +11,10 @@ from rest_framework.exceptions import NotAuthenticated, PermissionDenied, Thrott
 from rest_framework.permissions import BasePermission
 # Imports DRF's base throttle class which calculates window durations and formats Redis cache keys for rate limiting.
 from rest_framework.throttling import SimpleRateThrottle
+# Imports DRF standard exception handler to provide baseline error response formatting.
 from rest_framework.views import exception_handler
 
+# Imports authentication identity and client IP extraction utilities from auth views.
 from coordinator.auth_views import _get_caller, _get_client_ip
 
 logger = logging.getLogger(__name__)
