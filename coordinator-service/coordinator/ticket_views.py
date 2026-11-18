@@ -651,7 +651,9 @@ def send_ticket_email(request, transaction_id):
         # Returns error HTTP response immediately if authentication or authorization failed.
         return err_resp
 
+    # Checks whether the transaction record contains a registered recipient email address.
     if not txn.user_email:
+        # Rejects dispatch attempts if no destination email is linked to the booking.
         return Response({"error": "No email address associated with this transaction.", "code": "NO_EMAIL"}, status=status.HTTP_400_BAD_REQUEST)
 
     # Rate limit: 3/hour per transaction
