@@ -117,6 +117,7 @@ class Transaction(models.Model):
     )
 
     # Immutable audit timestamp set automatically when the transaction row is first inserted, used to calculate holding timeouts and sweep eligibility.
+    # Immutable timestamp capturing the exact moment this saga transition event was committed to the ledger.
     created_at = models.DateTimeField(auto_now_add=True)
     # Mutable audit timestamp updated automatically on every row modification, used by optimistic locking and recovery sweepers.
     updated_at = models.DateTimeField(auto_now=True)
@@ -153,6 +154,7 @@ class SagaEvent(models.Model):
         max_length=20,
         help_text="Which code path wrote this transition: 'request', 'recovery', or 'retry'.",
     )
+    # Records the downstream HTTP status code returned by Inventory or Payment service during this saga step.
     http_status_code = models.IntegerField(null=True, blank=True)
     # Captures the raw HTTP response payload received from downstream services (Payment or Inventory) for post-mortem incident analysis.
     http_payload = models.JSONField(null=True, blank=True)
