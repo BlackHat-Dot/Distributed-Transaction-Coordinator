@@ -4,8 +4,10 @@ import json
 import logging
 import threading
 import time
+# Imports redis-py client library to publish transaction lifecycle events to Redis Pub/Sub channels for Server-Sent Events (SSE) streaming.
 import redis
 from django.conf import settings
+# Imports Django's database transaction module to manage atomic database blocks, row-level locks (select_for_update), and on_commit hooks.
 from django.db import transaction as db_transaction
 from django.db.models import Max
 from django.utils import timezone
