@@ -659,7 +659,9 @@ def send_ticket_email(request, transaction_id):
     # Rate limit: 3/hour per transaction
     # Enforces a rate limit of 3 email dispatches per hour per transaction to prevent mail-bombing and outbound SMTP server reputation degradation.
     rate_key = f"dtc:ratelimit:ticket_email:{txn.transaction_id}"
+    # Evaluates hourly email dispatch count against allowable limit to prevent outbound spam.
     if not check_rate_limit(rate_key, limit=3, window=3600):
+        # Returns HTTP 429 Too Many Requests when email rate limit is exceeded.
         return Response(
             {"error": "Email rate limit exceeded. You can only send ticket emails 3 times per hour.", "code": "RATE_LIMITED"},
             status=status.HTTP_429_TOO_MANY_REQUESTS,
