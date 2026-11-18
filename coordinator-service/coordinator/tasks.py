@@ -257,9 +257,11 @@ def send_ticket_email_task(self, transaction_id):
 
     # Configures Resend API key on the global SDK module prior to executing outbound email dispatch.
     resend.api_key = api_key
+    # Protected block executing PDF generation and external Resend API email dispatch.
     try:
         # Renders the high-resolution printable PDF ticket containing QR admission codes, seat metadata, and security references.
         pdf_bytes = generate_tickets_pdf(txn, tickets)
+        # Formats human-friendly comma-separated list of assigned seat labels for inclusion in email body.
         seat_labels = ", ".join(t.seat_label for t in tickets)
         event_name = tickets[0].event_name if tickets else ""
         # Constructs the email payload with HTML body and attaches the binary PDF ticket stream as a byte list.
