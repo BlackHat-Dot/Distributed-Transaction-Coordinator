@@ -219,6 +219,7 @@ def get_transaction_tickets(request, transaction_id):
 
     # Extracts the first ticket from the collection to derive shared event-level venue and timing metadata.
     first_ticket = tickets[0] if tickets else None
+    # Constructs a structured event metadata payload containing venue, timing, and event title details.
     event_data = {
         "name": first_ticket.event_name if first_ticket else "",
         "venue": first_ticket.venue if first_ticket else "",
@@ -226,6 +227,7 @@ def get_transaction_tickets(request, transaction_id):
         "starts_at_formatted": format_kolkata_time(first_ticket.starts_at) if first_ticket else "TBA",
     }
 
+    # Assembles list of serialized ticket dictionaries with seat labels, pricing, and base64 QR codes.
     tickets_data = [
         {
             "ticket_code": t.ticket_code,
