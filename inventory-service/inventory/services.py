@@ -148,6 +148,7 @@ def reclaim_expired_holds():
         seat_held_until = _ensure_aware(seat["held_until"])
 
         # 1. Time-based expiry (hold elapsed)
+        # Evaluates absolute time expiration: immediately flags seats whose 10-minute lease window has fully elapsed.
         if seat_held_until and seat_held_until <= now:
             expired_snapshots[seat_id] = {
                 "tid": seat["held_by_transaction_id"],
@@ -160,6 +161,7 @@ def reclaim_expired_holds():
         if seat_held_until and has_identifier and redis_client:
             hold_start = seat_held_until - hold_duration
             hold_age = (now - hold_start).total_seconds()
+            # Applies a 120-second grace period before checking browser presence to prevent prematurely reclaiming seats during page reloads.
             if hold_age >= grace_seconds:
                 presence_candidates.append(seat)
 
