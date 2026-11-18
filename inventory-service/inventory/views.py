@@ -105,6 +105,7 @@ def event_list(request):
 
     Instead, prefetch_related executes separate queries and links them in Python memory.
     """
+    # Batches seat queries via prefetch_related to load all event seating layouts without triggering N+1 database queries.
     events = Event.objects.all().prefetch_related("seats")
     serializer = EventSerializer(events, many=True, context={"request": request})
 
@@ -149,6 +150,7 @@ def seat_list(request):
         except (ValueError, TypeError):
             return Response({"error": "event_id must be an integer"}, status=400)
     seats = seats.order_by("id")
+    # Serializes public seat states, dynamically stripping buyer identities and projecting expired holds as AVAILABLE.
     serializer = PublicSeatSerializer(seats, many=True, context={"request": request})
     return Response(serializer.data)
 
