@@ -289,6 +289,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         c.drawImage(qr_reader, qr_x, qr_y, width=qr_size, height=qr_size)
 
         # Scan at gate instruction
+        # Centers scan instruction and customer check-in guidance text beneath the QR code.
         c.setFillColor(colors.HexColor("#0f172a"))
         c.setFont("Helvetica-Bold", 11.5)
         c.drawCentredString(page_w / 2, qr_y - 16, "Scan at gate")
@@ -302,6 +303,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         )
 
         # Footer
+        # Draws muted security footnote and DTC platform branding in bottom page margin.
         c.setFillColor(colors.HexColor("#94a3b8"))
         c.setFont("Helvetica", 7.5)
         c.drawCentredString(
