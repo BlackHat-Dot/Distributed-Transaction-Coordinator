@@ -96,9 +96,11 @@ def issue_tickets_for_transaction(transaction: Transaction) -> list[Ticket]:
         return existing
 
     # Guard 2: Inventory ground truth check BEFORE entering db_transaction.atomic()
+    # Lazy-loads correlation utility and seeds current execution context with transaction ID for distributed tracing.
     from coordinator.middleware import set_correlation_id
     set_correlation_id(str(transaction.transaction_id))
 
+    # Resolves Inventory Service base URL with runtime settings and environment fallback overrides.
     inventory_base = _get_inventory_base_url()
     # Constructs the inventory verification endpoint URL to confirm physical seat booking state before opening a database write transaction.
     check_url = f"{inventory_base}/seats/check/?transaction_id={transaction.transaction_id}"
