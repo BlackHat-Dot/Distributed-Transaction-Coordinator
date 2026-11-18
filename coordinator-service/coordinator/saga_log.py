@@ -24,7 +24,9 @@ from .models import Transaction, SagaEvent
 
 logger = logging.getLogger(__name__)
 
+# Global singleton holding the active Redis pub/sub client connection across the worker process.
 _pub_client = None
+# Monotonic timestamp recording when Redis connectivity was last probed to throttle reconnection attempts.
 _pub_last_check = 0.0
 # Mutex lock protecting the singleton Redis publisher client from race conditions during concurrent worker thread reconnection.
 _pub_lock = threading.Lock()
