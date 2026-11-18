@@ -126,6 +126,7 @@ def _release_inventory(tx_id, reason=""):
 @api_view(["GET"])
 def health_check(request):
     """Liveness probe returning healthy service status."""
+    # Provides a zero-dependency liveness probe for container orchestrators (Kubernetes/Docker) to verify coordinator process responsiveness.
     return Response({"status": "healthy", "service": "coordinator"})
 
 # verified
@@ -149,6 +150,7 @@ def list_transactions(request):
 # verified
 def _can_access(txn, user_id, is_staff=False):
     """Check if caller has permission to view or modify transaction."""
+    # Enforces multi-tenant data isolation: grants unrestricted read access to staff members while restricting regular buyers strictly to their own transactions.
     if is_staff:
         return True
     txn_uid = getattr(txn, "user_id", None)
