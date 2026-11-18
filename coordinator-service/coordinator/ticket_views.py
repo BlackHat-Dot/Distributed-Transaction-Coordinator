@@ -566,8 +566,10 @@ def gate_redeem_ticket(request):
     
     # Employs constant-time string comparison (hmac.compare_digest) to prevent timing side-channel attacks against the venue staff gate secret.
     if not provided_key or not hmac.compare_digest(str(provided_key), str(expected_key)):
+        # Rejects unauthorized gate scanning requests with HTTP 401 Unauthorized.
         return Response({"error": "Invalid or missing gate API key.", "code": "UNAUTHORIZED"}, status=status.HTTP_401_UNAUTHORIZED)
 
+    # Checks if gate scanner client is performing a diagnostic key verification ping.
     if request.data.get("action") == "verify_key":
         return Response({
             "status": "KEY_VALID",
