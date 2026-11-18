@@ -353,9 +353,11 @@ def public_verify_ticket(request, ticket_code):
     Public read-only verification page/JSON.
     Rate limited. NO PII (no email, user ID, transaction UUID).
     """
+    # Resolves client IP address to enforce verification rate limiting per caller.
     ip = _get_client_ip(request)
     # Applies aggressive IP-based rate limiting on the public verification endpoint to protect venue gate scanners from denial-of-service and brute-force ticket code attacks.
     rate_key = f"dtc:ratelimit:verify:{ip}"
+    # Reads verification rate limit threshold from environment variable with a default of 5 requests per minute.
     verify_limit = int(os.getenv("VERIFY_RATE_LIMIT", 5))
     if not check_rate_limit(rate_key, limit=verify_limit, window=60):
         return HttpResponse("Too Many Requests", status=429, content_type="text/plain")
