@@ -53,10 +53,12 @@ class CorrelationIdMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        # Ingests correlation or transaction headers forwarded by the upstream Coordinator or client applications.
         raw_cid = request.META.get("HTTP_X_CORRELATION_ID") or request.META.get("HTTP_X_TRANSACTION_ID")
 
         if raw_cid and isinstance(raw_cid, str):
             cleaned = raw_cid.strip()
+            # Validates header format against safe characters, generating a fresh random UUIDv4 if missing, malformed, or hostile.
             if _SAFE_CORRELATION_ID_RE.match(cleaned):
                 cid = cleaned
             else:
