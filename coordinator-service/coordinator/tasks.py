@@ -4,7 +4,9 @@
 import logging
 # Imports standard OS module to inspect runtime environment variables and process settings.
 import os
+# Imports standard time library to record task execution timestamps and track background run intervals.
 import time
+# Imports standard UUID library to generate unique distributed lock tokens and validate transaction IDs.
 import uuid
 import redis
 # Imports Celery's shared_task decorator to define reusable asynchronous background tasks without hardcoding the Celery app instance.
