@@ -193,6 +193,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
             cur_y -= line_height
 
         # Venue
+        # Renders venue label and location name in muted slate typography.
         c.setFillColor(colors.HexColor("#475569"))
         c.setFont("Helvetica", 10.5)
         venue_name = getattr(ticket, "venue", "") or "Main Arena"
@@ -201,6 +202,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         cur_y -= 18
 
         # Date & Time in Asia/Kolkata
+        # Formats and renders event starting time localized to Asia/Kolkata timezone.
         time_text = f"Date & Time: {format_kolkata_time(getattr(ticket, 'starts_at', None))}"
         c.drawString(25, cur_y - 2, time_text)
         cur_y -= 20
