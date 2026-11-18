@@ -17,6 +17,7 @@ def _get_valid_internal_keys():
         val = getattr(settings, attr, None)
         if val is None:
             val = os.getenv(attr)
+        # Filters out whitespace and empty values to ensure only cryptographically viable secrets are loaded into the key pool.
         if val is not None and isinstance(val, str) and val.strip():
             keys.append(val.strip())
     return keys
