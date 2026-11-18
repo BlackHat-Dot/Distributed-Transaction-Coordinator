@@ -208,6 +208,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         cur_y -= 20
 
         # Seat & Price Box
+        # Calculates bounding coordinates for the seat and price summary information box.
         box_top = min(cur_y, page_h - 165)
         box_h = 58
         box_bottom = box_top - box_h
@@ -217,6 +218,7 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         # Renders an enclosed rectangular summary card highlighting the assigned physical seat identifier and admission price.
         c.rect(25, box_bottom, page_w - 50, box_h, fill=1, stroke=1)
 
+        # Draws column labels for assigned seat number and admission pricing inside summary card.
         c.setFillColor(colors.HexColor("#64748b"))
         c.setFont("Helvetica-Bold", 8.5)
         c.drawString(40, box_top - 18, "ASSIGNED SEAT")
