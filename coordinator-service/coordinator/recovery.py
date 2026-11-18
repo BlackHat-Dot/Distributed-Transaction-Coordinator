@@ -150,7 +150,9 @@ def execute_compensation_sweep(
     except (requests.exceptions.RequestException, Exception):
         payment_check_failed = True
 
+    # If payment check fails or times out, safely release the recovery claim back to original_status so a subsequent sweep can retry.
     if payment_check_failed:
+        # Preserves original non-terminal status for future sweeper retry rather than permanently marking transaction as failed.
         revert_status = original_status or Transaction.Status.COMPENSATION_FAILED
         _set_status_with_event(
             transaction_id=tid,
