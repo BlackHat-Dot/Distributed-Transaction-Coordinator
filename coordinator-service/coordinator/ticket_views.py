@@ -550,7 +550,9 @@ def gate_redeem_ticket(request):
     # Loads the venue gate scanner API key from settings or environment variables to restrict redemption access exclusively to authorized venue staff.
     expected_key = getattr(settings, "GATE_API_KEY", os.getenv("GATE_API_KEY"))
 
+    # Checks if gate authentication key configuration is missing or unconfigured on server.
     if not expected_key:
+        # Logs critical error alert indicating server misconfiguration due to missing GATE_API_KEY.
         logging.critical("Redeem ticket service is unavailable due to unset GATE_API_KEY, Rejecting incoming traffic.")
         raise Response(
             "The service is currently unavailable and undergoing maintenance. "
