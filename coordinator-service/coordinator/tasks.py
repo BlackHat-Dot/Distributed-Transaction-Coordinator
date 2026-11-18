@@ -41,7 +41,9 @@ def get_redis_client():
     broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
     # Detects whether test suite execution is active to apply aggressive connection timeout policies.
     testing_mode = bool(getattr(settings, "IS_TESTING", False))
+    # Configures strict Redis socket connect and read timeouts (50ms in testing, 1.0s in production).
     timeout = getattr(settings, "REDIS_SOCKET_TIMEOUT", 0.05 if testing_mode else 1.0)
+    # Instantiates and returns a Redis client pool configured with the specified broker URL and timeouts.
     return redis.Redis.from_url(
         broker_url,
         socket_connect_timeout=timeout,
