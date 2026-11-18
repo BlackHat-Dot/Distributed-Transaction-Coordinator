@@ -597,6 +597,7 @@ def gate_redeem_ticket(request):
 
         # Verifies that parent booking transaction completed successfully before granting admission.
         if ticket.transaction.status != Transaction.Status.COMPLETED:
+            # Returns HTTP 409 Conflict if parent booking transaction is not in COMPLETED status.
             return Response({
                 "error": f"Cannot redeem ticket: transaction status is {ticket.transaction.status}, expected COMPLETED.",
                 "code": "TRANSACTION_NOT_COMPLETED",
@@ -604,6 +605,7 @@ def gate_redeem_ticket(request):
 
         # Enforces strict single-entry admission semantics by returning 409 CONFLICT if the ticket has previously been scanned and redeemed.
         if ticket.used_at is not None:
+            # Rejects double redemption attempts with HTTP 409 Conflict and prior usage metadata.
             return Response({
                 "error": "Ticket has already been used.",
                 "code": "ALREADY_USED",
