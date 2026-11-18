@@ -74,9 +74,11 @@ class PublicSeatSerializer(serializers.ModelSerializer):
         return False
 
     def to_representation(self, instance):
+        # Generates standard dictionary representation before applying read-time state transformations and privacy filters.
         rep = super().to_representation(instance)
         # Lazy Read-Time Shedding: Treat expired holds as AVAILABLE on read
         if rep.get("status") == Seat.Status.HELD and instance.held_until and _is_hold_expired(instance.held_until):
+            # Lazy read-time eviction: projects expired holds as AVAILABLE to buyers immediately without waiting for Celery background sweepers.
             rep["status"] = Seat.Status.AVAILABLE
             rep["held_until"] = None
             rep["is_mine"] = False
@@ -104,9 +106,11 @@ class InternalSeatSerializer(serializers.ModelSerializer):
         ]
 
     def to_representation(self, instance):
+        # Generates standard dictionary representation before applying read-time state transformations and privacy filters.
         rep = super().to_representation(instance)
         # Lazy Read-Time Shedding: Treat expired holds as AVAILABLE on read
         if rep.get("status") == Seat.Status.HELD and instance.held_until and _is_hold_expired(instance.held_until):
+            # Lazy read-time eviction: projects expired holds as AVAILABLE to buyers immediately without waiting for Celery background sweepers.
             rep["status"] = Seat.Status.AVAILABLE
             rep["held_until"] = None
             rep["held_by_transaction_id"] = None
