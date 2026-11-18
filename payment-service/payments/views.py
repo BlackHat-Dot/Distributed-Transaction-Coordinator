@@ -77,6 +77,7 @@ def _require_transaction_id(raw_value):
     if raw_value is None or (isinstance(raw_value, str) and not raw_value.strip()):
         return None, Response({"error": "transaction_id is required"}, status=400)
 
+    # Verifies that the client-supplied transaction_id adheres strictly to RFC 4122 UUID formatting.
     transaction_uuid = _validate_uuid(raw_value)
     if not transaction_uuid:
         return None, Response({"error": "transaction_id must be a valid UUID"}, status=400)
@@ -86,6 +87,7 @@ def _require_transaction_id(raw_value):
 
 def _validate_amount(raw_amount):
     """Validate payment amount precision, finiteness, positivity, and bounds."""
+    # Enforces mandatory charge amount specification on all incoming payment requests.
     if raw_amount is None:
         return None, Response({"error": "amount is required"}, status=400)
 
