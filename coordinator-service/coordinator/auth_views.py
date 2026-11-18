@@ -791,6 +791,7 @@ def send_otp(request):
         except Exception:
             pass
 
+    # Enforces single-device login policy: immediately blocks new login attempts if an active session is currently alive on another device.
     if session_active:
         return Response(
             {
@@ -857,6 +858,7 @@ def send_otp(request):
             except Exception:
                 pass
 
+        # Prevents OTP SMS/email flooding by returning a polite 30-second cooldown response while preserving the active OTP code.
         if cooldown_active:
             daily_used = 0
             if client:
@@ -1072,6 +1074,7 @@ def verify_otp(request):
         except Exception:
             pass
 
+    # Enforces single-device login policy: immediately blocks new login attempts if an active session is currently alive on another device.
     if session_active:
         return Response(
             {
