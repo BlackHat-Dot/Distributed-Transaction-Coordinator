@@ -119,6 +119,7 @@ ALLOWED_TRANSITIONS = {
         Transaction.Status.COMPENSATING,
         Transaction.Status.RECOVERY_IN_PROGRESS,
     },
+    # In-flight payment transitions: leads to completion on charge success, or failure/timeout/compensation paths on error.
     Transaction.Status.PAYMENT_PROCESSING: {
         Transaction.Status.COMPLETED,
         Transaction.Status.PAYMENT_FAILED,
@@ -127,6 +128,7 @@ ALLOWED_TRANSITIONS = {
         Transaction.Status.COMPENSATING,
         Transaction.Status.RECOVERY_IN_PROGRESS,
     },
+    # Payment timeout transitions: allows sweeper recovery, charge verification completion, or compensation rollback.
     Transaction.Status.PAYMENT_TIMEOUT: {
         Transaction.Status.COMPENSATING,
         Transaction.Status.COMPLETED,
