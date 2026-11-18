@@ -402,6 +402,7 @@ def execute_compensation_sweep(
 
     # Step 2: If payment was confirmed charged, issue a refund request to Payment Service to credit funds back to the customer.
     if payment_status == "CHARGED":
+        # Dispatches outbound HTTP refund request to Payment Service to credit charged funds back to customer.
         try:
             r_resp = _safe_call_http(
                 post_http,
@@ -411,6 +412,7 @@ def execute_compensation_sweep(
                 headers=headers,
                 timeout=REQUEST_TIMEOUT,
             )
+            # Captures HTTP response status and evaluates whether refund request was accepted with 200 OK.
             refund_status_code = r_resp.status_code
             if r_resp.content:
                 try:
