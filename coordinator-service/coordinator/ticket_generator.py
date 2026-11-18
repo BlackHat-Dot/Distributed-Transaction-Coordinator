@@ -310,6 +310,7 @@ def generate_tickets_ics(transaction: Transaction, tickets: list[Ticket]) -> byt
     short_ref = str(tid)[:8].upper()
     user_email = getattr(transaction, "user_email", "") or "Customer"
 
+    # Instantiates an iCalendar VEVENT component containing booking summary, venue coordinates, and attendee details.
     event = icalendar.Event()
     event.add("summary", event_name or "Event Ticket")
     event.add("location", venue or "Venue TBA")
@@ -324,4 +325,5 @@ def generate_tickets_ics(transaction: Transaction, tickets: list[Ticket]) -> byt
     event.add("status", "CONFIRMED")
 
     cal.add_component(event)
+    # Serializes the calendar object into compliant vCalendar 2.0 text bytes for email attachments or direct downloads.
     return cal.to_ical()
