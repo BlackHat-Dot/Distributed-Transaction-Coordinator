@@ -82,7 +82,9 @@ def check_rate_limit(key: str, limit: int, window: int = 60) -> bool:
             count = int(current)
         # Catches parsing errors if the cached data is corrupted or contains unexpected data types.
         except (ValueError, TypeError):
+            # Resets the local count to zero to avoid crashing when cache data is malformed.
             count = 0
+        # Checks if the current request volume equals or exceeds the allowable threshold for this time window.
         if count >= limit:
             return False
         try:
