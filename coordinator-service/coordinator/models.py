@@ -116,6 +116,7 @@ class SagaEvent(models.Model):
     seq = models.PositiveIntegerField(
         help_text="1-based sequence number, monotonically increasing per transaction.",
     )
+    # Records the previous state and target state to form an immutable directed graph edge of the saga state machine transition.
     from_status = models.CharField(max_length=40)
     to_status = models.CharField(max_length=40)
     actor = models.CharField(
@@ -123,6 +124,7 @@ class SagaEvent(models.Model):
         help_text="Which code path wrote this transition: 'request', 'recovery', or 'retry'.",
     )
     http_status_code = models.IntegerField(null=True, blank=True)
+    # Captures the raw HTTP response payload received from downstream services (Payment or Inventory) for post-mortem incident analysis.
     http_payload = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
