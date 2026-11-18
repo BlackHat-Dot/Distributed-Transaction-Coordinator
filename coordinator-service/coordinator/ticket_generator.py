@@ -273,11 +273,13 @@ def generate_tickets_pdf(transaction: Transaction, tickets: list[Ticket]) -> byt
         # QR Code Section
         # Generates the verification QR code for this specific ticket and streams it into ReportLab as an in-memory image reader.
         qr_img = generate_qr_code_image(ticket_code)
+        # Pipes QR code image PNG stream into ReportLab ImageReader for canvas rendering.
         qr_io = io.BytesIO()
         qr_img.save(qr_io, format="PNG")
         qr_io.seek(0)
         qr_reader = ImageReader(qr_io)
 
+        # Dynamically calculates square QR dimensions and vertical offset to maintain bottom margin.
         qr_size = 165
         if (divider_y - qr_size - 12) < 55:
             qr_size = max(130, int(divider_y - 70))
