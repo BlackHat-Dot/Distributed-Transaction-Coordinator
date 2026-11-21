@@ -697,12 +697,14 @@ class RequesterIdentity(tuple):
 
     # Formats developer-friendly string representation of requester identity attributes.
     def __repr__(self):
+        # Returns formatted debug string detailing internal tuple components.
         return (
             f"RequesterIdentity(is_authenticated={self.is_authenticated!r}, "
             f"user_id={self.user_id!r}, is_staff={self.is_staff!r}, user_email={self.user_email!r})"
         )
 
 # verified
+# Determines caller identity and staff privileges from staff key or bearer JWT.
 def _get_caller(request):
     """
     Resolve caller identity strictly from verified sources:
