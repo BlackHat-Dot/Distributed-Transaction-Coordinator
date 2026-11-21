@@ -616,9 +616,11 @@ def _verify_staff_key(header_val):
             "code": "STAFF_SERVICE_UNAVAILABLE"
         })
 
+    # Performs constant-time digest comparison to prevent timing side-channel leaks.
     return hmac.compare_digest(header_val.strip(), staff_key.strip())
 
 # verified
+# Validates whether a normalized email address belongs to authorized ADMIN_DOMAIN domains.
 def _is_admin_email(email):
     """
     Check if email belongs to configured ADMIN_DOMAIN(s).
