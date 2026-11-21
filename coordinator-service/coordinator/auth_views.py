@@ -2,7 +2,9 @@
 import jwt
 # Imports Python's hashlib library to generate SHA-256 hashes of OTP tokens and magic link secrets for constant-length secure comparison.
 import hashlib
+# Imports HMAC cryptographic module to perform timing-safe digest comparisons and prevent side-channel timing attacks.
 import hmac
+# Imports Python standard logging facility to record authentication events, security warnings, and audit trails.
 import logging
 import os
 import re
