@@ -713,9 +713,11 @@ def _get_caller(request):
     No unverified headers or environment fallbacks allowed.
     Memoized on the request object for zero-overhead repeated lookups.
     """
+    # Returns cached caller identity from request context if already resolved.
     if hasattr(request, "_cached_caller_identity"):
         return request._cached_caller_identity
 
+    # Initializes caller identity reference to None prior to credential evaluation.
     identity = None
 
     # Staff verification
