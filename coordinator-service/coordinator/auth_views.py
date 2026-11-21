@@ -651,9 +651,11 @@ def _is_admin_email(email):
 
     # Splits normalized email into local-part and domain-part components.
     parts = norm.split("@")
+    # Validates email has exactly two non-empty components before and after '@'.
     if len(parts) != 2 or not parts[0] or not parts[1]:
         return False
 
+    # Returns True if domain matches one of the configured admin domains.
     return parts[1] in admin_domains
 
 # verified
