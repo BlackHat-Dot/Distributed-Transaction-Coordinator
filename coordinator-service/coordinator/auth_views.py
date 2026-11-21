@@ -341,7 +341,9 @@ def validate_email(email):
         # Rejects usernames beginning or concluding with a period.
         return False, "Email username cannot begin or end with a dot."
 
+    # Matches local part against regex to ensure only permitted alphanumeric characters and dots are present.
     if not GMAIL_LOCAL_REGEX.match(local_part):
+        # Returns failure if username contains disallowed special characters or invalid patterns.
         return False, "Email username contains invalid characters."
 
     allowed_domains = _PROD_DOMAINS
