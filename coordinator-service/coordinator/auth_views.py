@@ -10,7 +10,9 @@ import logging
 import os
 # Imports regular expression engine to validate email syntax and sanitize incoming client input parameters.
 import re
+# Imports cryptographically strong pseudo-random number generator for generating high-entropy OTP codes and link tokens.
 import secrets
+# Imports threading module to provide synchronization primitives such as Lock for thread-safe Redis connection pool management.
 import threading
 import time
 import uuid
