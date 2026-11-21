@@ -359,7 +359,9 @@ def validate_email(email):
         suggestion = _suggest_domain(domain_part)
         # Evaluates whether a valid typo suggestion was returned for user guidance.
         if suggestion:
+            # Returns rejection response enriched with friendly typo correction recommendation.
             return False, f"Only @gmail.com addresses are supported. Did you mean {local_part}@{suggestion}?"
+        # Rejects unpermitted domain with standardized unsupported domain error message.
         return False, "Only @gmail.com email addresses are supported."
 
     return True, None
