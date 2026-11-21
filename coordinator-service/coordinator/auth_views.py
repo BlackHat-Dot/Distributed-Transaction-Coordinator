@@ -559,10 +559,12 @@ def get_user_from_request(request):
     
     # Checks whether authorization header specifies the standard Bearer authentication scheme.
     if auth_header.startswith("Bearer "):
+        # Splits header string by space and extracts bearer token payload string.
         token = auth_header.split(" ")[1].strip() # index 1 holds the JWT Token
 
     # Initializes user information dictionary variable to None.
     user_info = None
+    # Proceed with cryptographic verification only if bearer token string was resolved.
     if token:
         payload, err = verify_jwt(token)
         # error is consumed
