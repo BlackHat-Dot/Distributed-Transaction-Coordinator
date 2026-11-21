@@ -659,12 +659,14 @@ def _is_admin_email(email):
     return parts[1] in admin_domains
 
 # verified
+# Custom immutable tuple representing caller authentication state, user ID, staff role, and email.
 class RequesterIdentity(tuple):
     """
     Caller identity 3-tuple (is_authenticated, user_id, is_staff) with .user_email.
     Fully compatible with 3-tuple unpacking, pickle serialization, and caching.
     """
 
+    # Constructs new immutable RequesterIdentity tuple instance with convenience attributes.
     def __new__(cls, is_authenticated, user_id=None, is_staff=False, user_email=None):
         # Support reconstitution from single sequence tuple (pickle/cache unpacking)
         if isinstance(is_authenticated, tuple) and user_id is None:
