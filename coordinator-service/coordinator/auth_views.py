@@ -30,7 +30,9 @@ from django.conf import settings
 from django.core.cache import cache
 # Imports HTTP status codes from Django REST Framework for standardized API response status reporting.
 from rest_framework import status
+# Imports api_view decorator to wrap functional views with DRF request handling, authentication, and permission checks.
 from rest_framework.decorators import api_view
+# Imports DRF Response object to serialize Python dictionaries into HTTP response payloads with proper content negotiation.
 from rest_framework.response import Response
 from rest_framework.exceptions import APIException, AuthenticationFailed
 from django.utils import timezone
