@@ -830,6 +830,7 @@ def _dispatch_otp_email(to_email, otp_code):
     — DTC Security
     Distributed Transaction Coordinator"""
 
+    # Constructs responsive branded HTML email body template with stylized OTP code display.
     html_content = f"""<!DOCTYPE html>
     <html lang="en">
     <head>
@@ -921,6 +922,7 @@ def _dispatch_otp_email(to_email, otp_code):
     </body>
     </html>"""
 
+    # Attempts to deliver verification email through Resend API while capturing potential network exceptions.
     try:
         params: resend.Emails.SendParams = {
             "from": from_email,
