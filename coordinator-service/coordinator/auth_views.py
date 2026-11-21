@@ -477,7 +477,9 @@ def _email_hash(email):
 # Issues a signed JSON Web Token carrying user identity, session identifier, and expiration timestamps.
 def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
     """Create a signed HS256 JWT."""
+    # Captures current epoch time in integer seconds for JWT issue timestamp.
     now = int(time.time())
+    # Falls back to configured environment expiration seconds or 1800 seconds (30 minutes) default.
     if expires_in is None:
         expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "1800"))
 
