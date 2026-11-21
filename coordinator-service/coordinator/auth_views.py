@@ -266,7 +266,9 @@ def _suggest_domain(domain_part):
     if d in _NON_TYPO_REAL_DOMAINS:
         # Returns None immediately if domain is an explicit non-typo legitimate third-party provider.
         return None
+    # Rejects malformed domain strings lacking dot delimiters unless equal to bare 'gmail'.
     if "." not in d and d != "gmail":
+        # Discards domain strings that cannot represent a valid domain or known abbreviation.
         return None
 
     # Fast path: known high-frequency typos
