@@ -587,9 +587,11 @@ def get_user_from_request(request):
     # Attempts to attach memoized user info to request instance, catching immutability errors.
     try:
         request._cached_user_info = user_info
+    # Suppresses AttributeError if request object is mock or does not allow dynamic attributes.
     except AttributeError:
         pass
 
+    # Returns extracted user info dictionary or None if unauthenticated.
     return user_info
 
 # verified
