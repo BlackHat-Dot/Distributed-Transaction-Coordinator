@@ -371,7 +371,9 @@ def validate_email(email):
 # Generates deterministic user identifier prefixed with usr_ derived from SHA256 of canonical email.
 def _generate_user_id(email):
     """Generate deterministic user ID prefixed with usr_ from normalized email SHA256."""
+    # Sanitizes input email to ensure user ID hashing is consistent across casing variants.
     norm = _normalize_email(email)
+    # Returns empty string fallback if email parameter is empty or non-string.
     if not norm:
         return ""
     # Computes a deterministic 16-character hexadecimal hash of the canonical email to generate persistent, PII-free internal user identifiers.
