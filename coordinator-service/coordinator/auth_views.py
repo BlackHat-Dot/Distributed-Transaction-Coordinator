@@ -65,11 +65,13 @@ class ServiceUnavailable(APIException):
 # Defines an internal helper function that manages, health-checks, and safely returns an active Redis client connection.
 def _get_redis_client():
     """Return a healthy cached Redis client with thread-safety and circuit-breaker self-healing."""
+    # Declares module-level state variables as global so connection timestamps and client handles can be mutated across calls.
     global _redis_last_check, _redis_last_ping, _redis_client_instance
 
     # Captures a clock timestamp that always moves forward and never jumps backwards (even if system time changes), making it ideal for measuring elapsed intervals.
     now = time.monotonic()
 
+    # Checks if an existing Redis connection instance is already cached in memory.
     if _redis_client_instance is not None:
         # Checks if a Redis health ping succeeded within the last 2 seconds to avoid overloading Redis with unnecessary ping calls on every request.
         if now - _redis_last_ping < 2.0:
