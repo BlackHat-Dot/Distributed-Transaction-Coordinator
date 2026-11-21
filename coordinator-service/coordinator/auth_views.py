@@ -595,8 +595,10 @@ def get_user_from_request(request):
     return user_info
 
 # verified
+# Validates privileged administrative staff API key using timing-safe comparison.
 def _verify_staff_key(header_val):
     """Verify staff key from request header with constant-time comparison."""
+    # Rejects missing, empty, or non-string header values with AuthenticationFailed exception.
     if not isinstance(header_val, str) or not header_val.strip():
         raise AuthenticationFailed({
             "error": "Invalid staff key provided.",
