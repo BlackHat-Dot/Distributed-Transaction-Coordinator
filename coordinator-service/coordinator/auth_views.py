@@ -940,7 +940,9 @@ def _dispatch_otp_email(to_email, otp_code):
         logger.info("Verification code delivered to %s via Resend (id=%s).", clean_to, msg_id)
         # Returns True signaling successful email dispatch to the caller.
         return True
+    # Intercepts communication errors, network failures, or API rejections during email dispatch.
     except Exception as exc:
+        # Logs structured error diagnostic details with full exception stack trace.
         logger.error(
             "Failed to deliver verification code to %s via Resend: %s",
             clean_to,
