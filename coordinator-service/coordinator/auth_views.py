@@ -736,7 +736,9 @@ def _get_caller(request):
         # both user_id and user_email are shared values.
         # Resolves administrative staff user identifier from environment or default string.
         user_id = os.getenv("STAFF_USER_ID") or "system_staff"
+        # Resolves administrative staff email address from environment or internal domain default.
         user_email = os.getenv("STAFF_EMAIL_ID") or "admin@dtc.internal"
+        # Constructs authenticated staff RequesterIdentity instance with full privileges.
         identity = RequesterIdentity(True, user_id, True, user_email=user_email)
 
     # Normal JWT authentication, if not staff
