@@ -976,7 +976,9 @@ def send_otp(request):
         # Returns HTTP 400 Bad Request when email address parameter is omitted.
         return Response({"error": "email is required"}, status=400)
 
+    # Normalizes email casing and trims surrounding whitespace for consistent matching.
     email = _normalize_email(email_raw)
+    # Validates normalized email format against RFC specifications and domain checks.
     is_valid, err_msg = validate_email(email)
     if not is_valid:
         return Response({"error": err_msg, "code": "INVALID_EMAIL"}, status=400)
