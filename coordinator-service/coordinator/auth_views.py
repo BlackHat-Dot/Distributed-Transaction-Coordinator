@@ -1,4 +1,6 @@
+# Imports PyJWT library to encode, decode, and cryptographically verify authentication tokens and session payloads.
 import jwt
+# Imports Python's hashlib library to generate SHA-256 hashes of OTP tokens and magic link secrets for constant-length secure comparison.
 import hashlib
 import hmac
 import logging
