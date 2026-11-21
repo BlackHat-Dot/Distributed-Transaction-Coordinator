@@ -421,10 +421,12 @@ def _get_client_ip(request):
     # If the direct peer is not a trusted proxy, it might be an untrusted client attempting to spoof headers; ignore XFF
     # Anti-spoofing firewall: ignores X-Forwarded-For headers entirely unless the direct upstream TCP peer is explicitly verified as a trusted reverse proxy.
     if remote_addr not in trusted_proxies:
+        # Returns direct remote address without trusting forwarded headers from untrusted proxy peer.
         return remote_addr
 
     # Fetch X-Forwarded-For header containing proxy chain: "client_ip, proxy1_ip, proxy2_ip"
     xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    # Verifies presence and string type of HTTP_X_FORWARDED_FOR header before parsing.
     if not xff or not isinstance(xff, str):
         return remote_addr
 
