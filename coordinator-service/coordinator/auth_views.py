@@ -336,7 +336,9 @@ def validate_email(email):
         # Rejects local username strings containing consecutive period characters.
         return False, "Email username cannot contain consecutive dots ('..')."
 
+    # Enforces RFC 5322 rule prohibiting leading or trailing period characters in email usernames.
     if local_part.startswith(".") or local_part.endswith("."):
+        # Rejects usernames beginning or concluding with a period.
         return False, "Email username cannot begin or end with a dot."
 
     if not GMAIL_LOCAL_REGEX.match(local_part):
