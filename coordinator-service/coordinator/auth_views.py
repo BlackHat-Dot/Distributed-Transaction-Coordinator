@@ -161,12 +161,14 @@ def _get_redis_client():
             # Updates the ping timestamp to record the time of the successful connection handshake.
             _redis_last_ping = now
 
+            # Returns the freshly established and verified Redis client to the caller.
             return client
 
         # Catches any connection failure, DNS resolution error, or ping timeout during the connection attempt.
         except Exception:
             # Cleanly shuts down dangling network sockets if the client was partially constructed before failing.
             if client is not None:
+                # Wraps socket cleanup in an exception handler to prevent shutdown errors from masking the original exception.
                 try:
                     client.close()
                 except Exception:
