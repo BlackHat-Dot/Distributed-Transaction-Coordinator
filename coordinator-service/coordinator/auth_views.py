@@ -205,6 +205,7 @@ def _normalize_email(email_str):
     # Strip invisible zero-width unicode characters (\u200b, \u200c, \u200d, \ufeff)
     # Strips invisible zero-width unicode characters to prevent homograph obfuscation and cache key bypass attacks.
     cleaned = re.sub(r"[\u200b\u200c\u200d\ufeff]", "", email_str)
+    # Returns the trimmed, lowercased canonical email string for consistent comparison and storage.
     return cleaned.strip().lower()
 
 
@@ -218,6 +219,7 @@ def _normalize_email(email_str):
 
 => Together ^...$ means the entire string must match this pattern top to bottom, nothing before, nothing after.
 """
+# Precompiled regular expression enforcing RFC 5322-compliant Gmail username syntax and character length boundaries.
 GMAIL_LOCAL_REGEX = re.compile(r"^[a-z0-9][a-z0-9._%+-]{1,62}[a-z0-9]$")
 
 # Enforces immutable frozensets for permitted email domains to provide thread-safe, zero-allocation O(1) membership lookups.
