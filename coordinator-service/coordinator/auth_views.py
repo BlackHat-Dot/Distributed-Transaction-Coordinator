@@ -191,9 +191,11 @@ def _is_dev_auth_mode():
     if getattr(settings, "IS_TESTING", False):
         # Disables development auth mode under test runners to ensure security suites validate production rules.
         return False
+    # Returns True if Django DEBUG setting is active, enabling developer convenience bypasses in local dev.
     return bool(getattr(settings, "DEBUG", False))
 
 # verified
+# Helper function to sanitize, lowercase, and strip zero-width characters from email inputs.
 def _normalize_email(email_str):
     """Safely strip, sanitize zero-width unicode characters, and lowercase email string."""
     if not email_str or not isinstance(email_str, str):
