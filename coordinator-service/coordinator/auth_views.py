@@ -439,9 +439,11 @@ def _get_client_ip(request):
     for ip in raw_ips:
         # Strips any characters outside valid IPv4/IPv6 sets to eliminate injection risks.
         sanitized = re.sub(r"[^a-zA-Z0-9.:%-]", "", ip)
+        # Appends non-empty sanitized IP address to clean list.
         if sanitized:
             clean_ips.append(sanitized)
 
+    # Falls back to direct peer IP if sanitization stripped all entries from the forwarded header.
     if not clean_ips:
         return remote_addr
 
