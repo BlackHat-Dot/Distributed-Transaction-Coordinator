@@ -796,7 +796,9 @@ def _dispatch_otp_email(to_email, otp_code):
     api_key = getattr(settings, "RESEND_API_KEY", None) or os.getenv("RESEND_API_KEY")
     # Aborts OTP email dispatch if no Resend API key is configured in the application environment.
     if not api_key:
+        # Logs server configuration error when Resend API key is missing.
         logger.error("Failed to dispatch OTP email: RESEND_API_KEY is not configured on the server.")
+        # Returns False indicating failure to dispatch verification email due to missing credentials.
         return False
 
     resend.api_key = api_key
