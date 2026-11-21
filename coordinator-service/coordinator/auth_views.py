@@ -498,8 +498,10 @@ def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
     return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
 # verified
+# Validates and cryptographically decodes a JSON Web Token using server secret key.
 def verify_jwt(token):
     """Verify and decode a JWT. Returns (payload, None) on success, or (None, err_str)."""
+    # Validates token is a string containing exactly two dot separators (header.payload.signature).
     if not token or not isinstance(token, str) or token.count(".") != 2:
         return None, "Invalid token format"
 
