@@ -801,8 +801,10 @@ def _dispatch_otp_email(to_email, otp_code):
         # Returns False indicating failure to dispatch verification email due to missing credentials.
         return False
 
+    # Configures global Resend client SDK credentials with the retrieved API key.
     resend.api_key = api_key
 
+    # Resolves sender display address and mailbox from settings, environment, or default fallback.
     from_email = (
         getattr(settings, "RESEND_FROM_EMAIL", None)
         or getattr(settings, "DEFAULT_FROM_EMAIL", None)
