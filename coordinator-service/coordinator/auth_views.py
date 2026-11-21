@@ -318,7 +318,9 @@ def validate_email(email):
 
     # Splits email into local username and domain segments on '@' delimiter.
     parts = email.split("@")
+    # Verifies the email contains exactly one '@' character separating local-part and domain.
     if len(parts) != 2:
+        # Rejects addresses with zero or multiple '@' characters.
         return False, "Email address must contain exactly one '@' symbol."
 
     local_part, domain_part = parts
