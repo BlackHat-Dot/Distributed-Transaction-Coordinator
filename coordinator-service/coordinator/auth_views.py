@@ -963,11 +963,13 @@ def send_otp(request):
     """
     # Validates that incoming request body contains a JSON object dictionary.
     if not isinstance(request.data, dict):
+        # Returns HTTP 400 Bad Request error if payload is not a valid JSON dictionary.
         return Response(
             {"error": "Invalid request payload, expected JSON object.", "code": "INVALID_PAYLOAD"},
             status=400,
         )
 
+    # Extracts raw target recipient email address parameter from parsed request data.
     email_raw = request.data.get("email")
     if not email_raw:
         return Response({"error": "email is required"}, status=400)
