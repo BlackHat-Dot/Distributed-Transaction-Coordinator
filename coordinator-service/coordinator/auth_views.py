@@ -985,7 +985,9 @@ def send_otp(request):
         # Returns HTTP 400 Bad Request with specific validation failure message.
         return Response({"error": err_msg, "code": "INVALID_EMAIL"}, status=400)
 
+    # Evaluates whether server is running in dev authentication bypass mode.
     is_dev_mode = _is_dev_auth_mode()
+    # Determines if current runtime environment is executing unit or integration tests.
     is_testing = bool(getattr(settings, "IS_TESTING", False))
     client = _get_redis_client()
 
