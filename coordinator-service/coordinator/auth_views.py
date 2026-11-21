@@ -411,8 +411,10 @@ def _get_client_ip(request):
     # Handles collection types (list, tuple, set) by trimming non-empty string representations.
     elif isinstance(trusted_proxies, (list, tuple, set)): 
         trusted_proxies = {str(p).strip() for p in trusted_proxies if str(p).strip()}
+    # Parses string formatted settings into a set of trimmed IP addresses.
     elif isinstance(trusted_proxies, str):
         trusted_proxies = {p.strip() for p in trusted_proxies.split(",") if p.strip()}
+    # Defaults to loopback addresses if trusted_proxies is configured with an unrecognized type.
     else:
         trusted_proxies = {"127.0.0.1", "::1"}
 
