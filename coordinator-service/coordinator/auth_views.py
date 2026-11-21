@@ -669,12 +669,14 @@ class RequesterIdentity(tuple):
     # Constructs new immutable RequesterIdentity tuple instance with convenience attributes.
     def __new__(cls, is_authenticated, user_id=None, is_staff=False, user_email=None):
         # Support reconstitution from single sequence tuple (pickle/cache unpacking)
+        # Unpacks nested tuple during deserialization or pickle reconstitution.
         if isinstance(is_authenticated, tuple) and user_id is None:
             seq = is_authenticated
             is_authenticated = seq[0] if len(seq) > 0 else False
             user_id = seq[1] if len(seq) > 1 else None
             is_staff = seq[2] if len(seq) > 2 else False
 
+        # Enforces boolean type casting for authentication status.
         auth_bool = bool(is_authenticated)
         staff_bool = bool(is_staff)
 
