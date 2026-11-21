@@ -575,6 +575,7 @@ def get_user_from_request(request):
             uemail = payload.get("user_email")
             sid = payload.get("sid")
 
+            # Assembles authenticated user metadata dictionary from decoded claims.
             user_info = {
                 "user_id": uid,
                 "user_email": uemail,
@@ -583,6 +584,7 @@ def get_user_from_request(request):
                 "is_authenticated": True
             }
 
+    # Attempts to attach memoized user info to request instance, catching immutability errors.
     try:
         request._cached_user_info = user_info
     except AttributeError:
