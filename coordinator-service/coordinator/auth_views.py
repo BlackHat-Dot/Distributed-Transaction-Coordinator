@@ -372,6 +372,7 @@ def validate_email(email):
 def _generate_user_id(email):
     """Generate deterministic user ID prefixed with usr_ from normalized email SHA256."""
     # Sanitizes input email to ensure user ID hashing is consistent across casing variants.
+    # Canonicalizes email address to prevent cache key divergence across mixed cases.
     norm = _normalize_email(email)
     # Returns empty string fallback if email parameter is empty or non-string.
     if not norm:
@@ -473,6 +474,7 @@ def _email_hash(email):
 
 
 # verfied
+# Issues a signed JSON Web Token carrying user identity, session identifier, and expiration timestamps.
 def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
     """Create a signed HS256 JWT."""
     now = int(time.time())
