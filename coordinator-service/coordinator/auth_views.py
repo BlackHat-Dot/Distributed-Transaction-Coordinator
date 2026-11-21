@@ -980,7 +980,9 @@ def send_otp(request):
     email = _normalize_email(email_raw)
     # Validates normalized email format against RFC specifications and domain checks.
     is_valid, err_msg = validate_email(email)
+    # Rejects request early if email syntax validation checks fail.
     if not is_valid:
+        # Returns HTTP 400 Bad Request with specific validation failure message.
         return Response({"error": err_msg, "code": "INVALID_EMAIL"}, status=400)
 
     is_dev_mode = _is_dev_auth_mode()
