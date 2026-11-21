@@ -779,6 +779,7 @@ def _dispatch_otp_email(to_email, otp_code):
     """
     # Normalizes recipient email address to standard lowercase representation.
     clean_to = _normalize_email(to_email)
+    # Rejects transmission and logs error if recipient address is missing or malformed.
     if not clean_to:
         logger.error("Failed to dispatch OTP email: Recipient email address is missing or invalid.")
         return False
@@ -786,6 +787,7 @@ def _dispatch_otp_email(to_email, otp_code):
     # Defensively enforce strictly 6 numeric digits to prevent template injection
     # Defensively strips non-numeric characters to ensure exactly 6 digits are injected into the transactional email template, preventing injection attacks.
     clean_otp = re.sub(r"[^0-9]", "", str(otp_code or ""))
+    # Validates stripped OTP code is exactly six numeric digits before template injection.
     if len(clean_otp) != 6:
         logger.error("Failed to dispatch OTP email to %s: Invalid OTP code format.", clean_to)
         return False
