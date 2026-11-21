@@ -355,7 +355,9 @@ def validate_email(email):
 
     # Validates whether extracted domain part belongs to permitted email domains.
     if domain_part not in allowed_domains:
+        # Checks if unrecognized domain matches known Gmail typo patterns.
         suggestion = _suggest_domain(domain_part)
+        # Evaluates whether a valid typo suggestion was returned for user guidance.
         if suggestion:
             return False, f"Only @gmail.com addresses are supported. Did you mean {local_part}@{suggestion}?"
         return False, "Only @gmail.com email addresses are supported."
