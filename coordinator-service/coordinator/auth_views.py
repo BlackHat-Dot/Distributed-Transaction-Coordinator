@@ -136,6 +136,7 @@ def _get_redis_client():
         _redis_last_check = now
         # Resolves the Redis broker URL from Django application settings or defaults to localhost.
         broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+        # Determines if current execution is running inside automated test suite to set aggressive timeouts.
         testing_mode = bool(getattr(settings, "IS_TESTING", False))
 
         # Sets a tight network socket timeout (0.02s in tests, 0.5s in production) to fail fast on outages.
@@ -143,6 +144,7 @@ def _get_redis_client():
 
         # Initializes the client variable to ensure clean error handling in the except block if connection setup fails.
         client = None
+        # Guards the Redis connection establishment and initial ping handshake against socket and DNS failures.
         try:
             # Creates a new Redis client with UTF-8 string decoding and strict connection/read timeouts.
             client = redis.Redis.from_url(
