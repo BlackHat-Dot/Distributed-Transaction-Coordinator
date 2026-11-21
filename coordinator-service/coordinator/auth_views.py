@@ -309,12 +309,14 @@ def validate_email(email):
     if not email or not isinstance(email, str):
         return False, "Email address is required."
 
+    # Trims extraneous whitespace and normalizes email casing to lowercase.
     email = email.strip().lower()
 
     # Enforces RFC 5321 maximum path length limit to protect downstream SMTP transport agents and database columns from buffer overflows.
     if len(email) > 254:
         return False, "Email address exceeds maximum length of 254 characters."
 
+    # Splits email into local username and domain segments on '@' delimiter.
     parts = email.split("@")
     if len(parts) != 2:
         return False, "Email address must contain exactly one '@' symbol."
