@@ -85,6 +85,7 @@ def _get_redis_client():
             # Updates the last verified ping timestamp so subsequent calls within the 2-second grace period can skip pinging.
             _redis_last_ping = now
 
+            # Returns the verified active Redis client after confirming successful ping response.
             return _redis_client_instance
 
         # Catches any ping failure (network drop, timeout, or closed connection) and binds the error object to exc.
@@ -94,6 +95,7 @@ def _get_redis_client():
 
             # Acquires the thread lock to ensure only one thread mutates the shared Redis connection state at a time.
             with _redis_lock:
+                # Verifies the cached instance has not already been reset by a concurrent thread.
                 if _redis_client_instance is not None:
                     # Safely closes open socket connections without crashing if the socket is already corrupted.
                     try:
