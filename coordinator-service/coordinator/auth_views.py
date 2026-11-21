@@ -100,7 +100,9 @@ def _get_redis_client():
                     # Safely closes open socket connections without crashing if the socket is already corrupted.
                     try:
                         _redis_client_instance.close()
+                    # Intercepts any exception raised during connection socket shutdown to prevent resource leak aborts.
                     except Exception:
+                        # Ignores cleanup exceptions when closing an already broken socket.
                         pass
 
                     # Wipes the cached instance variable so subsequent requests know they must re-establish a fresh connection.
