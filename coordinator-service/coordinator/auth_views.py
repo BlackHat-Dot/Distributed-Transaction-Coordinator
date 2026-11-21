@@ -541,6 +541,7 @@ def verify_jwt(token):
         return None, str(e)
 
 # verified
+# Extracts, validates, and memoizes authenticated user profile from request Authorization headers.
 def get_user_from_request(request):
     """
     Extracts authenticated user identity from Authorization header or request payload.
@@ -548,6 +549,7 @@ def get_user_from_request(request):
     """
     # Memoizes the decoded user identity on the Django request object to eliminate redundant cryptographic decoding across multiple middleware and view checks.
     if hasattr(request, "_cached_user_info"):
+        # Returns pre-computed cached user information without re-verifying token.
         return request._cached_user_info
 
     auth_header = request.headers.get("Authorization", "") # fallback "" given for grazeful stop
