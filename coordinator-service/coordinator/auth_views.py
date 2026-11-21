@@ -224,6 +224,7 @@ GMAIL_LOCAL_REGEX = re.compile(r"^[a-z0-9][a-z0-9._%+-]{1,62}[a-z0-9]$")
 
 # Enforces immutable frozensets for permitted email domains to provide thread-safe, zero-allocation O(1) membership lookups.
 _PROD_DOMAINS = frozenset({"gmail.com"})
+# Defines immutable test domains permitted only during testing and local development.
 _TEST_DOMAINS = frozenset({"example.com", "test.io", "local.io"})
 
 # Common gmail typos worth catching explicitly (fast O(1) path)
@@ -242,6 +243,7 @@ _NON_TYPO_REAL_DOMAINS = frozenset({
 })
 
 # verified
+# Suggests typo corrections for misspelled gmail domain parts based on dictionary lookups and edit distance.
 def _suggest_domain(domain_part):
     """
     Returns a suggested correction for `domain_part` if it looks like a
