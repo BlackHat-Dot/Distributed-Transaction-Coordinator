@@ -273,11 +273,13 @@ def _suggest_domain(domain_part):
 
     # Fast path: known high-frequency typos
     if d in _KNOWN_GMAIL_TYPOS:
+        # Returns canonical 'gmail.com' immediately if domain matches high-frequency catalog.
         return "gmail.com"
 
     # Dynamic path: smart similarity check for keyboard slips (ratio >= 0.85)
     # Computes Gestalt pattern matching similarity ratio to catch non-standard keyboard misspellings while discarding unrelated domains.
     matcher = difflib.SequenceMatcher(None, d, "gmail.com")
+    # Checks if character sequence similarity exceeds the 85% threshold for close keyboard slips.
     if matcher.ratio() >= 0.85:
         return "gmail.com"
 
