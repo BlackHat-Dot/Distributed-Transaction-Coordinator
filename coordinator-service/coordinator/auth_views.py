@@ -258,11 +258,13 @@ def _suggest_domain(domain_part):
         # Aborts domain suggestion and returns None if domain part is absent or invalid type.
         return None
 
+    # Trims whitespace and normalizes domain part to lowercase for consistent dictionary and regex lookups.
     d = domain_part.strip().lower()
 
     # Guard: legitimate third-party services and malformed non-TLDs must never suggest gmail.com
     # Explicitly blacklists legitimate independent mail providers (Yahoo, Outlook, Proton) from ever triggering a Gmail typo recommendation.
     if d in _NON_TYPO_REAL_DOMAINS:
+        # Returns None immediately if domain is an explicit non-typo legitimate third-party provider.
         return None
     if "." not in d and d != "gmail":
         return None
