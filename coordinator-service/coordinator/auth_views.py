@@ -924,6 +924,7 @@ def _dispatch_otp_email(to_email, otp_code):
 
     # Attempts to deliver verification email through Resend API while capturing potential network exceptions.
     try:
+        # Prepares structured email payload dictionary containing sender, recipient, subject, and content.
         params: resend.Emails.SendParams = {
             "from": from_email,
             "to": [clean_to],
@@ -933,6 +934,7 @@ def _dispatch_otp_email(to_email, otp_code):
         }
         # Dispatches transactional verification email via Resend's REST API with preheader preview text and branded HTML layout.
         result = resend.Emails.send(params)
+        # Extracts external message delivery ID from the Resend API response for tracing.
         msg_id = result.get("id") if isinstance(result, dict) else None
         logger.info("Verification code delivered to %s via Resend (id=%s).", clean_to, msg_id)
         return True
