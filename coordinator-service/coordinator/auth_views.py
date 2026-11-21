@@ -428,10 +428,12 @@ def _get_client_ip(request):
     xff = request.META.get("HTTP_X_FORWARDED_FOR")
     # Verifies presence and string type of HTTP_X_FORWARDED_FOR header before parsing.
     if not xff or not isinstance(xff, str):
+        # Returns direct socket address if forwarded header is absent or not a string.
         return remote_addr
 
     # Parse comma-separated XFF IPs in order, sanitizing valid IP characters to prevent Redis key injection
     raw_ips = [ip.strip() for ip in xff.split(",") if ip.strip()]
+    # Initializes accumulator list to collect sanitized IP strings.
     clean_ips = []
     for ip in raw_ips:
         sanitized = re.sub(r"[^a-zA-Z0-9.:%-]", "", ip)
