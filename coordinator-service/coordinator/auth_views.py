@@ -1005,7 +1005,9 @@ def send_otp(request):
     if client:
         # Wraps primary Redis session presence lookup in error-resilient exception handler.
         try:
+            # Checks whether active session record exists in Redis for this user account.
             if client.exists(session_key):
+                # Marks session as active when concurrent login record is found in Redis.
                 session_active = True
         except Exception:
             pass
