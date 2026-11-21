@@ -936,7 +936,9 @@ def _dispatch_otp_email(to_email, otp_code):
         result = resend.Emails.send(params)
         # Extracts external message delivery ID from the Resend API response for tracing.
         msg_id = result.get("id") if isinstance(result, dict) else None
+        # Logs successful OTP email dispatch with recipient and delivery identifier.
         logger.info("Verification code delivered to %s via Resend (id=%s).", clean_to, msg_id)
+        # Returns True signaling successful email dispatch to the caller.
         return True
     except Exception as exc:
         logger.error(
