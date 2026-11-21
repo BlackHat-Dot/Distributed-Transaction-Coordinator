@@ -323,8 +323,10 @@ def validate_email(email):
         # Rejects addresses with zero or multiple '@' characters.
         return False, "Email address must contain exactly one '@' symbol."
 
+    # Unpacks the two verified segments into distinct local_part and domain_part variables.
     local_part, domain_part = parts
 
+    # Validates local username length is between 3 and 64 characters per Gmail specifications.
     if not local_part or len(local_part) < 3 or len(local_part) > 64:
         return False, "Email username (before '@') must be between 3 and 64 characters."
 
