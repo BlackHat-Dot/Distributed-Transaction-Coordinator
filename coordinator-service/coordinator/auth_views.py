@@ -600,11 +600,13 @@ def _verify_staff_key(header_val):
     """Verify staff key from request header with constant-time comparison."""
     # Rejects missing, empty, or non-string header values with AuthenticationFailed exception.
     if not isinstance(header_val, str) or not header_val.strip():
+        # Raises AuthenticationFailed exception with INVALID_STAFF_KEY error details.
         raise AuthenticationFailed({
             "error": "Invalid staff key provided.",
             "code": "INVALID_STAFF_KEY"
         })
 
+    # Fetches active staff secret key from operating system environment.
     staff_key = os.getenv("STAFF_API_KEY")
     # Validates the privileged staff API key using constant-time string comparison to prevent timing side-channel attacks.
     if not staff_key:
