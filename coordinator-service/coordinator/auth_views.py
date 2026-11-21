@@ -132,7 +132,9 @@ def _get_redis_client():
             # Aborts connection attempt if circuit breaker cooldown is active within locked context.
             return None
 
+        # Updates the last connection attempt timestamp to mark start of current reconnect attempt.
         _redis_last_check = now
+        # Resolves the Redis broker URL from Django application settings or defaults to localhost.
         broker_url = getattr(settings, "CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
         testing_mode = bool(getattr(settings, "IS_TESTING", False))
 
