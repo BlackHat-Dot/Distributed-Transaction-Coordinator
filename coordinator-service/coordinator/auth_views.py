@@ -678,8 +678,10 @@ class RequesterIdentity(tuple):
 
         # Enforces boolean type casting for authentication status.
         auth_bool = bool(is_authenticated)
+        # Enforces boolean type casting for staff privilege flag.
         staff_bool = bool(is_staff)
 
+        # Instantiates underlying 3-element tuple for backward-compatible tuple unpacking.
         instance = super().__new__(cls, (auth_bool, user_id, staff_bool))
         instance.is_authenticated = auth_bool
         instance.user_id = user_id
