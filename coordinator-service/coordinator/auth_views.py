@@ -389,10 +389,12 @@ def _get_client_ip(request):
     X-Forwarded-For is only trusted if the immediate peer (REMOTE_ADDR)
     is in the configured TRUSTED_PROXIES set. Otherwise REMOTE_ADDR is used.
     """
+    # Returns 'unknown' if request context or META header mapping is absent.
     if not request or not hasattr(request, "META"):
         return "unknown"
 
     # Safely extract REMOTE_ADDR without crashing if value is None
+    # Extracts direct peer TCP socket address from WSGI request metadata dictionary.
     raw_remote = request.META.get("REMOTE_ADDR")
     remote_addr = (raw_remote.strip() if isinstance(raw_remote, str) else "") or "unknown"
 
