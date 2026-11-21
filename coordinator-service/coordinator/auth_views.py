@@ -281,8 +281,10 @@ def _suggest_domain(domain_part):
     matcher = difflib.SequenceMatcher(None, d, "gmail.com")
     # Checks if character sequence similarity exceeds the 85% threshold for close keyboard slips.
     if matcher.ratio() >= 0.85:
+        # Suggests 'gmail.com' correction when dynamic similarity threshold is met.
         return "gmail.com"
 
+    # Returns None when domain does not sufficiently resemble gmail.com.
     return None
 
 # verified
