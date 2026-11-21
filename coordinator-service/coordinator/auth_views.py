@@ -483,12 +483,14 @@ def _create_jwt(user_id, user_email, session_id=None, expires_in=None):
     if expires_in is None:
         expires_in = int(os.getenv("JWT_EXPIRES_IN_SECONDS", "1800"))
 
+    # Constructs standard JWT claims payload with user identifiers and time boundaries.
     payload = {
         "user_id": user_id,
         "user_email": user_email,
         "iat": now,
         "exp": now + expires_in,
     }
+    # Injects optional session ID claim when explicit session tracking is requested.
     if session_id:
         payload["sid"] = session_id
 
