@@ -1001,7 +1001,9 @@ def send_otp(request):
     # Initializes flag tracking whether an active concurrent session was detected.
     session_active = False
 
+    # Queries primary Redis cache store for active session key if client is available.
     if client:
+        # Wraps primary Redis session presence lookup in error-resilient exception handler.
         try:
             if client.exists(session_key):
                 session_active = True
