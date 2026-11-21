@@ -996,7 +996,9 @@ def send_otp(request):
     chances_remaining = 10
 
     # Single-Device Guard: Reject new login attempts if an active session already exists for this email
+    # Formats Redis session lookup cache key scoped to the normalized email address.
     session_key = f"dtc:session:{email}"
+    # Initializes flag tracking whether an active concurrent session was detected.
     session_active = False
 
     if client:
