@@ -552,7 +552,9 @@ def get_user_from_request(request):
         # Returns pre-computed cached user information without re-verifying token.
         return request._cached_user_info
 
+    # Extracts Authorization header value, defaulting to empty string.
     auth_header = request.headers.get("Authorization", "") # fallback "" given for grazeful stop
+    # Initializes token variable to None prior to bearer extraction.
     token = None
     
     if auth_header.startswith("Bearer "):
