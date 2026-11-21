@@ -812,8 +812,10 @@ def _dispatch_otp_email(to_email, otp_code):
         or "DTC Security <otp@relaydtc.online>"
     )
 
+    # Constructs email subject line containing the 6-digit one-time password code.
     subject = f"Your DTC Verification Code: {clean_otp}"
 
+    # Composes plain-text version of verification email for email clients without HTML rendering support.
     text_content = f"""Hello,
 
     Your verification code for the Distributed Transaction Coordinator is:
