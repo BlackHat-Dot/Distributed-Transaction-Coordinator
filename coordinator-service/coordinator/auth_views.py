@@ -744,8 +744,10 @@ def _get_caller(request):
     # Normal JWT authentication, if not staff
     # Priority 2: Resolves customer authentication identity from the verified Bearer JWT footprint and sets staff flags if using an admin domain.
     if not identity:
+        # Resolves authenticated user metadata from Bearer token in request headers.
         user_info = get_user_from_request(request)
-        if user_info and user_info.get("is_authenticated"):
+        # Evaluates whether user info exists and carries verified authentication status.
+        if user_info and user_info.get("is_authenticated"): 
             user_id = user_info.get("user_id")
             user_email = user_info.get("user_email")
             is_staff = _is_admin_email(user_email)
