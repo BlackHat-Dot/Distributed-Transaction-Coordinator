@@ -75,7 +75,9 @@ def _get_redis_client():
     if _redis_client_instance is not None:
         # Checks if a Redis health ping succeeded within the last 2 seconds to avoid overloading Redis with unnecessary ping calls on every request.
         if now - _redis_last_ping < 2.0:
+            # Returns the cached client immediately without sending a ping if the last ping was recent.
             return _redis_client_instance
+        # Wraps the connection health verification ping in an exception handler to catch socket drops or timeouts.
         try:
             # Sends a lightweight heartbeat ping to Redis to actively verify the connection is still alive.
             _redis_client_instance.ping()
