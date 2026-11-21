@@ -6,7 +6,9 @@ import hashlib
 import hmac
 # Imports Python standard logging facility to record authentication events, security warnings, and audit trails.
 import logging
+# Imports operating system module to read environment variables such as token expiration intervals and staff secret keys.
 import os
+# Imports regular expression engine to validate email syntax and sanitize incoming client input parameters.
 import re
 import secrets
 import threading
