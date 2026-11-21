@@ -524,7 +524,9 @@ def verify_jwt(token):
             algorithms=["HS256"],
             options={"require": ["exp"]},
         )
+        # Returns decoded claims dictionary and None error upon successful signature verification.
         return payload, None
+    # Handles expired token exception and returns expired error string.
     except jwt.ExpiredSignatureError:
         return None, "Token has expired"
     except jwt.InvalidSignatureError:
