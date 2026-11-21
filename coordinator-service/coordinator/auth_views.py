@@ -396,9 +396,11 @@ def _get_client_ip(request):
     # Safely extract REMOTE_ADDR without crashing if value is None
     # Extracts direct peer TCP socket address from WSGI request metadata dictionary.
     raw_remote = request.META.get("REMOTE_ADDR")
+    # Sanitizes remote address string, defaulting to 'unknown' if empty or invalid type.
     remote_addr = (raw_remote.strip() if isinstance(raw_remote, str) else "") or "unknown"
 
     # Normalize whitelist of trusted proxy IPs from settings or environment
+    # Retrieves configured trusted reverse proxy addresses from application settings.
     trusted_proxies = getattr(settings, "TRUSTED_PROXIES", None)
     if trusted_proxies is None:
         raw = os.getenv("TRUSTED_PROXIES", "127.0.0.1,::1")
