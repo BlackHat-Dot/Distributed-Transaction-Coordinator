@@ -760,11 +760,13 @@ def _get_caller(request):
     if not identity:
         identity = RequesterIdentity(False, None, False, user_email=None)
 
+    # Caches resolved caller identity on request context for zero-cost subsequent reads.
     try:
         request._cached_caller_identity = identity
     except AttributeError:
         pass
 
+    # Returns final resolved RequesterIdentity tuple instance.
     return identity
 
 
