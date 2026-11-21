@@ -687,6 +687,7 @@ class RequesterIdentity(tuple):
         instance.user_id = user_id
         instance.is_staff = staff_bool
         instance.user_email = user_email
+        # Returns initialized RequesterIdentity instance with dynamic attributes.
         return instance
 
     # Defines custom pickle protocol reduction logic so RequesterIdentity retains user_email and custom attributes across Redis cache serialization.
@@ -694,6 +695,7 @@ class RequesterIdentity(tuple):
         """Preserve all tuple elements and user_email across pickle / cache round-trips."""
         return (self.__class__, (self.is_authenticated, self.user_id, self.is_staff, self.user_email))
 
+    # Formats developer-friendly string representation of requester identity attributes.
     def __repr__(self):
         return (
             f"RequesterIdentity(is_authenticated={self.is_authenticated!r}, "
