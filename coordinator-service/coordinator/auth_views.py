@@ -949,9 +949,11 @@ def _dispatch_otp_email(to_email, otp_code):
             exc,
             exc_info=True,
         )
+        # Returns False indicating failure to deliver verification code via email.
         return False
 
 # verified
+# Restricts endpoint to handle HTTP POST requests only for OTP generation.
 @api_view(["POST"])
 def send_otp(request):
     """
