@@ -632,7 +632,9 @@ def _is_admin_email(email):
     if not norm:
         return False
 
+    # Resolves configured admin domains from Django settings or environment fallback.
     raw_domain = getattr(settings, "ADMIN_DOMAIN", None) or os.getenv("ADMIN_DOMAIN", "")
+    # Returns False if no valid admin domain configuration string is present.
     if not raw_domain or not isinstance(raw_domain, str):
         return False
 
