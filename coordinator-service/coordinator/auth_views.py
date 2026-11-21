@@ -175,11 +175,13 @@ def _get_redis_client():
                 except Exception:
                     # Suppresses cleanup exceptions to allow failure handling to proceed cleanly.
                     pass
+            # Clears the global client singleton reference to prevent stale socket reuse after failed connect.
             _redis_client_instance = None
 
             # Returns None to indicate to caller services that Redis remains unavailable.
             return None
 
+# Imports difflib module to provide text sequence matching and similarity scoring for typo-squatting detection.
 import difflib
 # verified
 def _is_dev_auth_mode():
