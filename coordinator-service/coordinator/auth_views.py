@@ -727,12 +727,14 @@ def _get_caller(request):
     # Evaluates staff key authenticity using timing-safe comparison if header is present.
     if req_staff :
         if not _verify_staff_key(req_staff):
+            # Rejects unauthorized staff key attempts with AuthenticationFailed exception.
             raise AuthenticationFailed({
                 "error": "Invalid staff key provided",
                 "code": "INVALID_STAFF_KEY "
             })
         
         # both user_id and user_email are shared values.
+        # Resolves administrative staff user identifier from environment or default string.
         user_id = os.getenv("STAFF_USER_ID") or "system_staff"
         user_email = os.getenv("STAFF_EMAIL_ID") or "admin@dtc.internal"
         identity = RequesterIdentity(True, user_id, True, user_email=user_email)
