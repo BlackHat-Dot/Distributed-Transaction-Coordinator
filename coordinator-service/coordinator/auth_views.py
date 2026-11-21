@@ -288,6 +288,7 @@ def _suggest_domain(domain_part):
     return None
 
 # verified
+# Main validation utility ensuring incoming email addresses strictly conform to security and provider constraints.
 def validate_email(email):
     """
     Validates that the email address is a valid @gmail.com address
@@ -304,6 +305,7 @@ def validate_email(email):
     On domain failure, attempts a typo suggestion (e.g. 'gmial.com' ->
     'gmail.com') and includes it in the error message when found.
     """
+    # Verifies email parameter is a non-empty string instance to reject null, integer, or complex payloads.
     if not email or not isinstance(email, str):
         return False, "Email address is required."
 
