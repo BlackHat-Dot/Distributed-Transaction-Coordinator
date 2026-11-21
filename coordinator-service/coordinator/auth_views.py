@@ -989,8 +989,10 @@ def send_otp(request):
     is_dev_mode = _is_dev_auth_mode()
     # Determines if current runtime environment is executing unit or integration tests.
     is_testing = bool(getattr(settings, "IS_TESTING", False))
+    # Obtains shared Redis connection client or in-memory fallback adapter.
     client = _get_redis_client()
 
+    # Initializes maximum allowed verification attempts counter for daily quota tracking.
     chances_remaining = 10
 
     # Single-Device Guard: Reject new login attempts if an active session already exists for this email
