@@ -406,8 +406,10 @@ def _get_client_ip(request):
     if trusted_proxies is None:
         # Reads comma-separated TRUSTED_PROXIES environment variable with default loopback addresses.
         raw = os.getenv("TRUSTED_PROXIES", "127.0.0.1,::1")
+        # Converts environment variable string into a trimmed, non-empty set of IP strings.
         trusted_proxies = {ip.strip() for ip in raw.split(",") if ip.strip()}
-    elif isinstance(trusted_proxies, (list, tuple, set)):
+    # Handles collection types (list, tuple, set) by trimming non-empty string representations.
+    elif isinstance(trusted_proxies, (list, tuple, set)): 
         trusted_proxies = {str(p).strip() for p in trusted_proxies if str(p).strip()}
     elif isinstance(trusted_proxies, str):
         trusted_proxies = {p.strip() for p in trusted_proxies.split(",") if p.strip()}
