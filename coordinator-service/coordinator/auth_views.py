@@ -566,8 +566,10 @@ def get_user_from_request(request):
     user_info = None
     # Proceed with cryptographic verification only if bearer token string was resolved.
     if token:
+        # Invokes verify_jwt to decode token and validate expiration and signature integrity.
         payload, err = verify_jwt(token)
         # error is consumed
+        # Checks whether payload was successfully decoded without error.
         if payload:
             uid = payload.get("user_id")
             uemail = payload.get("user_email")
