@@ -14,7 +14,9 @@ import re
 import secrets
 # Imports threading module to provide synchronization primitives such as Lock for thread-safe Redis connection pool management.
 import threading
+# Imports time module to measure monotonic clock intervals for rate limiting and Redis circuit breaker health pings.
 import time
+# Imports uuid module to parse, validate, and generate universally unique user and session identifiers.
 import uuid
 from datetime import datetime, timedelta
 import redis
