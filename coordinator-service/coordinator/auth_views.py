@@ -56,7 +56,9 @@ _redis_lock = threading.Lock()
 
 # Defines a custom Django REST Framework exception to signal that a critical dependency is down.
 class ServiceUnavailable(APIException):
+    # Sets HTTP status code to 503 Service Unavailable indicating an essential backend dependency is offline.
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    # Provides the machine-readable error code string returned in the error response payload.
     default_code = "STAFF_SERVICE_UNAVAILABLE"
 
 
