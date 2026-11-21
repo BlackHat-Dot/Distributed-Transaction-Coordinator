@@ -402,7 +402,9 @@ def _get_client_ip(request):
     # Normalize whitelist of trusted proxy IPs from settings or environment
     # Retrieves configured trusted reverse proxy addresses from application settings.
     trusted_proxies = getattr(settings, "TRUSTED_PROXIES", None)
+    # Falls back to environment configuration when settings variable is unconfigured.
     if trusted_proxies is None:
+        # Reads comma-separated TRUSTED_PROXIES environment variable with default loopback addresses.
         raw = os.getenv("TRUSTED_PROXIES", "127.0.0.1,::1")
         trusted_proxies = {ip.strip() for ip in raw.split(",") if ip.strip()}
     elif isinstance(trusted_proxies, (list, tuple, set)):
