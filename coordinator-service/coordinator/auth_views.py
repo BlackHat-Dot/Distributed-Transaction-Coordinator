@@ -253,7 +253,9 @@ def _suggest_domain(domain_part):
     2. O(1) lookup against known Gmail typo catalog.
     3. Dynamic SequenceMatcher ratio (>= 0.85) for single-letter keyboard slips.
     """
+    # Guard check ensuring domain input is a populated string prior to parsing.
     if not domain_part or not isinstance(domain_part, str):
+        # Aborts domain suggestion and returns None if domain part is absent or invalid type.
         return None
 
     d = domain_part.strip().lower()
