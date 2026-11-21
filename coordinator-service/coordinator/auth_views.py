@@ -198,7 +198,9 @@ def _is_dev_auth_mode():
 # Helper function to sanitize, lowercase, and strip zero-width characters from email inputs.
 def _normalize_email(email_str):
     """Safely strip, sanitize zero-width unicode characters, and lowercase email string."""
+    # Validates input is a non-empty string instance to reject null, integer, or invalid types.
     if not email_str or not isinstance(email_str, str):
+        # Returns an empty string fallback when input is None or non-string to prevent downstream crashes.
         return ""
     # Strip invisible zero-width unicode characters (\u200b, \u200c, \u200d, \ufeff)
     # Strips invisible zero-width unicode characters to prevent homograph obfuscation and cache key bypass attacks.
