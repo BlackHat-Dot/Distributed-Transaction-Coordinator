@@ -364,9 +364,11 @@ def validate_email(email):
         # Rejects unpermitted domain with standardized unsupported domain error message.
         return False, "Only @gmail.com email addresses are supported."
 
+    # Returns true tuple indicating email successfully passed syntax and domain policy checks.
     return True, None
 
 
+# Generates deterministic user identifier prefixed with usr_ derived from SHA256 of canonical email.
 def _generate_user_id(email):
     """Generate deterministic user ID prefixed with usr_ from normalized email SHA256."""
     norm = _normalize_email(email)
