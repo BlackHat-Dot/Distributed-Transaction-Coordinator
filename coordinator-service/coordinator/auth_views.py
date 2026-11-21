@@ -156,7 +156,9 @@ def _get_redis_client():
 
             # Immediately tests whether the newly created connection is actually responsive.
             client.ping()
+            # Caches the verified active Redis client in the singleton module variable.
             _redis_client_instance = client
+            # Updates the ping timestamp to record the time of the successful connection handshake.
             _redis_last_ping = now
 
             return client
