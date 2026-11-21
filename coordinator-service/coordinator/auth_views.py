@@ -533,8 +533,10 @@ def verify_jwt(token):
     except jwt.InvalidSignatureError:
         # Returns failure tuple with signature error detail.
         return None, "Invalid token signature"
+    # Catches general PyJWT decode errors and returns string representation.
     except jwt.PyJWTError as e:
         return None, str(e)
+    # Intercepts unexpected exceptions during JWT verification.
     except Exception as e:
         return None, str(e)
 
