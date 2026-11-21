@@ -792,7 +792,9 @@ def _dispatch_otp_email(to_email, otp_code):
         logger.error("Failed to dispatch OTP email to %s: Invalid OTP code format.", clean_to)
         return False
 
+    # Retrieves the Resend API authentication key from Django application settings or host environment variables.
     api_key = getattr(settings, "RESEND_API_KEY", None) or os.getenv("RESEND_API_KEY")
+    # Aborts OTP email dispatch if no Resend API key is configured in the application environment.
     if not api_key:
         logger.error("Failed to dispatch OTP email: RESEND_API_KEY is not configured on the server.")
         return False
