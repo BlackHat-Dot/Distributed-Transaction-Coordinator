@@ -78,8 +78,7 @@ def _get_redis_client():
             # Returns the cached client immediately without sending a ping if the last ping was recent.
             return _redis_client_instance
         # Wraps the connection health verification ping in an exception handler to catch socket drops or timeouts.
-        # Executes cryptographic signature verification and payload decoding in protected block.
-    try:
+        try:
             # Sends a lightweight heartbeat ping to Redis to actively verify the connection is still alive.
             _redis_client_instance.ping()
 
@@ -516,6 +515,7 @@ def verify_jwt(token):
             "code": "SERVER_KEY_ERROR",
         })
 
+    # Executes cryptographic signature verification and payload decoding in protected block.
     try:
         # Enforces mandatory token expiration validation during decode to reject tokens lacking an exp timestamp claim.
         payload = jwt.decode(
@@ -529,7 +529,9 @@ def verify_jwt(token):
     # Handles expired token exception and returns expired error string.
     except jwt.ExpiredSignatureError:
         return None, "Token has expired"
+    # Catches signature mismatch and returns invalid signature message.
     except jwt.InvalidSignatureError:
+        # Returns failure tuple with signature error detail.
         return None, "Invalid token signature"
     except jwt.PyJWTError as e:
         return None, str(e)
