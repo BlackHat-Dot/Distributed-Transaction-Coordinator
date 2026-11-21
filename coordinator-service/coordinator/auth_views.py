@@ -955,11 +955,13 @@ def _dispatch_otp_email(to_email, otp_code):
 # verified
 # Restricts endpoint to handle HTTP POST requests only for OTP generation.
 @api_view(["POST"])
+# Handles client request to generate and dispatch a 6-digit one-time password.
 def send_otp(request):
     """
     Phase 1: Generates random 6-digit numeric OTP, stores in Redis (5-min TTL) with in-memory fallback,
     enforces rate limits (cooldown, daily limit, abandonment), and dispatches via Resend.
     """
+    # Validates that incoming request body contains a JSON object dictionary.
     if not isinstance(request.data, dict):
         return Response(
             {"error": "Invalid request payload, expected JSON object.", "code": "INVALID_PAYLOAD"},
