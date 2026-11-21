@@ -110,10 +110,12 @@ def _get_redis_client():
 
                     # Records when the failure occurred to enforce a cooldown before attempting another connection.
                     _redis_last_check = now
+            # Returns None to signal to the caller that the existing Redis instance failed health check and was cleared.
             return None
 
     # Circuit breaker cooldown: Redis failed within the last 5 seconds, it immediately returns None without wasting time attempting to reconnect.
     if now - _redis_last_check < 5.0:
+        # Returns None immediately during the circuit breaker cooldown period without attempting an expensive reconnect.
         return None
 
     # Acquires the lock to guarantee only one thread attempts reconnection at any given moment.
