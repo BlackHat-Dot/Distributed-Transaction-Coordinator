@@ -171,7 +171,9 @@ def _get_redis_client():
                 # Wraps socket cleanup in an exception handler to prevent shutdown errors from masking the original exception.
                 try:
                     client.close()
+                # Silently intercepts any network socket or descriptor exceptions occurring during close.
                 except Exception:
+                    # Suppresses cleanup exceptions to allow failure handling to proceed cleanly.
                     pass
             _redis_client_instance = None
 
