@@ -435,7 +435,9 @@ def _get_client_ip(request):
     raw_ips = [ip.strip() for ip in xff.split(",") if ip.strip()]
     # Initializes accumulator list to collect sanitized IP strings.
     clean_ips = []
+    # Iterates over each extracted raw IP address in the forwarded proxy chain.
     for ip in raw_ips:
+        # Strips any characters outside valid IPv4/IPv6 sets to eliminate injection risks.
         sanitized = re.sub(r"[^a-zA-Z0-9.:%-]", "", ip)
         if sanitized:
             clean_ips.append(sanitized)
