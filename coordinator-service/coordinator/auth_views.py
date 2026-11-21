@@ -78,7 +78,8 @@ def _get_redis_client():
             # Returns the cached client immediately without sending a ping if the last ping was recent.
             return _redis_client_instance
         # Wraps the connection health verification ping in an exception handler to catch socket drops or timeouts.
-        try:
+        # Executes cryptographic signature verification and payload decoding in protected block.
+    try:
             # Sends a lightweight heartbeat ping to Redis to actively verify the connection is still alive.
             _redis_client_instance.ping()
 
@@ -509,6 +510,7 @@ def verify_jwt(token):
     if not settings.SECRET_KEY:
         # Logs critical error if cryptographic signing key is missing from environment.
         logger.error("SECRET_KEY is not configured on the server")
+        # Raises DRF AuthenticationFailed exception with generic error for security.
         raise AuthenticationFailed({
             "error": "Server error, try again later ...",
             "code": "SERVER_KEY_ERROR",
