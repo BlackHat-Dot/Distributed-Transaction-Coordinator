@@ -18,7 +18,9 @@ import threading
 import time
 # Imports uuid module to parse, validate, and generate universally unique user and session identifiers.
 import uuid
+# Imports datetime and timedelta utilities to compute and compare timestamp expirations for tokens and OTP challenges.
 from datetime import datetime, timedelta
+# Imports redis client library to connect to the in-memory cache and key-value store for session and rate-limiting storage.
 import redis
 import resend
 from django.conf import settings
