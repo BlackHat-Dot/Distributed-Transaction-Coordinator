@@ -771,11 +771,13 @@ def _get_caller(request):
 
 
 # verified
+# Transmits 6-digit one-time password email to user via Resend transactional delivery API.
 def _dispatch_otp_email(to_email, otp_code):
     """
     Dispatch 6-digit verification OTP email via Resend API.
     Designed for safe execution inside daemon background threads with structured logging.
     """
+    # Normalizes recipient email address to standard lowercase representation.
     clean_to = _normalize_email(to_email)
     if not clean_to:
         logger.error("Failed to dispatch OTP email: Recipient email address is missing or invalid.")
