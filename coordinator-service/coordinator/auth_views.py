@@ -328,10 +328,12 @@ def validate_email(email):
 
     # Validates local username length is between 3 and 64 characters per Gmail specifications.
     if not local_part or len(local_part) < 3 or len(local_part) > 64:
+        # Rejects username strings shorter than 3 or longer than 64 characters.
         return False, "Email username (before '@') must be between 3 and 64 characters."
 
     # Rejects consecutive dots in the email local-part in strict accordance with RFC 5322 section 3.4.1.
     if ".." in local_part:
+        # Rejects local username strings containing consecutive period characters.
         return False, "Email username cannot contain consecutive dots ('..')."
 
     if local_part.startswith(".") or local_part.endswith("."):
