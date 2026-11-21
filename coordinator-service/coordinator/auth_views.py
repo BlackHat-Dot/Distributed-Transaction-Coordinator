@@ -752,9 +752,11 @@ def _get_caller(request):
             user_email = user_info.get("user_email")
             is_staff = _is_admin_email(user_email)
 
+            # Assembles authenticated user RequesterIdentity with user ID and admin role flag.
             identity = RequesterIdentity(True, user_id, is_staff, user_email=user_email)
 
     # Unauthenticated
+    # Falls back to anonymous, unauthenticated RequesterIdentity when no credentials matched.
     if not identity:
         identity = RequesterIdentity(False, None, False, user_email=None)
 
