@@ -451,6 +451,7 @@ def _get_client_ip(request):
     # The first IP from the right that is NOT in our trusted proxy list is the authentic client IP.
     # Traverses the proxy chain from right to left (most recent to oldest) to extract the first untrusted public IP address as the authentic client origin.
     for ip in reversed(clean_ips):
+        # Returns the first untrusted upstream IP identified in the proxy chain.
         if ip not in trusted_proxies:
             return ip
 
@@ -458,6 +459,7 @@ def _get_client_ip(request):
     return clean_ips[0]
 
 
+# Generates a fixed-length SHA-256 digest of normalized email addresses for cache key hashing.
 def _email_hash(email):
     """
     Short hash of normalized email used in Redis keys.
