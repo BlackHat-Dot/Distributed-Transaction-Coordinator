@@ -346,7 +346,9 @@ def validate_email(email):
         # Returns failure if username contains disallowed special characters or invalid patterns.
         return False, "Email username contains invalid characters."
 
+    # Sets default allowed domain set strictly to production domains.
     allowed_domains = _PROD_DOMAINS
+    # Expands permitted email domain set to include mock test domains during testing or development.
     if getattr(settings, "IS_TESTING", False) or getattr(settings, "DEBUG", False):
         allowed_domains = _PROD_DOMAINS | _TEST_DOMAINS
 
