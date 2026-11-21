@@ -22,7 +22,9 @@ import uuid
 from datetime import datetime, timedelta
 # Imports redis client library to connect to the in-memory cache and key-value store for session and rate-limiting storage.
 import redis
+# Imports Resend email delivery service SDK to transmit authentication emails containing OTP codes and magic links to users.
 import resend
+# Imports Django application configuration settings containing API keys, token secrets, and environment parameters.
 from django.conf import settings
 from django.core.cache import cache
 from rest_framework import status
