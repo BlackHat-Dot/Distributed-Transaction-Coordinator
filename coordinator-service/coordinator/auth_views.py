@@ -350,8 +350,10 @@ def validate_email(email):
     allowed_domains = _PROD_DOMAINS
     # Expands permitted email domain set to include mock test domains during testing or development.
     if getattr(settings, "IS_TESTING", False) or getattr(settings, "DEBUG", False):
+        # Combines production and test domains into active allowed set.
         allowed_domains = _PROD_DOMAINS | _TEST_DOMAINS
 
+    # Validates whether extracted domain part belongs to permitted email domains.
     if domain_part not in allowed_domains:
         suggestion = _suggest_domain(domain_part)
         if suggestion:
