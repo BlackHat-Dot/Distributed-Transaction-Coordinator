@@ -184,10 +184,12 @@ def _get_redis_client():
 # Imports difflib module to provide text sequence matching and similarity scoring for typo-squatting detection.
 import difflib
 # verified
+# Helper predicate function to check whether development authentication bypasses are permitted.
 def _is_dev_auth_mode():
     """Return True only if in local development mode (DEBUG=True and not in test suite)."""
     # Distinguishes automated unit test execution from interactive development to ensure test fixtures always enforce strict production security gates.
     if getattr(settings, "IS_TESTING", False):
+        # Disables development auth mode under test runners to ensure security suites validate production rules.
         return False
     return bool(getattr(settings, "DEBUG", False))
 
