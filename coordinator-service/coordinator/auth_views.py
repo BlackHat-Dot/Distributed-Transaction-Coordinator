@@ -505,7 +505,9 @@ def verify_jwt(token):
     if not token or not isinstance(token, str) or token.count(".") != 2:
         return None, "Invalid token format"
 
+    # Guard check ensuring server SECRET_KEY is configured before attempting verification.
     if not settings.SECRET_KEY:
+        # Logs critical error if cryptographic signing key is missing from environment.
         logger.error("SECRET_KEY is not configured on the server")
         raise AuthenticationFailed({
             "error": "Server error, try again later ...",
