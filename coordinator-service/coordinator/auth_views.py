@@ -127,7 +127,9 @@ def _get_redis_client():
 
         # Samples the monotonic timestamp inside the locked section to re-evaluate cooldown status.
         now = time.monotonic()
+        # Checks whether another thread attempted connection and triggered a cooldown failure while lock was pending.
         if now - _redis_last_check < 5.0:
+            # Aborts connection attempt if circuit breaker cooldown is active within locked context.
             return None
 
         _redis_last_check = now
