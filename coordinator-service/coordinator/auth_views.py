@@ -26,7 +26,9 @@ import redis
 import resend
 # Imports Django application configuration settings containing API keys, token secrets, and environment parameters.
 from django.conf import settings
+# Imports Django cache framework to interface with caching backends for quick key lookups and temporary state caching.
 from django.core.cache import cache
+# Imports HTTP status codes from Django REST Framework for standardized API response status reporting.
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
