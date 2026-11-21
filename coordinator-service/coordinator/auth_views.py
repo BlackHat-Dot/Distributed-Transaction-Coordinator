@@ -645,9 +645,11 @@ def _is_admin_email(email):
         for d in raw_domain.split(",")
         if d.strip() and d.strip() != "@"
     }
+    # Disallows administrative rights if the parsed admin domain set is empty.
     if not admin_domains:
         return False
 
+    # Splits normalized email into local-part and domain-part components.
     parts = norm.split("@")
     if len(parts) != 2 or not parts[0] or not parts[1]:
         return False
