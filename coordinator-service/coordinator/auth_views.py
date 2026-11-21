@@ -34,7 +34,9 @@ from rest_framework import status
 from rest_framework.decorators import api_view
 # Imports DRF Response object to serialize Python dictionaries into HTTP response payloads with proper content negotiation.
 from rest_framework.response import Response
+# Imports DRF exception classes to raise structured API errors and reject unauthenticated requests with appropriate HTTP codes.
 from rest_framework.exceptions import APIException, AuthenticationFailed
+# Imports Django timezone utilities to obtain timezone-aware datetime objects conforming to UTC and local settings.
 from django.utils import timezone
 
 # reates a namespaced logger instance tied to this module so error and debug messages trace back here.
