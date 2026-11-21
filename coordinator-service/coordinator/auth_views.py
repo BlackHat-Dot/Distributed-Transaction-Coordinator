@@ -378,9 +378,11 @@ def _generate_user_id(email):
         return ""
     # Computes a deterministic 16-character hexadecimal hash of the canonical email to generate persistent, PII-free internal user identifiers.
     sha = hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
+    # Prefixes truncated hexadecimal digest with 'usr_' namespace to format application user identifier.
     return f"usr_{sha}"
 
 
+# Resolves client IP address safely while preventing header spoofing via trusted proxy validation.
 def _get_client_ip(request):
     """
     Safely resolves client IP address (SEC-05).
