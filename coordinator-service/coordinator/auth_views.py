@@ -722,7 +722,9 @@ def _get_caller(request):
 
     # Staff verification
     # Priority 1: Evaluates administrative staff API key credentials before falling back to standard customer JWT verification.
+    # Extracts privileged X-Staff-Key authentication header from request.
     req_staff = request.headers.get("X-Staff-Key")
+    # Evaluates staff key authenticity using timing-safe comparison if header is present.
     if req_staff :
         if not _verify_staff_key(req_staff):
             raise AuthenticationFailed({
