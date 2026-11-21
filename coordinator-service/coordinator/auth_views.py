@@ -122,8 +122,10 @@ def _get_redis_client():
     with _redis_lock:
         # Double-checked locking pattern; returns the client if another thread already reconnected while this thread was waiting.
         if _redis_client_instance is not None:
+            # Returns the newly initialized Redis client created by a concurrent thread.
             return _redis_client_instance
 
+        # Samples the monotonic timestamp inside the locked section to re-evaluate cooldown status.
         now = time.monotonic()
         if now - _redis_last_check < 5.0:
             return None
