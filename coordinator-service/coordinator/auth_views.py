@@ -971,7 +971,9 @@ def send_otp(request):
 
     # Extracts raw target recipient email address parameter from parsed request data.
     email_raw = request.data.get("email")
+    # Guards against missing or empty email field in the request payload.
     if not email_raw:
+        # Returns HTTP 400 Bad Request when email address parameter is omitted.
         return Response({"error": "email is required"}, status=400)
 
     email = _normalize_email(email_raw)
