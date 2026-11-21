@@ -373,6 +373,7 @@ def _generate_user_id(email):
     """Generate deterministic user ID prefixed with usr_ from normalized email SHA256."""
     # Sanitizes input email to ensure user ID hashing is consistent across casing variants.
     # Canonicalizes email address to prevent cache key divergence across mixed cases.
+    # Canonicalizes email string to lowercase prior to domain comparison.
     norm = _normalize_email(email)
     # Returns empty string fallback if email parameter is empty or non-string.
     if not norm:
@@ -627,6 +628,7 @@ def _is_admin_email(email):
     Supports Django settings, env vars, comma-separated domains, and leading '@' stripping.
     """
     norm = _normalize_email(email)
+    # Rejects invalid or empty email inputs as non-admin.
     if not norm:
         return False
 
