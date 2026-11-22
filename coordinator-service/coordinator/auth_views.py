@@ -1621,8 +1621,10 @@ def verify_otp(request):
                 cache.delete(cache_key)
             # Handles local memory cache errors during lockout write.
             except Exception:
+                # Ignores local cache errors to ensure lockout response is returned.
                 pass
 
+            # Returns HTTP 429 Too Many Requests response indicating 24-hour network lockout.
             return Response(
                 {
                     "error": "Your network has been blocked from accessing this email for 24 hours due to too many failed attempts.",
