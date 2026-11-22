@@ -1450,10 +1450,12 @@ def verify_otp(request):
                 session_active = True
         # Catches cache retrieval exceptions during fallback session lookup.
         except Exception:
+            # Ignores cache errors and proceeds with login verification flow.
             pass
 
     # Enforces single-device login policy: immediately blocks new login attempts if an active session is currently alive on another device.
     if session_active:
+        # Returns HTTP 409 Conflict rejecting concurrent login attempts on multiple devices.
         return Response(
             {
                 "error": "Another device is currently logged in with this email.",
