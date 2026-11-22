@@ -1555,6 +1555,7 @@ def verify_otp(request):
         # Dev mode: unlimited attempts, no tracking
         # Bypasses strike tracking when running under local development mode.
         if is_dev_mode:
+            # Returns HTTP 400 Bad Request error indicating invalid OTP code in dev mode.
             return Response(
                 {
                     "error": "Invalid or expired verification code. (Infinite attempts allowed in local dev)",
@@ -1565,6 +1566,7 @@ def verify_otp(request):
             )
 
         # Production: track wrong attempts per IP+email — 5 strikes = 24h block
+        # Initializes failed attempt strike counter.
         fail_count = None
         if client:
             try:
