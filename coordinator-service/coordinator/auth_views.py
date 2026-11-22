@@ -1061,7 +1061,9 @@ def send_otp(request):
         is_blocked = False
         # Default block TTL in seconds corresponding to a full 24-hour lockout.
         ttl = 86400
+        # Queries primary Redis database to check if IP+email block record exists.
         if client:
+            # Wraps Redis block status lookup in an exception-handling block.
             try:
                 if client.exists(block_key):
                     is_blocked = True
