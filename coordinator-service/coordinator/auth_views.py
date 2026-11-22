@@ -1185,6 +1185,7 @@ def send_otp(request):
 
         # Rejects OTP generation if user has crossed maximum daily request quota.
         if daily_blocked:
+            # Returns HTTP 429 Too Many Requests informing client that daily quota has been exceeded.
             return Response(
                 {
                     "error": "Daily OTP limit reached. You can request a new code tomorrow.",
@@ -1194,6 +1195,7 @@ def send_otp(request):
             )
 
         # 4. Abandonment tracking: send without verify (5+ unverified sends = 24h block)
+        # Checks primary Redis client to manage unverified request abandonment counters.
         if client:
             try:
                 abandon_count = client.incr(abandon_key)
