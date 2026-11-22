@@ -1586,7 +1586,9 @@ def verify_otp(request):
         if fail_count is None:
             # Protects local cache counter updates against transient cache errors.
             try:
+                # Retrieves existing count from local cache and increments by one.
                 fail_count = (cache.get(fail_key) or 0) + 1
+                # Saves updated fail count in cache with a 24-hour expiration.
                 cache.set(fail_key, fail_count, timeout=86400)
             except Exception:
                 fail_count = 1
