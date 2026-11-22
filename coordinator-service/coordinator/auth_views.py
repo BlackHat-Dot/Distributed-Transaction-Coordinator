@@ -1434,7 +1434,9 @@ def verify_otp(request):
         try:
             # Checks whether an active session record exists in Redis for this email.
             if client.exists(session_key):
+                # Marks session active flag to True when concurrent session record is found.
                 session_active = True
+        # Catches Redis communication failures during session presence lookup.
         except Exception:
             pass
     if not session_active:
