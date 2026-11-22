@@ -1426,7 +1426,9 @@ def verify_otp(request):
 
     # Single-Device Guard: Reject verification if an active session already exists for this email
     session_key = f"dtc:session:{email}"
+    # Initializes flag tracking whether an active concurrent session was detected.
     session_active = False
+    # Queries primary Redis database to check if user has an active session.
     if client:
         try:
             if client.exists(session_key):
