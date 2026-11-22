@@ -972,6 +972,7 @@ def send_otp(request):
         )
 
     # Extracts raw target recipient email address parameter from parsed request data.
+    # Extracts raw target email address parameter from request payload.
     email_raw = request.data.get("email")
     # Guards against missing or empty email field in the request payload.
     if not email_raw:
@@ -1400,6 +1401,7 @@ def verify_otp(request):
         )
 
     email_raw = request.data.get("email")
+    # Extracts submitted OTP code from request payload and strips surrounding whitespace.
     submitted_otp = str(request.data.get("otp", "")).strip()
 
     if not email_raw or not submitted_otp:
