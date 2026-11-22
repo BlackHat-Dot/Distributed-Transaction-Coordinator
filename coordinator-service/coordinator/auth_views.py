@@ -1119,7 +1119,9 @@ def send_otp(request):
             except Exception:
                 # Continues to fallback cache check if Redis query encounters errors.
                 pass
+        # Evaluates fallback cache if Redis check did not indicate active cooldown.
         if not cooldown_active:
+            # Protects local cache lookup with try-except block against memory errors.
             try:
                 if cache.get(cooldown_key):
                     cooldown_active = True
