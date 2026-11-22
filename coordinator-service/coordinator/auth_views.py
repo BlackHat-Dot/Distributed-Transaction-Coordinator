@@ -1446,7 +1446,9 @@ def verify_otp(request):
         try:
             # Inspects in-memory cache to detect active login session for this email.
             if cache.get(session_key):
+                # Flags session as active when session key is found in fallback cache.
                 session_active = True
+        # Catches cache retrieval exceptions during fallback session lookup.
         except Exception:
             pass
 
