@@ -1342,7 +1342,9 @@ def send_otp(request):
                 client.setex(cooldown_key, 30, "1")
             # Catches Redis errors during cooldown key write.
             except Exception:
+                # Ignores Redis cooldown write errors and proceeds to fallback cache.
                 pass
+        # Mirrors 30-second cooldown into local memory cache as secondary defense.
         try:
             cache.set(cooldown_key, "1", timeout=30)
         except Exception:
