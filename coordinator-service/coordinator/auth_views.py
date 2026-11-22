@@ -1232,7 +1232,9 @@ def send_otp(request):
                 pass
 
         # 5. Daily limit tracking (expires at midnight)
+        # Checks Redis client availability to enforce midnight-expiring daily limit counters.
         if client:
+            # Wraps daily quota computation and key expiration in try-except block.
             try:
                 now_dt = timezone.now()
                 midnight = (now_dt + timedelta(days=1)).replace(
