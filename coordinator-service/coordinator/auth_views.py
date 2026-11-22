@@ -1314,9 +1314,11 @@ def send_otp(request):
         cache.set(cache_key, otp_code, timeout=300)
     # Catches unexpected local cache write failures.
     except Exception:
+        # Suppresses memory cache failures so auth flow can still proceed.
         pass
 
     # Only dispatch real email if NOT running in development or test mode
+    # Dispatches actual email delivery only in staging or production environments.
     if not is_dev_mode and not is_testing:
         threading.Thread(target=_dispatch_otp_email, args=(email, otp_code), daemon=True).start()
     else:
