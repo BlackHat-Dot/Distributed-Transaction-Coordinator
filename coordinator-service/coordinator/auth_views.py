@@ -1127,11 +1127,13 @@ def send_otp(request):
                 if cache.get(cooldown_key):
                     # Marks cooldown active based on fallback cache entry.
                     cooldown_active = True
+            # Intercepts any cache errors encountered during fallback cooldown lookup.
             except Exception:
                 pass
 
         # Prevents OTP SMS/email flooding by returning a polite 30-second cooldown response while preserving the active OTP code.
         if cooldown_active:
+            # Initializes daily attempt tally counter for chances remaining computation.
             daily_used = 0
             if client:
                 try:
