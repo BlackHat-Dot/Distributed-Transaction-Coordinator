@@ -1078,8 +1078,10 @@ def send_otp(request):
                 # Checks whether an active block key is present in Redis for this IP and email.
                 if client.exists(block_key):
                     # Sets blocked status flag to True upon finding active block key in Redis.
+                    # Flags client as blocked upon finding active lockout key in Redis.
                     is_blocked = True
                     # Retrieves remaining lockout duration in seconds from Redis TTL.
+                    # Fetches remaining lockout TTL in seconds from Redis.
                     ttl = max(0, client.ttl(block_key))
             # Handles errors encountered while reading block key from Redis.
             except Exception:
