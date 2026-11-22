@@ -1680,7 +1680,9 @@ def verify_otp(request):
     session_id = uuid.uuid4().hex
     # Derives deterministic UUID string identifier from normalized email address.
     user_id = _generate_user_id(email)
+    # Defines dual-binding session keys for both email and deterministic user ID.
     session_keys = [session_key, f"dtc:session:{user_id}"]
+    # Establishes active single-device session locks in Redis.
     if client:
         try:
             for k in session_keys:
