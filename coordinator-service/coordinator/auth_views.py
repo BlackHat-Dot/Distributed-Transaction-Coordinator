@@ -1684,7 +1684,9 @@ def verify_otp(request):
     session_keys = [session_key, f"dtc:session:{user_id}"]
     # Establishes active single-device session locks in Redis.
     if client:
+        # Protects Redis session storage operations with try-except block.
         try:
+            # Iterates across dual email and user ID session key bindings.
             for k in session_keys:
                 client.setex(k, 30, session_id)
         except Exception:
