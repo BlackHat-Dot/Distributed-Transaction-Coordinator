@@ -1508,7 +1508,9 @@ def verify_otp(request):
                 # Ignores cache errors and proceeds with verification.
                 pass
 
+        # Halts verification immediately if network or account is currently locked out.
         if is_blocked:
+            # Returns HTTP 429 Too Many Requests informing user of active lockout and remaining duration.
             return Response(
                 {
                     "error": "Your network has been temporarily blocked from accessing this email. Try again in 24 hours.",
