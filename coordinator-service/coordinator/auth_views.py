@@ -1582,7 +1582,9 @@ def verify_otp(request):
             except Exception:
                 fail_count = None
 
+        # Falls back to local memory cache if Redis was unavailable or failed.
         if fail_count is None:
+            # Protects local cache counter updates against transient cache errors.
             try:
                 fail_count = (cache.get(fail_key) or 0) + 1
                 cache.set(fail_key, fail_count, timeout=86400)
