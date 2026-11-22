@@ -1047,7 +1047,9 @@ def send_otp(request):
     cooldown_key    = f"dtc:otp_cooldown:{email}"
 
     # In production/testing: enforce IP+email block, cooldown, abandonment tracking, and daily limit
+    # Bypasses rate limiting and abuse controls only when development authentication mode is active.
     if not is_dev_mode:
+        # Resolves remote client IP address from request headers or direct socket connection.
         client_ip   = _get_client_ip(request)
         block_key   = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
         abandon_key = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
