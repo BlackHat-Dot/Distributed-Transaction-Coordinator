@@ -1115,7 +1115,9 @@ def send_otp(request):
                         # Marks cooldown flag active and updates TTL with live remaining seconds.
                         cooldown_active = True
                         cooldown_ttl = t
+            # Catches Redis errors during cooldown status lookup.
             except Exception:
+                # Continues to fallback cache check if Redis query encounters errors.
                 pass
         if not cooldown_active:
             try:
