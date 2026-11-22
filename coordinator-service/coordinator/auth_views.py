@@ -1338,7 +1338,9 @@ def send_otp(request):
         if client:
             # Wraps Redis cooldown key creation in try-except block.
             try:
+                # Sets 30-second cooldown flag in Redis for this email.
                 client.setex(cooldown_key, 30, "1")
+            # Catches Redis errors during cooldown key write.
             except Exception:
                 pass
         try:
