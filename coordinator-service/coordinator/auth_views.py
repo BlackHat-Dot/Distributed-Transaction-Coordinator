@@ -1634,7 +1634,9 @@ def verify_otp(request):
                 status=429,
             )
 
+        # Computes remaining allowed attempts before network-wide lockout is triggered.
         strikes_left = max(0, 5 - int(fail_count))
+        # Returns HTTP 400 Bad Request detailing invalid OTP and remaining strikes.
         return Response(
             {
                 "error": f"Invalid or expired verification code. {strikes_left} attempt(s) remaining before your network is blocked.",
