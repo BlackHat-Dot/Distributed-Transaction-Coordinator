@@ -1700,7 +1700,9 @@ def verify_otp(request):
         for k in session_keys:
             # Writes 30-second session lock to local memory cache.
             cache.set(k, session_id, timeout=30)
+    # Handles unexpected errors during fallback cache session storage.
     except Exception:
+        # Suppresses cache failure to permit client authentication response.
         pass
 
     jwt_expires_in = int(
