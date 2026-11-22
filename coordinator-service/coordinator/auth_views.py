@@ -1609,7 +1609,9 @@ def verify_otp(request):
                     client.delete(cache_key)
                 # Silently handles Redis communication failures during lockout write.
                 except Exception:
+                    # Ignores Redis lockout write failures and falls back to local cache.
                     pass
+            # Wraps local cache lockout enforcement in try-except block.
             try:
                 cache.set(block_key, "otp_fail", timeout=86400)
                 cache.delete(fail_key)
