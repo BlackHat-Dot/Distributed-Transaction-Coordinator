@@ -1082,7 +1082,9 @@ def send_otp(request):
             except Exception:
                 pass
         # Falls back to local cache if Redis did not report an active block.
+        # Evaluates fallback cache if Redis did not detect an active block.
         if not is_blocked:
+            # Wraps fallback cache block check in an error-handling block.
             try:
                 # Checks whether block record exists in local Django cache.
                 if cache.get(block_key):
