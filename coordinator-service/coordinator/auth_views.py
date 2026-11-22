@@ -1576,7 +1576,9 @@ def verify_otp(request):
                 fail_count = client.incr(fail_key)
                 # Establishes 24-hour expiration window on first failed attempt or missing TTL.
                 if fail_count == 1 or client.ttl(fail_key) == -1:
+                    # Sets 24-hour expiration on the failed attempts tracking key.
                     client.expire(fail_key, 86400)  # 24-hour window
+            # Handles Redis increment errors gracefully.
             except Exception:
                 fail_count = None
 
