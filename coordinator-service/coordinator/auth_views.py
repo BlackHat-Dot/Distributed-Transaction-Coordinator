@@ -1590,7 +1590,9 @@ def verify_otp(request):
                 fail_count = (cache.get(fail_key) or 0) + 1
                 # Saves updated fail count in cache with a 24-hour expiration.
                 cache.set(fail_key, fail_count, timeout=86400)
+            # Catches unexpected local cache failures during count updates.
             except Exception:
+                # Assumes at least one failed strike if cache write fails.
                 fail_count = 1
 
         # Brute-force shield: locks the IP and email combination for 24 hours upon 5 consecutive incorrect OTP submissions.
