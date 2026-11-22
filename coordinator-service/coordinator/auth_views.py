@@ -1374,9 +1374,11 @@ def send_otp(request):
     }
     # Injects plain-text OTP code directly into response when running in local development mode.
     if is_dev_mode:
+        # Exposes generated OTP directly in development response for rapid testing.
         resp_data["otp"] = otp_code
         resp_data["is_local"] = True
 
+    # Returns HTTP 200 OK with verification dispatch confirmation and metadata.
     return Response(resp_data, status=200)
 
 # verified
