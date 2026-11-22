@@ -1665,7 +1665,9 @@ def verify_otp(request):
 
     # Wraps local fallback cache eviction in try-except block.
     try:
+        # Removes consumed OTP token from local memory cache.
         cache.delete(cache_key)
+        # Resets strike count in local cache upon valid OTP verification.
         cache.delete(fail_key)
         cache.delete(abandon_key)
     except Exception:
