@@ -1061,15 +1061,12 @@ def send_otp(request):
         # Key identifying whether this IP and email pair has been blocked due to failed attempts or abuse.
         block_key   = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
         # Key tracking unverified OTP generation requests to detect OTP request abandonment abuse.
-        # Key identifying unverified request abandonment records for this IP and email.
-    abandon_key = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
+        abandon_key = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
 
         # 1. IP+email block check (wrong OTPs or abandonment abuse)
         # Initializes network block status flag for this IP address and email pair.
-        # Initializes boolean flag tracking whether client is under active lockout.
         is_blocked = False
         # Default block TTL in seconds corresponding to a full 24-hour lockout.
-        # Default lockout duration of 24 hours (86400 seconds) for IP+email blocks.
         ttl = 86400
         # Queries primary Redis database to check if IP+email block record exists.
         if client:
@@ -1078,10 +1075,8 @@ def send_otp(request):
                 # Checks whether an active block key is present in Redis for this IP and email.
                 if client.exists(block_key):
                     # Sets blocked status flag to True upon finding active block key in Redis.
-                    # Flags client as blocked upon finding active lockout key in Redis.
                     is_blocked = True
                     # Retrieves remaining lockout duration in seconds from Redis TTL.
-                    # Fetches remaining lockout TTL in seconds from Redis.
                     ttl = max(0, client.ttl(block_key))
             # Handles errors encountered while reading block key from Redis.
             except Exception:
@@ -1476,12 +1471,15 @@ def verify_otp(request):
     block_key = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
     # Key tracking failed OTP attempts for this specific client IP and email pair.
     fail_key = f"dtc:ip_fail:{client_ip}:{_email_hash(email)}"
+    # Key identifying unverified request abandonment records for this IP and email.
     abandon_key = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
 
     # In production: check IP+email block before allowing verify attempt
     # Enforces lockout verification check in production or non-dev environments.
     if not is_dev_mode:
+        # Initializes boolean flag tracking whether client is under active lockout.
         is_blocked = False
+        # Default lockout duration of 24 hours (86400 seconds) for IP+email blocks.
         ttl = 86400
         # Checks primary Redis database for active lockout block record.
         if client:
@@ -1489,7 +1487,9 @@ def verify_otp(request):
             try:
                 # Queries Redis to see if IP+email block key exists.
                 if client.exists(block_key):
+                    # Flags client as blocked upon finding active lockout key in Redis.
                     is_blocked = True
+                    # Fetches remaining lockout TTL in seconds from Redis.
                     ttl = max(0, client.ttl(block_key))
             except Exception:
                 pass
@@ -1510,7 +1510,9 @@ def verify_otp(request):
                 status=429,
             )
 
+    # Initializes variable holding retrieved cached OTP secret.
     stored_otp = None
+    # Queries Redis to retrieve active OTP code for verification.
     if client:
         try:
             stored_otp = client.get(cache_key)
