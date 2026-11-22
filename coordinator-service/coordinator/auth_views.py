@@ -1572,7 +1572,9 @@ def verify_otp(request):
         if client:
             # Wraps failed attempt increment in try-except block.
             try:
+                # Atomically increments failed OTP submission strike counter.
                 fail_count = client.incr(fail_key)
+                # Establishes 24-hour expiration window on first failed attempt or missing TTL.
                 if fail_count == 1 or client.ttl(fail_key) == -1:
                     client.expire(fail_key, 86400)  # 24-hour window
             except Exception:
