@@ -1605,7 +1605,9 @@ def verify_otp(request):
                     client.setex(block_key, 86400, "otp_fail")
                     # Cleans up failed attempts tracking counter after enforcing lock.
                     client.delete(fail_key)
+                    # Invalidates cached OTP token in Redis to prevent reuse.
                     client.delete(cache_key)
+                # Silently handles Redis communication failures during lockout write.
                 except Exception:
                     pass
             try:
