@@ -1110,7 +1110,9 @@ def send_otp(request):
                 if client.exists(cooldown_key):
                     # Retrieves remaining TTL duration of the cooldown lock.
                     t = client.ttl(cooldown_key)
+                    # Verifies that remaining cooldown time is strictly positive.
                     if t > 0:
+                        # Marks cooldown flag active and updates TTL with live remaining seconds.
                         cooldown_active = True
                         cooldown_ttl = t
             except Exception:
