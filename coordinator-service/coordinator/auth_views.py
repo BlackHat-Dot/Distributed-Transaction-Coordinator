@@ -1759,7 +1759,9 @@ def get_me(request):
             try:
                 # Retrieves raw active session token for the user email from Redis.
                 raw_val = client.get(f"dtc:session:{email}")
+                # Verifies that active session token exists in Redis.
                 if raw_val:
+                    # Decodes binary Redis session string to unicode string representation.
                     active_sid = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else raw_val
             except Exception:
                 pass
