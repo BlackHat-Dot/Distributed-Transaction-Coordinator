@@ -1212,10 +1212,12 @@ def send_otp(request):
                     client.setex(block_key, 86400, "abandon")
                     # Clears the temporary abandonment counter once hard block has been set.
                     client.delete(abandon_key)
+                    # Mirror-replicates the abandonment block to local cache for resilience.
                     try:
                         cache.set(block_key, "abandon", timeout=86400)
                     except Exception:
                         pass
+                    # Returns HTTP 429 response informing client of the 24-hour abandonment block.
                     return Response(
                         {
                             "error": "Too many OTP requests without completing verification. Your network is blocked for 24 hours.",
