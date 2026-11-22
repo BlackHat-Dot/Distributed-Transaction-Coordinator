@@ -1346,7 +1346,9 @@ def send_otp(request):
                 pass
         # Mirrors 30-second cooldown into local memory cache as secondary defense.
         try:
+            # Stores 30-second cooldown token in local Django cache.
             cache.set(cooldown_key, "1", timeout=30)
+        # Catches local cache failures during cooldown write.
         except Exception:
             pass
 
