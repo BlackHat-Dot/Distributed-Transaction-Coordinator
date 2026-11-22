@@ -1688,7 +1688,9 @@ def verify_otp(request):
         try:
             # Iterates across dual email and user ID session key bindings.
             for k in session_keys:
+                # Stores 30-second rolling session lock in Redis for single-device enforcement.
                 client.setex(k, 30, session_id)
+        # Catches Redis errors during session token writing.
         except Exception:
             pass
     try:
