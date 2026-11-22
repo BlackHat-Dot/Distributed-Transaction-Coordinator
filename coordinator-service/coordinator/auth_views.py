@@ -1169,8 +1169,10 @@ def send_otp(request):
                 if client.exists(daily_block_key):
                     # Sets daily lockout status flag when Redis block key is found.
                     daily_blocked = True
+            # Catches Redis communication failures during daily block status query.
             except Exception:
                 pass
+        # Inspects local Django cache if Redis did not report active daily lockout.
         if not daily_blocked:
             try:
                 if cache.get(daily_block_key):
