@@ -1041,7 +1041,9 @@ def send_otp(request):
 
     # Key identifying users who have been locked out for 24 hours after exceeding daily OTP requests.
     daily_block_key = f"dtc:otp_daily_blocked:{email}"
+    # Key tracking cumulative number of OTP requests made by this email within the current calendar day.
     daily_key       = f"dtc:otp_daily:{email}"
+    # Key enforcing 60-second cooldown period between successive OTP requests to prevent spamming.
     cooldown_key    = f"dtc:otp_cooldown:{email}"
 
     # In production/testing: enforce IP+email block, cooldown, abandonment tracking, and daily limit
