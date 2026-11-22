@@ -1669,7 +1669,9 @@ def verify_otp(request):
         cache.delete(cache_key)
         # Resets strike count in local cache upon valid OTP verification.
         cache.delete(fail_key)
+        # Removes unverified abandoned OTP tracker from local cache.
         cache.delete(abandon_key)
+    # Catches local cache errors during post-verification cleanup.
     except Exception:
         pass
 
