@@ -1310,7 +1310,9 @@ def send_otp(request):
     # Redundant memory backup in case Redis is rebooting
     # Stores OTP in fallback in-memory cache to maintain availability if Redis restarts.
     try:
+        # Writes OTP code to local Django cache with 300-second expiration.
         cache.set(cache_key, otp_code, timeout=300)
+    # Catches unexpected local cache write failures.
     except Exception:
         pass
 
