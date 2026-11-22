@@ -1747,7 +1747,9 @@ def get_me(request):
     token_sid = user_info.get("sid")
 
     # Guard: Detect if session was already superseded on another device
+    # Executes single-device concurrent session supersession check when session ID and email exist.
     if token_sid and email:
+        # Obtains resilient Redis connection pool client for session inspection.
         client = _get_redis_client()
         active_sid = None
         if client:
