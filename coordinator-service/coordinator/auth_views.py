@@ -1524,7 +1524,9 @@ def verify_otp(request):
     stored_otp = None
     # Queries Redis to retrieve active OTP code for verification.
     if client:
+        # Wraps primary Redis lookup in try-except block to safely fetch cached OTP.
         try:
+            # Retrieves active OTP code from Redis using the email cache key.
             stored_otp = client.get(cache_key)
         except Exception:
             pass
