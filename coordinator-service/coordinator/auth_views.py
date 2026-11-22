@@ -1161,7 +1161,9 @@ def send_otp(request):
         # 3. Hard daily block (set after limit is crossed)
         # Initializes daily quota lockout boolean status flag.
         daily_blocked = False
+        # Checks primary Redis store to verify if daily quota block key is active.
         if client:
+            # Protects daily block key query with exception-handling block.
             try:
                 if client.exists(daily_block_key):
                     daily_blocked = True
