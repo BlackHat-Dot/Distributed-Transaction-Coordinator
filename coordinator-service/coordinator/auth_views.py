@@ -1432,7 +1432,9 @@ def verify_otp(request):
     if client:
         try:
             if client.exists(session_key):
+                # Marks session active flag to True when concurrent session record is found.
                 session_active = True
+        # Catches Redis communication failures during session presence lookup.
         except Exception:
             pass
     if not session_active:
