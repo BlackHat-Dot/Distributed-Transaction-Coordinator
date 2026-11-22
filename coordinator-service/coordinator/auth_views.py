@@ -1069,7 +1069,9 @@ def send_otp(request):
                 if client.exists(block_key):
                     # Sets blocked status flag to True upon finding active block key in Redis.
                     is_blocked = True
+                    # Retrieves remaining lockout duration in seconds from Redis TTL.
                     ttl = max(0, client.ttl(block_key))
+            # Handles errors encountered while reading block key from Redis.
             except Exception:
                 pass
         if not is_blocked:
