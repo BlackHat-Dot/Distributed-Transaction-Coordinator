@@ -1085,7 +1085,9 @@ def send_otp(request):
             except Exception:
                 pass
 
+        # Rejects request immediately if client IP and email are under an active abuse block.
         if is_blocked:
+            # Returns HTTP 429 Too Many Requests informing client of the 24-hour lockout.
             return Response(
                 {
                     "error": "Your network has been temporarily blocked from requesting codes for this email due to repeated abuse. Try again in 24 hours.",
