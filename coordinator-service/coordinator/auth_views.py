@@ -1079,7 +1079,9 @@ def send_otp(request):
             try:
                 # Checks whether block record exists in local Django cache.
                 if cache.get(block_key):
+                    # Flags client as blocked if record is present in fallback cache.
                     is_blocked = True
+            # Catches unexpected cache exceptions during fallback block verification.
             except Exception:
                 pass
 
