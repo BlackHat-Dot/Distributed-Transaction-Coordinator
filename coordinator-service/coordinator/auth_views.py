@@ -1197,7 +1197,9 @@ def send_otp(request):
         # 4. Abandonment tracking: send without verify (5+ unverified sends = 24h block)
         # Checks primary Redis client to manage unverified request abandonment counters.
         if client:
+            # Wraps abandonment counter increment and TTL management in try-except block.
             try:
+                # Atomically increments consecutive unverified request counter for this IP and email.
                 abandon_count = client.incr(abandon_key)
                 if abandon_count == 1 or client.ttl(abandon_key) == -1:
                     client.expire(abandon_key, 7200)  # 2-hour rolling window
