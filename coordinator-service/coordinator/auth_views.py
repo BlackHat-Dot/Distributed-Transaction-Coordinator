@@ -1144,6 +1144,7 @@ def send_otp(request):
                 # Handles Redis read failures gracefully when fetching daily used counter.
                 except Exception:
                     pass
+            # Returns HTTP 200 response with remaining cooldown seconds and remaining chances.
             return Response(
                 {
                     "success": True,
@@ -1158,6 +1159,7 @@ def send_otp(request):
             )
 
         # 3. Hard daily block (set after limit is crossed)
+        # Initializes daily quota lockout boolean status flag.
         daily_blocked = False
         if client:
             try:
