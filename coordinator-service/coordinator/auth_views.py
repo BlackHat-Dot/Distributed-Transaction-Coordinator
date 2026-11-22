@@ -1382,7 +1382,9 @@ def send_otp(request):
     return Response(resp_data, status=200)
 
 # verified
+# Restricts endpoint to handle HTTP POST requests only for OTP verification.
 @api_view(["POST"])
+# Validates submitted OTP, checks single-device login locks, and returns signed JWT token.
 def verify_otp(request):
     """
     Phase 2: Compares submitted OTP using constant-time comparison, deletes OTP on match (single-use),
