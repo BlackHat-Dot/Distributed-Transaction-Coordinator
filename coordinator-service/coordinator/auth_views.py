@@ -1430,7 +1430,9 @@ def verify_otp(request):
     session_active = False
     # Queries primary Redis database to check if user has an active session.
     if client:
+        # Wraps Redis session lookup query in an error-handling block.
         try:
+            # Checks whether an active session record exists in Redis for this email.
             if client.exists(session_key):
                 session_active = True
         except Exception:
