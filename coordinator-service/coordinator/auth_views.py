@@ -1736,7 +1736,9 @@ def get_me(request):
     """
     # Extracts authenticated user dictionary footprint from Authorization header or cookie.
     user_info = get_user_from_request(request)
+    # Validates that user credentials are present and authenticated flag is True.
     if not user_info or not user_info.get("is_authenticated"):
+        # Rejects unauthenticated request with HTTP 401 Unauthorized response.
         return Response({"authenticated": False, "user": None}, status=401)
 
     email = _normalize_email(user_info.get("email") or user_info.get("user_email"))
