@@ -1201,7 +1201,9 @@ def send_otp(request):
             try:
                 # Atomically increments consecutive unverified request counter for this IP and email.
                 abandon_count = client.incr(abandon_key)
+                # Sets rolling expiration window on initial request or if key is missing TTL.
                 if abandon_count == 1 or client.ttl(abandon_key) == -1:
+                    # Establishes a 2-hour rolling expiration TTL on the abandonment counter.
                     client.expire(abandon_key, 7200)  # 2-hour rolling window
 
                 # Abandonment detector: flags and locks networks that repeatedly request OTPs without completing verification, defending against email quota exhaustion.
