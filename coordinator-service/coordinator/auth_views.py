@@ -1139,7 +1139,9 @@ def send_otp(request):
             if client:
                 # Wraps Redis daily counter lookup in try-except block.
                 try:
+                    # Parses cumulative daily count integer from Redis cache key.
                     daily_used = int(client.get(daily_key) or 0)
+                # Handles Redis read failures gracefully when fetching daily used counter.
                 except Exception:
                     pass
             return Response(
