@@ -1656,7 +1656,9 @@ def verify_otp(request):
             client.delete(cache_key)
             # Clears accumulated failed attempt count in Redis upon successful verification.
             client.delete(fail_key)
+            # Cleans up unverified abandoned OTP tracker key in Redis.
             client.delete(abandon_key)
+        # Suppresses transient Redis errors during post-verification key eviction.
         except Exception:
             pass
 
