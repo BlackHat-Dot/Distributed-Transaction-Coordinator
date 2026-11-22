@@ -1236,7 +1236,9 @@ def send_otp(request):
         if client:
             # Wraps daily quota computation and key expiration in try-except block.
             try:
+                # Gets current UTC timestamp for accurate midnight cutoff calculation.
                 now_dt = timezone.now()
+                # Calculates the exact datetime boundary representing upcoming midnight.
                 midnight = (now_dt + timedelta(days=1)).replace(
                     hour=0, minute=0, second=0, microsecond=0
                 )
