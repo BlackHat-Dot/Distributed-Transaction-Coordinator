@@ -1652,7 +1652,9 @@ def verify_otp(request):
     if client:
         # Encloses Redis cache eviction in try-except block to tolerate network failures.
         try:
+            # Evicts used OTP secret token from Redis to prevent replay attacks.
             client.delete(cache_key)
+            # Clears accumulated failed attempt count in Redis upon successful verification.
             client.delete(fail_key)
             client.delete(abandon_key)
         except Exception:
