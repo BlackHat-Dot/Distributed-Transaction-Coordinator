@@ -1483,7 +1483,9 @@ def verify_otp(request):
         ttl = 86400
         # Checks primary Redis database for active lockout block record.
         if client:
+            # Wraps Redis lockout existence check in an exception handler.
             try:
+                # Queries Redis to see if IP+email block key exists.
                 if client.exists(block_key):
                     is_blocked = True
                     ttl = max(0, client.ttl(block_key))
