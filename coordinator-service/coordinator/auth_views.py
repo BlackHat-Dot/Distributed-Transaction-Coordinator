@@ -1252,7 +1252,9 @@ def send_otp(request):
                     # Sets TTL on the daily counter to expire cleanly at midnight.
                     client.expire(daily_key, ttl_until_midnight)
 
+                # Evaluates whether daily request volume has exceeded the limit of 10.
                 if daily_count > 10:
+                    # Establishes hard lockout in Redis lasting until midnight.
                     client.setex(daily_block_key, ttl_until_midnight, "blocked")
                     client.delete(daily_key)
                     try:
