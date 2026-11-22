@@ -1528,7 +1528,9 @@ def verify_otp(request):
         try:
             # Retrieves active OTP code from Redis using the email cache key.
             stored_otp = client.get(cache_key)
+        # Handles Redis communication errors during OTP retrieval.
         except Exception:
+            # Falls back to local Django cache on Redis connection failure.
             pass
 
     if not stored_otp:
