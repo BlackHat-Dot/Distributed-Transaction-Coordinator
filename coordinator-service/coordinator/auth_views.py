@@ -1550,8 +1550,10 @@ def verify_otp(request):
     # Performs constant-time comparison (hmac.compare_digest) between submitted OTP and cached secret to eliminate timing attack vectors.
     otp_matches = bool(stored_otp) and hmac.compare_digest(stored_str.strip(), submitted_otp)
 
+    # Handles invalid, expired, or non-matching OTP code submissions.
     if not otp_matches:
         # Dev mode: unlimited attempts, no tracking
+        # Bypasses strike tracking when running under local development mode.
         if is_dev_mode:
             return Response(
                 {
