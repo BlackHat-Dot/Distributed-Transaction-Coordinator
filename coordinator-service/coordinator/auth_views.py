@@ -1601,7 +1601,9 @@ def verify_otp(request):
             if client:
                 # Wraps Redis lockout writes in try-except block.
                 try:
+                    # Locks IP-email tuple in Redis for 24 hours with otp_fail tag.
                     client.setex(block_key, 86400, "otp_fail")
+                    # Cleans up failed attempts tracking counter after enforcing lock.
                     client.delete(fail_key)
                     client.delete(cache_key)
                 except Exception:
