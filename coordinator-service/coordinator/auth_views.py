@@ -1442,7 +1442,9 @@ def verify_otp(request):
             pass
     # Falls back to local Django cache if Redis did not report an active session.
     if not session_active:
+        # Wraps fallback cache session lookup in an error-handling block.
         try:
+            # Inspects in-memory cache to detect active login session for this email.
             if cache.get(session_key):
                 session_active = True
         except Exception:
