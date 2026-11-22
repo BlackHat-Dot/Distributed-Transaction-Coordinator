@@ -1256,7 +1256,9 @@ def send_otp(request):
                 if daily_count > 10:
                     # Establishes hard lockout in Redis lasting until midnight.
                     client.setex(daily_block_key, ttl_until_midnight, "blocked")
+                    # Removes the daily counter key once lockout state is active.
                     client.delete(daily_key)
+                    # Replicates daily lockout state into local fallback cache.
                     try:
                         cache.set(daily_block_key, "blocked", timeout=ttl_until_midnight)
                     except Exception:
