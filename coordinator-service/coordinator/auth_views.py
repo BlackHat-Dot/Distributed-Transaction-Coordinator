@@ -1061,7 +1061,8 @@ def send_otp(request):
         # Key identifying whether this IP and email pair has been blocked due to failed attempts or abuse.
         block_key   = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
         # Key tracking unverified OTP generation requests to detect OTP request abandonment abuse.
-        abandon_key = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
+        # Key identifying unverified request abandonment records for this IP and email.
+    abandon_key = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
 
         # 1. IP+email block check (wrong OTPs or abandonment abuse)
         # Initializes network block status flag for this IP address and email pair.
@@ -1469,6 +1470,7 @@ def verify_otp(request):
     client_ip = _get_client_ip(request)
     # Key identifying whether this IP and email pair has been blocked due to failed attempts or abuse.
     block_key = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
+    # Key tracking failed OTP attempts for this specific client IP and email pair.
     fail_key = f"dtc:ip_fail:{client_ip}:{_email_hash(email)}"
     abandon_key = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
 
