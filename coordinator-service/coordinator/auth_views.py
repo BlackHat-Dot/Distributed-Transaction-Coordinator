@@ -1541,9 +1541,11 @@ def verify_otp(request):
             stored_otp = cache.get(cache_key)
         # Catches local cache read errors.
         except Exception:
+            # Ignores local cache errors and continues to match evaluation.
             pass
 
     # Constant-time comparison to prevent timing attacks
+    # Decodes binary Redis value to string or defaults to empty string.
     stored_str = stored_otp.decode("utf-8") if isinstance(stored_otp, bytes) else str(stored_otp or "")
     # Performs constant-time comparison (hmac.compare_digest) between submitted OTP and cached secret to eliminate timing attack vectors.
     otp_matches = bool(stored_otp) and hmac.compare_digest(stored_str.strip(), submitted_otp)
