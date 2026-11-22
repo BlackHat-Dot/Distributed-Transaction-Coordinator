@@ -1178,10 +1178,12 @@ def send_otp(request):
             try:
                 # Detects whether daily block flag is recorded in local cache.
                 if cache.get(daily_block_key):
+                    # Flags user as daily blocked based on local cache entry.
                     daily_blocked = True
             except Exception:
                 pass
 
+        # Rejects OTP generation if user has crossed maximum daily request quota.
         if daily_blocked:
             return Response(
                 {
