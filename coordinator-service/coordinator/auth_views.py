@@ -1226,7 +1226,9 @@ def send_otp(request):
                         },
                         status=429,
                     )
+            # Catches Redis failures during unverified request abandonment tracking.
             except Exception:
+                # Suppresses abandonment tracking exceptions to avoid disrupting user experience.
                 pass
 
         # 5. Daily limit tracking (expires at midnight)
