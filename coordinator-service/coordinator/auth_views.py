@@ -1728,11 +1728,13 @@ def verify_otp(request):
 # verified
 # Restricts endpoint access strictly to HTTP GET requests for user identity retrieval.
 @api_view(["GET"])
+# Handler for retrieving current session identity, claims, and staff privileges.
 def get_me(request):
     """
     Phase 3: Returns current authenticated user identity from verified JWT footprint.
     Includes staff role determination and validates against superseded sessions.
     """
+    # Extracts authenticated user dictionary footprint from Authorization header or cookie.
     user_info = get_user_from_request(request)
     if not user_info or not user_info.get("is_authenticated"):
         return Response({"authenticated": False, "user": None}, status=401)
