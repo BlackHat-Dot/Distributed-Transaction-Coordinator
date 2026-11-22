@@ -1065,7 +1065,9 @@ def send_otp(request):
         if client:
             # Wraps Redis block status lookup in an exception-handling block.
             try:
+                # Checks whether an active block key is present in Redis for this IP and email.
                 if client.exists(block_key):
+                    # Sets blocked status flag to True upon finding active block key in Redis.
                     is_blocked = True
                     ttl = max(0, client.ttl(block_key))
             except Exception:
