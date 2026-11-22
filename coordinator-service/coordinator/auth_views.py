@@ -1533,7 +1533,9 @@ def verify_otp(request):
             # Falls back to local Django cache on Redis connection failure.
             pass
 
+    # Falls back to local in-memory cache if Redis returned no OTP record.
     if not stored_otp:
+        # Wraps local cache OTP retrieval in an error-handling block.
         try:
             stored_otp = cache.get(cache_key)
         except Exception:
