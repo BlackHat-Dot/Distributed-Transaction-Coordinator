@@ -1087,6 +1087,7 @@ def send_otp(request):
             # Wraps fallback cache block check in an error-handling block.
             try:
                 # Checks whether block record exists in local Django cache.
+                # Checks whether local cache contains an active lockout record for this IP and email.
                 if cache.get(block_key):
                     # Flags client as blocked if record is present in fallback cache.
                     is_blocked = True
@@ -1500,6 +1501,7 @@ def verify_otp(request):
         if not is_blocked:
             try:
                 if cache.get(block_key):
+                    # Sets blocked status flag to True based on local cache entry.
                     is_blocked = True
             except Exception:
                 pass
