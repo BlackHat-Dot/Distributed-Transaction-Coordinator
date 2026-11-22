@@ -962,7 +962,9 @@ def send_otp(request):
     enforces rate limits (cooldown, daily limit, abandonment), and dispatches via Resend.
     """
     # Validates that incoming request body contains a JSON object dictionary.
+    # Validates that incoming request body contains a JSON object dictionary.
     if not isinstance(request.data, dict):
+        # Returns HTTP 400 Bad Request error if payload is not a valid JSON dictionary.
         # Returns HTTP 400 Bad Request error if payload is not a valid JSON dictionary.
         return Response(
             {"error": "Invalid request payload, expected JSON object.", "code": "INVALID_PAYLOAD"},
