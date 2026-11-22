@@ -1465,7 +1465,9 @@ def verify_otp(request):
             status=409,
         )
 
+    # Resolves remote client IP address from request headers or direct socket connection.
     client_ip = _get_client_ip(request)
+    # Key identifying whether this IP and email pair has been blocked due to failed attempts or abuse.
     block_key = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
     fail_key = f"dtc:ip_fail:{client_ip}:{_email_hash(email)}"
     abandon_key = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
