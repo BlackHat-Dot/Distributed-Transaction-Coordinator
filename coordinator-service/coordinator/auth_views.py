@@ -1568,7 +1568,9 @@ def verify_otp(request):
         # Production: track wrong attempts per IP+email — 5 strikes = 24h block
         # Initializes failed attempt strike counter.
         fail_count = None
+        # Tracks failed verification attempt count in Redis.
         if client:
+            # Wraps failed attempt increment in try-except block.
             try:
                 fail_count = client.incr(fail_key)
                 if fail_count == 1 or client.ttl(fail_key) == -1:
