@@ -1123,7 +1123,9 @@ def send_otp(request):
         if not cooldown_active:
             # Protects local cache lookup with try-except block against memory errors.
             try:
+                # Checks whether cooldown flag is present in local cache.
                 if cache.get(cooldown_key):
+                    # Marks cooldown active based on fallback cache entry.
                     cooldown_active = True
             except Exception:
                 pass
