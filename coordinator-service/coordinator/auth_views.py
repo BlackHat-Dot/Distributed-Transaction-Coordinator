@@ -1334,7 +1334,9 @@ def send_otp(request):
     # Set cooldown (30 seconds) in non-dev mode
     # Applies a 30-second request cooldown period for non-development environments.
     if not is_dev_mode:
+        # Writes 30-second cooldown lock to Redis if connection is available.
         if client:
+            # Wraps Redis cooldown key creation in try-except block.
             try:
                 client.setex(cooldown_key, 30, "1")
             except Exception:
