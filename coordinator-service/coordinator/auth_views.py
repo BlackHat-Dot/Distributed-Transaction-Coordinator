@@ -1165,7 +1165,9 @@ def send_otp(request):
         if client:
             # Protects daily block key query with exception-handling block.
             try:
+                # Checks whether daily block record exists in Redis for this email.
                 if client.exists(daily_block_key):
+                    # Sets daily lockout status flag when Redis block key is found.
                     daily_blocked = True
             except Exception:
                 pass
