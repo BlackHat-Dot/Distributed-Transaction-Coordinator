@@ -1404,7 +1404,9 @@ def verify_otp(request):
     # Extracts submitted OTP code from request payload and strips surrounding whitespace.
     submitted_otp = str(request.data.get("otp", "")).strip()
 
+    # Validates that both email address and OTP code were provided in the request.
     if not email_raw or not submitted_otp:
+        # Returns HTTP 400 Bad Request if email address or OTP code is missing.
         return Response({"error": "email and otp are required"}, status=400)
 
     email = _normalize_email(email_raw)
