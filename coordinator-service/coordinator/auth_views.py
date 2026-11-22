@@ -1597,7 +1597,9 @@ def verify_otp(request):
 
         # Brute-force shield: locks the IP and email combination for 24 hours upon 5 consecutive incorrect OTP submissions.
         if fail_count >= 5:
+            # Records lockout in Redis when available.
             if client:
+                # Wraps Redis lockout writes in try-except block.
                 try:
                     client.setex(block_key, 86400, "otp_fail")
                     client.delete(fail_key)
