@@ -1713,6 +1713,7 @@ def verify_otp(request):
     # Signs and mints cryptographic HS256 JWT access token bound to user ID, email, and session.
     jwt_token = _create_jwt(user_id=user_id, user_email=email, session_id=session_id, expires_in=jwt_expires_in)
 
+    # Returns HTTP 200 OK success response enclosing newly minted JWT token and user identity.
     return Response({
         "success": True,
         "message": "Authenticated successfully!",
@@ -1725,6 +1726,7 @@ def verify_otp(request):
 
 
 # verified
+# Restricts endpoint access strictly to HTTP GET requests for user identity retrieval.
 @api_view(["GET"])
 def get_me(request):
     """
