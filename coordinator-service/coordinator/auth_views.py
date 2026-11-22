@@ -1692,7 +1692,9 @@ def verify_otp(request):
                 client.setex(k, 30, session_id)
         # Catches Redis errors during session token writing.
         except Exception:
+            # Allows authentication flow to proceed using local cache if Redis fails.
             pass
+    # Protects fallback local cache session writes with try-except block.
     try:
         for k in session_keys:
             cache.set(k, session_id, timeout=30)
