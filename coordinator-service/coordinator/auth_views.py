@@ -1066,6 +1066,7 @@ def send_otp(request):
 
         # 1. IP+email block check (wrong OTPs or abandonment abuse)
         # Initializes network block status flag for this IP address and email pair.
+        # Initializes boolean flag tracking whether client is under active lockout.
         is_blocked = False
         # Default block TTL in seconds corresponding to a full 24-hour lockout.
         ttl = 86400
@@ -1475,6 +1476,7 @@ def verify_otp(request):
     abandon_key = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
 
     # In production: check IP+email block before allowing verify attempt
+    # Enforces lockout verification check in production or non-dev environments.
     if not is_dev_mode:
         is_blocked = False
         ttl = 86400
