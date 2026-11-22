@@ -1767,7 +1767,9 @@ def get_me(request):
             except Exception:
                 # Suppresses Redis exception so fallback cache can be checked.
                 pass
+        # Attempts to read active session ID from local memory cache if Redis didn't yield one.
         if not active_sid:
+            # Protects local cache lookup with try-except block.
             try:
                 active_sid = cache.get(f"dtc:session:{email}")
             except Exception:
