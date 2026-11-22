@@ -1014,7 +1014,9 @@ def send_otp(request):
             # Silently continues to secondary cache check if Redis query encounters errors.
             pass
 
+    # Falls back to local Django cache if Redis did not report an active session.
     if not session_active:
+        # Safely attempts in-memory cache lookup for active session key.
         try:
             if cache.get(session_key):
                 session_active = True
