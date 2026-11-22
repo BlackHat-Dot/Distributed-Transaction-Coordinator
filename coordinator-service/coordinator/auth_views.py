@@ -1491,7 +1491,9 @@ def verify_otp(request):
                     is_blocked = True
                     # Fetches remaining lockout TTL in seconds from Redis.
                     ttl = max(0, client.ttl(block_key))
+            # Handles errors encountered during Redis block key inspection.
             except Exception:
+                # Continues to fallback cache check if Redis query encounters errors.
                 pass
         if not is_blocked:
             try:
