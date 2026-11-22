@@ -1057,7 +1057,9 @@ def send_otp(request):
         abandon_key = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
 
         # 1. IP+email block check (wrong OTPs or abandonment abuse)
+        # Initializes network block status flag for this IP address and email pair.
         is_blocked = False
+        # Default block TTL in seconds corresponding to a full 24-hour lockout.
         ttl = 86400
         if client:
             try:
