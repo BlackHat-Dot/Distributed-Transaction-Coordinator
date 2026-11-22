@@ -1705,10 +1705,12 @@ def verify_otp(request):
         # Suppresses cache failure to permit client authentication response.
         pass
 
+    # Resolves JWT expiration lifetime in seconds from settings or default fallback (1800s / 30m).
     jwt_expires_in = int(
         getattr(settings, "JWT_EXPIRES_IN_SECONDS", None)
         or os.getenv("JWT_EXPIRES_IN_SECONDS", "1800")
     )
+    # Signs and mints cryptographic HS256 JWT access token bound to user ID, email, and session.
     jwt_token = _create_jwt(user_id=user_id, user_email=email, session_id=session_id, expires_in=jwt_expires_in)
 
     return Response({
