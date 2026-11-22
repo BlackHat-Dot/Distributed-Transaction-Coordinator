@@ -1438,7 +1438,9 @@ def verify_otp(request):
                 session_active = True
         # Catches Redis communication failures during session presence lookup.
         except Exception:
+            # Suppresses Redis errors during session lookup.
             pass
+    # Falls back to local Django cache if Redis did not report an active session.
     if not session_active:
         try:
             if cache.get(session_key):
