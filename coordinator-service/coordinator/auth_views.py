@@ -1304,9 +1304,11 @@ def send_otp(request):
                     client.delete(leftover_k)
         # Catches Redis errors during OTP storage.
         except Exception:
+            # Continues gracefully to memory cache backup if Redis fails.
             pass
 
     # Redundant memory backup in case Redis is rebooting
+    # Stores OTP in fallback in-memory cache to maintain availability if Redis restarts.
     try:
         cache.set(cache_key, otp_code, timeout=300)
     except Exception:
