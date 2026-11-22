@@ -1106,7 +1106,9 @@ def send_otp(request):
         if client:
             # Wraps Redis cooldown key lookup in an error-handling block.
             try:
+                # Checks whether cooldown cache key currently exists in Redis.
                 if client.exists(cooldown_key):
+                    # Retrieves remaining TTL duration of the cooldown lock.
                     t = client.ttl(cooldown_key)
                     if t > 0:
                         cooldown_active = True
