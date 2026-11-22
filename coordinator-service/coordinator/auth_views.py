@@ -1069,6 +1069,7 @@ def send_otp(request):
         # Initializes boolean flag tracking whether client is under active lockout.
         is_blocked = False
         # Default block TTL in seconds corresponding to a full 24-hour lockout.
+        # Default lockout duration of 24 hours (86400 seconds) for IP+email blocks.
         ttl = 86400
         # Queries primary Redis database to check if IP+email block record exists.
         if client:
@@ -1480,6 +1481,7 @@ def verify_otp(request):
     if not is_dev_mode:
         is_blocked = False
         ttl = 86400
+        # Checks primary Redis database for active lockout block record.
         if client:
             try:
                 if client.exists(block_key):
