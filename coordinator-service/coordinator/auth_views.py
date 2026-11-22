@@ -1247,7 +1247,9 @@ def send_otp(request):
 
                 # Atomically increments the daily request count for this email address.
                 daily_count = client.incr(daily_key)
+                # Ensures daily counter key expires at upcoming midnight.
                 if daily_count == 1 or client.ttl(daily_key) == -1:
+                    # Sets TTL on the daily counter to expire cleanly at midnight.
                     client.expire(daily_key, ttl_until_midnight)
 
                 if daily_count > 10:
