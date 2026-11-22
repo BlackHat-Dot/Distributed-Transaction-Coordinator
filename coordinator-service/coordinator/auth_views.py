@@ -1751,7 +1751,9 @@ def get_me(request):
     if token_sid and email:
         # Obtains resilient Redis connection pool client for session inspection.
         client = _get_redis_client()
+        # Initializes active session token variable to None.
         active_sid = None
+        # Checks Redis client availability to fetch current authoritative session ID.
         if client:
             try:
                 raw_val = client.get(f"dtc:session:{email}")
