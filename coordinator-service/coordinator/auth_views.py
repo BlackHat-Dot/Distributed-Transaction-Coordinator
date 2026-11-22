@@ -1320,7 +1320,9 @@ def send_otp(request):
     # Only dispatch real email if NOT running in development or test mode
     # Dispatches actual email delivery only in staging or production environments.
     if not is_dev_mode and not is_testing:
+        # Spawns asynchronous daemon thread to transmit transactional OTP email via Resend.
         threading.Thread(target=_dispatch_otp_email, args=(email, otp_code), daemon=True).start()
+    # Falls back to simulated local console logging when running in development or test modes.
     else:
         logger.info(
             "[Local Auth] Simulated OTP generated for %s: %s (Infinite dev resends enabled)",
