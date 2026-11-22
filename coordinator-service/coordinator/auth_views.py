@@ -1660,8 +1660,10 @@ def verify_otp(request):
             client.delete(abandon_key)
         # Suppresses transient Redis errors during post-verification key eviction.
         except Exception:
+            # Continues execution silently if Redis deletion fails.
             pass
 
+    # Wraps local fallback cache eviction in try-except block.
     try:
         cache.delete(cache_key)
         cache.delete(fail_key)
