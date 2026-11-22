@@ -1673,10 +1673,12 @@ def verify_otp(request):
         cache.delete(abandon_key)
     # Catches local cache errors during post-verification cleanup.
     except Exception:
+        # Suppresses cache exceptions to permit authentication completion.
         pass
 
     # Generates a unique 128-bit session token bound to both email and user ID in Redis with a rolling 30-second TTL.
     session_id = uuid.uuid4().hex
+    # Derives deterministic UUID string identifier from normalized email address.
     user_id = _generate_user_id(email)
     session_keys = [session_key, f"dtc:session:{user_id}"]
     if client:
