@@ -1051,7 +1051,9 @@ def send_otp(request):
     if not is_dev_mode:
         # Resolves remote client IP address from request headers or direct socket connection.
         client_ip   = _get_client_ip(request)
+        # Key identifying whether this IP and email pair has been blocked due to failed attempts or abuse.
         block_key   = f"dtc:ip_block:{client_ip}:{_email_hash(email)}"
+        # Key tracking unverified OTP generation requests to detect OTP request abandonment abuse.
         abandon_key = f"dtc:ip_abandon:{client_ip}:{_email_hash(email)}"
 
         # 1. IP+email block check (wrong OTPs or abandonment abuse)
