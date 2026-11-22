@@ -1324,6 +1324,7 @@ def send_otp(request):
         threading.Thread(target=_dispatch_otp_email, args=(email, otp_code), daemon=True).start()
     # Falls back to simulated local console logging when running in development or test modes.
     else:
+        # Logs generated OTP code to console for instant developer convenience.
         logger.info(
             "[Local Auth] Simulated OTP generated for %s: %s (Infinite dev resends enabled)",
             email,
@@ -1331,6 +1332,7 @@ def send_otp(request):
         )
 
     # Set cooldown (30 seconds) in non-dev mode
+    # Applies a 30-second request cooldown period for non-development environments.
     if not is_dev_mode:
         if client:
             try:
