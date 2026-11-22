@@ -1022,7 +1022,9 @@ def send_otp(request):
             if cache.get(session_key):
                 # Flags session as active when session key is found in fallback cache.
                 session_active = True
+        # Catches cache retrieval exceptions during fallback session lookup.
         except Exception:
+            # Ignores cache errors and proceeds with login flow.
             pass
 
     # Enforces single-device login policy: immediately blocks new login attempts if an active session is currently alive on another device.
