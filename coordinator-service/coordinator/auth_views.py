@@ -1648,7 +1648,9 @@ def verify_otp(request):
 
     # OTP matched: clean slate on success (single-use)
     # Enforces single-use semantics: immediately evicts the verified OTP from Redis and fallback cache upon successful authentication.
+    # Checks whether active Redis connection is available for cache eviction.
     if client:
+        # Encloses Redis cache eviction in try-except block to tolerate network failures.
         try:
             client.delete(cache_key)
             client.delete(fail_key)
