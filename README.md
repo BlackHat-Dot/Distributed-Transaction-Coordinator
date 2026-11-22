@@ -20,7 +20,7 @@ with transaction.atomic():
 
 In a microservices architecture, this is **impossible**:
 - The **Inventory Service** has its own PostgreSQL database.
-- The **Payment Service** has its own PostgreSQL database (or an external gateway like Stripe).
+- The **Payment Service** has its own PostgreSQL database.
 - The **Coordinator Service** has its own PostgreSQL database.
 
 There is no shared database transaction across network boundaries. If the Coordinator reserves inventory in Service A and then the payment fails in Service B, the database for Service A has *already committed* the inventory reservation. A standard SQL `ROLLBACK` cannot undo a committed transaction in another service's database across the network.
