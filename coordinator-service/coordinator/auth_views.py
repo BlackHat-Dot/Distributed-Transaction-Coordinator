@@ -1291,7 +1291,9 @@ def send_otp(request):
         try:
             # Writes OTP code to Redis with 5-minute (300 seconds) time-to-live.
             client.setex(cache_key, 300, otp_code)
+            # Purges residual rate limit and lockout keys in development environment.
             if is_dev_mode:
+                # Iterates over leftover lockout and throttling keys to ensure smooth testing.
                 for leftover_k in [
                     daily_block_key,
                     daily_key,
