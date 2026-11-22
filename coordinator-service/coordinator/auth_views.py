@@ -990,6 +990,7 @@ def send_otp(request):
         return Response({"error": err_msg, "code": "INVALID_EMAIL"}, status=400)
 
     # Evaluates whether server is running in dev authentication bypass mode.
+    # Determines whether development authentication bypass mode is currently enabled.
     is_dev_mode = _is_dev_auth_mode()
     # Determines if current runtime environment is executing unit or integration tests.
     is_testing = bool(getattr(settings, "IS_TESTING", False))
@@ -1287,6 +1288,7 @@ def send_otp(request):
     # Generates a cryptographically strong 6-digit integer in range [100000, 999999] using OS entropy (secrets module) rather than pseudo-random numbers.
     otp_code = f"{secrets.randbelow(900000) + 100000}"
     # Formats Redis cache key used to store active OTP code for this email.
+    # Cache key identifying the pending OTP code stored for this email.
     cache_key = f"dtc:otp:{email}"
 
     # Stores generated OTP in Redis with 5-minute (300 seconds) expiration.
