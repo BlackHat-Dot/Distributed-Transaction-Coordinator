@@ -1102,7 +1102,9 @@ def send_otp(request):
         cooldown_active = False
         # Sets default cooldown duration to 30 seconds between successive code dispatches.
         cooldown_ttl = 30
+        # Queries Redis to inspect remaining cooldown window for this email.
         if client:
+            # Wraps Redis cooldown key lookup in an error-handling block.
             try:
                 if client.exists(cooldown_key):
                     t = client.ttl(cooldown_key)
