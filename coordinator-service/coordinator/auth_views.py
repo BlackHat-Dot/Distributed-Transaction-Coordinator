@@ -1242,8 +1242,10 @@ def send_otp(request):
                 midnight = (now_dt + timedelta(days=1)).replace(
                     hour=0, minute=0, second=0, microsecond=0
                 )
+                # Calculates remaining TTL in seconds until the midnight quota reset.
                 ttl_until_midnight = max(1, int((midnight - now_dt).total_seconds()))
 
+                # Atomically increments the daily request count for this email address.
                 daily_count = client.incr(daily_key)
                 if daily_count == 1 or client.ttl(daily_key) == -1:
                     client.expire(daily_key, ttl_until_midnight)
