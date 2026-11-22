@@ -1174,7 +1174,9 @@ def send_otp(request):
                 pass
         # Inspects local Django cache if Redis did not report active daily lockout.
         if not daily_blocked:
+            # Protects local cache daily block lookup with try-except block.
             try:
+                # Detects whether daily block flag is recorded in local cache.
                 if cache.get(daily_block_key):
                     daily_blocked = True
             except Exception:
