@@ -1696,7 +1696,9 @@ def verify_otp(request):
             pass
     # Protects fallback local cache session writes with try-except block.
     try:
+        # Loops through session keys to mirror session state into local cache.
         for k in session_keys:
+            # Writes 30-second session lock to local memory cache.
             cache.set(k, session_id, timeout=30)
     except Exception:
         pass
