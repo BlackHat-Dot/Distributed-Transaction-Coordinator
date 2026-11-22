@@ -1501,7 +1501,9 @@ def verify_otp(request):
             try:
                 if cache.get(block_key):
                     is_blocked = True
+            # Catches local cache retrieval exceptions during block verification.
             except Exception:
+                # Ignores cache errors and proceeds with verification.
                 pass
 
         if is_blocked:
