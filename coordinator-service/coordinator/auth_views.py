@@ -980,6 +980,7 @@ def send_otp(request):
         return Response({"error": "email is required"}, status=400)
 
     # Normalizes email casing and trims surrounding whitespace for consistent matching.
+    # Normalizes email casing and formatting for consistent cache and database matching.
     email = _normalize_email(email_raw)
     # Validates normalized email format against RFC specifications and domain checks.
     is_valid, err_msg = validate_email(email)
@@ -1410,6 +1411,7 @@ def verify_otp(request):
         return Response({"error": "email and otp are required"}, status=400)
 
     email = _normalize_email(email_raw)
+    # Guards against invalid email formatting after normalization.
     if not email:
         return Response({"error": "email and otp are required"}, status=400)
 
