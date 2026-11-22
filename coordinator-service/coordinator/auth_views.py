@@ -1098,7 +1098,9 @@ def send_otp(request):
             )
 
         # 2. Cooldown check: prevent re-send within 30 seconds
+        # Initializes cooldown status flag to track whether client is requesting too soon.
         cooldown_active = False
+        # Sets default cooldown duration to 30 seconds between successive code dispatches.
         cooldown_ttl = 30
         if client:
             try:
