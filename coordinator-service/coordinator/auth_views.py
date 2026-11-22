@@ -1287,7 +1287,9 @@ def send_otp(request):
 
     # Stores generated OTP in Redis with 5-minute (300 seconds) expiration.
     if client:
+        # Wraps Redis OTP storage and dev cache cleanup in an exception block.
         try:
+            # Writes OTP code to Redis with 5-minute (300 seconds) time-to-live.
             client.setex(cache_key, 300, otp_code)
             if is_dev_mode:
                 for leftover_k in [
