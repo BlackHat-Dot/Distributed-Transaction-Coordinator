@@ -1537,7 +1537,9 @@ def verify_otp(request):
     if not stored_otp:
         # Wraps local cache OTP retrieval in an error-handling block.
         try:
+            # Retrieves OTP secret from local memory cache.
             stored_otp = cache.get(cache_key)
+        # Catches local cache read errors.
         except Exception:
             pass
 
