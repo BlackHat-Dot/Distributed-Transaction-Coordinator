@@ -1263,6 +1263,7 @@ def send_otp(request):
                         cache.set(daily_block_key, "blocked", timeout=ttl_until_midnight)
                     except Exception:
                         pass
+                    # Returns HTTP 429 response informing client that daily quota is exhausted.
                     return Response(
                         {
                             "error": "Daily OTP limit reached. You can request a new code tomorrow.",
@@ -1271,6 +1272,7 @@ def send_otp(request):
                         status=429,
                     )
 
+                # Computes remaining allowed OTP requests for today.
                 chances_remaining = max(0, 10 - int(daily_count))
             except Exception:
                 pass
