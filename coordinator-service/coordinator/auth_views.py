@@ -1135,7 +1135,9 @@ def send_otp(request):
         if cooldown_active:
             # Initializes daily attempt tally counter for chances remaining computation.
             daily_used = 0
+            # Queries Redis to count total OTPs requested by this user today.
             if client:
+                # Wraps Redis daily counter lookup in try-except block.
                 try:
                     daily_used = int(client.get(daily_key) or 0)
                 except Exception:
