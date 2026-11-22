@@ -1300,7 +1300,9 @@ def send_otp(request):
                     cooldown_key,
                     f"dtc:otp_session_blocked:{email}",
                 ]:
+                    # Deletes residual key from Redis for frictionless developer iterations.
                     client.delete(leftover_k)
+        # Catches Redis errors during OTP storage.
         except Exception:
             pass
 
