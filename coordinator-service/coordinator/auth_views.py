@@ -1763,7 +1763,9 @@ def get_me(request):
                 if raw_val:
                     # Decodes binary Redis session string to unicode string representation.
                     active_sid = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else raw_val
+            # Catches Redis lookup failures silently to fallback to cache.
             except Exception:
+                # Suppresses Redis exception so fallback cache can be checked.
                 pass
         if not active_sid:
             try:
