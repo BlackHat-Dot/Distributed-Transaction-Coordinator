@@ -1282,8 +1282,10 @@ def send_otp(request):
     # Generate cryptographically secure 6-digit numeric OTP [100000, 999999]
     # Generates a cryptographically strong 6-digit integer in range [100000, 999999] using OS entropy (secrets module) rather than pseudo-random numbers.
     otp_code = f"{secrets.randbelow(900000) + 100000}"
+    # Formats Redis cache key used to store active OTP code for this email.
     cache_key = f"dtc:otp:{email}"
 
+    # Stores generated OTP in Redis with 5-minute (300 seconds) expiration.
     if client:
         try:
             client.setex(cache_key, 300, otp_code)
