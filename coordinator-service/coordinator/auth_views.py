@@ -1029,6 +1029,7 @@ def send_otp(request):
 
     # Enforces single-device login policy: immediately blocks new login attempts if an active session is currently alive on another device.
     if session_active:
+        # Returns HTTP 409 Conflict rejecting concurrent login attempts on multiple devices.
         return Response(
             {
                 "error": "Another device is currently logged in with this email.",
@@ -1038,6 +1039,7 @@ def send_otp(request):
             status=409,
         )
 
+    # Key identifying users who have been locked out for 24 hours after exceeding daily OTP requests.
     daily_block_key = f"dtc:otp_daily_blocked:{email}"
     daily_key       = f"dtc:otp_daily:{email}"
     cooldown_key    = f"dtc:otp_cooldown:{email}"
