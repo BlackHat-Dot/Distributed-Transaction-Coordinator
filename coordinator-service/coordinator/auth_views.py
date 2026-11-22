@@ -1274,7 +1274,9 @@ def send_otp(request):
 
                 # Computes remaining allowed OTP requests for today.
                 chances_remaining = max(0, 10 - int(daily_count))
+            # Catches unexpected Redis errors during daily limit enforcement.
             except Exception:
+                # Suppresses Redis errors to avoid blocking authentic user requests.
                 pass
 
     # Generate cryptographically secure 6-digit numeric OTP [100000, 999999]
