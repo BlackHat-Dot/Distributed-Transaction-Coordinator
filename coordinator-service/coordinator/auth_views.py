@@ -1613,7 +1613,9 @@ def verify_otp(request):
                     pass
             # Wraps local cache lockout enforcement in try-except block.
             try:
+                # Stores 24-hour lockout state in local memory cache.
                 cache.set(block_key, "otp_fail", timeout=86400)
+                # Removes failed strike counter from local cache.
                 cache.delete(fail_key)
                 cache.delete(cache_key)
             except Exception:
