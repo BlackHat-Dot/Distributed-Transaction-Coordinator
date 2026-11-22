@@ -1350,8 +1350,10 @@ def send_otp(request):
             cache.set(cooldown_key, "1", timeout=30)
         # Catches local cache failures during cooldown write.
         except Exception:
+            # Suppresses local cache errors to prevent blocking authentication response.
             pass
 
+    # Derives deterministic UUID string identifier from normalized email address.
     user_id = _generate_user_id(email)
 
     resp_data = {
