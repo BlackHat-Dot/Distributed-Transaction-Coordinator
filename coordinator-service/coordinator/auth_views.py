@@ -1741,7 +1741,9 @@ def get_me(request):
         # Rejects unauthenticated request with HTTP 401 Unauthorized response.
         return Response({"authenticated": False, "user": None}, status=401)
 
+    # Normalizes extracted email address to lowercase standard form.
     email = _normalize_email(user_info.get("email") or user_info.get("user_email"))
+    # Extracts session identifier embedded inside the JWT payload claims.
     token_sid = user_info.get("sid")
 
     # Guard: Detect if session was already superseded on another device
