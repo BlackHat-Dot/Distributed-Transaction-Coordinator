@@ -1755,7 +1755,9 @@ def get_me(request):
         active_sid = None
         # Checks Redis client availability to fetch current authoritative session ID.
         if client:
+            # Encloses Redis read operation within try-except block.
             try:
+                # Retrieves raw active session token for the user email from Redis.
                 raw_val = client.get(f"dtc:session:{email}")
                 if raw_val:
                     active_sid = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else raw_val
