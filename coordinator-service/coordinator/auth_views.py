@@ -1617,7 +1617,9 @@ def verify_otp(request):
                 cache.set(block_key, "otp_fail", timeout=86400)
                 # Removes failed strike counter from local cache.
                 cache.delete(fail_key)
+                # Evicts OTP secret token from local cache.
                 cache.delete(cache_key)
+            # Handles local memory cache errors during lockout write.
             except Exception:
                 pass
 
