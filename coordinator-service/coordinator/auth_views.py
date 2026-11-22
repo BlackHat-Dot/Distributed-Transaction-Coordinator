@@ -1356,6 +1356,7 @@ def send_otp(request):
     # Derives deterministic UUID string identifier from normalized email address.
     user_id = _generate_user_id(email)
 
+    # Constructs structured JSON response payload containing delivery status and cooldown info.
     resp_data = {
         "success": True,
         "message": (
@@ -1371,6 +1372,7 @@ def send_otp(request):
         "is_cooldown": False,
         "chances_remaining": "∞" if is_dev_mode else chances_remaining,
     }
+    # Injects plain-text OTP code directly into response when running in local development mode.
     if is_dev_mode:
         resp_data["otp"] = otp_code
         resp_data["is_local"] = True
