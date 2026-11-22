@@ -1018,7 +1018,9 @@ def send_otp(request):
     if not session_active:
         # Safely attempts in-memory cache lookup for active session key.
         try:
+            # Inspects in-memory cache to detect active login session for this email.
             if cache.get(session_key):
+                # Flags session as active when session key is found in fallback cache.
                 session_active = True
         except Exception:
             pass
