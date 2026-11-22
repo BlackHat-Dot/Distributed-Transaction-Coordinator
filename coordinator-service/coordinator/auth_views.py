@@ -1208,7 +1208,9 @@ def send_otp(request):
 
                 # Abandonment detector: flags and locks networks that repeatedly request OTPs without completing verification, defending against email quota exhaustion.
                 if abandon_count > 5:
+                    # Imposes a 24-hour lockout block key on this IP and email in Redis.
                     client.setex(block_key, 86400, "abandon")
+                    # Clears the temporary abandonment counter once hard block has been set.
                     client.delete(abandon_key)
                     try:
                         cache.set(block_key, "abandon", timeout=86400)
